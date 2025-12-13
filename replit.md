@@ -55,6 +55,13 @@ python -c "from alembic.config import main; import sys; sys.argv = ['alembic', '
 ```
 
 ## Recent Changes
+- 2024-12-13: Added multi-tenant chatbot MVP with prompt versioning
+  - Gemini AI integration via Replit AI Integrations (no API key needed, billed to credits)
+  - PromptBundle/PromptSection models with draft/testing/production workflow
+  - Tenants can create prompts, test with real AI, then publish to production
+  - Prompt sections support: system, base, pricing, FAQ, business_info, custom scopes
+  - Updated Prompts page with bundle management, testing, and publish functionality
+  - Embeddable widget (static/chat-widget.js) uses production prompts
 - 2024-12-13: Added React frontend
   - Login page with JWT authentication
   - Dashboard with leads chart and recent leads list

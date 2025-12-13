@@ -1,8 +1,20 @@
 """Application settings using Pydantic BaseSettings."""
 
 import json
+import os
 import time
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+def _debug_log(location: str, message: str, data: dict, hypothesis_id: str = "A"):
+    """Helper to safely write debug logs."""
+    try:
+        log_path = Path(".cursor/debug.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": location, "message": message, "data": data, "sessionId": "debug-session", "runId": "run1", "hypothesisId": hypothesis_id}) + "\n")
+    except Exception:
+        pass  # Silently fail if logging isn't possible
 
 
 class Settings(BaseSettings):
@@ -50,7 +62,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # #region agent log
-with open("/Users/dustinyates/Desktop/chattercheatah/.cursor/debug.log", "a") as f:
-    f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": "settings.py:48", "message": "Settings initialized", "data": {"database_url_prefix": settings.database_url[:30] + "..." if len(settings.database_url) > 30 else settings.database_url, "has_cloud_sql_conn": settings.cloud_sql_instance_connection_name is not None, "gcp_project_id": settings.gcp_project_id, "environment": settings.environment}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
+_debug_log("settings.py:48", "Settings initialized", {"database_url_prefix": settings.database_url[:30] + "..." if len(settings.database_url) > 30 else settings.database_url, "has_cloud_sql_conn": settings.cloud_sql_instance_connection_name is not None, "gcp_project_id": settings.gcp_project_id, "environment": settings.environment})
 # #endregion
 

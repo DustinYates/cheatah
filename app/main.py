@@ -15,26 +15,34 @@ from app.settings import settings
 setup_logging()
 
 
+def _debug_log(location: str, message: str, data: dict, hypothesis_id: str = "A"):
+    """Helper to safely write debug logs."""
+    try:
+        from pathlib import Path
+        import json
+        import time
+        log_path = Path(".cursor/debug.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": location, "message": message, "data": data, "sessionId": "debug-session", "runId": "run1", "hypothesisId": hypothesis_id}) + "\n")
+    except Exception:
+        pass  # Silently fail if logging isn't possible
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    import json
-    import time
     # #region agent log
-    with open("/Users/dustinyates/Desktop/chattercheatah/.cursor/debug.log", "a") as f:
-        f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": "main.py:22", "message": "Application startup - connecting Redis", "data": {}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+    _debug_log("main.py:22", "Application startup - connecting Redis", {}, "C")
     # #endregion
     # Startup
     try:
         await redis_client.connect()
         # #region agent log
-        with open("/Users/dustinyates/Desktop/chattercheatah/.cursor/debug.log", "a") as f:
-            f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": "main.py:27", "message": "Redis connected successfully", "data": {}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+        _debug_log("main.py:27", "Redis connected successfully", {}, "C")
         # #endregion
     except Exception as e:
         # #region agent log
-        with open("/Users/dustinyates/Desktop/chattercheatah/.cursor/debug.log", "a") as f:
-            f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": "main.py:31", "message": "Redis connection error", "data": {"error_type": type(e).__name__, "error_message": str(e)}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+        _debug_log("main.py:31", "Redis connection error", {"error_type": type(e).__name__, "error_message": str(e)}, "C")
         # #endregion
         raise
     yield

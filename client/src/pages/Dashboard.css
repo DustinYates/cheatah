@@ -1,0 +1,99 @@
+.dashboard h1 {
+  margin: 0 0 24px 0;
+  color: #1a1a2e;
+}
+
+.dashboard-grid {
+  display: grid;
+  gap: 24px;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.card h2 {
+  margin: 0 0 20px 0;
+  font-size: 1.1rem;
+  color: #3f3f46;
+}
+
+.chart-container {
+  height: 300px;
+}
+
+.leads-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.leads-table th,
+.leads-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #e4e4e7;
+}
+
+.leads-table th {
+  font-weight: 500;
+  color: #71717a;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.leads-table td {
+  color: #3f3f46;
+}
+
+.status {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.status.new {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status.contacted {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.status.qualified {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.status.converted {
+  background: #4ade80;
+  color: #1a1a2e;
+}
+
+.empty-state {
+  color: #71717a;
+  text-align: center;
+  padding: 40px;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #71717a;
+}
+
+.error {
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}

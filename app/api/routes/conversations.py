@@ -28,6 +28,7 @@ class ConversationResponse(BaseModel):
     tenant_id: int
     channel: str
     external_id: str | None
+    phone_number: str | None = None
     created_at: str
     updated_at: str
 
@@ -56,10 +57,20 @@ class MessageResponse(BaseModel):
         from_attributes = True
 
 
-class ConversationWithMessagesResponse(ConversationResponse):
+class ConversationWithMessagesResponse(BaseModel):
     """Conversation with messages response."""
 
+    id: int
+    tenant_id: int
+    channel: str
+    external_id: str | None
+    phone_number: str | None = None
+    created_at: str
+    updated_at: str
     messages: list[MessageResponse]
+
+    class Config:
+        from_attributes = True
 
 
 @router.post("", response_model=ConversationResponse)
@@ -88,9 +99,60 @@ async def create_conversation(
         tenant_id=conversation.tenant_id,
         channel=conversation.channel,
         external_id=conversation.external_id,
+        phone_number=conversation.phone_number,
         created_at=conversation.created_at.isoformat(),
         updated_at=conversation.updated_at.isoformat(),
     )
+
+
+@router.get("", response_model=list[ConversationResponse])
+async def list_conversations(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    channel: str | None = None,
+    skip: int = 0,
+    limit: int = 100,
+) -> list[ConversationResponse]:
+    """List conversations for the tenant.
+    
+    Args:
+        current_user: Current authenticated user
+        tenant_id: Tenant ID
+        db: Database session
+        channel: Optional channel filter (web, sms, voice)
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        
+    Returns:
+        List of conversations
+    """
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required",
+        )
+    
+    from app.persistence.repositories.conversation_repository import ConversationRepository
+    conversation_repo = ConversationRepository(db)
+    
+    # Filter by channel if specified
+    if channel:
+        conversations = await conversation_repo.list_by_channel(tenant_id, channel, skip=skip, limit=limit)
+    else:
+        conversations = await conversation_repo.list_all(tenant_id, skip=skip, limit=limit)
+    
+    return [
+        ConversationResponse(
+            id=conv.id,
+            tenant_id=conv.tenant_id,
+            channel=conv.channel,
+            external_id=conv.external_id,
+            created_at=conv.created_at.isoformat(),
+            updated_at=conv.updated_at.isoformat(),
+        )
+        for conv in conversations
+    ]
 
 
 @router.get("/{conversation_id}", response_model=ConversationWithMessagesResponse)
@@ -122,6 +184,7 @@ async def get_conversation(
         tenant_id=conversation.tenant_id,
         channel=conversation.channel,
         external_id=conversation.external_id,
+        phone_number=conversation.phone_number,
         created_at=conversation.created_at.isoformat(),
         updated_at=conversation.updated_at.isoformat(),
         messages=[

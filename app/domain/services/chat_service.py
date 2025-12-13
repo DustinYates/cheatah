@@ -147,28 +147,15 @@ class ChatService:
             if not existing_lead:
                 requires_contact_info = True
 
-        # Assemble prompt with conversation history
-        system_prompt = await self.prompt_service.compose_prompt(tenant_id)
-        
-        # Build conversation context for LLM
-        conversation_context = self._build_conversation_context(
-            system_prompt, messages, user_message, requires_contact_info
+        # Use core chat processing logic
+        llm_response, llm_latency_ms = await self._process_chat_core(
+            tenant_id=tenant_id,
+            conversation_id=conversation.id,
+            user_message=user_message,
+            messages=messages,
+            system_prompt_method=self.prompt_service.compose_prompt,
+            requires_contact_info=requires_contact_info,
         )
-
-        # Call LLM
-        llm_start = time.time()
-        try:
-            llm_response = await self.llm_orchestrator.generate(
-                conversation_context,
-                context={"temperature": 0.3, "max_tokens": 500},  # Deterministic defaults
-            )
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"LLM generation failed: {e}", exc_info=True)
-            llm_response = "I apologize, but I'm having trouble processing your request right now. Please try again in a moment."
-        
-        llm_latency_ms = (time.time() - llm_start) * 1000
 
         # Add assistant response
         await self.conversation_service.add_message(
@@ -226,6 +213,7 @@ class ChatService:
         messages: list[Message],
         current_user_message: str,
         requires_contact_info: bool,
+        additional_context: str | None = None,
     ) -> str:
         """Build conversation context for LLM.
         
@@ -260,7 +248,59 @@ class ChatService:
                 "politely ask for their name and contact information (email or phone) to help them better."
             )
         
+        if additional_context:
+            prompt_parts.append(f"\n\n{additional_context}")
+        
         prompt_parts.append("\n\nAssistant:")
         
         return "\n".join(prompt_parts)
+
+    async def _process_chat_core(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        user_message: str,
+        messages: list[Message],
+        system_prompt_method,
+        requires_contact_info: bool = False,
+        additional_context: str | None = None,
+    ) -> tuple[str, float]:
+        """Core chat processing logic (reusable for web and SMS).
+        
+        Args:
+            tenant_id: Tenant ID
+            conversation_id: Conversation ID
+            user_message: User's message
+            messages: Previous messages in conversation
+            system_prompt_method: Method to get system prompt (compose_prompt or compose_prompt_sms)
+            requires_contact_info: Whether to ask for contact info
+            additional_context: Additional context to add to prompt
+            
+        Returns:
+            Tuple of (llm_response, llm_latency_ms)
+        """
+        # Assemble prompt with conversation history
+        system_prompt = await system_prompt_method(tenant_id)
+        
+        # Build conversation context for LLM
+        conversation_context = self._build_conversation_context(
+            system_prompt, messages, user_message, requires_contact_info, additional_context
+        )
+
+        # Call LLM
+        llm_start = time.time()
+        try:
+            llm_response = await self.llm_orchestrator.generate(
+                conversation_context,
+                context={"temperature": 0.3, "max_tokens": 500},  # Deterministic defaults
+            )
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"LLM generation failed: {e}", exc_info=True)
+            llm_response = "I apologize, but I'm having trouble processing your request right now. Please try again in a moment."
+        
+        llm_latency_ms = (time.time() - llm_start) * 1000
+        
+        return llm_response, llm_latency_ms
 

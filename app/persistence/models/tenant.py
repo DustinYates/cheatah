@@ -34,6 +34,15 @@ class Tenant(Base):
     prompt_bundles = relationship(
         "PromptBundle", back_populates="tenant", cascade="all, delete-orphan"
     )
+    sms_config = relationship(
+        "TenantSmsConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
+    )
+    sms_opt_ins = relationship(
+        "SmsOptIn", back_populates="tenant", cascade="all, delete-orphan"
+    )
+    escalations = relationship(
+        "Escalation", back_populates="tenant", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Tenant(id={self.id}, name={self.name}, subdomain={self.subdomain})>"

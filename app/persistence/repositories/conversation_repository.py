@@ -25,3 +25,74 @@ class ConversationRepository(BaseRepository[Conversation]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_phone_number(
+        self, tenant_id: int, phone_number: str, channel: str = "sms"
+    ) -> Conversation | None:
+        """Get conversation by phone number and channel.
+        
+        Args:
+            tenant_id: Tenant ID
+            phone_number: Phone number
+            channel: Channel type (default: "sms")
+            
+        Returns:
+            Conversation or None if not found
+        """
+        stmt = select(Conversation).where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.phone_number == phone_number,
+            Conversation.channel == channel
+        ).order_by(Conversation.updated_at.desc())
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_by_channel(
+        self, tenant_id: int, channel: str, skip: int = 0, limit: int = 100
+    ) -> list[Conversation]:
+        """List conversations by channel.
+        
+        Args:
+            tenant_id: Tenant ID
+            channel: Channel type
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+            
+        Returns:
+            List of conversations
+        """
+        stmt = (
+            select(Conversation)
+            .where(
+                Conversation.tenant_id == tenant_id,
+                Conversation.channel == channel
+            )
+            .order_by(Conversation.updated_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_all(
+        self, tenant_id: int, skip: int = 0, limit: int = 100
+    ) -> list[Conversation]:
+        """List all conversations for tenant, ordered by updated_at.
+        
+        Args:
+            tenant_id: Tenant ID
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+            
+        Returns:
+            List of conversations
+        """
+        stmt = (
+            select(Conversation)
+            .where(Conversation.tenant_id == tenant_id)
+            .order_by(Conversation.updated_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+

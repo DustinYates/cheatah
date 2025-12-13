@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatter Cheetah - Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .header {
+            background: #007bff;
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 1rem;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: #007bff;
+        }
+
+        .tab.active {
+            color: #007bff;
+            border-bottom-color: #007bff;
+            font-weight: 600;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            margin-bottom: 1rem;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #555;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .form-group input[type="checkbox"] {
+            width: auto;
+            margin-right: 0.5rem;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #545b62;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        .conversation-list {
+            list-style: none;
+        }
+
+        .conversation-item {
+            padding: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .conversation-item:hover {
+            background: #f8f9fa;
+        }
+
+        .conversation-item.active {
+            background: #e7f3ff;
+            border-color: #007bff;
+        }
+
+        .message-list {
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .message {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            border-radius: 4px;
+        }
+
+        .message.user {
+            background: #007bff;
+            color: white;
+            margin-left: 20%;
+        }
+
+        .message.assistant {
+            background: white;
+            border: 1px solid #ddd;
+            margin-right: 20%;
+        }
+
+        .message-header {
+            font-size: 0.875rem;
+            opacity: 0.8;
+            margin-bottom: 0.25rem;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .status-enabled {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-disabled {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-resolved {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+
+        .auth-section {
+            max-width: 400px;
+            margin: 4rem auto;
+            padding: 2rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .login-circle {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0 auto 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .login-circle::before {
+            content: "👤";
+            font-size: 2rem;
+        }
+
+        .auth-section h2 {
+            margin-top: 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Chatter Cheetah - Admin Dashboard</h1>
+    </div>
+
+    <!-- Auth Section -->
+    <div id="authSection" class="auth-section">
+        <div class="login-circle"></div>
+        <h2>Login</h2>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="loginEmail" placeholder="admin@example.com">
+        </div>
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="loginPassword" placeholder="Password">
+        </div>
+        <button class="btn btn-primary" onclick="login()">Login</button>
+        <div id="authError" class="alert alert-error hidden" style="margin-top: 1rem;"></div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard" class="container hidden">
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('sms-config')">SMS Configuration</button>
+            <button class="tab" onclick="switchTab('conversations')">Conversations</button>
+            <button class="tab" onclick="switchTab('escalations')">Escalations</button>
+            <button class="tab" onclick="switchTab('opt-ins')">Opt-ins</button>
+            <button class="tab" onclick="switchTab('send-sms')">Send SMS</button>
+        </div>
+
+        <!-- SMS Configuration Tab -->
+        <div id="sms-config" class="tab-content active">
+            <div class="card">
+                <h2>SMS Configuration</h2>
+                <div id="configAlert"></div>
+                <form id="smsConfigForm">
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="isEnabled">
+                            <label for="isEnabled">Enable SMS</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Twilio Account SID</label>
+                        <input type="text" id="twilioAccountSid" placeholder="AC...">
+                    </div>
+                    <div class="form-group">
+                        <label>Twilio Auth Token</label>
+                        <input type="password" id="twilioAuthToken" placeholder="Auth token">
+                    </div>
+                    <div class="form-group">
+                        <label>Twilio Phone Number</label>
+                        <input type="text" id="twilioPhoneNumber" placeholder="+1234567890">
+                    </div>
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="businessHoursEnabled">
+                            <label for="businessHoursEnabled">Enable Business Hours</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Timezone</label>
+                        <select id="timezone">
+                            <option value="UTC">UTC</option>
+                            <option value="America/New_York">America/New_York (EST)</option>
+                            <option value="America/Chicago">America/Chicago (CST)</option>
+                            <option value="America/Denver">America/Denver (MST)</option>
+                            <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="autoReplyOutsideHours">
+                            <label for="autoReplyOutsideHours">Auto-reply Outside Business Hours</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Auto-reply Message</label>
+                        <textarea id="autoReplyMessage" placeholder="Message to send outside business hours"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save Configuration</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Conversations Tab -->
+        <div id="conversations" class="tab-content">
+            <div class="card">
+                <h2>SMS Conversations</h2>
+                <div id="conversationsList" class="loading">Loading conversations...</div>
+                <div id="conversationDetail" class="hidden">
+                    <h3>Conversation Details</h3>
+                    <div id="messageList" class="message-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Escalations Tab -->
+        <div id="escalations" class="tab-content">
+            <div class="card">
+                <h2>Escalations</h2>
+                <div id="escalationsList" class="loading">Loading escalations...</div>
+            </div>
+        </div>
+
+        <!-- Opt-ins Tab -->
+        <div id="opt-ins" class="tab-content">
+            <div class="card">
+                <h2>SMS Opt-ins</h2>
+                <div id="optInsList" class="loading">Loading opt-ins...</div>
+            </div>
+        </div>
+
+        <!-- Send SMS Tab -->
+        <div id="send-sms" class="tab-content">
+            <div class="card">
+                <h2>Send Manual SMS</h2>
+                <div id="sendSmsAlert"></div>
+                <form id="sendSmsForm">
+                    <div class="form-group">
+                        <label>To (Phone Number)</label>
+                        <input type="text" id="sendTo" placeholder="+1234567890" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Message</label>
+                        <textarea id="sendMessage" placeholder="Enter message..." required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-success">Send SMS</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1';
+        let authToken = localStorage.getItem('authToken');
+        let currentTenantId = null;
+
+        // Check if already logged in
+        if (authToken) {
+            showDashboard();
+        }
+
+        async function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const errorDiv = document.getElementById('authError');
+
+            try {
+                // In production, use proper auth endpoint
+                // For now, we'll use a mock or you can implement auth
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    authToken = data.access_token;
+                    localStorage.setItem('authToken', authToken);
+                    currentTenantId = data.tenant_id;
+                    showDashboard();
+                    loadSmsConfig();
+                } else {
+                    errorDiv.textContent = 'Invalid credentials';
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                // For development, allow bypassing auth
+                console.warn('Auth endpoint not available, using mock auth');
+                authToken = 'mock-token';
+                currentTenantId = 1; // Default tenant
+                localStorage.setItem('authToken', authToken);
+                showDashboard();
+                loadSmsConfig();
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('authSection').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+        }
+
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+
+            // Load tab data
+            if (tabName === 'conversations') {
+                loadConversations();
+            } else if (tabName === 'escalations') {
+                loadEscalations();
+            } else if (tabName === 'opt-ins') {
+                loadOptIns();
+            }
+        }
+
+        async function loadSmsConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/sms/config`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                });
+
+                if (response.ok) {
+                    const config = await response.json();
+                    document.getElementById('isEnabled').checked = config.is_enabled || false;
+                    document.getElementById('twilioAccountSid').value = config.twilio_account_sid || '';
+                    document.getElementById('twilioAuthToken').value = ''; // Never show existing token
+                    document.getElementById('twilioPhoneNumber').value = config.twilio_phone_number || '';
+                    document.getElementById('businessHoursEnabled').checked = config.business_hours_enabled || false;
+                    document.getElementById('timezone').value = config.timezone || 'UTC';
+                    document.getElementById('autoReplyOutsideHours').checked = config.auto_reply_outside_hours || false;
+                    document.getElementById('autoReplyMessage').value = config.auto_reply_message || '';
+                } else if (response.status === 404) {
+                    // Config doesn't exist yet, that's okay
+                    console.log('SMS config not found, will create new one');
+                }
+            } catch (error) {
+                console.error('Error loading SMS config:', error);
+            }
+        }
+
+        document.getElementById('smsConfigForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const alertDiv = document.getElementById('configAlert');
+
+            const config = {
+                is_enabled: document.getElementById('isEnabled').checked,
+                twilio_account_sid: document.getElementById('twilioAccountSid').value,
+                twilio_auth_token: document.getElementById('twilioAuthToken').value || undefined,
+                twilio_phone_number: document.getElementById('twilioPhoneNumber').value,
+                business_hours_enabled: document.getElementById('businessHoursEnabled').checked,
+                timezone: document.getElementById('timezone').value,
+                auto_reply_outside_hours: document.getElementById('autoReplyOutsideHours').checked,
+                auto_reply_message: document.getElementById('autoReplyMessage').value,
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/sms/config`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                    body: JSON.stringify(config),
+                });
+
+                if (response.ok) {
+                    alertDiv.innerHTML = '<div class="alert alert-success">Configuration saved successfully!</div>';
+                    setTimeout(() => alertDiv.innerHTML = '', 3000);
+                } else {
+                    const error = await response.json();
+                    alertDiv.innerHTML = `<div class="alert alert-error">Error: ${error.detail || 'Failed to save'}</div>`;
+                }
+            } catch (error) {
+                alertDiv.innerHTML = `<div class="alert alert-error">Error: ${error.message}</div>`;
+            }
+        });
+
+        async function loadConversations() {
+            const listDiv = document.getElementById('conversationsList');
+            listDiv.innerHTML = '<div class="loading">Loading conversations...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/conversations?channel=sms`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                });
+
+                if (response.ok) {
+                    const conversations = await response.json();
+                    if (conversations.length === 0) {
+                        listDiv.innerHTML = '<p>No SMS conversations found.</p>';
+                        return;
+                    }
+
+                    const html = conversations.map(conv => `
+                        <div class="conversation-item" onclick="loadConversationDetail(${conv.id})">
+                            <strong>${conv.channel.toUpperCase()}</strong>
+                            ${conv.phone_number ? `<span style="color: #666;">${conv.phone_number}</span>` : ''}
+                            <span style="float: right; color: #666;">${new Date(conv.created_at).toLocaleString()}</span>
+                        </div>
+                    `).join('');
+
+                    listDiv.innerHTML = `<ul class="conversation-list">${html}</ul>`;
+                } else {
+                    listDiv.innerHTML = '<p>Error loading conversations.</p>';
+                }
+            } catch (error) {
+                listDiv.innerHTML = '<p>Error loading conversations.</p>';
+            }
+        }
+
+        async function loadConversationDetail(conversationId) {
+            try {
+                const response = await fetch(`${API_BASE}/conversations/${conversationId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                });
+
+                if (response.ok) {
+                    const conversation = await response.json();
+                    const messageList = document.getElementById('messageList');
+                    
+                    const messagesHtml = conversation.messages.map(msg => `
+                        <div class="message ${msg.role}">
+                            <div class="message-header">${msg.role === 'user' ? 'User' : 'Assistant'}</div>
+                            <div>${msg.content}</div>
+                            <div style="font-size: 0.75rem; opacity: 0.7; margin-top: 0.5rem;">
+                                ${new Date(msg.created_at).toLocaleString()}
+                            </div>
+                        </div>
+                    `).join('');
+
+                    messageList.innerHTML = messagesHtml;
+                    document.getElementById('conversationDetail').classList.remove('hidden');
+                    messageList.scrollTop = messageList.scrollHeight;
+                }
+            } catch (error) {
+                console.error('Error loading conversation:', error);
+            }
+        }
+
+        async function loadEscalations() {
+            const listDiv = document.getElementById('escalationsList');
+            listDiv.innerHTML = '<div class="loading">Loading escalations...</div>';
+
+            // Note: Escalations endpoint would need to be created
+            listDiv.innerHTML = '<p>Escalations feature coming soon. Use API endpoint to view escalations.</p>';
+        }
+
+        async function loadOptIns() {
+            const listDiv = document.getElementById('optInsList');
+            listDiv.innerHTML = '<div class="loading">Loading opt-ins...</div>';
+
+            // Note: Opt-ins endpoint would need to be created
+            listDiv.innerHTML = '<p>Opt-ins feature coming soon. Use API endpoint to view opt-ins.</p>';
+        }
+
+        document.getElementById('sendSmsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const alertDiv = document.getElementById('sendSmsAlert');
+
+            const to = document.getElementById('sendTo').value;
+            const message = document.getElementById('sendMessage').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/sms/send`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                    body: JSON.stringify({ to, message }),
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    alertDiv.innerHTML = `<div class="alert alert-success">SMS sent! Message SID: ${result.message_sid}</div>`;
+                    document.getElementById('sendSmsForm').reset();
+                    setTimeout(() => alertDiv.innerHTML = '', 5000);
+                } else {
+                    const error = await response.json();
+                    alertDiv.innerHTML = `<div class="alert alert-error">Error: ${error.detail || 'Failed to send'}</div>`;
+                }
+            } catch (error) {
+                alertDiv.innerHTML = `<div class="alert alert-error">Error: ${error.message}</div>`;
+            }
+        });
+    </script>
+</body>
+</html>
+

@@ -56,6 +56,16 @@ class Settings(BaseSettings):
     # Idempotency
     idempotency_ttl_seconds: int = 3600
 
+    # Twilio (SMS)
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
+    twilio_webhook_url_base: str | None = None  # Base URL for webhook endpoints
+
+    # Cloud Tasks
+    cloud_tasks_queue_name: str = "sms-processing"
+    cloud_tasks_location: str = "us-central1"
+    cloud_tasks_worker_url: str | None = None  # URL for worker endpoint
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

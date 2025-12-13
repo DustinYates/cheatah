@@ -108,3 +108,35 @@ class PromptService:
         await self.session.refresh(bundle)
         return bundle
 
+    async def compose_prompt_sms(
+        self, tenant_id: int | None, context: dict | None = None
+    ) -> str:
+        """Compose SMS-specific prompt with constraints.
+        
+        SMS prompts should:
+        - Be concise (responses will be limited to 160 chars)
+        - Avoid markdown formatting
+        - Use SMS-friendly tone
+        
+        Args:
+            tenant_id: Tenant ID (None for global)
+            context: Optional context for prompt composition
+            
+        Returns:
+            Composed prompt string with SMS constraints
+        """
+        base_prompt = await self.compose_prompt(tenant_id, context)
+        
+        # Add SMS-specific instructions
+        sms_instructions = (
+            "\n\nIMPORTANT SMS CONSTRAINTS:\n"
+            "- Keep responses SHORT (under 160 characters when possible)\n"
+            "- NO markdown formatting (no **bold**, *italic*, links, etc.)\n"
+            "- Use plain text only\n"
+            "- Be concise and direct\n"
+            "- If response is too long, split into multiple messages\n"
+            "- Use abbreviations sparingly and only when clear"
+        )
+        
+        return base_prompt + sms_instructions
+

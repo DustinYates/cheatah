@@ -75,6 +75,10 @@ app.add_middleware(IdempotencyMiddleware)
 # Include API routes
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 
+# Include worker routes (for Cloud Tasks)
+from app.workers import sms_worker
+app.include_router(sms_worker.router, prefix="/workers", tags=["workers"])
+
 # Serve static files (chat widget)
 static_dir = Path(__file__).parent.parent / "static"
 if static_dir.exists():
@@ -94,5 +98,13 @@ async def root():
         "message": "Chatter Cheetah API",
         "version": "0.1.0",
         "docs": "/docs",
+        "admin_dashboard": "/static/admin-dashboard.html",
     }
+
+
+@app.get("/admin")
+async def admin_dashboard_redirect():
+    """Redirect to admin dashboard."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/static/admin-dashboard.html")
 

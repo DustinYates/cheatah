@@ -23,6 +23,13 @@ class ApiClient {
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
+    
+    // Add tenant override header for global admin impersonation
+    const selectedTenant = this.getSelectedTenant();
+    const userInfo = this.getUserInfo();
+    if (userInfo?.is_global_admin && selectedTenant) {
+      headers['X-Tenant-Id'] = selectedTenant.toString();
+    }
 
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
@@ -59,11 +66,46 @@ class ApiClient {
 
     const data = await response.json();
     this.setToken(data.access_token);
+    // Store user info in localStorage
+    localStorage.setItem('userInfo', JSON.stringify({
+      email: data.email,
+      role: data.role,
+      tenant_id: data.tenant_id,
+      is_global_admin: data.is_global_admin,
+    }));
     return data;
   }
 
   logout() {
     this.setToken(null);
+    localStorage.removeItem('userInfo');
+    localStorage.removeItem('selectedTenantId');
+  }
+
+  async getMe() {
+    return this.request('/auth/me');
+  }
+
+  async getTenants() {
+    return this.request('/admin/tenants');
+  }
+
+  setSelectedTenant(tenantId) {
+    if (tenantId) {
+      localStorage.setItem('selectedTenantId', tenantId.toString());
+    } else {
+      localStorage.removeItem('selectedTenantId');
+    }
+  }
+
+  getSelectedTenant() {
+    const id = localStorage.getItem('selectedTenantId');
+    return id ? parseInt(id, 10) : null;
+  }
+
+  getUserInfo() {
+    const info = localStorage.getItem('userInfo');
+    return info ? JSON.parse(info) : null;
   }
 
   async getLeads(params = {}) {

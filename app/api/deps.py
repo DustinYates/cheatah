@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,19 +70,36 @@ async def get_current_user(
 
 async def get_current_tenant(
     current_user: Annotated[User, Depends(get_current_user)],
+    x_tenant_id: Annotated[str | None, Header()] = None,
 ) -> int | None:
-    """Get current tenant from user context.
+    """Get current tenant from user context or header override.
+
+    Global admins can pass X-Tenant-Id header to impersonate a tenant.
 
     Args:
         current_user: Current authenticated user
+        x_tenant_id: Optional tenant ID header for global admin impersonation
 
     Returns:
-        Tenant ID or None for global admin
+        Tenant ID or None for global admin without impersonation
 
     Raises:
         HTTPException: If user has no tenant and is not global admin
     """
-    tenant_id = current_user.tenant_id
+    # Check if user is global admin
+    is_global_admin = current_user.tenant_id is None and current_user.role == "admin"
+    
+    # If global admin and header provided, use header value
+    if is_global_admin and x_tenant_id:
+        try:
+            tenant_id = int(x_tenant_id)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid X-Tenant-Id header value",
+            )
+    else:
+        tenant_id = current_user.tenant_id
     
     # Set tenant context
     set_tenant_context(tenant_id)

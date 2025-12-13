@@ -70,3 +70,91 @@
   padding: 30px;
   overflow-y: auto;
 }
+
+.impersonation-banner {
+  position: fixed;
+  top: 0;
+  left: 220px;
+  right: 0;
+  background: #f59e0b;
+  color: #1a1a2e;
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 0.9rem;
+  z-index: 100;
+}
+
+.impersonation-banner .exit-btn {
+  padding: 4px 12px;
+  background: #1a1a2e;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.impersonation-banner .exit-btn:hover {
+  background: #2d2d4a;
+}
+
+.tenant-selector {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tenant-selector label {
+  display: block;
+  font-size: 0.75rem;
+  color: #a1a1aa;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tenant-selector select {
+  width: 100%;
+  padding: 10px 12px;
+  background: #2d2d4a;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.tenant-selector select:focus {
+  outline: none;
+  border-color: #4ade80;
+}
+
+.user-info {
+  margin-bottom: 12px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-email {
+  display: block;
+  font-size: 0.85rem;
+  color: #a1a1aa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-badge {
+  display: inline-block;
+  background: #4ade80;
+  color: #1a1a2e;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-top: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+}

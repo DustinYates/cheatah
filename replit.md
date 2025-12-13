@@ -1,42 +1,45 @@
 # Chatter Cheetah
 
 ## Overview
-Multi-tenant AI customer communication platform built with FastAPI and PostgreSQL. This is a backend API service that provides:
-- Multi-tenant architecture with strict tenant isolation
-- AI-powered chat via Google Gemini
-- SMS integration via Twilio
-- Authentication with JWT tokens
+Multi-tenant AI customer communication platform built with FastAPI and PostgreSQL with a React frontend. Each client signs in and gets their own dashboard to manage:
+- Leads and conversion tracking
+- AI prompts for customer communication
+- Verified contacts
 
 ## Project Structure
-- `app/` - Main application code
-  - `api/` - FastAPI routes and middleware
+- `app/` - Backend FastAPI application
+  - `api/` - Routes and middleware
   - `domain/` - Domain services (chat, SMS, compliance)
   - `persistence/` - Database models and repositories
   - `llm/` - LLM abstraction layer (Gemini)
   - `infrastructure/` - Redis, Cloud Tasks, Twilio client
   - `core/` - Auth, tenant context, idempotency
   - `workers/` - Background task workers
+- `client/` - React frontend (Vite)
+  - `src/pages/` - Dashboard, Prompts, Contacts, Login
+  - `src/components/` - Layout, ProtectedRoute
+  - `src/context/` - AuthContext
+  - `src/api/` - API client
 - `alembic/` - Database migrations
 - `tests/` - Test suite
-- `static/` - Static files (admin dashboard, chat widget)
 
 ## Technology Stack
-- **Language**: Python 3.11
-- **Framework**: FastAPI
+- **Backend**: Python 3.11, FastAPI
+- **Frontend**: React 18, Vite, Recharts
 - **Database**: PostgreSQL (Replit built-in)
 - **Cache**: Redis (optional, disabled by default)
 - **LLM**: Google Gemini
 
 ## Running the Application
-The API server runs on port 5000 with:
-```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
-```
+Two workflows run simultaneously:
+- **Frontend**: React on port 5000 (user-facing)
+- **API Server**: FastAPI on port 8000 (backend)
+
+The frontend proxies API requests to the backend.
 
 ## API Documentation
-- Swagger UI: `/docs`
-- OpenAPI JSON: `/openapi.json`
-- Admin Dashboard: `/static/admin-dashboard.html`
+- Swagger UI: `http://localhost:8000/docs`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
 
 ## Environment Variables
 Required for full functionality:
@@ -52,8 +55,9 @@ python -c "from alembic.config import main; import sys; sys.argv = ['alembic', '
 ```
 
 ## Recent Changes
-- 2024-12-13: Configured for Replit environment
-  - Fixed Python version to 3.11
-  - Made Redis optional for development
-  - Configured DATABASE_URL conversion for asyncpg
-  - Set up deployment configuration
+- 2024-12-13: Added React frontend
+  - Login page with JWT authentication
+  - Dashboard with leads chart and recent leads list
+  - Prompts page for creating and testing prompts
+  - Contacts page for verified contacts
+  - Clean, minimal design with sidebar navigation

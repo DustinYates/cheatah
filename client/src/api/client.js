@@ -75,22 +75,43 @@ class ApiClient {
     return this.request('/leads/stats');
   }
 
-  async getPrompts() {
-    return this.request('/prompts');
+  async getPromptBundles() {
+    return this.request('/prompts/bundles');
   }
 
-  async createPrompt(data) {
-    return this.request('/prompts', {
+  async getPromptBundle(bundleId) {
+    return this.request(`/prompts/bundles/${bundleId}`);
+  }
+
+  async createPromptBundle(data) {
+    return this.request('/prompts/bundles', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
-  async testPrompt(promptId, testInput) {
-    return this.request(`/prompts/${promptId}/test`, {
-      method: 'POST',
-      body: JSON.stringify({ input: testInput }),
+  async updatePromptBundle(bundleId, data) {
+    return this.request(`/prompts/bundles/${bundleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     });
+  }
+
+  async publishPromptBundle(bundleId) {
+    return this.request(`/prompts/bundles/${bundleId}/publish`, {
+      method: 'PUT',
+    });
+  }
+
+  async testPrompt(bundleId, message) {
+    return this.request('/prompts/test', {
+      method: 'POST',
+      body: JSON.stringify({ bundle_id: bundleId, message }),
+    });
+  }
+
+  async getComposedPrompt(useDraft = false) {
+    return this.request(`/prompts/compose${useDraft ? '?use_draft=true' : ''}`);
   }
 
   async getContacts(params = {}) {

@@ -65,6 +65,13 @@ Two account types are available:
   - Can only see their own tenant's data
 
 ## Recent Changes
+- 2024-12-13: Added business profile onboarding
+  - TenantBusinessProfile model with business_name, website_url, phone_number, email fields
+  - Onboarding page for new tenants to complete their business profile
+  - Route guards redirect users with incomplete profiles to onboarding
+  - Settings page for editing business profile after initial setup
+  - Profile API endpoints: GET/PUT /api/v1/tenant/profile
+  - AuthContext tracks profile completion status
 - 2024-12-13: Added master admin and tenant impersonation
   - Global admin account (tenant_id=NULL) can access all tenants
   - Tenant selector dropdown in sidebar for global admins

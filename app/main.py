@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from app.api.middleware import IdempotencyMiddleware
 from app.api.routes import api_router
@@ -72,6 +74,11 @@ app.add_middleware(IdempotencyMiddleware)
 
 # Include API routes
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+
+# Serve static files (chat widget)
+static_dir = Path(__file__).parent.parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 @app.get("/health")

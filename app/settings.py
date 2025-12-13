@@ -41,7 +41,12 @@ class Settings(BaseSettings):
 
     # LLM (Gemini)
     gemini_api_key: str
-    gemini_model: str = "gemini-2.0-flash-exp"
+    gemini_model: str = "gemini-2.0-flash-exp"  # Using Flash 2.0 (Flash 2.5 not yet available, will update when released)
+    
+    # Chat guardrails
+    chat_max_turns: int = 20
+    chat_timeout_seconds: int = 300
+    chat_follow_up_nudge_turn: int = 3
 
     # Application
     environment: str = "development"

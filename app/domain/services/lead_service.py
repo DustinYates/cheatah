@@ -73,3 +73,17 @@ class LeadService:
         """
         return await self.lead_repo.list(tenant_id, skip=skip, limit=limit)
 
+    async def get_lead_by_conversation(
+        self, tenant_id: int, conversation_id: int
+    ) -> Lead | None:
+        """Get lead by conversation ID.
+
+        Args:
+            tenant_id: Tenant ID
+            conversation_id: Conversation ID
+
+        Returns:
+            Lead or None if not found
+        """
+        return await self.lead_repo.get_by_conversation(tenant_id, conversation_id)
+

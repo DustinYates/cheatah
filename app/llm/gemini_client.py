@@ -35,6 +35,10 @@ class GeminiClient(LLMClient):
             loop = asyncio.get_event_loop()
             generation_config: dict[str, Any] = {}
             
+            # Default to deterministic settings (low temperature)
+            generation_config["temperature"] = 0.3
+            generation_config["max_output_tokens"] = 500
+            
             if context:
                 if "temperature" in context:
                     generation_config["temperature"] = context["temperature"]

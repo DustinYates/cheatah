@@ -54,7 +54,24 @@ Run migrations with:
 python -c "from alembic.config import main; import sys; sys.argv = ['alembic', 'upgrade', 'head']; main()"
 ```
 
+## User Accounts
+Two account types are available:
+- **Master Admin** (admin@chattercheetah.com / admin123)
+  - Can view and manage all tenants
+  - Tenant selector dropdown to switch between tenant views
+  - Shows impersonation banner when viewing as a tenant
+- **Tenant User** (demo@demo.com / demo123)
+  - Regular tenant user for Demo Company
+  - Can only see their own tenant's data
+
 ## Recent Changes
+- 2024-12-13: Added master admin and tenant impersonation
+  - Global admin account (tenant_id=NULL) can access all tenants
+  - Tenant selector dropdown in sidebar for global admins
+  - X-Tenant-Id header support for API impersonation
+  - Impersonation banner shows when viewing as a tenant
+  - Updated auth to return role and is_global_admin in login response
+  - Added /auth/me endpoint for user info retrieval
 - 2024-12-13: Added multi-tenant chatbot MVP with prompt versioning
   - Gemini AI integration via Replit AI Integrations (no API key needed, billed to credits)
   - PromptBundle/PromptSection models with draft/testing/production workflow

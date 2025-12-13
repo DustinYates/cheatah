@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 
-from app.settings import settings
+from app.settings import settings, get_async_database_url
 
 def _debug_log(location: str, message: str, data: dict, hypothesis_id: str = "A"):
     """Helper to safely write debug logs."""
@@ -19,13 +19,16 @@ def _debug_log(location: str, message: str, data: dict, hypothesis_id: str = "A"
     except Exception:
         pass  # Silently fail if logging isn't possible
 
+# Get the async-compatible database URL
+async_database_url = get_async_database_url()
+
 # #region agent log
-_debug_log("database.py:9", "Creating async engine", {"database_url_prefix": settings.database_url[:50] + "..." if len(settings.database_url) > 50 else settings.database_url, "url_uses_asyncpg": "postgresql+asyncpg" in settings.database_url.lower()})
+_debug_log("database.py:9", "Creating async engine", {"database_url_prefix": async_database_url[:50] + "..." if len(async_database_url) > 50 else async_database_url, "url_uses_asyncpg": "postgresql+asyncpg" in async_database_url.lower()})
 # #endregion
 
 # Create async engine
 engine = create_async_engine(
-    settings.database_url,
+    async_database_url,
     echo=False,
     future=True,
 )

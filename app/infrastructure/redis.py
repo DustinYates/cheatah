@@ -1,11 +1,14 @@
 """Redis client wrapper for caching and idempotency."""
 
 import json
+import logging
 from typing import Any
 
 import redis.asyncio as aioredis
 
 from app.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 class RedisClient:
@@ -14,15 +17,24 @@ class RedisClient:
     def __init__(self) -> None:
         """Initialize Redis client."""
         self._client: aioredis.Redis | None = None
+        self._enabled: bool = settings.redis_enabled
 
     async def connect(self) -> None:
         """Connect to Redis."""
+        if not self._enabled:
+            logger.info("Redis disabled - skipping connection")
+            return
         if self._client is None:
-            self._client = await aioredis.from_url(
-                settings.redis_url,
-                encoding="utf-8",
-                decode_responses=True,
-            )
+            try:
+                self._client = await aioredis.from_url(
+                    settings.redis_url,
+                    encoding="utf-8",
+                    decode_responses=True,
+                )
+                logger.info("Redis connected successfully")
+            except Exception as e:
+                logger.warning(f"Redis connection failed: {e}. Continuing without Redis.")
+                self._enabled = False
 
     async def disconnect(self) -> None:
         """Disconnect from Redis."""
@@ -39,8 +51,8 @@ class RedisClient:
         Returns:
             Value or None if not found
         """
-        if self._client is None:
-            await self.connect()
+        if not self._enabled or self._client is None:
+            return None
         return await self._client.get(key)
 
     async def set(
@@ -56,8 +68,8 @@ class RedisClient:
         Returns:
             True if successful
         """
-        if self._client is None:
-            await self.connect()
+        if not self._enabled or self._client is None:
+            return True  # Pretend success when disabled
         if ttl:
             return await self._client.setex(key, ttl, value)
         return await self._client.set(key, value)
@@ -71,8 +83,8 @@ class RedisClient:
         Returns:
             Number of keys deleted
         """
-        if self._client is None:
-            await self.connect()
+        if not self._enabled or self._client is None:
+            return 0
         return await self._client.delete(key)
 
     async def exists(self, key: str) -> bool:
@@ -84,8 +96,8 @@ class RedisClient:
         Returns:
             True if key exists
         """
-        if self._client is None:
-            await self.connect()
+        if not self._enabled or self._client is None:
+            return False
         return await self._client.exists(key) > 0
 
     async def get_json(self, key: str) -> dict[str, Any] | None:

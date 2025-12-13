@@ -31,21 +31,23 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set the database URL from settings
-original_url = settings.database_url
+# Get database URL from environment (Alembic uses sync driver)
+import os
+original_url = os.environ.get("DATABASE_URL", settings.database_url)
+
+# Convert postgres:// to postgresql:// and ensure sync driver for Alembic
+if original_url.startswith("postgres://"):
+    sync_url = original_url.replace("postgres://", "postgresql://", 1)
+elif "+asyncpg" in original_url.lower():
+    sync_url = original_url.replace("+asyncpg", "")
+else:
+    sync_url = original_url
+
 # #region agent log
-_debug_log("alembic/env.py:25", "Alembic setting database URL", {"original_url_prefix": original_url[:50] + "..." if len(original_url) > 50 else original_url, "url_uses_asyncpg": "postgresql+asyncpg" in original_url.lower(), "is_async_driver": "+asyncpg" in original_url.lower() or "+psycopg" in original_url.lower()})
+_debug_log("alembic/env.py:25", "Alembic setting database URL", {"sync_url_prefix": sync_url[:50] + "..." if len(sync_url) > 50 else sync_url})
 # #endregion
 
-# Convert async URL to sync for Alembic if needed
-if "+asyncpg" in original_url.lower():
-    sync_url = original_url.replace("+asyncpg", "")
-    # #region agent log
-    _debug_log("alembic/env.py:31", "Converting async URL to sync for Alembic", {"sync_url_prefix": sync_url[:50] + "..." if len(sync_url) > 50 else sync_url})
-    # #endregion
-    config.set_main_option("sqlalchemy.url", sync_url)
-else:
-    config.set_main_option("sqlalchemy.url", original_url)
+config.set_main_option("sqlalchemy.url", sync_url)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

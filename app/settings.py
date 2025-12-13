@@ -17,30 +17,42 @@ def _debug_log(location: str, message: str, data: dict, hypothesis_id: str = "A"
         pass  # Silently fail if logging isn't possible
 
 
+def get_async_database_url() -> str:
+    """Get database URL converted for asyncpg driver."""
+    url = os.environ.get("DATABASE_URL", "")
+    # Convert postgres:// to postgresql+asyncpg:// for SQLAlchemy async
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    # GCP Configuration
-    gcp_project_id: str
+    # GCP Configuration (optional for local dev)
+    gcp_project_id: str = "local-development"
     gcp_region: str = "us-central1"
 
     # Cloud SQL (Postgres)
-    database_url: str
+    database_url: str = ""
     cloud_sql_instance_connection_name: str | None = None
     cloud_sql_database_name: str = "chattercheatah"
 
-    # Redis
+    # Redis (optional)
     redis_url: str = "redis://localhost:6379/0"
     redis_host: str = "localhost"
     redis_port: int = 6379
+    redis_enabled: bool = False  # Disable Redis by default for dev
 
     # JWT
-    jwt_secret_key: str
+    jwt_secret_key: str = "dev-secret-key-change-in-production"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
 
-    # LLM (Gemini)
-    gemini_api_key: str
+    # LLM (Gemini) - optional for basic functionality
+    gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash-exp"  # Using Flash 2.0 (Flash 2.5 not yet available, will update when released)
     
     # Chat guardrails

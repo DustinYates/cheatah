@@ -343,11 +343,34 @@ async def test_prompt(
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PromptTestResponse:
-    """Test a prompt with a sample message (uses draft bundle)."""
+    """Test a prompt with a sample message."""
     from app.llm.gemini_client import GeminiClient
+    from app.persistence.repositories.prompt_repository import PromptRepository
     
     prompt_service = PromptService(db)
-    composed_prompt = await prompt_service.compose_prompt(tenant_id, use_draft=True)
+    prompt_repo = PromptRepository(db)
+    
+    if test_request.bundle_id:
+        bundle = await prompt_repo.get_by_id(tenant_id, test_request.bundle_id)
+        if not bundle:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Prompt bundle not found",
+            )
+        sections = await prompt_repo.get_sections(test_request.bundle_id)
+        global_bundle = await prompt_repo.get_global_base_bundle()
+        all_sections = []
+        if global_bundle:
+            global_sections = await prompt_repo.get_sections(global_bundle.id)
+            all_sections.extend(global_sections)
+        all_sections.extend(sections)
+        section_map: dict[str, tuple[str, int]] = {}
+        for section in all_sections:
+            section_map[section.section_key] = (section.content, section.order)
+        sorted_sections = sorted(section_map.items(), key=lambda x: (x[1][1], x[0]))
+        composed_prompt = "\n\n".join([content for _, (content, _) in sorted_sections])
+    else:
+        composed_prompt = await prompt_service.compose_prompt(tenant_id, use_draft=True)
     
     full_prompt = f"{composed_prompt}\n\nUser message: {test_request.message}\n\nAssistant response:"
     

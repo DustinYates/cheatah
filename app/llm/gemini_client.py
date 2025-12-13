@@ -18,14 +18,16 @@ class GeminiClient(LLMClient):
         api_key = os.environ.get("AI_INTEGRATIONS_GEMINI_API_KEY", settings.gemini_api_key)
         base_url = os.environ.get("AI_INTEGRATIONS_GEMINI_BASE_URL")
         
-        client_options = {}
         if base_url:
-            client_options["api_endpoint"] = base_url
-        
-        self.client = genai.Client(
-            api_key=api_key,
-            http_options=types.HttpOptions(api_version="v1beta") if not base_url else None,
-        )
+            self.client = genai.Client(
+                api_key=api_key,
+                http_options=types.HttpOptions(api_version="v1beta", base_url=base_url),
+            )
+        else:
+            self.client = genai.Client(
+                api_key=api_key,
+                http_options=types.HttpOptions(api_version="v1beta"),
+            )
         self.model_name = settings.gemini_model
 
     async def generate(self, prompt: str, context: dict | None = None) -> str:

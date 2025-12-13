@@ -636,6 +636,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
+    { name = "bcrypt" },
     { name = "cloud-sql-python-connector", extra = ["asyncpg"] },
     { name = "db-dtypes" },
     { name = "fastapi" },
@@ -695,6 +696,7 @@ requires-dist = [
     { name = "aiosqlite", marker = "extra == 'dev'", specifier = ">=0.19.0" },
     { name = "alembic", specifier = ">=1.12.0" },
     { name = "asyncpg", specifier = ">=0.29.0" },
+    { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "chattercheatah", extras = ["analysis"], marker = "extra == 'all'" },
     { name = "chattercheatah", extras = ["dev"], marker = "extra == 'all'" },
     { name = "cloud-sql-python-connector", extras = ["asyncpg"], specifier = ">=1.4.0" },

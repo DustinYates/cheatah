@@ -39,6 +39,7 @@ dependencies = [
     "twilio>=8.0.0",
     # Utilities
     "pytz>=2023.3", # For timezone handling in business hours
+    "bcrypt>=5.0.0",
 ]
 
 [project.optional-dependencies]

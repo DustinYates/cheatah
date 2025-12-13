@@ -44,9 +44,8 @@ async def login(
     Returns:
         JWT access token
     """
-    from passlib.context import CryptContext
+    import bcrypt
     
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     user_repo = UserRepository(db)
     
     # Find user by email
@@ -57,8 +56,16 @@ async def login(
             detail="Invalid credentials",
         )
     
-    # Verify password
-    if not pwd_context.verify(login_data.password, user.hashed_password):
+    # Verify password using bcrypt directly
+    try:
+        password_valid = bcrypt.checkpw(
+            login_data.password.encode('utf-8'),
+            user.hashed_password.encode('utf-8')
+        )
+    except Exception:
+        password_valid = False
+    
+    if not password_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",

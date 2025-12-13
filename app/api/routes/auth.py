@@ -71,8 +71,8 @@ async def login(
             detail="Invalid credentials",
         )
     
-    # Create access token
-    access_token = create_access_token(data={"sub": user.id})
+    # Create access token (sub must be string for JWT compatibility)
+    access_token = create_access_token(data={"sub": str(user.id)})
     
     return LoginResponse(
         access_token=access_token,

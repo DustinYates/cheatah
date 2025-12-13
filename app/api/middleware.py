@@ -37,7 +37,10 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         if not idempotency_key:
             # Generate key from request if not provided
             body = await request.body()
-            body_dict = json.loads(body) if body else {}
+            try:
+                body_dict = json.loads(body) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                body_dict = {}
             idempotency_key = generate_idempotency_key(
                 request.method, str(request.url.path), body_dict
             )

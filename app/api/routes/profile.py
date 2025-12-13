@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_tenant, get_current_user
+from app.api.deps import get_current_user, require_tenant_context
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 from app.persistence.repositories.business_profile_repository import BusinessProfileRepository
@@ -43,18 +43,10 @@ class BusinessProfileUpdate(BaseModel):
 @router.get("/profile", response_model=BusinessProfileResponse)
 async def get_business_profile(
     current_user: Annotated[User, Depends(get_current_user)],
-    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BusinessProfileResponse:
     """Get business profile for current tenant."""
-    effective_tenant_id = tenant_id if tenant_id is not None else current_user.tenant_id
-    if effective_tenant_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tenant context required",
-        )
-    tenant_id = effective_tenant_id
-    
     profile_repo = BusinessProfileRepository(db)
     profile = await profile_repo.get_by_tenant_id(tenant_id)
     
@@ -77,18 +69,10 @@ async def get_business_profile(
 async def update_business_profile(
     profile_data: BusinessProfileUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
-    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BusinessProfileResponse:
     """Update business profile for current tenant."""
-    effective_tenant_id = tenant_id if tenant_id is not None else current_user.tenant_id
-    if effective_tenant_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tenant context required",
-        )
-    tenant_id = effective_tenant_id
-    
     profile_repo = BusinessProfileRepository(db)
     
     existing = await profile_repo.get_by_tenant_id(tenant_id)

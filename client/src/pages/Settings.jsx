@@ -1,27 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { api } from '../api/client';
+import { useFetchData } from '../hooks/useFetchData';
 import './Settings.css';
 
+const defaultFormData = {
+  business_name: '',
+  website_url: '',
+  phone_number: '',
+  twilio_phone: '',
+  email: '',
+};
+
 export default function Settings() {
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
-  const [formData, setFormData] = useState({
-    business_name: '',
-    website_url: '',
-    phone_number: '',
-    twilio_phone: '',
-    email: '',
-  });
+  const [formError, setFormError] = useState('');
+  const [formData, setFormData] = useState(defaultFormData);
+
+  const fetchProfile = useCallback(() => api.getBusinessProfile(), []);
+  const { data: profile, loading, error } = useFetchData(fetchProfile);
 
   useEffect(() => {
-    loadProfile();
-  }, []);
-
-  const loadProfile = async () => {
-    try {
-      const profile = await api.getBusinessProfile();
+    if (profile) {
       setFormData({
         business_name: profile.business_name || '',
         website_url: profile.website_url || '',
@@ -29,12 +29,8 @@ export default function Settings() {
         twilio_phone: profile.twilio_phone || '',
         email: profile.email || '',
       });
-    } catch (err) {
-      setError('Failed to load profile');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [profile]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -42,7 +38,7 @@ export default function Settings() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setFormError('');
     setSuccess('');
     setSaving(true);
 
@@ -50,7 +46,7 @@ export default function Settings() {
       await api.updateBusinessProfile(formData);
       setSuccess('Profile updated successfully');
     } catch (err) {
-      setError(err.message || 'Failed to save profile');
+      setFormError(err.message || 'Failed to save profile');
     } finally {
       setSaving(false);
     }
@@ -65,7 +61,7 @@ export default function Settings() {
       <h1>Business Profile Settings</h1>
       <p className="description">Update your business information used in customer communications.</p>
 
-      {error && <div className="error-message">{error}</div>}
+      {(error || formError) && <div className="error-message">{error || formError}</div>}
       {success && <div className="success-message">{success}</div>}
 
       <form onSubmit={handleSubmit} className="settings-form">

@@ -2,36 +2,16 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_tenant, get_current_user
+from app.api.schemas.tenant import TenantResponse, TenantUpdate
 from app.persistence.database import get_db
 from app.persistence.models.tenant import Tenant, User
 from app.persistence.repositories.tenant_repository import TenantRepository
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
-
-
-class TenantResponse(BaseModel):
-    """Tenant response."""
-
-    id: int
-    name: str
-    subdomain: str
-    is_active: bool
-    created_at: str
-
-    class Config:
-        from_attributes = True
-
-
-class TenantUpdate(BaseModel):
-    """Tenant update request."""
-
-    name: str | None = None
-    is_active: bool | None = None
 
 
 @router.get("/me", response_model=TenantResponse)
@@ -42,16 +22,14 @@ async def get_current_tenant_info(
 ) -> TenantResponse:
     """Get current tenant information."""
     if tenant_id is None:
-        from fastapi import HTTPException, status
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No tenant associated with user",
         )
-    
+
     tenant_repo = TenantRepository(db)
     tenant = await tenant_repo.get_by_id(None, tenant_id)
     if tenant is None:
-        from fastapi import HTTPException, status
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tenant not found",
@@ -75,22 +53,20 @@ async def update_current_tenant(
 ) -> TenantResponse:
     """Update current tenant."""
     if tenant_id is None:
-        from fastapi import HTTPException, status
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No tenant associated with user",
         )
-    
+
     tenant_repo = TenantRepository(db)
     update_data = {}
     if tenant_update.name is not None:
         update_data["name"] = tenant_update.name
     if tenant_update.is_active is not None:
         update_data["is_active"] = tenant_update.is_active
-    
+
     tenant = await tenant_repo.update(None, tenant_id, **update_data)
     if tenant is None:
-        from fastapi import HTTPException, status
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tenant not found",

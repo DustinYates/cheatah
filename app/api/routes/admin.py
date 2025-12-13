@@ -2,37 +2,16 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_global_admin
+from app.api.schemas.tenant import TenantCreate, TenantResponse
 from app.persistence.database import get_db
 from app.persistence.models.tenant import Tenant, User
 from app.persistence.repositories.tenant_repository import TenantRepository
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
-
-
-class TenantCreate(BaseModel):
-    """Tenant creation request."""
-
-    name: str
-    subdomain: str
-    is_active: bool = True
-
-
-class TenantResponse(BaseModel):
-    """Tenant response."""
-
-    id: int
-    name: str
-    subdomain: str
-    is_active: bool
-    created_at: str
-
-    class Config:
-        from_attributes = True
 
 
 @router.post("/tenants", response_model=TenantResponse)
@@ -90,7 +69,6 @@ async def get_tenant(
     tenant_repo = TenantRepository(db)
     tenant = await tenant_repo.get_by_id(None, tenant_id)
     if tenant is None:
-        from fastapi import HTTPException, status
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tenant not found",

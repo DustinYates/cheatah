@@ -9,6 +9,7 @@ from pathlib import Path
 
 from app.api.middleware import IdempotencyMiddleware
 from app.api.routes import api_router
+from app.core.debug import debug_log
 from app.infrastructure.redis import redis_client
 from app.logging_config import setup_logging
 from app.settings import settings
@@ -16,35 +17,21 @@ from app.settings import settings
 # Setup logging
 setup_logging()
 
-
-def _debug_log(location: str, message: str, data: dict, hypothesis_id: str = "A"):
-    """Helper to safely write debug logs."""
-    try:
-        from pathlib import Path
-        import json
-        import time
-        log_path = Path(".cursor/debug.log")
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": location, "message": message, "data": data, "sessionId": "debug-session", "runId": "run1", "hypothesisId": hypothesis_id}) + "\n")
-    except Exception:
-        pass  # Silently fail if logging isn't possible
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # #region agent log
-    _debug_log("main.py:22", "Application startup - connecting Redis", {}, "C")
+    debug_log("main.py:22", "Application startup - connecting Redis", {}, "C")
     # #endregion
     # Startup
     try:
         await redis_client.connect()
         # #region agent log
-        _debug_log("main.py:27", "Redis connected successfully", {}, "C")
+        debug_log("main.py:27", "Redis connected successfully", {}, "C")
         # #endregion
     except Exception as e:
         # #region agent log
-        _debug_log("main.py:31", "Redis connection error", {"error_type": type(e).__name__, "error_message": str(e)}, "C")
+        debug_log("main.py:31", "Redis connection error", {"error_type": type(e).__name__, "error_message": str(e)}, "C")
         # #endregion
         raise
     yield

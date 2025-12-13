@@ -1,26 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { api } from '../api/client';
+import { useFetchData } from '../hooks/useFetchData';
 import './Contacts.css';
 
 export default function Contacts() {
-  const [contacts, setContacts] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    fetchContacts();
+  const fetchContacts = useCallback(async () => {
+    const data = await api.getContacts().catch(() => []);
+    return Array.isArray(data) ? data : data.contacts || [];
   }, []);
 
-  const fetchContacts = async () => {
-    try {
-      const data = await api.getContacts().catch(() => []);
-      setContacts(Array.isArray(data) ? data : data.contacts || []);
-    } catch (err) {
-      console.error('Failed to fetch contacts:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: contacts, loading } = useFetchData(fetchContacts, { defaultValue: [] });
 
   const filteredContacts = contacts.filter(contact => 
     (contact.name || '').toLowerCase().includes(search.toLowerCase()) ||

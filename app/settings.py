@@ -25,6 +25,13 @@ def get_async_database_url() -> str:
         url = url.replace("postgres://", "postgresql+asyncpg://", 1)
     elif url.startswith("postgresql://") and "+asyncpg" not in url:
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # asyncpg doesn't support sslmode, it uses ssl parameter
+    # Remove sslmode parameter as Replit's internal DB doesn't need SSL
+    if "sslmode=" in url:
+        import re
+        url = re.sub(r'[?&]sslmode=[^&]*', '', url)
+        # Clean up any leftover ? or & at the end
+        url = url.rstrip('?&')
     return url
 
 

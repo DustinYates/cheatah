@@ -40,6 +40,7 @@ dependencies = [
     # Utilities
     "pytz>=2023.3", # For timezone handling in business hours
     "bcrypt>=5.0.0",
+    "google-genai>=1.55.0",
 ]
 
 [project.optional-dependencies]

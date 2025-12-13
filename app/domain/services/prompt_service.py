@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.persistence.models.prompt import PromptBundle, PromptSection
+from app.persistence.models.prompt import PromptBundle, PromptSection, PromptStatus
 from app.persistence.repositories.prompt_repository import PromptRepository
 
 
@@ -15,50 +15,53 @@ class PromptService:
         self.prompt_repo = PromptRepository(session)
 
     async def get_active_bundle(self, tenant_id: int | None) -> PromptBundle | None:
-        """Get the active prompt bundle for a tenant.
-
-        Args:
-            tenant_id: Tenant ID (None for global)
-
-        Returns:
-            Active prompt bundle or None
-        """
+        """Get the active prompt bundle for a tenant."""
         return await self.prompt_repo.get_active_bundle(tenant_id)
 
+    async def get_production_bundle(self, tenant_id: int | None) -> PromptBundle | None:
+        """Get the production prompt bundle for a tenant."""
+        return await self.prompt_repo.get_production_bundle(tenant_id)
+
+    async def get_draft_bundle(self, tenant_id: int | None) -> PromptBundle | None:
+        """Get the draft prompt bundle for a tenant."""
+        return await self.prompt_repo.get_draft_bundle(tenant_id)
+
     async def compose_prompt(
-        self, tenant_id: int | None, context: dict | None = None
+        self, tenant_id: int | None, context: dict | None = None, use_draft: bool = False
     ) -> str:
         """Compose final prompt from global base + tenant overrides.
 
         Args:
             tenant_id: Tenant ID (None for global)
             context: Optional context for prompt composition
+            use_draft: If True, use draft bundle for testing
 
         Returns:
             Composed prompt string
         """
-        # Get global base bundle
         global_bundle = await self.prompt_repo.get_global_base_bundle()
         
-        # Get tenant-specific bundle if tenant_id is provided
         tenant_bundle = None
         if tenant_id is not None:
-            tenant_bundle = await self.prompt_repo.get_active_bundle(tenant_id)
+            if use_draft:
+                tenant_bundle = await self.prompt_repo.get_draft_bundle(tenant_id)
+                if not tenant_bundle:
+                    tenant_bundle = await self.prompt_repo.get_production_bundle(tenant_id)
+            else:
+                tenant_bundle = await self.prompt_repo.get_production_bundle(tenant_id)
+                if not tenant_bundle:
+                    tenant_bundle = await self.prompt_repo.get_active_bundle(tenant_id)
 
-        # Collect all sections with their order values
         all_sections = []
         
-        # Add global sections first (lower priority)
         if global_bundle:
             global_sections = await self.prompt_repo.get_sections(global_bundle.id)
             all_sections.extend(global_sections)
         
-        # Add tenant sections (higher priority, will override global)
         if tenant_bundle:
             tenant_sections = await self.prompt_repo.get_sections(tenant_bundle.id)
             all_sections.extend(tenant_sections)
 
-        # If no sections found, return default prompt
         if not all_sections:
             return (
                 "You are a helpful customer service assistant. "
@@ -66,18 +69,15 @@ class PromptService:
                 "Answer questions based on the business information provided."
             )
         
-        # Build section map (tenant sections override global)
-        section_map: dict[str, tuple[str, int]] = {}  # (content, order)
+        section_map: dict[str, tuple[str, int]] = {}
         for section in all_sections:
             section_map[section.section_key] = (section.content, section.order)
         
-        # Sort sections by order, then by section_key for consistent ordering
         sorted_sections = sorted(
             section_map.items(),
-            key=lambda x: (x[1][1], x[0])  # Sort by order, then by key
+            key=lambda x: (x[1][1], x[0])
         )
         
-        # Build prompt from ordered sections
         prompt_parts = [content for _, (content, _) in sorted_sections]
         
         return "\n\n".join(prompt_parts)
@@ -85,49 +85,32 @@ class PromptService:
     async def activate_bundle(
         self, tenant_id: int | None, bundle_id: int
     ) -> PromptBundle | None:
-        """Activate a prompt bundle (deactivates others).
-
-        Args:
-            tenant_id: Tenant ID (None for global)
-            bundle_id: Bundle ID to activate
-
-        Returns:
-            Activated bundle or None if not found
-        """
-        # Get bundle
+        """Activate a prompt bundle (deactivates others)."""
         bundle = await self.prompt_repo.get_by_id(tenant_id, bundle_id)
         if not bundle:
             return None
 
-        # Deactivate all other bundles for this tenant
         await self.prompt_repo.deactivate_all_bundles(tenant_id)
 
-        # Activate this bundle
         bundle.is_active = True
         await self.session.commit()
         await self.session.refresh(bundle)
         return bundle
 
+    async def publish_bundle(self, tenant_id: int | None, bundle_id: int) -> PromptBundle | None:
+        """Publish a bundle to production."""
+        return await self.prompt_repo.publish_bundle(tenant_id, bundle_id)
+
+    async def set_testing(self, tenant_id: int | None, bundle_id: int) -> PromptBundle | None:
+        """Set a bundle to testing status."""
+        return await self.prompt_repo.set_testing(tenant_id, bundle_id)
+
     async def compose_prompt_sms(
         self, tenant_id: int | None, context: dict | None = None
     ) -> str:
-        """Compose SMS-specific prompt with constraints.
-        
-        SMS prompts should:
-        - Be concise (responses will be limited to 160 chars)
-        - Avoid markdown formatting
-        - Use SMS-friendly tone
-        
-        Args:
-            tenant_id: Tenant ID (None for global)
-            context: Optional context for prompt composition
-            
-        Returns:
-            Composed prompt string with SMS constraints
-        """
+        """Compose SMS-specific prompt with constraints."""
         base_prompt = await self.compose_prompt(tenant_id, context)
         
-        # Add SMS-specific instructions
         sms_instructions = (
             "\n\nIMPORTANT SMS CONSTRAINTS:\n"
             "- Keep responses SHORT (under 160 characters when possible)\n"

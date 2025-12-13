@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Script to verify Alembic migration status and database schema."""
 
+import re
 import sys
 from pathlib import Path
 
@@ -16,15 +17,14 @@ def verify_schema():
     
     # Convert async URL to sync for direct connection
     db_url = settings.database_url
-    if "+asyncpg" in db_url.lower():
-        db_url = db_url.replace("+asyncpg", "")
+    # Use case-insensitive replacement to handle any case variation (+asyncpg, +ASYNCPG, etc.)
+    db_url = re.sub(r'\+asyncpg', '', db_url, flags=re.IGNORECASE)
     
     print(f"Connecting to database...")
     print(f"URL prefix: {db_url[:50]}...")
     
+    engine = create_engine(db_url)
     try:
-        engine = create_engine(db_url)
-        
         with engine.connect() as conn:
             # Check Alembic version table
             print("\n" + "="*60)
@@ -111,6 +111,8 @@ def verify_schema():
         import traceback
         traceback.print_exc()
         return False
+    finally:
+        engine.dispose()
 
 if __name__ == "__main__":
     success = verify_schema()

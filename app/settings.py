@@ -1,5 +1,7 @@
 """Application settings using Pydantic BaseSettings."""
 
+import json
+import time
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,4 +48,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# #region agent log
+with open("/Users/dustinyates/Desktop/chattercheatah/.cursor/debug.log", "a") as f:
+    f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": "settings.py:48", "message": "Settings initialized", "data": {"database_url_prefix": settings.database_url[:30] + "..." if len(settings.database_url) > 30 else settings.database_url, "has_cloud_sql_conn": settings.cloud_sql_instance_connection_name is not None, "gcp_project_id": settings.gcp_project_id, "environment": settings.environment}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
+# #endregion
 

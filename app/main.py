@@ -18,8 +18,25 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
+    import json
+    import time
+    # #region agent log
+    with open("/Users/dustinyates/Desktop/chattercheatah/.cursor/debug.log", "a") as f:
+        f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": "main.py:22", "message": "Application startup - connecting Redis", "data": {}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+    # #endregion
     # Startup
-    await redis_client.connect()
+    try:
+        await redis_client.connect()
+        # #region agent log
+        with open("/Users/dustinyates/Desktop/chattercheatah/.cursor/debug.log", "a") as f:
+            f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": "main.py:27", "message": "Redis connected successfully", "data": {}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+        # #endregion
+    except Exception as e:
+        # #region agent log
+        with open("/Users/dustinyates/Desktop/chattercheatah/.cursor/debug.log", "a") as f:
+            f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": "main.py:31", "message": "Redis connection error", "data": {"error_type": type(e).__name__, "error_message": str(e)}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+        # #endregion
+        raise
     yield
     # Shutdown
     await redis_client.disconnect()

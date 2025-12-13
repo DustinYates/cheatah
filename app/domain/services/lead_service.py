@@ -31,7 +31,7 @@ class LeadService:
             email: Optional email
             phone: Optional phone
             name: Optional name
-            metadata: Optional metadata dictionary
+            metadata: Optional metadata dictionary (mapped to extra_data)
 
         Returns:
             Created lead
@@ -42,7 +42,7 @@ class LeadService:
             email=email,
             phone=phone,
             name=name,
-            metadata=metadata,
+            extra_data=metadata,  # Map metadata parameter to extra_data field
         )
         return lead
 

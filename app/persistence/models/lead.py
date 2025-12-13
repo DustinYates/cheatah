@@ -24,7 +24,7 @@ class Lead(Base):
     email = Column(String(255), nullable=True, index=True)
     phone = Column(String(50), nullable=True, index=True)
     name = Column(String(255), nullable=True)
-    metadata = Column(JSON, nullable=True)  # Additional flexible data
+    extra_data = Column(JSON, nullable=True)  # Additional flexible data (avoiding 'metadata' reserved name)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

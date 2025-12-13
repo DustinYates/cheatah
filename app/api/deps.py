@@ -15,6 +15,20 @@ from app.persistence.repositories.user_repository import UserRepository
 security = HTTPBearer()
 
 
+def is_global_admin(user: User) -> bool:
+    """Check if user is a global admin.
+
+    A global admin has no tenant_id and admin role.
+
+    Args:
+        user: User to check
+
+    Returns:
+        True if user is global admin, False otherwise
+    """
+    return user.tenant_id is None and user.role == "admin"
+
+
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -86,11 +100,8 @@ async def get_current_tenant(
     Raises:
         HTTPException: If user has no tenant and is not global admin
     """
-    # Check if user is global admin
-    is_global_admin = current_user.tenant_id is None and current_user.role == "admin"
-    
     # If global admin and header provided, use header value
-    if is_global_admin and x_tenant_id:
+    if is_global_admin(current_user) and x_tenant_id:
         try:
             tenant_id = int(x_tenant_id)
         except (ValueError, TypeError):
@@ -121,12 +132,34 @@ async def require_global_admin(
     Raises:
         HTTPException: If user is not global admin
     """
-    if current_user.tenant_id is not None or current_user.role != "admin":
+    if not is_global_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Global admin access required",
         )
     return current_user
+
+
+async def require_tenant_context(
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+) -> int:
+    """Require a tenant context to be present.
+
+    Args:
+        tenant_id: Current tenant ID from get_current_tenant
+
+    Returns:
+        Tenant ID (guaranteed non-None)
+
+    Raises:
+        HTTPException: If no tenant context is present
+    """
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required",
+        )
+    return tenant_id
 
 
 async def require_tenant_admin(

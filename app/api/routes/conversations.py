@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.deps import get_current_tenant, get_current_user
+from app.api.deps import get_current_user, require_tenant_context
 from app.domain.services.conversation_service import ConversationService
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
@@ -77,16 +77,10 @@ class ConversationWithMessagesResponse(BaseModel):
 async def create_conversation(
     conversation_data: ConversationCreate,
     current_user: Annotated[User, Depends(get_current_user)],
-    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ConversationResponse:
     """Create a new conversation."""
-    if tenant_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required",
-        )
-    
     conversation_service = ConversationService(db)
     conversation = await conversation_service.create_conversation(
         tenant_id,
@@ -108,14 +102,14 @@ async def create_conversation(
 @router.get("", response_model=list[ConversationResponse])
 async def list_conversations(
     current_user: Annotated[User, Depends(get_current_user)],
-    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
     channel: str | None = None,
     skip: int = 0,
     limit: int = 100,
 ) -> list[ConversationResponse]:
     """List conversations for the tenant.
-    
+
     Args:
         current_user: Current authenticated user
         tenant_id: Tenant ID
@@ -123,16 +117,10 @@ async def list_conversations(
         channel: Optional channel filter (web, sms, voice)
         skip: Number of records to skip
         limit: Maximum number of records to return
-        
+
     Returns:
         List of conversations
     """
-    if tenant_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required",
-        )
-    
     from app.persistence.repositories.conversation_repository import ConversationRepository
     conversation_repo = ConversationRepository(db)
     
@@ -159,16 +147,10 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
-    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ConversationWithMessagesResponse:
     """Get a conversation with its messages."""
-    if tenant_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required",
-        )
-    
     conversation_service = ConversationService(db)
     conversation = await conversation_service.get_conversation(tenant_id, conversation_id)
     if conversation is None:
@@ -206,16 +188,10 @@ async def add_message(
     conversation_id: int,
     message_data: MessageCreate,
     current_user: Annotated[User, Depends(get_current_user)],
-    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MessageResponse:
     """Add a message to a conversation."""
-    if tenant_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required",
-        )
-    
     conversation_service = ConversationService(db)
     try:
         message = await conversation_service.add_message(

@@ -1,20 +1,9 @@
 """Application settings using Pydantic BaseSettings."""
 
-import json
 import os
-import time
-from pathlib import Path
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import re
 
-def _debug_log(location: str, message: str, data: dict, hypothesis_id: str = "A"):
-    """Helper to safely write debug logs."""
-    try:
-        log_path = Path(".cursor/debug.log")
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"timestamp": int(time.time() * 1000), "location": location, "message": message, "data": data, "sessionId": "debug-session", "runId": "run1", "hypothesisId": hypothesis_id}) + "\n")
-    except Exception:
-        pass  # Silently fail if logging isn't possible
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def get_async_database_url() -> str:
@@ -28,7 +17,6 @@ def get_async_database_url() -> str:
     # asyncpg doesn't support sslmode, it uses ssl parameter
     # Remove sslmode parameter as Replit's internal DB doesn't need SSL
     if "sslmode=" in url:
-        import re
         url = re.sub(r'[?&]sslmode=[^&]*', '', url)
         # Clean up any leftover ? or & at the end
         url = url.rstrip('?&')
@@ -95,7 +83,10 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# Import debug_log after settings is created to avoid circular import
+from app.core.debug import debug_log
+
 # #region agent log
-_debug_log("settings.py:48", "Settings initialized", {"database_url_prefix": settings.database_url[:30] + "..." if len(settings.database_url) > 30 else settings.database_url, "has_cloud_sql_conn": settings.cloud_sql_instance_connection_name is not None, "gcp_project_id": settings.gcp_project_id, "environment": settings.environment})
+debug_log("settings.py:48", "Settings initialized", {"database_url_prefix": settings.database_url[:30] + "..." if len(settings.database_url) > 30 else settings.database_url, "has_cloud_sql_conn": settings.cloud_sql_instance_connection_name is not None, "gcp_project_id": settings.gcp_project_id, "environment": settings.environment})
 # #endregion
 

@@ -55,6 +55,9 @@ export default function Layout() {
           <li>
             <NavLink to="/contacts">Contacts</NavLink>
           </li>
+          <li>
+            <NavLink to="/settings">Settings</NavLink>
+          </li>
           {user?.is_global_admin && !selectedTenantId && (
             <li>
               <NavLink to="/admin/tenants">Manage Tenants</NavLink>

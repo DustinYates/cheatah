@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.persistence.database import Base
@@ -43,9 +43,37 @@ class Tenant(Base):
     escalations = relationship(
         "Escalation", back_populates="tenant", cascade="all, delete-orphan"
     )
+    business_profile = relationship(
+        "TenantBusinessProfile", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Tenant(id={self.id}, name={self.name}, subdomain={self.subdomain})>"
+
+
+class TenantBusinessProfile(Base):
+    """Business profile for a tenant - contact and business info for chat/SMS."""
+
+    __tablename__ = "tenant_business_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), unique=True, nullable=False, index=True)
+    
+    business_name = Column(String(255), nullable=True)
+    website_url = Column(Text, nullable=True)
+    phone_number = Column(String(50), nullable=True)
+    twilio_phone = Column(String(50), nullable=True)
+    email = Column(String(255), nullable=True)
+    
+    profile_complete = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant = relationship("Tenant", back_populates="business_profile")
+
+    def __repr__(self) -> str:
+        return f"<TenantBusinessProfile(id={self.id}, tenant_id={self.tenant_id}, business_name={self.business_name})>"
 
 
 class User(Base):

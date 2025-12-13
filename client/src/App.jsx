@@ -6,6 +6,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Prompts from './pages/Prompts';
 import Contacts from './pages/Contacts';
+import Onboarding from './pages/Onboarding';
+import Settings from './pages/Settings';
 import './App.css';
 
 function App() {
@@ -14,10 +16,15 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/onboarding" element={
+            <ProtectedRoute>
+              <Onboarding />
+            </ProtectedRoute>
+          } />
           <Route
             path="/"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute requireProfile>
                 <Layout />
               </ProtectedRoute>
             }
@@ -25,6 +32,7 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="prompts" element={<Prompts />} />
             <Route path="contacts" element={<Contacts />} />
+            <Route path="settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -6,8 +6,23 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileComplete, setProfileComplete] = useState(null);
   const [tenants, setTenants] = useState([]);
   const [selectedTenantId, setSelectedTenantId] = useState(null);
+
+  const loadProfile = async () => {
+    try {
+      setProfileLoading(true);
+      const profile = await api.getBusinessProfile();
+      setProfileComplete(profile.profile_complete);
+    } catch (err) {
+      console.error('Failed to load profile:', err);
+      setProfileComplete(false);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -20,8 +35,10 @@ export function AuthProvider({ children }) {
         if (userInfo.is_global_admin) {
           const savedTenant = api.getSelectedTenant();
           setSelectedTenantId(savedTenant);
-          // Fetch tenants list
           api.getTenants().then(setTenants).catch(console.error);
+          setProfileComplete(true);
+        } else {
+          loadProfile();
         }
       } else {
         setUser({ authenticated: true });
@@ -41,14 +58,18 @@ export function AuthProvider({ children }) {
     };
     setUser(userInfo);
     
-    // If global admin, fetch tenants list
+    // If global admin, fetch tenants list and skip profile check
     if (data.is_global_admin) {
+      setProfileComplete(true);
       try {
         const tenantList = await api.getTenants();
         setTenants(tenantList);
       } catch (err) {
         console.error('Failed to fetch tenants:', err);
       }
+    } else {
+      // Load profile for tenant users
+      await loadProfile();
     }
   };
 
@@ -57,11 +78,16 @@ export function AuthProvider({ children }) {
     setUser(null);
     setTenants([]);
     setSelectedTenantId(null);
+    setProfileComplete(null);
   };
 
   const selectTenant = (tenantId) => {
     setSelectedTenantId(tenantId);
     api.setSelectedTenant(tenantId);
+  };
+
+  const refreshProfile = async () => {
+    await loadProfile();
   };
 
   // Get effective tenant ID (selected tenant for global admin, or user's tenant)
@@ -72,7 +98,10 @@ export function AuthProvider({ children }) {
       user, 
       login, 
       logout, 
-      loading, 
+      loading,
+      profileLoading,
+      profileComplete,
+      refreshProfile,
       tenants, 
       selectedTenantId, 
       selectTenant,

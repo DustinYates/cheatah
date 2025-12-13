@@ -160,6 +160,17 @@ class ApiClient {
     const query = new URLSearchParams(params).toString();
     return this.request(`/contacts${query ? `?${query}` : ''}`);
   }
+
+  async getBusinessProfile() {
+    return this.request('/tenant/profile');
+  }
+
+  async updateBusinessProfile(data) {
+    return this.request('/tenant/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const api = new ApiClient();

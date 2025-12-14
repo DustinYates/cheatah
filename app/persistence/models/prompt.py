@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, Enum
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, Enum, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 import enum
 
@@ -42,6 +42,15 @@ class PromptBundle(Base):
         "PromptSection", back_populates="bundle", cascade="all, delete-orphan", order_by="PromptSection.order"
     )
     source_bundle = relationship("PromptBundle", remote_side=[id], backref="derived_bundles")
+
+    # Constraints for tenant data isolation
+    __table_args__ = (
+        # Each tenant can only have one bundle with a given name and version
+        UniqueConstraint('tenant_id', 'name', 'version', name='uq_prompt_bundles_tenant_name_version'),
+        # Each tenant can only have one PRODUCTION bundle at a time (partial unique index)
+        Index('uq_prompt_bundles_tenant_production', 'tenant_id', 'status',
+              unique=True, postgresql_where=Column('status') == PromptStatus.PRODUCTION.value),
+    )
 
     def __repr__(self) -> str:
         return f"<PromptBundle(id={self.id}, tenant_id={self.tenant_id}, name={self.name}, status={self.status})>"

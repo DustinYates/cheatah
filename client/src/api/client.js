@@ -145,6 +145,40 @@ class ApiClient {
     });
   }
 
+  async deletePromptBundle(bundleId) {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    
+    const selectedTenant = this.getSelectedTenant();
+    const userInfo = this.getUserInfo();
+    if (userInfo?.is_global_admin && selectedTenant) {
+      headers['X-Tenant-Id'] = selectedTenant.toString();
+    }
+
+    const response = await fetch(`${API_BASE}/prompts/bundles/${bundleId}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (response.status === 401) {
+      this.setToken(null);
+      window.location.href = '/login';
+      throw new Error('Unauthorized');
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Delete failed' }));
+      throw new Error(error.detail || 'Delete failed');
+    }
+
+    return true;
+  }
+
   async testPrompt(bundleId, message) {
     return this.request('/prompts/test', {
       method: 'POST',

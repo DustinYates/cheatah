@@ -124,6 +124,21 @@
   font-size: 13px;
 }
 
+.btn-danger {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-danger:hover {
+  background: #c82333;
+}
+
 .btn-danger-small {
   background: #dc3545;
   color: white;

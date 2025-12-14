@@ -110,6 +110,16 @@ export default function Prompts() {
     }
   };
 
+  const handleDelete = async (bundle) => {
+    if (!confirm(`Are you sure you want to delete "${bundle.name}"? This action cannot be undone.`)) return;
+    try {
+      await api.deletePromptBundle(bundle.id);
+      setBundles(bundles.filter(b => b.id !== bundle.id));
+    } catch (err) {
+      alert('Failed to delete: ' + err.message);
+    }
+  };
+
   const handleTest = async (e) => {
     e.preventDefault();
     setTestLoading(true);
@@ -321,14 +331,6 @@ export default function Prompts() {
                             onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'section_key', e.target.value)}
                             required
                           />
-                          <select
-                            value={section.scope}
-                            onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'scope', e.target.value)}
-                          >
-                            {SECTION_SCOPES.map(s => (
-                              <option key={s.value} value={s.value}>{s.label}</option>
-                            ))}
-                          </select>
                         </div>
                         <textarea
                           value={section.content}
@@ -422,6 +424,23 @@ export default function Prompts() {
 
                 {editBundle.sections?.map((section, idx) => (
                   <div key={idx} className="section-editor expanded">
+                    <div className="section-header-bar">
+                      <div className="section-header-left">
+                        <span className="section-key-display">
+                          {section.section_key || 'Untitled Section'}
+                        </span>
+                        <span className="section-scope-badge">
+                          {getScopeLabel(section.scope)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-danger-small"
+                        onClick={() => removeSection(editBundle, setEditBundle, idx)}
+                      >
+                        Remove
+                      </button>
+                    </div>
                     <div className="section-content">
                       <div className="section-header">
                         <input
@@ -431,21 +450,6 @@ export default function Prompts() {
                           onChange={(e) => updateSection(editBundle, setEditBundle, idx, 'section_key', e.target.value)}
                           required
                         />
-                        <select
-                          value={section.scope}
-                          onChange={(e) => updateSection(editBundle, setEditBundle, idx, 'scope', e.target.value)}
-                        >
-                          {SECTION_SCOPES.map(s => (
-                            <option key={s.value} value={s.value}>{s.label}</option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          className="btn-danger-small"
-                          onClick={() => removeSection(editBundle, setEditBundle, idx)}
-                        >
-                          Remove
-                        </button>
                       </div>
                       <textarea
                         value={section.content}
@@ -554,13 +558,21 @@ export default function Prompts() {
                   {bundle.status === 'production' ? 'View' : 'Edit'}
                 </button>
                 {bundle.status !== 'production' && (
-                  <button
-                    className="btn-primary"
-                    onClick={() => handlePublish(bundle.id)}
-                    disabled={publishing === bundle.id}
-                  >
-                    {publishing === bundle.id ? 'Publishing...' : 'Publish'}
-                  </button>
+                  <>
+                    <button
+                      className="btn-primary"
+                      onClick={() => handlePublish(bundle.id)}
+                      disabled={publishing === bundle.id}
+                    >
+                      {publishing === bundle.id ? 'Publishing...' : 'Publish'}
+                    </button>
+                    <button
+                      className="btn-danger"
+                      onClick={() => handleDelete(bundle)}
+                    >
+                      Delete
+                    </button>
+                  </>
                 )}
               </div>
             </div>

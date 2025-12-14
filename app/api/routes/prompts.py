@@ -383,6 +383,39 @@ async def test_prompt(
     )
 
 
+@router.delete("/bundles/{bundle_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_prompt_bundle(
+    bundle_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Delete a prompt bundle (only allowed if not in production)."""
+    from app.persistence.repositories.prompt_repository import PromptRepository
+    
+    prompt_repo = PromptRepository(db)
+    bundle = await prompt_repo.get_by_id(tenant_id, bundle_id)
+    
+    if not bundle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prompt bundle not found",
+        )
+    
+    if bundle.status == PromptStatus.PRODUCTION.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete a production bundle. Create a new version instead.",
+        )
+    
+    sections = await prompt_repo.get_sections(bundle_id)
+    for section in sections:
+        await db.delete(section)
+    
+    await db.delete(bundle)
+    await db.commit()
+
+
 @router.get("/compose", response_model=PromptComposeResponse)
 async def get_composed_prompt(
     current_user: Annotated[User, Depends(get_current_user)],

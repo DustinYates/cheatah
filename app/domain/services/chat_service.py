@@ -100,8 +100,9 @@ class ChatService:
             )
 
         # Check timeout (conversation age)
-        from datetime import datetime, timezone
-        conversation_age = (datetime.now(timezone.utc) - conversation.created_at).total_seconds()
+
+        from datetime import datetime
+        conversation_age = (datetime.utcnow() - conversation.created_at).total_seconds()
         if conversation_age > self.TIMEOUT_SECONDS:
             return ChatResult(
                 session_id=session_id,

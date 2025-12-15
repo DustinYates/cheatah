@@ -2,9 +2,14 @@
 
 import os
 import re
+from pathlib import Path
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Load .env file from project root before any environment variables are read
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 def get_async_database_url() -> str:
     """Get database URL converted for asyncpg driver."""

@@ -43,6 +43,9 @@ elif "+asyncpg" in original_url.lower():
 else:
     sync_url = original_url
 
+# Escape % signs for ConfigParser (double them) - needed because %21 in password
+sync_url = sync_url.replace("%", "%%")
+
 # #region agent log
 _debug_log("alembic/env.py:25", "Alembic setting database URL", {"sync_url_prefix": sync_url[:50] + "..." if len(sync_url) > 50 else sync_url})
 # #endregion

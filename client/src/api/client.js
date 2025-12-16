@@ -37,7 +37,10 @@ class ApiClient {
     });
 
     if (response.status === 401) {
+      // Clear all auth state on 401 (token expired or invalid)
       this.setToken(null);
+      localStorage.removeItem('userInfo');
+      localStorage.removeItem('selectedTenantId');
       window.location.href = '/login';
       throw new Error('Unauthorized');
     }
@@ -166,7 +169,10 @@ class ApiClient {
     });
 
     if (response.status === 401) {
+      // Clear all auth state on 401 (token expired or invalid)
       this.setToken(null);
+      localStorage.removeItem('userInfo');
+      localStorage.removeItem('selectedTenantId');
       window.location.href = '/login';
       throw new Error('Unauthorized');
     }

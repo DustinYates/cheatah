@@ -25,26 +25,65 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      api.setToken(token);
-      const userInfo = api.getUserInfo();
-      if (userInfo) {
-        setUser({ authenticated: true, ...userInfo });
-        // Restore selected tenant for global admins
-        if (userInfo.is_global_admin) {
-          const savedTenant = api.getSelectedTenant();
-          setSelectedTenantId(savedTenant);
-          api.getTenants().then(setTenants).catch(console.error);
-          setProfileComplete(true);
-        } else {
-          loadProfile();
+    const initializeAuth = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          // Set token in API client before making request
+          api.setToken(token);
+          
+          // Verify token is valid by calling /auth/me
+          const userData = await api.getMe();
+          
+          // Build user object from API response
+          const userInfo = {
+            authenticated: true,
+            id: userData.id,
+            email: userData.email,
+            role: userData.role,
+            tenant_id: userData.tenant_id,
+            is_global_admin: userData.is_global_admin,
+          };
+          
+          // Update localStorage userInfo to keep it in sync
+          localStorage.setItem('userInfo', JSON.stringify({
+            email: userData.email,
+            role: userData.role,
+            tenant_id: userData.tenant_id,
+            is_global_admin: userData.is_global_admin,
+          }));
+          
+          setUser(userInfo);
+          
+          // Restore selected tenant for global admins
+          if (userData.is_global_admin) {
+            const savedTenant = api.getSelectedTenant();
+            setSelectedTenantId(savedTenant);
+            try {
+              const tenantList = await api.getTenants();
+              setTenants(tenantList);
+            } catch (err) {
+              console.error('Failed to fetch tenants:', err);
+            }
+            setProfileComplete(true);
+          } else {
+            // Load profile for tenant users
+            await loadProfile();
+          }
+        } catch (err) {
+          // Token is invalid or expired
+          console.error('Failed to verify token:', err);
+          // Clear auth state (API client already cleared token on 401)
+          setUser(null);
+          setTenants([]);
+          setSelectedTenantId(null);
+          setProfileComplete(null);
         }
-      } else {
-        setUser({ authenticated: true });
       }
-    }
-    setLoading(false);
+      setLoading(false);
+    };
+
+    initializeAuth();
   }, []);
 
   const login = async (email, password) => {

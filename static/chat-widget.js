@@ -59,9 +59,24 @@
             <span>Thinking...</span>
           </div>
         </div>
-        <button class="cc-widget-toggle" id="cc-toggle" aria-label="Open chat">
-          💬
-        </button>
+        <div class="cc-toggle-wrapper" id="cc-toggle-wrapper">
+          <button class="cc-widget-toggle" id="cc-toggle" aria-label="Open chat">
+            <svg class="cc-robot-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- Gear teeth -->
+              <path d="M50 5 L55 15 L60 5 L65 12 L72 3 L75 13 L83 6 L84 16 L93 12 L91 22 L100 20 L96 30 L100 35 L95 42 L100 50 L95 58 L100 65 L96 70 L100 80 L91 78 L93 88 L84 84 L83 94 L75 87 L72 97 L65 88 L60 95 L55 85 L50 95 L45 85 L40 95 L35 88 L28 97 L25 87 L17 94 L16 84 L7 88 L9 78 L0 80 L4 70 L0 65 L5 58 L0 50 L5 42 L0 35 L4 30 L0 20 L9 22 L7 12 L16 16 L17 6 L25 13 L28 3 L35 12 L40 5 L45 15 L50 5Z" 
+                    fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+              <!-- Robot head -->
+              <rect x="30" y="35" width="40" height="35" rx="8" fill="none" stroke="currentColor" stroke-width="3"/>
+              <!-- Robot eyes -->
+              <rect x="38" y="45" width="6" height="10" rx="2" fill="currentColor"/>
+              <rect x="56" y="45" width="6" height="10" rx="2" fill="currentColor"/>
+              <!-- Robot antenna -->
+              <line x1="50" y1="35" x2="50" y2="25" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="50" cy="23" r="4" fill="currentColor"/>
+            </svg>
+          </button>
+          <span class="cc-toggle-label">Chat</span>
+        </div>
       `;
       document.body.appendChild(widget);
       this.injectStyles();
@@ -77,139 +92,292 @@
           z-index: 10000;
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
         }
+        
+        /* Toggle button wrapper */
+        .cc-toggle-wrapper {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+        }
+        
         .cc-widget-toggle {
-          width: 60px;
-          height: 60px;
+          width: 70px;
+          height: 70px;
           border-radius: 50%;
-          background: #007bff;
-          color: white;
-          border: none;
+          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+          color: #00d4ff;
+          border: 3px solid #00d4ff;
           font-size: 24px;
           cursor: pointer;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-          transition: transform 0.2s;
+          box-shadow: 
+            0 0 20px rgba(0, 212, 255, 0.5),
+            0 0 40px rgba(0, 212, 255, 0.3),
+            0 0 60px rgba(0, 212, 255, 0.1),
+            inset 0 0 20px rgba(0, 212, 255, 0.1);
+          transition: all 0.3s ease;
+          animation: cc-glow-pulse 2s ease-in-out infinite;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 12px;
         }
+        
+        .cc-robot-icon {
+          width: 40px;
+          height: 40px;
+        }
+        
+        @keyframes cc-glow-pulse {
+          0%, 100% {
+            box-shadow: 
+              0 0 20px rgba(0, 212, 255, 0.5),
+              0 0 40px rgba(0, 212, 255, 0.3),
+              0 0 60px rgba(0, 212, 255, 0.1),
+              inset 0 0 20px rgba(0, 212, 255, 0.1);
+            border-color: #00d4ff;
+          }
+          50% {
+            box-shadow: 
+              0 0 25px rgba(0, 212, 255, 0.7),
+              0 0 50px rgba(0, 212, 255, 0.4),
+              0 0 75px rgba(0, 212, 255, 0.2),
+              inset 0 0 25px rgba(0, 212, 255, 0.15);
+            border-color: #4ddbff;
+          }
+        }
+        
         .cc-widget-toggle:hover {
           transform: scale(1.1);
+          box-shadow: 
+            0 0 30px rgba(0, 212, 255, 0.7),
+            0 0 60px rgba(0, 212, 255, 0.5),
+            0 0 90px rgba(0, 212, 255, 0.3),
+            inset 0 0 30px rgba(0, 212, 255, 0.2);
         }
+        
+        .cc-toggle-label {
+          color: #1a1a2e;
+          font-size: 14px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+        }
+        
         .cc-widget-container {
-          width: 350px;
-          height: 500px;
-          background: white;
-          border-radius: 10px;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+          width: 370px;
+          height: 520px;
+          background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
+          border-radius: 16px;
+          box-shadow: 
+            0 10px 40px rgba(0, 0, 0, 0.15),
+            0 0 20px rgba(0, 212, 255, 0.1);
           display: flex;
           flex-direction: column;
           overflow: hidden;
+          border: 1px solid rgba(0, 212, 255, 0.2);
         }
+        
         .cc-widget-header {
-          background: #007bff;
+          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
           color: white;
-          padding: 15px;
+          padding: 16px 20px;
           display: flex;
           justify-content: space-between;
           align-items: center;
+          border-bottom: 2px solid #00d4ff;
         }
+        
         .cc-widget-title {
           font-weight: 600;
+          font-size: 16px;
+          color: #00d4ff;
         }
+        
         .cc-widget-minimize, .cc-widget-close {
-          background: none;
+          background: transparent;
           border: none;
-          color: white;
+          color: #00d4ff;
           font-size: 20px;
           cursor: pointer;
-          padding: 0 5px;
+          padding: 4px 8px;
+          border-radius: 4px;
+          transition: all 0.2s;
         }
+        
+        .cc-widget-minimize:hover, .cc-widget-close:hover {
+          background: rgba(0, 212, 255, 0.2);
+        }
+        
         .cc-widget-messages {
           flex: 1;
           overflow-y: auto;
-          padding: 15px;
-          background: #f5f5f5;
-        }
-        .cc-message {
-          margin-bottom: 10px;
-          padding: 10px;
-          border-radius: 8px;
-          max-width: 80%;
-          word-wrap: break-word;
-        }
-        .cc-message.user {
-          background: #007bff;
-          color: white;
-          margin-left: auto;
-          text-align: right;
-        }
-        .cc-message.assistant {
-          background: white;
-          color: #333;
-          border: 1px solid #ddd;
-        }
-        .cc-widget-input-container {
-          padding: 15px;
-          border-top: 1px solid #ddd;
+          padding: 16px;
           display: flex;
-          gap: 10px;
+          flex-direction: column;
+          gap: 12px;
         }
+        
+        .cc-message {
+          max-width: 85%;
+          padding: 12px 16px;
+          border-radius: 16px;
+          font-size: 14px;
+          line-height: 1.5;
+          animation: cc-message-fade-in 0.3s ease;
+        }
+        
+        @keyframes cc-message-fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        .cc-message.user {
+          background: linear-gradient(135deg, #0f3460 0%, #16213e 100%);
+          color: white;
+          align-self: flex-end;
+          border-bottom-right-radius: 4px;
+        }
+        
+        .cc-message.assistant {
+          background: #f0f2f5;
+          color: #1a1a2e;
+          align-self: flex-start;
+          border-bottom-left-radius: 4px;
+          border: 1px solid #e4e6ea;
+        }
+        
+        .cc-widget-input-container {
+          display: flex;
+          padding: 16px;
+          gap: 10px;
+          background: white;
+          border-top: 1px solid #e4e6ea;
+        }
+        
         #cc-message-input {
           flex: 1;
-          padding: 10px;
-          border: 1px solid #ddd;
-          border-radius: 5px;
+          padding: 12px 16px;
+          border: 2px solid #e4e6ea;
+          border-radius: 24px;
+          outline: none;
           font-size: 14px;
+          transition: border-color 0.2s;
         }
+        
+        #cc-message-input:focus {
+          border-color: #00d4ff;
+        }
+        
         #cc-send-button {
-          padding: 10px 20px;
-          background: #007bff;
-          color: white;
-          border: none;
-          border-radius: 5px;
+          padding: 12px 24px;
+          background: linear-gradient(135deg, #0f3460 0%, #16213e 100%);
+          color: #00d4ff;
+          border: 2px solid #00d4ff;
+          border-radius: 24px;
           cursor: pointer;
           font-weight: 600;
+          font-size: 14px;
+          transition: all 0.2s;
         }
+        
         #cc-send-button:hover {
-          background: #0056b3;
+          background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
+          box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
         }
-        #cc-send-button:disabled {
-          background: #ccc;
-          cursor: not-allowed;
-        }
+        
         .cc-widget-contact-form {
-          padding: 15px;
-          border-top: 1px solid #ddd;
-          background: #fff3cd;
+          padding: 16px;
+          background: #f8f9fa;
+          border-top: 1px solid #e4e6ea;
         }
+        
+        .cc-widget-contact-form p {
+          margin: 0 0 12px 0;
+          font-size: 14px;
+          color: #1a1a2e;
+        }
+        
         .cc-widget-contact-form input {
           width: 100%;
-          padding: 8px;
-          margin: 5px 0;
-          border: 1px solid #ddd;
-          border-radius: 5px;
+          padding: 10px 14px;
+          border: 2px solid #e4e6ea;
+          border-radius: 8px;
+          margin-bottom: 10px;
+          font-size: 14px;
           box-sizing: border-box;
+          transition: border-color 0.2s;
         }
+        
+        .cc-widget-contact-form input:focus {
+          outline: none;
+          border-color: #00d4ff;
+        }
+        
         #cc-submit-contact {
           width: 100%;
-          padding: 10px;
-          background: #28a745;
-          color: white;
-          border: none;
-          border-radius: 5px;
+          padding: 12px;
+          background: linear-gradient(135deg, #0f3460 0%, #16213e 100%);
+          color: #00d4ff;
+          border: 2px solid #00d4ff;
+          border-radius: 8px;
           cursor: pointer;
-          margin-top: 10px;
+          font-weight: 600;
+          font-size: 14px;
+          transition: all 0.2s;
         }
+        
+        #cc-submit-contact:hover {
+          box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
+        }
+        
         .cc-widget-loading {
-          padding: 10px;
+          padding: 12px 16px;
           text-align: center;
-          color: #666;
+          color: #0f3460;
           font-style: italic;
+          font-size: 14px;
         }
+        
         .cc-widget-container.minimized {
-          height: 50px;
+          height: 60px;
         }
+        
         .cc-widget-container.minimized .cc-widget-messages,
         .cc-widget-container.minimized .cc-widget-input-container,
         .cc-widget-container.minimized .cc-widget-contact-form {
           display: none;
+        }
+        
+        /* Responsive */
+        @media (max-width: 480px) {
+          #chatter-cheetah-widget {
+            bottom: 10px;
+            right: 10px;
+          }
+          
+          .cc-widget-container {
+            width: calc(100vw - 20px);
+            height: 70vh;
+            max-height: 500px;
+          }
+          
+          .cc-widget-toggle {
+            width: 60px;
+            height: 60px;
+          }
+          
+          .cc-robot-icon {
+            width: 32px;
+            height: 32px;
+          }
         }
       `;
       document.head.appendChild(style);
@@ -217,6 +385,7 @@
 
     attachEventListeners: function() {
       const toggle = document.getElementById('cc-toggle');
+      const toggleWrapper = document.getElementById('cc-toggle-wrapper');
       const close = document.querySelector('.cc-widget-close');
       const minimize = document.querySelector('.cc-widget-minimize');
       const sendButton = document.getElementById('cc-send-button');
@@ -238,13 +407,13 @@
 
     toggleWidget: function() {
       const container = document.querySelector('.cc-widget-container');
-      const toggle = document.getElementById('cc-toggle');
+      const toggleWrapper = document.getElementById('cc-toggle-wrapper');
       
       if (this.isOpen) {
         this.closeWidget();
       } else {
         container.style.display = 'flex';
-        toggle.style.display = 'none';
+        toggleWrapper.style.display = 'none';
         this.isOpen = true;
         this.isMinimized = false;
         document.getElementById('cc-message-input').focus();
@@ -253,9 +422,9 @@
 
     closeWidget: function() {
       const container = document.querySelector('.cc-widget-container');
-      const toggle = document.getElementById('cc-toggle');
+      const toggleWrapper = document.getElementById('cc-toggle-wrapper');
       container.style.display = 'none';
-      toggle.style.display = 'block';
+      toggleWrapper.style.display = 'flex';
       this.isOpen = false;
     },
 
@@ -375,4 +544,3 @@
   // Expose globally
   window.ChatterCheetah = ChatterCheetah;
 })();
-

@@ -4,12 +4,12 @@ import { getAllTemplates, cloneTemplateSections, TEMPLATE_CATEGORIES } from '../
 import './Prompts.css';
 
 const SECTION_SCOPES = [
-  { value: 'system', label: 'System Instructions' },
-  { value: 'base', label: 'Base Prompt' },
-  { value: 'pricing', label: 'Pricing Info' },
-  { value: 'faq', label: 'FAQ' },
-  { value: 'business_info', label: 'Business Info' },
-  { value: 'custom', label: 'Custom' },
+  { value: 'system', label: 'System Instructions', icon: '⚙️' },
+  { value: 'base', label: 'Base Prompt', icon: '📋' },
+  { value: 'pricing', label: 'Pricing Info', icon: '💰' },
+  { value: 'faq', label: 'FAQ', icon: '❓' },
+  { value: 'business_info', label: 'Business Info', icon: '🏢' },
+  { value: 'custom', label: 'Custom', icon: '✏️' },
 ];
 
 export default function Prompts() {
@@ -24,7 +24,8 @@ export default function Prompts() {
   const [testResult, setTestResult] = useState(null);
   const [testLoading, setTestLoading] = useState(false);
   const [publishing, setPublishing] = useState(null);
-  const [expandedSections, setExpandedSections] = useState({});
+  const [deleting, setDeleting] = useState(null);
+  const [deactivating, setDeactivating] = useState(null);
 
   const [newBundle, setNewBundle] = useState({
     name: '',
@@ -54,16 +55,6 @@ export default function Prompts() {
     setNewBundle({
       name: template.id === 'blank' ? '' : `${template.name} - Draft`,
       sections: sections,
-    });
-    setShowTemplateSelector(false);
-    setShowCreate(true);
-  };
-
-  const handleStartFromScratch = () => {
-    setSelectedTemplate(null);
-    setNewBundle({
-      name: '',
-      sections: [{ section_key: 'custom_section', scope: 'custom', content: '', order: 0 }],
     });
     setShowTemplateSelector(false);
     setShowCreate(true);
@@ -111,12 +102,39 @@ export default function Prompts() {
   };
 
   const handleDelete = async (bundle) => {
-    if (!confirm(`Are you sure you want to delete "${bundle.name}"? This action cannot be undone.`)) return;
+    if (bundle.status === 'production') {
+      alert('Cannot delete a production bundle. Deactivate it first or create a new production bundle.');
+      return;
+    }
+    if (!confirm(`Delete "${bundle.name}"?\n\nThis action cannot be undone.`)) return;
+    
+    setDeleting(bundle.id);
     try {
       await api.deletePromptBundle(bundle.id);
       setBundles(bundles.filter(b => b.id !== bundle.id));
     } catch (err) {
       alert('Failed to delete: ' + err.message);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleDeactivate = async (bundle) => {
+    if (!confirm(`Deactivate "${bundle.name}"?\n\nThis will remove it from production. Your chatbot will use the default responses until you publish another bundle.`)) return;
+    
+    setDeactivating(bundle.id);
+    try {
+      // Call API to demote from production to draft
+      const updated = await api.updatePromptBundle(bundle.id, {
+        ...bundle,
+        status: 'draft'
+      });
+      setBundles(bundles.map(b => b.id === updated.id ? { ...updated, status: 'draft' } : b));
+      alert('Bundle deactivated. It is now a draft.');
+    } catch (err) {
+      alert('Failed to deactivate: ' + err.message);
+    } finally {
+      setDeactivating(null);
     }
   };
 
@@ -164,33 +182,33 @@ export default function Prompts() {
     setTarget({ ...target, sections: updated });
   };
 
-  const toggleSectionExpanded = (index) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [index]: !prev[index]
-    }));
-  };
-
   const getStatusBadge = (status) => {
-    const colors = {
-      draft: '#6c757d',
-      testing: '#ffc107',
-      production: '#28a745',
+    const config = {
+      draft: { color: '#6c757d', bg: '#f8f9fa', label: 'Draft' },
+      testing: { color: '#856404', bg: '#fff3cd', label: 'Testing' },
+      production: { color: '#155724', bg: '#d4edda', label: '● Live' },
     };
+    const { color, bg, label } = config[status] || config.draft;
     return (
-      <span className="status-badge" style={{ backgroundColor: colors[status] || '#6c757d' }}>
-        {status}
+      <span className="status-badge" style={{ backgroundColor: bg, color }}>
+        {label}
       </span>
     );
   };
 
-  const getScopeLabel = (scopeValue) => {
-    const scope = SECTION_SCOPES.find(s => s.value === scopeValue);
-    return scope ? scope.label : scopeValue;
+  const getScopeInfo = (scopeValue) => {
+    return SECTION_SCOPES.find(s => s.value === scopeValue) || { label: scopeValue, icon: '📝' };
   };
 
   if (loading) {
-    return <div className="loading">Loading prompts...</div>;
+    return (
+      <div className="prompts-page">
+        <div className="loading-state">
+          <div className="loading-spinner"></div>
+          <p>Loading prompts...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -209,7 +227,10 @@ export default function Prompts() {
       {showTemplateSelector && (
         <div className="modal-overlay" onClick={() => setShowTemplateSelector(false)}>
           <div className="modal template-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Choose a Template</h2>
+            <div className="modal-header">
+              <h2>Choose a Template</h2>
+              <button className="modal-close" onClick={() => setShowTemplateSelector(false)}>×</button>
+            </div>
             <p className="modal-subtitle">Start with a pre-built template or create from scratch</p>
 
             <div className="template-grid">
@@ -224,52 +245,153 @@ export default function Prompts() {
                   </div>
                   <h3>{template.name}</h3>
                   <p>{template.description}</p>
-                  <span className="template-category">
-                    {TEMPLATE_CATEGORIES[template.category]?.name || template.category}
-                  </span>
-                  {template.id !== 'blank' && (
-                    <span className="template-sections-count">
-                      {template.sections.length} sections
+                  <div className="template-meta">
+                    <span className="template-category">
+                      {TEMPLATE_CATEGORIES[template.category]?.name || template.category}
                     </span>
-                  )}
+                    {template.id !== 'blank' && (
+                      <span className="template-sections-count">
+                        {template.sections.length} sections
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
-            </div>
-
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => setShowTemplateSelector(false)}
-              >
-                Cancel
-              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Create/Edit Bundle Modal */}
-      {showCreate && (
+      {/* Two-Column Create/Edit Modal */}
+      {showCreate && selectedTemplate && (
         <div className="modal-overlay" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>
-          <div className="modal large-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header-with-info">
-              <h2>
-                {selectedTemplate && selectedTemplate.id !== 'blank'
-                  ? `Create from: ${selectedTemplate.name}`
-                  : 'Create Prompt Bundle'}
-              </h2>
-              {selectedTemplate && selectedTemplate.id !== 'blank' && (
-                <span className="template-badge">Template</span>
-              )}
+          <div className="modal two-column-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title-group">
+                <h2>Create from: {selectedTemplate.name}</h2>
+                {selectedTemplate.id !== 'blank' && (
+                  <span className="template-badge">Template</span>
+                )}
+              </div>
+              <button className="modal-close" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>×</button>
             </div>
 
-            {selectedTemplate && selectedTemplate.id !== 'blank' && (
-              <div className="template-info-banner">
-                <strong>Tip:</strong> Replace text in [BRACKETS] with your specific information.
-                You can add, remove, or modify any section.
+            <div className="two-column-info-banner">
+              <span className="info-icon">💡</span>
+              <span>Replace text in <code>[BRACKETS]</code> with your specific information. The left column shows the template reference.</span>
+            </div>
+
+            <form onSubmit={handleCreate}>
+              <div className="form-group bundle-name-input">
+                <label>Bundle Name</label>
+                <input
+                  type="text"
+                  value={newBundle.name}
+                  onChange={(e) => setNewBundle({ ...newBundle, name: e.target.value })}
+                  placeholder="e.g., Main Sales Prompt"
+                  required
+                />
               </div>
-            )}
+
+              <div className="two-column-sections">
+                {newBundle.sections.map((section, idx) => {
+                  const templateSection = selectedTemplate.sections?.[idx];
+                  const scopeInfo = getScopeInfo(section.scope);
+                  
+                  return (
+                    <div key={idx} className="two-column-section">
+                      <div className="section-label-row">
+                        <div className="section-label-left">
+                          <span className="scope-icon">{scopeInfo.icon}</span>
+                          <input
+                            type="text"
+                            className="section-key-input"
+                            placeholder="Section key"
+                            value={section.section_key}
+                            onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'section_key', e.target.value)}
+                            required
+                          />
+                          <select
+                            className="scope-select"
+                            value={section.scope}
+                            onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'scope', e.target.value)}
+                          >
+                            {SECTION_SCOPES.map(s => (
+                              <option key={s.value} value={s.value}>{s.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-remove-section"
+                          onClick={() => removeSection(newBundle, setNewBundle, idx)}
+                          title="Remove section"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                      
+                      <div className="two-column-content">
+                        {/* Left Column: Template Reference (Read-only) */}
+                        <div className="column template-column">
+                          <div className="column-header">
+                            <span className="column-label">📖 Template Reference</span>
+                          </div>
+                          <div className="template-reference-content">
+                            {templateSection?.content || (
+                              <span className="no-template">No template content for this section</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right Column: Your Content (Editable) */}
+                        <div className="column edit-column">
+                          <div className="column-header">
+                            <span className="column-label">✏️ Your Content</span>
+                          </div>
+                          <textarea
+                            value={section.content}
+                            onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'content', e.target.value)}
+                            placeholder="Enter your customized content here..."
+                            rows={10}
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                className="btn-add-section"
+                onClick={() => addSection(newBundle, setNewBundle)}
+              >
+                + Add Section
+              </button>
+
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  Create Draft
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Simple Create Modal (Blank Template) */}
+      {showCreate && selectedTemplate?.id === 'blank' && (
+        <div className="modal-overlay" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>
+          <div className="modal large-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Create Prompt Bundle</h2>
+              <button className="modal-close" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>×</button>
+            </div>
 
             <form onSubmit={handleCreate}>
               <div className="form-group">
@@ -296,73 +418,44 @@ export default function Prompts() {
 
               <div className="sections-list">
                 {newBundle.sections.map((section, idx) => (
-                  <div key={idx} className={`section-editor ${expandedSections[idx] !== false ? 'expanded' : 'collapsed'}`}>
-                    <div
-                      className="section-header-bar"
-                      onClick={() => toggleSectionExpanded(idx)}
-                    >
-                      <div className="section-header-left">
-                        <span className="section-expand-icon">
-                          {expandedSections[idx] !== false ? '▼' : '▶'}
-                        </span>
-                        <span className="section-key-display">
-                          {section.section_key || 'Untitled Section'}
-                        </span>
-                        <span className="section-scope-badge">
-                          {getScopeLabel(section.scope)}
-                        </span>
-                      </div>
+                  <div key={idx} className="section-editor">
+                    <div className="section-editor-header">
+                      <input
+                        type="text"
+                        placeholder="Section key (e.g., greeting)"
+                        value={section.section_key}
+                        onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'section_key', e.target.value)}
+                        required
+                      />
+                      <select
+                        value={section.scope}
+                        onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'scope', e.target.value)}
+                      >
+                        {SECTION_SCOPES.map(s => (
+                          <option key={s.value} value={s.value}>{s.label}</option>
+                        ))}
+                      </select>
                       <button
                         type="button"
                         className="btn-danger-small"
-                        onClick={(e) => { e.stopPropagation(); removeSection(newBundle, setNewBundle, idx); }}
+                        onClick={() => removeSection(newBundle, setNewBundle, idx)}
                       >
                         Remove
                       </button>
                     </div>
-
-                    {expandedSections[idx] !== false && (
-                      <div className="section-content">
-                        <div className="section-header">
-                          <input
-                            type="text"
-                            placeholder="Section key (e.g., greeting)"
-                            value={section.section_key}
-                            onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'section_key', e.target.value)}
-                            required
-                          />
-                        </div>
-                        <textarea
-                          value={section.content}
-                          onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'content', e.target.value)}
-                          placeholder="Enter prompt content for this section..."
-                          rows={8}
-                          required
-                        />
-                        {section.placeholder_hints && (
-                          <div className="placeholder-hints">
-                            <strong>Placeholders to replace:</strong>
-                            <ul>
-                              {Object.entries(section.placeholder_hints).map(([placeholder, hint]) => (
-                                <li key={placeholder}>
-                                  <code>{placeholder}</code> → {hint}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <textarea
+                      value={section.content}
+                      onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'content', e.target.value)}
+                      placeholder="Enter prompt content..."
+                      rows={6}
+                      required
+                    />
                   </div>
                 ))}
               </div>
 
               <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}
-                >
+                <button type="button" className="btn-secondary" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>
                   Cancel
                 </button>
                 <button type="submit" className="btn-primary">
@@ -378,22 +471,44 @@ export default function Prompts() {
       {editBundle && (
         <div className="modal-overlay" onClick={() => setEditBundle(null)}>
           <div className="modal large-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>{editBundle.status === 'production' ? 'View' : 'Edit'} Bundle: {editBundle.name}</h2>
+            <div className="modal-header">
+              <div className="modal-title-group">
+                <h2>{editBundle.status === 'production' ? 'View' : 'Edit'}: {editBundle.name}</h2>
+                {getStatusBadge(editBundle.status)}
+              </div>
+              <button className="modal-close" onClick={() => setEditBundle(null)}>×</button>
+            </div>
+
             {editBundle.status === 'production' ? (
               <>
-                <p className="warning">This bundle is live. Create a new bundle to make changes.</p>
+                <div className="production-warning">
+                  <span className="warning-icon">⚠️</span>
+                  <span>This bundle is live. To make changes, deactivate it first or create a new draft.</span>
+                </div>
                 <div className="readonly-sections">
-                  {editBundle.sections?.map((section, idx) => (
-                    <div key={idx} className="section-readonly">
-                      <div className="section-readonly-header">
-                        <span className="section-key-display">{section.section_key}</span>
-                        <span className="section-scope-badge">{getScopeLabel(section.scope)}</span>
+                  {editBundle.sections?.map((section, idx) => {
+                    const scopeInfo = getScopeInfo(section.scope);
+                    return (
+                      <div key={idx} className="section-readonly">
+                        <div className="section-readonly-header">
+                          <span className="scope-icon">{scopeInfo.icon}</span>
+                          <span className="section-key-display">{section.section_key}</span>
+                          <span className="section-scope-badge">{scopeInfo.label}</span>
+                        </div>
+                        <pre className="section-readonly-content">{section.content}</pre>
                       </div>
-                      <pre className="section-readonly-content">{section.content}</pre>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn-warning"
+                    onClick={() => { setEditBundle(null); handleDeactivate(editBundle); }}
+                    disabled={deactivating === editBundle.id}
+                  >
+                    {deactivating === editBundle.id ? 'Deactivating...' : 'Deactivate Bundle'}
+                  </button>
                   <button type="button" className="btn-secondary" onClick={() => setEditBundle(null)}>
                     Close
                   </button>
@@ -422,44 +537,46 @@ export default function Prompts() {
                   </button>
                 </div>
 
-                {editBundle.sections?.map((section, idx) => (
-                  <div key={idx} className="section-editor expanded">
-                    <div className="section-header-bar">
-                      <div className="section-header-left">
-                        <span className="section-key-display">
-                          {section.section_key || 'Untitled Section'}
-                        </span>
-                        <span className="section-scope-badge">
-                          {getScopeLabel(section.scope)}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-danger-small"
-                        onClick={() => removeSection(editBundle, setEditBundle, idx)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <div className="section-content">
-                      <div className="section-header">
-                        <input
-                          type="text"
-                          placeholder="Section key"
-                          value={section.section_key}
-                          onChange={(e) => updateSection(editBundle, setEditBundle, idx, 'section_key', e.target.value)}
+                <div className="sections-list">
+                  {editBundle.sections?.map((section, idx) => {
+                    const scopeInfo = getScopeInfo(section.scope);
+                    return (
+                      <div key={idx} className="section-editor">
+                        <div className="section-editor-header">
+                          <span className="scope-icon">{scopeInfo.icon}</span>
+                          <input
+                            type="text"
+                            placeholder="Section key"
+                            value={section.section_key}
+                            onChange={(e) => updateSection(editBundle, setEditBundle, idx, 'section_key', e.target.value)}
+                            required
+                          />
+                          <select
+                            value={section.scope}
+                            onChange={(e) => updateSection(editBundle, setEditBundle, idx, 'scope', e.target.value)}
+                          >
+                            {SECTION_SCOPES.map(s => (
+                              <option key={s.value} value={s.value}>{s.label}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="btn-danger-small"
+                            onClick={() => removeSection(editBundle, setEditBundle, idx)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <textarea
+                          value={section.content}
+                          onChange={(e) => updateSection(editBundle, setEditBundle, idx, 'content', e.target.value)}
+                          rows={6}
                           required
                         />
                       </div>
-                      <textarea
-                        value={section.content}
-                        onChange={(e) => updateSection(editBundle, setEditBundle, idx, 'content', e.target.value)}
-                        rows={6}
-                        required
-                      />
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })}
+                </div>
 
                 <div className="modal-actions">
                   <button type="button" className="btn-secondary" onClick={() => setEditBundle(null)}>
@@ -479,7 +596,10 @@ export default function Prompts() {
       {testBundle && (
         <div className="modal-overlay" onClick={() => { setTestBundle(null); setTestResult(null); }}>
           <div className="modal test-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Test: {testBundle.name}</h2>
+            <div className="modal-header">
+              <h2>Test: {testBundle.name}</h2>
+              <button className="modal-close" onClick={() => { setTestBundle(null); setTestResult(null); }}>×</button>
+            </div>
             <p className="modal-subtitle">Send a test message to see how your chatbot responds</p>
 
             <form onSubmit={handleTest}>
@@ -488,7 +608,7 @@ export default function Prompts() {
                 <textarea
                   value={testMessage}
                   onChange={(e) => setTestMessage(e.target.value)}
-                  placeholder="Type a message to test the chatbot response... (e.g., 'What swim classes do you offer for a 4 year old?')"
+                  placeholder="Type a message to test... (e.g., 'What swim classes do you offer for a 4 year old?')"
                   rows={3}
                   required
                 />
@@ -498,16 +618,19 @@ export default function Prompts() {
               </button>
 
               {testResult && (
-                <div className="test-result">
+                <div className={`test-result ${testResult.error ? 'error' : 'success'}`}>
                   {testResult.error ? (
-                    <p className="error">Error: {testResult.error}</p>
+                    <div className="result-error">
+                      <span className="error-icon">❌</span>
+                      <span>Error: {testResult.error}</span>
+                    </div>
                   ) : (
                     <>
                       <div className="result-section">
                         <label>AI Response:</label>
-                        <pre>{testResult.response}</pre>
+                        <div className="ai-response">{testResult.response}</div>
                       </div>
-                      <details>
+                      <details className="debug-details">
                         <summary>View Composed Prompt (Debug)</summary>
                         <pre className="composed-prompt">{testResult.composed_prompt}</pre>
                       </details>
@@ -516,12 +639,6 @@ export default function Prompts() {
                 </div>
               )}
             </form>
-            <button
-              className="btn-secondary close-btn"
-              onClick={() => { setTestBundle(null); setTestResult(null); }}
-            >
-              Close
-            </button>
           </div>
         </div>
       )}
@@ -545,32 +662,50 @@ export default function Prompts() {
                 {getStatusBadge(bundle.status)}
               </div>
               <div className="bundle-meta">
-                <span>v{bundle.version}</span>
+                <span className="version-tag">v{bundle.version}</span>
                 {bundle.published_at && (
-                  <span>Published: {new Date(bundle.published_at).toLocaleDateString()}</span>
+                  <span className="published-date">
+                    Published: {new Date(bundle.published_at).toLocaleDateString()}
+                  </span>
                 )}
+                <span className="section-count">
+                  {bundle.sections?.length || '?'} sections
+                </span>
               </div>
               <div className="bundle-actions">
-                <button className="btn-secondary" onClick={() => setTestBundle(bundle)}>
-                  Test
+                <button className="btn-icon" onClick={() => setTestBundle(bundle)} title="Test">
+                  🧪
                 </button>
-                <button className="btn-secondary" onClick={() => openEdit(bundle)}>
-                  {bundle.status === 'production' ? 'View' : 'Edit'}
+                <button className="btn-icon" onClick={() => openEdit(bundle)} title={bundle.status === 'production' ? 'View' : 'Edit'}>
+                  {bundle.status === 'production' ? '👁️' : '✏️'}
                 </button>
-                {bundle.status !== 'production' && (
+                
+                {bundle.status === 'production' ? (
+                  <button
+                    className="btn-warning-small"
+                    onClick={() => handleDeactivate(bundle)}
+                    disabled={deactivating === bundle.id}
+                    title="Deactivate"
+                  >
+                    {deactivating === bundle.id ? '...' : '⏸️ Deactivate'}
+                  </button>
+                ) : (
                   <>
                     <button
-                      className="btn-primary"
+                      className="btn-success-small"
                       onClick={() => handlePublish(bundle.id)}
                       disabled={publishing === bundle.id}
+                      title="Publish to production"
                     >
-                      {publishing === bundle.id ? 'Publishing...' : 'Publish'}
+                      {publishing === bundle.id ? '...' : '🚀 Publish'}
                     </button>
                     <button
-                      className="btn-danger"
+                      className="btn-danger-small"
                       onClick={() => handleDelete(bundle)}
+                      disabled={deleting === bundle.id}
+                      title="Delete"
                     >
-                      Delete
+                      {deleting === bundle.id ? '...' : '🗑️'}
                     </button>
                   </>
                 )}

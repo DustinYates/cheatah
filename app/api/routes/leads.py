@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_tenant_id
+from app.api.deps import get_current_user, require_tenant_context
 from app.domain.services.lead_service import LeadService
 from app.persistence.database import get_db
 from app.persistence.models.user import User
@@ -41,7 +41,7 @@ class LeadsListResponse(BaseModel):
 async def list_leads(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-    tenant_id: Annotated[int, Depends(get_tenant_id)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
 ) -> LeadsListResponse:
@@ -72,7 +72,7 @@ async def get_lead(
     lead_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-    tenant_id: Annotated[int, Depends(get_tenant_id)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> LeadResponse:
     """Get a specific lead by ID."""
     lead_service = LeadService(db)

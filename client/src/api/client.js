@@ -1,4 +1,4 @@
-const API_BASE = '/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
 
 class ApiClient {
   constructor() {
@@ -23,8 +23,8 @@ class ApiClient {
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
-    
-    // Add tenant override header for global admin impersonation
+
+    // Add tenant impersonation header if global admin has selected a tenant
     const selectedTenant = this.getSelectedTenant();
     const userInfo = this.getUserInfo();
     if (userInfo?.is_global_admin && selectedTenant) {
@@ -54,50 +54,29 @@ class ApiClient {
   }
 
   async login(email, password) {
-    const response = await fetch(`${API_BASE}/auth/login`, {
+    const response = await this.request('/auth/login', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({ email, password }),
     });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Login failed' }));
-      throw new Error(error.detail || 'Login failed');
+    
+    if (response.access_token) {
+      this.setToken(response.access_token);
+      // Store user info for later use
+      localStorage.setItem('userInfo', JSON.stringify({
+        tenant_id: response.tenant_id,
+        role: response.role,
+        email: response.email,
+        is_global_admin: response.is_global_admin,
+      }));
     }
-
-    const data = await response.json();
-    this.setToken(data.access_token);
-    // Store user info in localStorage
-    localStorage.setItem('userInfo', JSON.stringify({
-      email: data.email,
-      role: data.role,
-      tenant_id: data.tenant_id,
-      is_global_admin: data.is_global_admin,
-    }));
-    return data;
+    
+    return response;
   }
 
   logout() {
     this.setToken(null);
     localStorage.removeItem('userInfo');
     localStorage.removeItem('selectedTenantId');
-  }
-
-  async getMe() {
-    return this.request('/auth/me');
-  }
-
-  async getTenants() {
-    return this.request('/admin/tenants');
-  }
-
-  async createTenant(data) {
-    return this.request('/admin/tenants', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
   }
 
   setSelectedTenant(tenantId) {
@@ -125,6 +104,13 @@ class ApiClient {
 
   async getLeadsStats() {
     return this.request('/leads/stats');
+  }
+
+  async updateLeadStatus(leadId, status) {
+    return this.request(`/leads/${leadId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
   }
 
   async getPromptBundles() {
@@ -176,7 +162,6 @@ class ApiClient {
     });
 
     if (response.status === 401) {
-      // Clear all auth state on 401 (token expired or invalid)
       this.setToken(null);
       localStorage.removeItem('userInfo');
       localStorage.removeItem('selectedTenantId');

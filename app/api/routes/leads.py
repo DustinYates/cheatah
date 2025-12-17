@@ -23,6 +23,7 @@ class LeadResponse(BaseModel):
     name: str | None
     email: str | None
     phone: str | None
+    status: str | None
     extra_data: dict | None
     created_at: str
 
@@ -35,6 +36,12 @@ class LeadsListResponse(BaseModel):
 
     leads: list[LeadResponse]
     total: int
+
+
+class LeadStatusUpdate(BaseModel):
+    """Lead status update request."""
+    
+    status: str  # 'new', 'verified', 'unknown'
 
 
 @router.get("", response_model=LeadsListResponse)
@@ -58,6 +65,7 @@ async def list_leads(
                 name=lead.name,
                 email=lead.email,
                 phone=lead.phone,
+                status=lead.status if hasattr(lead, 'status') else None,
                 extra_data=lead.extra_data,
                 created_at=lead.created_at.isoformat() if lead.created_at else None,
             )
@@ -91,6 +99,46 @@ async def get_lead(
         name=lead.name,
         email=lead.email,
         phone=lead.phone,
+        status=lead.status if hasattr(lead, 'status') else None,
+        extra_data=lead.extra_data,
+        created_at=lead.created_at.isoformat() if lead.created_at else None,
+    )
+
+
+@router.put("/{lead_id}/status", response_model=LeadResponse)
+async def update_lead_status(
+    lead_id: int,
+    status_update: LeadStatusUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> LeadResponse:
+    """Update lead status (verify or mark unknown)."""
+    # Validate status
+    valid_statuses = ['new', 'verified', 'unknown']
+    if status_update.status not in valid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status. Must be one of: {valid_statuses}",
+        )
+    
+    lead_service = LeadService(db)
+    lead = await lead_service.update_lead_status(tenant_id, lead_id, status_update.status)
+    
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found",
+        )
+    
+    return LeadResponse(
+        id=lead.id,
+        tenant_id=lead.tenant_id,
+        conversation_id=lead.conversation_id,
+        name=lead.name,
+        email=lead.email,
+        phone=lead.phone,
+        status=lead.status if hasattr(lead, 'status') else None,
         extra_data=lead.extra_data,
         created_at=lead.created_at.isoformat() if lead.created_at else None,
     )

@@ -87,3 +87,24 @@ class LeadService:
         """
         return await self.lead_repo.get_by_conversation(tenant_id, conversation_id)
 
+    async def update_lead_status(
+        self, tenant_id: int, lead_id: int, status: str
+    ) -> Lead | None:
+        """Update lead status.
+
+        Args:
+            tenant_id: Tenant ID
+            lead_id: Lead ID
+            status: New status ('new', 'verified', 'unknown')
+
+        Returns:
+            Updated lead or None if not found
+        """
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            return None
+        
+        lead.status = status
+        await self.session.commit()
+        await self.session.refresh(lead)
+        return lead

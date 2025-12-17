@@ -24,6 +24,7 @@ class Lead(Base):
     email = Column(String(255), nullable=True, index=True)
     phone = Column(String(50), nullable=True, index=True)
     name = Column(String(255), nullable=True)
+    status = Column(String(50), nullable=True, default='new', index=True)  # new, verified, unknown
     extra_data = Column(JSON, nullable=True)  # Additional flexible data (avoiding 'metadata' reserved name)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -32,5 +33,4 @@ class Lead(Base):
     conversation = relationship("Conversation", back_populates="leads")
 
     def __repr__(self) -> str:
-        return f"<Lead(id={self.id}, tenant_id={self.tenant_id}, email={self.email}, phone={self.phone})>"
-
+        return f"<Lead(id={self.id}, tenant_id={self.tenant_id}, email={self.email}, phone={self.phone}, status={self.status})>"

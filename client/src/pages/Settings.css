@@ -1,0 +1,111 @@
+/* Settings Page Styles */
+.settings-page {
+  max-width: 640px;
+}
+
+.settings-page h1 {
+  margin: 0 0 var(--spacing-sm) 0;
+  color: var(--color-text-primary);
+}
+
+.settings-page .description {
+  color: var(--color-text-muted);
+  margin: 0 0 var(--spacing-xl) 0;
+  font-size: var(--font-size-sm);
+}
+
+/* Form Card */
+.settings-form {
+  background: var(--color-bg-card);
+  padding: var(--spacing-xl);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-form .form-group {
+  margin-bottom: var(--spacing-lg);
+}
+
+.settings-form .form-group:last-of-type {
+  margin-bottom: var(--spacing-xl);
+}
+
+.settings-form label {
+  display: block;
+  margin-bottom: var(--spacing-sm);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.settings-form input {
+  width: 100%;
+  padding: 12px var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  transition: all var(--transition-fast);
+}
+
+.settings-form input:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.15);
+}
+
+.settings-form input::placeholder {
+  color: var(--color-text-light);
+}
+
+.settings-form small {
+  display: block;
+  margin-top: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* Messages */
+.error-message {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-lg);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-error-border);
+}
+
+.success-message {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-lg);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-success-border);
+}
+
+/* Save Button */
+.save-btn {
+  padding: 12px var(--spacing-xl);
+  background: var(--color-primary);
+  color: var(--color-text-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.save-btn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.save-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}

@@ -1,0 +1,81 @@
+# This file specifies files that are *not* uploaded to Google Cloud
+# using gcloud. It follows the same syntax as .gitignore.
+
+# Ignore git directory
+.git/
+.gitignore
+
+# Python virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files (sensitive)
+.env
+.env.local
+.env.sync
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+tests/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Development files
+notebooks/
+client/node_modules/
+
+# uv cache
+.uv/
+
+# Replit
+.pythonlibs/
+.cache/
+.local/
+.cursor/
+.replit
+replit.md
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Scripts not needed in production
+scripts/
+docs/
+
+# Do NOT ignore these (needed for build):
+# - README.md
+# - pyproject.toml
+# - uv.lock
+# - app/
+# - alembic/
+# - static/
+# - Dockerfile

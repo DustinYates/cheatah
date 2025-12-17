@@ -1,0 +1,226 @@
+/* Layout Styles */
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--color-bg-dark);
+  color: var(--color-text-white);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 100;
+}
+
+.logo {
+  margin-bottom: var(--spacing-xl);
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logo h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.logo h2::before {
+  content: "🐆";
+  font-size: 1.4rem;
+}
+
+/* Navigation */
+.nav-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+}
+
+.nav-links li {
+  margin-bottom: var(--spacing-xs);
+}
+
+.nav-links a {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 12px var(--spacing-md);
+  color: var(--color-text-light);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-base);
+  font-size: var(--font-size-sm);
+}
+
+.nav-links a:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-white);
+}
+
+.nav-links a.active {
+  background: var(--color-primary);
+  color: var(--color-bg-dark);
+  font-weight: 500;
+}
+
+/* User Info */
+.user-info {
+  padding: var(--spacing-md) 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: auto;
+}
+
+.user-email {
+  display: block;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: var(--spacing-xs);
+}
+
+.admin-badge {
+  display: inline-block;
+  background: var(--color-primary);
+  color: var(--color-bg-dark);
+  font-size: var(--font-size-xs);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Logout Button */
+.logout-btn {
+  width: 100%;
+  margin-top: var(--spacing-md);
+  padding: 12px var(--spacing-md);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--color-text-light);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  transition: all var(--transition-base);
+}
+
+.logout-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--color-text-white);
+}
+
+/* Main Content */
+.content {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  background: var(--color-bg-light);
+  padding: var(--spacing-xl);
+  min-height: 100vh;
+}
+
+/* Impersonation Banner */
+.impersonation-banner {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width);
+  right: 0;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  z-index: 99;
+  border-bottom: 1px solid var(--color-warning-border);
+}
+
+.impersonation-banner strong {
+  color: var(--color-text-primary);
+}
+
+.impersonation-banner .exit-btn {
+  padding: 4px 12px;
+  background: var(--color-bg-dark);
+  color: var(--color-text-white);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.impersonation-banner .exit-btn:hover {
+  background: var(--color-bg-dark-hover);
+}
+
+/* Tenant Selector */
+.tenant-selector {
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tenant-selector label {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-light);
+  margin-bottom: var(--spacing-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tenant-selector select {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--color-bg-dark-hover);
+  color: var(--color-text-white);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.tenant-selector select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.tenant-selector select option {
+  background: var(--color-bg-dark);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100%;
+    position: relative;
+    padding: var(--spacing-md);
+  }
+  
+  .content {
+    margin-left: 0;
+    padding: var(--spacing-md);
+  }
+  
+  .impersonation-banner {
+    left: 0;
+    font-size: var(--font-size-xs);
+  }
+}

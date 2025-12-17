@@ -1,0 +1,211 @@
+/* SMS Settings Page Styles */
+.sms-settings-page {
+  max-width: 800px;
+}
+
+.sms-settings-page h1 {
+  margin-bottom: var(--spacing-lg);
+  color: var(--color-text-primary);
+}
+
+/* Cards */
+.sms-settings-page .card {
+  background: var(--color-bg-card);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.sms-settings-page .card h2 {
+  font-size: var(--font-size-lg);
+  margin-bottom: var(--spacing-md);
+  color: var(--color-text-primary);
+}
+
+/* Phone Status */
+.phone-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-bg-light);
+  border-radius: var(--radius-md);
+}
+
+.phone-status.active {
+  background: var(--color-success-bg);
+}
+
+.phone-status.inactive {
+  background: var(--color-warning-bg);
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-text-light);
+  flex-shrink: 0;
+}
+
+.phone-status.active .status-dot {
+  background: var(--color-success);
+}
+
+.phone-status.inactive .status-dot {
+  background: var(--color-warning);
+}
+
+.phone-number {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
+}
+
+.status-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Toggle Row */
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md) 0;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.toggle-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+/* Form Groups */
+.sms-settings-page .form-group {
+  margin: var(--spacing-md) 0;
+}
+
+.sms-settings-page .form-group label {
+  display: block;
+  margin-bottom: var(--spacing-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.sms-settings-page input[type="tel"],
+.sms-settings-page textarea,
+.sms-settings-page select {
+  width: 100%;
+  padding: 12px var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  font-family: inherit;
+  transition: all var(--transition-fast);
+}
+
+.sms-settings-page textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.sms-settings-page input:focus,
+.sms-settings-page textarea:focus,
+.sms-settings-page select:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.15);
+}
+
+/* Help Text */
+.sms-settings-page .help-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin: var(--spacing-sm) 0;
+  line-height: 1.5;
+}
+
+/* Buttons */
+.sms-settings-page .btn {
+  padding: 12px var(--spacing-lg);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.sms-settings-page .btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sms-settings-page .btn-primary {
+  background: var(--color-primary);
+  color: var(--color-text-primary);
+}
+
+.sms-settings-page .btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.sms-settings-page .btn-secondary {
+  background: var(--color-success);
+  color: white;
+}
+
+.sms-settings-page .btn-secondary:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+}
+
+/* Alerts */
+.sms-settings-page .alert {
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-lg);
+  font-size: var(--font-size-sm);
+}
+
+.sms-settings-page .alert-success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success-border);
+}
+
+.sms-settings-page .alert-error {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  border: 1px solid var(--color-error-border);
+}
+
+/* Loading */
+.sms-settings-page .loading {
+  text-align: center;
+  padding: var(--spacing-2xl);
+  color: var(--color-text-muted);
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .sms-settings-page {
+    padding: 0;
+  }
+  
+  .phone-status {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -1,31 +1,30 @@
 # Build stage
-FROM node:20-alpine AS builder
-
+FROM node:20-alpine AS build
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
 RUN npm ci
+
+# Copy source code
 COPY . .
+
+# Build the app
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine AS production
+FROM nginx:alpine
 
-RUN apk add --no-cache gettext
+# Copy built assets from build stage
+COPY --from=build /app/dist /usr/share/nginx/html
 
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/templates/default.conf.template
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup && \
-    chown -R appuser:appgroup /usr/share/nginx/html && \
-    chown -R appuser:appgroup /var/cache/nginx && \
-    chown -R appuser:appgroup /var/log/nginx && \
-    touch /var/run/nginx.pid && \
-    chown -R appuser:appgroup /var/run/nginx.pid
+# Expose port 80
+EXPOSE 80
 
-EXPOSE 8080
-
-ENV API_URL=https://chattercheatah-iyv6z6wp7a-uc.a.run.app
-
-CMD ["/bin/sh", "-c", "envsubst '${API_URL}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

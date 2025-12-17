@@ -36,14 +36,14 @@ export default function Dashboard() {
   return (
     <div className="dashboard">
       <h1>Dashboard</h1>
-      
+
       <div className="dashboard-grid">
         <div className="card leads-card">
           <h2>Recent Leads</h2>
           {error && <div className="error">{error}</div>}
-          
+
           {leads.length === 0 ? (
-            <EmptyState 
+            <EmptyState
               icon="📋"
               title="No leads yet"
               description="Start conversations to generate leads."
@@ -53,8 +53,8 @@ export default function Dashboard() {
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Email</th>
                   <th>Phone</th>
-                  <th>Status</th>
                   <th>Date</th>
                 </tr>
               </thead>
@@ -62,12 +62,8 @@ export default function Dashboard() {
                 {leads.map((lead) => (
                   <tr key={lead.id}>
                     <td>{lead.name || 'Unknown'}</td>
-                    <td>{lead.phone_number}</td>
-                    <td>
-                      <span className={`status ${lead.status}`}>
-                        {lead.status}
-                      </span>
-                    </td>
+                    <td>{lead.email || '-'}</td>
+                    <td>{lead.phone || '-'}</td>
                     <td>{new Date(lead.created_at).toLocaleDateString()}</td>
                   </tr>
                 ))}

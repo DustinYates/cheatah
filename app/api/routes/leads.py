@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_tenant_context
 from app.domain.services.lead_service import LeadService
 from app.persistence.database import get_db
-from app.persistence.models.user import User
+from app.persistence.models.tenant import User
 
 router = APIRouter()
 

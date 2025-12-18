@@ -9,7 +9,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'https://chattercheatah-900139201687.us-central1.run.app',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
     },

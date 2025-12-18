@@ -1,5 +1,8 @@
 """Chat service for processing web chat requests."""
 
+import json
+import logging
+import re
 import time
 from dataclasses import dataclass
 
@@ -11,6 +14,8 @@ from app.domain.services.prompt_service import PromptService
 from app.llm.orchestrator import LLMOrchestrator
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.repositories.tenant_repository import TenantRepository
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -163,6 +168,66 @@ class ChatService:
             tenant_id, conversation.id, "assistant", llm_response
         )
 
+        # Try to extract contact info from conversation if no lead captured yet
+        if not lead_captured:
+            logger.debug(
+                f"Checking for existing lead - tenant_id={tenant_id}, conversation_id={conversation.id}"
+            )
+            existing_lead = await self.lead_service.get_lead_by_conversation(
+                tenant_id, conversation.id
+            )
+            if not existing_lead:
+                logger.debug(
+                    f"No existing lead found, attempting extraction from conversation "
+                    f"(tenant_id={tenant_id}, conversation_id={conversation.id})"
+                )
+                # Extract contact info from conversation messages
+                extracted_info = await self._extract_contact_info_from_conversation(
+                    messages, user_message
+                )
+                
+                logger.debug(
+                    f"Extracted contact info: name={extracted_info.get('name')}, "
+                    f"email={extracted_info.get('email')}, phone={extracted_info.get('phone')}"
+                )
+                
+                # If any contact info was extracted, create a lead
+                extracted_name = extracted_info.get("name")
+                extracted_email = extracted_info.get("email")
+                extracted_phone = extracted_info.get("phone")
+                
+                if extracted_name or extracted_email or extracted_phone:
+                    try:
+                        lead = await self.lead_service.capture_lead(
+                            tenant_id=tenant_id,
+                            conversation_id=conversation.id,
+                            email=extracted_email,
+                            phone=extracted_phone,
+                            name=extracted_name,
+                        )
+                        lead_captured = True
+                        logger.info(
+                            f"Lead auto-captured from conversation - tenant_id={tenant_id}, "
+                            f"conversation_id={conversation.id}, lead_id={lead.id}, "
+                            f"name={extracted_name}, email={extracted_email}, phone={extracted_phone}"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to capture lead after extraction - tenant_id={tenant_id}, "
+                            f"conversation_id={conversation.id}, error={e}",
+                            exc_info=True
+                        )
+                else:
+                    logger.debug(
+                        f"No contact info extracted from conversation "
+                        f"(tenant_id={tenant_id}, conversation_id={conversation.id})"
+                    )
+            else:
+                logger.debug(
+                    f"Lead already exists for conversation - tenant_id={tenant_id}, "
+                    f"conversation_id={conversation.id}, lead_id={existing_lead.id}"
+                )
+
         # If we need contact info, append a nudge
         final_response = llm_response
         if requires_contact_info and not lead_captured:
@@ -256,6 +321,169 @@ class ChatService:
         
         return "\n".join(prompt_parts)
 
+    def _extract_email_regex(self, text: str) -> str | None:
+        """Extract email using regex as fallback."""
+        # Simple email regex pattern
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        matches = re.findall(email_pattern, text, re.IGNORECASE)
+        return matches[0].lower() if matches else None
+    
+    def _extract_phone_regex(self, text: str) -> str | None:
+        """Extract phone number using regex as fallback."""
+        # Phone pattern - matches various formats
+        phone_pattern = r'(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})'
+        matches = re.findall(phone_pattern, text)
+        if matches:
+            # Extract digits only
+            match = matches[0]
+            digits = ''.join([m for m in match if m and m.isdigit()])
+            if len(digits) >= 10:
+                # Format as US phone: +1XXXXXXXXXX or just the 10 digits
+                if len(digits) == 10:
+                    return digits
+                elif len(digits) == 11 and digits[0] == '1':
+                    return digits
+        return None
+    
+    def _extract_name_regex(self, text: str) -> str | None:
+        """Extract name using regex patterns as fallback."""
+        # Patterns like "I'm X", "my name is X", "I am X", "this is X", "im X"
+        patterns = [
+            r"(?:I'?m|I am|my name is|this is|im|name's)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            r"([A-Z][a-z]+\s+[A-Z][a-z]+)",  # First Last format
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, text)
+            if matches:
+                name = matches[0].strip()
+                # Filter out common false positives (words that are too short or common)
+                if len(name.split()) >= 1 and len(name) > 2:
+                    # Skip if it looks like a sentence starter
+                    if name.lower() not in ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all']:
+                        return name
+        return None
+
+    async def _extract_contact_info_from_conversation(
+        self,
+        messages: list[Message],
+        current_user_message: str,
+    ) -> dict[str, str | None]:
+        """Extract contact information from conversation messages using LLM with regex fallback.
+        
+        Args:
+            messages: Previous messages in conversation
+            current_user_message: Current user message
+            
+        Returns:
+            Dictionary with 'name', 'email', 'phone' keys (values may be None)
+        """
+        # First, try regex extraction from the current message as a quick fallback
+        all_text = current_user_message
+        for msg in messages:
+            if msg.role == "user":
+                all_text += " " + msg.content
+        
+        regex_email = self._extract_email_regex(all_text)
+        regex_phone = self._extract_phone_regex(all_text)
+        regex_name = self._extract_name_regex(all_text)
+        
+        logger.debug(
+            f"Regex extraction results - name={regex_name}, email={regex_email}, phone={regex_phone}"
+        )
+        
+        # Build conversation text for LLM extraction
+        conversation_text = []
+        for msg in messages:
+            if msg.role == "user":
+                conversation_text.append(f"User: {msg.content}")
+        conversation_text.append(f"User: {current_user_message}")
+        
+        # Limit to recent messages to avoid large prompts
+        recent_messages = conversation_text[-10:]  # Last 10 user messages
+        
+        extraction_prompt = """Analyze the following conversation messages and extract any contact information the user has provided.
+
+Conversation:
+{}
+
+Extract the following information if present:
+- name: The user's full name or first name (e.g., if user says "I'm John Doe" or "my name is Bob", extract "John Doe" or "Bob")
+- email: The user's email address (look for patterns like "user@domain.com")
+- phone: The user's phone number (any format)
+
+IMPORTANT:
+- Only extract information that was explicitly stated by the user
+- Names can appear in various forms: "I'm X", "my name is X", "I am X", "this is X", or just "X"
+- Do not make up or infer contact details
+- Return null for any field not found
+- For phone, include any format provided
+
+Respond with ONLY a valid JSON object in this exact format, no other text:
+{{"name": null, "email": null, "phone": null}}""".format("\n".join(recent_messages))
+
+        result = {"name": regex_name, "email": regex_email, "phone": regex_phone}
+        
+        try:
+            logger.debug(f"Attempting LLM extraction with prompt length: {len(extraction_prompt)}")
+            response = await self.llm_orchestrator.generate(
+                extraction_prompt,
+                context={"temperature": 0.0, "max_tokens": 200},  # Very deterministic
+            )
+            
+            logger.debug(f"LLM extraction response: {response[:200]}...")
+            
+            # Parse JSON response
+            # Clean up response - sometimes LLM adds extra text
+            response = response.strip()
+            
+            # Try to find JSON in response
+            if response.startswith("{"):
+                json_end = response.rfind("}") + 1
+                response = response[:json_end]
+            else:
+                # Try to extract JSON from response
+                start = response.find("{")
+                end = response.rfind("}") + 1
+                if start != -1 and end > start:
+                    response = response[start:end]
+                else:
+                    logger.warning(f"Could not find JSON in LLM response: {response}")
+                    # Use regex results as fallback
+                    return result
+            
+            extracted = json.loads(response)
+            
+            # Merge LLM results with regex fallback (LLM takes precedence for name)
+            llm_name = extracted.get("name")
+            llm_email = extracted.get("email")
+            llm_phone = extracted.get("phone")
+            
+            result = {
+                "name": llm_name if llm_name and llm_name != "null" else None,
+                "email": llm_email if llm_email and llm_email != "null" else regex_email,
+                "phone": llm_phone if llm_phone and llm_phone != "null" else regex_phone,
+            }
+            
+            # Clean up empty strings
+            for key in result:
+                if result[key] == "" or result[key] == "null":
+                    result[key] = None
+                    
+            logger.debug(f"Final extracted contact info: {result}")
+            return result
+            
+        except json.JSONDecodeError as e:
+            logger.warning(
+                f"Failed to parse contact extraction response: {e}, response: {response[:200]}"
+            )
+            # Use regex results as fallback
+            return result
+        except Exception as e:
+            logger.error(f"Contact extraction failed: {e}", exc_info=True)
+            # Use regex results as fallback
+            return result
+
     async def _process_chat_core(
         self,
         tenant_id: int,
@@ -279,9 +507,19 @@ class ChatService:
             
         Returns:
             Tuple of (llm_response, llm_latency_ms)
+            
+        Raises:
+            ValueError: If no prompt is configured for the tenant
         """
         # Assemble prompt with conversation history
         system_prompt = await system_prompt_method(tenant_id)
+        
+        # Check if prompt is configured
+        if system_prompt is None:
+            raise ValueError(
+                "No prompt configured for this tenant. "
+                "Please configure a prompt before using the chatbot."
+            )
         
         # Build conversation context for LLM
         conversation_context = self._build_conversation_context(
@@ -296,8 +534,6 @@ class ChatService:
                 context={"temperature": 0.3, "max_tokens": 500},  # Deterministic defaults
             )
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"LLM generation failed: {e}", exc_info=True)
             llm_response = "I apologize, but I'm having trouble processing your request right now. Please try again in a moment."
         

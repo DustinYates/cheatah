@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Widget Test</title>
+</head>
+<body>
+    <h1>Chat Widget Test Page</h1>
+    <p>This page tests the Chatter Cheetah chat widget.</p>
+    
+    <!-- Chat Widget Script -->
+    <script src="https://chattercheatah-iyv6z6wp7a-uc.a.run.app/static/chat-widget.js"></script>
+    <script>
+        // Initialize the widget
+        if (typeof ChatterCheetah !== 'undefined') {
+            ChatterCheetah.init({
+                apiUrl: 'https://chattercheatah-iyv6z6wp7a-uc.a.run.app/api/v1',
+                tenantId: 4  // The Best Chatbot tenant
+            });
+            console.log('Chat widget initialized successfully');
+        } else {
+            console.error('ChatterCheetah widget failed to load');
+        }
+    </script>
+</body>
+</html>
+

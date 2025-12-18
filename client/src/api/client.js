@@ -97,6 +97,10 @@ class ApiClient {
     return info ? JSON.parse(info) : null;
   }
 
+  async getTenants() {
+    return this.request('/admin/tenants');
+  }
+
   async getLeads(params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/leads${query ? `?${query}` : ''}`);

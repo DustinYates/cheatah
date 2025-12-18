@@ -1,0 +1,32 @@
+<!-- 
+Chatter Cheetah Chat Widget - WordPress Embed Code (FIXED)
+Use tenant ID 1 which exists in production
+-->
+
+<script src="https://chattercheatah-iyv6z6wp7a-uc.a.run.app/static/chat-widget.js"></script>
+<script>
+(function() {
+  function initChatWidget() {
+    if (typeof ChatterCheetah !== 'undefined') {
+      try {
+        ChatterCheetah.init({
+          apiUrl: 'https://chattercheatah-iyv6z6wp7a-uc.a.run.app/api/v1',
+          tenantId: 1  // Using tenant ID 1 (exists in production)
+        });
+        console.log('Chat widget initialized successfully');
+      } catch (error) {
+        console.error('Chat widget error:', error);
+      }
+    } else {
+      setTimeout(initChatWidget, 100);
+    }
+  }
+  
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initChatWidget);
+  } else {
+    initChatWidget();
+  }
+})();
+</script>
+

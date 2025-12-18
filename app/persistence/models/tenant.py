@@ -9,6 +9,7 @@ from sqlalchemy.orm import relationship
 from app.persistence.database import Base
 
 if TYPE_CHECKING:
+    from app.persistence.models.contact import Contact
     from app.persistence.models.conversation import Conversation
     from app.persistence.models.lead import Lead
     from app.persistence.models.prompt import PromptBundle
@@ -45,6 +46,9 @@ class Tenant(Base):
     )
     business_profile = relationship(
         "TenantBusinessProfile", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
+    )
+    contacts = relationship(
+        "Contact", back_populates="tenant", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

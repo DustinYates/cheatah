@@ -2,7 +2,9 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.persistence.models.contact import Contact
 from app.persistence.models.lead import Lead
+from app.persistence.repositories.contact_repository import ContactRepository
 from app.persistence.repositories.lead_repository import LeadRepository
 
 
@@ -13,6 +15,7 @@ class LeadService:
         """Initialize lead service."""
         self.session = session
         self.lead_repo = LeadRepository(session)
+        self.contact_repo = ContactRepository(session)
 
     async def capture_lead(
         self,
@@ -90,7 +93,7 @@ class LeadService:
     async def update_lead_status(
         self, tenant_id: int, lead_id: int, status: str
     ) -> Lead | None:
-        """Update lead status.
+        """Update lead status and create Contact if verified.
 
         Args:
             tenant_id: Tenant ID
@@ -105,6 +108,40 @@ class LeadService:
             return None
         
         lead.status = status
+        
+        # If verified, create a Contact record if one doesn't exist
+        if status == 'verified':
+            await self._create_contact_from_lead(tenant_id, lead)
+        
         await self.session.commit()
         await self.session.refresh(lead)
         return lead
+
+    async def _create_contact_from_lead(self, tenant_id: int, lead: Lead) -> Contact | None:
+        """Create a Contact from a verified lead if one doesn't already exist.
+
+        Args:
+            tenant_id: Tenant ID
+            lead: Lead to create contact from
+
+        Returns:
+            Created Contact or None if contact already exists
+        """
+        # Check if a contact already exists with this email or phone
+        existing_contact = await self.contact_repo.get_by_email_or_phone(
+            tenant_id, email=lead.email, phone=lead.phone
+        )
+        
+        if existing_contact:
+            return None
+        
+        # Create new contact from lead data
+        contact = Contact(
+            tenant_id=tenant_id,
+            email=lead.email,
+            phone=lead.phone,
+            name=lead.name,
+            source='web_chat_lead',
+        )
+        self.session.add(contact)
+        return contact

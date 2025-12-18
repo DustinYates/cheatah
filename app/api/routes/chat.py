@@ -86,9 +86,13 @@ async def chat(
         )
         
     except ValueError as e:
+        error_message = str(e)
+        # Provide user-friendly message for prompt not configured
+        if "No prompt configured" in error_message:
+            error_message = "Chatbot is not configured. Please contact support."
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            detail=error_message,
         )
     except Exception as e:
         import logging

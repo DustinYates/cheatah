@@ -28,7 +28,7 @@ class PromptService:
 
     async def compose_prompt(
         self, tenant_id: int | None, context: dict | None = None, use_draft: bool = False
-    ) -> str:
+    ) -> str | None:
         """Compose final prompt from global base + tenant overrides.
 
         Args:
@@ -37,7 +37,7 @@ class PromptService:
             use_draft: If True, use draft bundle for testing
 
         Returns:
-            Composed prompt string
+            Composed prompt string, or None if no prompt is configured
         """
         global_bundle = await self.prompt_repo.get_global_base_bundle()
         
@@ -63,11 +63,8 @@ class PromptService:
             all_sections.extend(tenant_sections)
 
         if not all_sections:
-            return (
-                "You are a helpful customer service assistant. "
-                "Be friendly, professional, and concise. "
-                "Answer questions based on the business information provided."
-            )
+            # No prompt configured - return None to signal error
+            return None
         
         section_map: dict[str, tuple[str, int]] = {}
         for section in all_sections:
@@ -107,9 +104,16 @@ class PromptService:
 
     async def compose_prompt_sms(
         self, tenant_id: int | None, context: dict | None = None
-    ) -> str:
-        """Compose SMS-specific prompt with constraints."""
+    ) -> str | None:
+        """Compose SMS-specific prompt with constraints.
+        
+        Returns:
+            Composed prompt string with SMS constraints, or None if no prompt is configured
+        """
         base_prompt = await self.compose_prompt(tenant_id, context)
+        
+        if base_prompt is None:
+            return None
         
         sms_instructions = (
             "\n\nIMPORTANT SMS CONSTRAINTS:\n"

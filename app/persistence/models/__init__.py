@@ -1,5 +1,6 @@
 """Database models."""
 
+from app.persistence.models.contact import Contact
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.escalation import Escalation
 from app.persistence.models.lead import Lead
@@ -14,6 +15,7 @@ __all__ = [
     "Conversation",
     "Message",
     "Lead",
+    "Contact",
     "PromptBundle",
     "PromptSection",
     "TenantSmsConfig",

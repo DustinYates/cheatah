@@ -9,6 +9,7 @@ from sqlalchemy.orm import relationship
 from app.persistence.database import Base
 
 if TYPE_CHECKING:
+    from app.persistence.models.contact import Contact
     from app.persistence.models.conversation import Conversation
     from app.persistence.models.tenant import Tenant
 
@@ -24,13 +25,14 @@ class Lead(Base):
     email = Column(String(255), nullable=True, index=True)
     phone = Column(String(50), nullable=True, index=True)
     name = Column(String(255), nullable=True)
-    status = Column(String(50), nullable=True, default='new', index=True)  # new, verified, unknown
-    extra_data = Column(JSON, nullable=True)  # Additional flexible data (avoiding 'metadata' reserved name)
+    status = Column(String(50), nullable=True, default='new', index=True)
+    extra_data = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
     tenant = relationship("Tenant", back_populates="leads")
     conversation = relationship("Conversation", back_populates="leads")
+    contact = relationship("Contact", back_populates="lead", uselist=False)
 
     def __repr__(self) -> str:
         return f"<Lead(id={self.id}, tenant_id={self.tenant_id}, email={self.email}, phone={self.phone}, status={self.status})>"

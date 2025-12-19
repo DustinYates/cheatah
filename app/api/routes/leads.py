@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_tenant_context
 from app.domain.services.lead_service import LeadService
+from app.domain.services.conversation_service import ConversationService
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 
@@ -41,7 +42,31 @@ class LeadsListResponse(BaseModel):
 class LeadStatusUpdate(BaseModel):
     """Lead status update request."""
     
-    status: str  # 'new', 'verified', 'unknown'
+    status: str  # 'new', 'verified', 'unknown', 'dismissed'
+
+
+class MessageResponse(BaseModel):
+    """Message response model."""
+    
+    id: int
+    role: str
+    content: str
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class ConversationResponse(BaseModel):
+    """Conversation with messages response."""
+    
+    id: int
+    channel: str
+    created_at: str
+    messages: list[MessageResponse]
+
+    class Config:
+        from_attributes = True
 
 
 @router.get("", response_model=LeadsListResponse)
@@ -51,10 +76,15 @@ async def list_leads(
     tenant_id: Annotated[int, Depends(require_tenant_context)],
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    status: str | None = Query(None),
 ) -> LeadsListResponse:
-    """List leads for the current tenant."""
+    """List leads for the current tenant, optionally filtered by status."""
     lead_service = LeadService(db)
     leads = await lead_service.list_leads(tenant_id, skip=skip, limit=limit)
+    
+    # Filter by status if provided
+    if status:
+        leads = [l for l in leads if l.status == status]
     
     return LeadsListResponse(
         leads=[
@@ -105,6 +135,54 @@ async def get_lead(
     )
 
 
+@router.get("/{lead_id}/conversation", response_model=ConversationResponse)
+async def get_lead_conversation(
+    lead_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> ConversationResponse:
+    """Get the conversation associated with a lead."""
+    lead_service = LeadService(db)
+    lead = await lead_service.get_lead(tenant_id, lead_id)
+    
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found",
+        )
+    
+    if not lead.conversation_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No conversation associated with this lead",
+        )
+    
+    conversation_service = ConversationService(db)
+    conversation = await conversation_service.get_conversation(tenant_id, lead.conversation_id)
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+    
+    return ConversationResponse(
+        id=conversation.id,
+        channel=conversation.channel,
+        created_at=conversation.created_at.isoformat(),
+        messages=[
+            MessageResponse(
+                id=msg.id,
+                role=msg.role,
+                content=msg.content,
+                created_at=msg.created_at.isoformat(),
+            )
+            for msg in conversation.messages
+        ],
+    )
+
+
 @router.put("/{lead_id}/status", response_model=LeadResponse)
 async def update_lead_status(
     lead_id: int,
@@ -114,8 +192,7 @@ async def update_lead_status(
     tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> LeadResponse:
     """Update lead status (verify or mark unknown)."""
-    # Validate status
-    valid_statuses = ['new', 'verified', 'unknown']
+    valid_statuses = ['new', 'verified', 'unknown', 'dismissed']
     if status_update.status not in valid_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

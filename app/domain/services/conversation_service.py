@@ -29,7 +29,6 @@ class ConversationService:
         Returns:
             Created conversation
         """
-        # Check for existing conversation with external_id if provided
         if external_id:
             existing = await self.conversation_repo.get_by_external_id(
                 tenant_id, external_id
@@ -61,12 +60,10 @@ class ConversationService:
         Raises:
             ValueError: If conversation not found
         """
-        # Verify conversation exists and belongs to tenant
         conversation = await self.conversation_repo.get_by_id(tenant_id, conversation_id)
         if not conversation:
             raise ValueError(f"Conversation {conversation_id} not found")
 
-        # Get next sequence number
         sequence_number = await self.message_repo.get_next_sequence_number(
             tenant_id, conversation_id
         )
@@ -97,14 +94,13 @@ class ConversationService:
     async def get_conversation(
         self, tenant_id: int, conversation_id: int
     ) -> Conversation | None:
-        """Get a conversation by ID.
+        """Get a conversation by ID with messages loaded.
 
         Args:
             tenant_id: Tenant ID
             conversation_id: Conversation ID
 
         Returns:
-            Conversation or None if not found
+            Conversation with messages or None if not found
         """
-        return await self.conversation_repo.get_by_id(tenant_id, conversation_id)
-
+        return await self.conversation_repo.get_by_id_with_messages(tenant_id, conversation_id)

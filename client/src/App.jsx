@@ -6,6 +6,9 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Prompts from './pages/Prompts';
 import Contacts from './pages/Contacts';
+import ContactDetail from './pages/ContactDetail';
+import UnknownLeads from './pages/UnknownLeads';
+import UnknownLeadDetail from './pages/UnknownLeadDetail';
 import Onboarding from './pages/Onboarding';
 import Settings from './pages/Settings';
 import SmsSettings from './pages/SmsSettings';
@@ -34,6 +37,9 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="prompts" element={<Prompts />} />
             <Route path="contacts" element={<Contacts />} />
+            <Route path="contacts/:id" element={<ContactDetail />} />
+            <Route path="unknown" element={<UnknownLeads />} />
+            <Route path="unknown/:id" element={<UnknownLeadDetail />} />
             <Route path="settings" element={<Settings />} />
             <Route path="sms" element={<SmsSettings />} />
             <Route path="admin/tenants" element={<ManageTenants />} />

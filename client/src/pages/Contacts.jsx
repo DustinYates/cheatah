@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -7,6 +8,7 @@ import './Contacts.css';
 
 export default function Contacts() {
   const { user, selectedTenantId } = useAuth();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
 
   const fetchContacts = useCallback(async () => {
@@ -14,18 +16,15 @@ export default function Contacts() {
       const data = await api.getContacts();
       return Array.isArray(data) ? data : data.contacts || [];
     } catch (err) {
-      // If it's a "Not Found" error, treat as empty (no contacts yet)
       if (err.message?.includes('Not Found') || err.message?.includes('not found')) {
         return [];
       }
-      // Re-throw other errors
       throw err;
     }
   }, []);
 
   const { data: contacts, loading, error, refetch } = useFetchData(fetchContacts, { defaultValue: [] });
 
-  // Check if global admin without tenant selected
   const needsTenant = user?.is_global_admin && !selectedTenantId;
 
   const filteredContacts = contacts.filter(contact => 
@@ -33,6 +32,10 @@ export default function Contacts() {
     (contact.phone_number || '').includes(search) ||
     (contact.email || '').toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleRowClick = (contactId) => {
+    navigate(`/contacts/${contactId}`);
+  };
 
   if (needsTenant) {
     return (
@@ -51,7 +54,6 @@ export default function Contacts() {
   }
 
   if (error) {
-    // Check if error is about tenant context
     if (error.includes('Tenant context required') || error.includes('Tenant context')) {
       return (
         <div className="contacts-page">
@@ -63,9 +65,7 @@ export default function Contacts() {
         </div>
       );
     }
-    // Check if it's a "Not Found" error - treat as empty
     if (error.includes('Not Found') || error.includes('not found')) {
-      // Show empty state instead of error
       return (
         <div className="contacts-page">
           <div className="page-header">
@@ -129,7 +129,11 @@ export default function Contacts() {
             </thead>
             <tbody>
               {filteredContacts.map((contact) => (
-                <tr key={contact.id}>
+                <tr 
+                  key={contact.id} 
+                  onClick={() => handleRowClick(contact.id)}
+                  className="clickable-row"
+                >
                   <td>
                     <div className="contact-name">
                       <div className="avatar">
@@ -138,7 +142,7 @@ export default function Contacts() {
                       {contact.name || 'Unknown'}
                     </div>
                   </td>
-                  <td>{contact.phone_number}</td>
+                  <td>{contact.phone_number || '-'}</td>
                   <td>{contact.email || '-'}</td>
                   <td>
                     <span className={`status ${contact.opt_in_status || 'verified'}`}>

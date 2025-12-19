@@ -1,0 +1,187 @@
+.contact-detail-page {
+  padding: 24px;
+}
+
+.contact-detail-page .page-header {
+  margin-bottom: 24px;
+}
+
+.contact-detail-page .back-btn {
+  background: none;
+  border: none;
+  color: var(--primary-color, #4a9b5e);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.contact-detail-page .back-btn:hover {
+  text-decoration: underline;
+}
+
+.contact-detail-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 768px) {
+  .contact-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.contact-info-card {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.contact-avatar-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--primary-color, #4a9b5e);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 600;
+  margin: 0 auto 16px;
+}
+
+.contact-info-card h2 {
+  margin: 0 0 16px 0;
+  font-size: 20px;
+}
+
+.contact-details {
+  text-align: left;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-row .label {
+  color: #666;
+  font-size: 14px;
+}
+
+.detail-row .value {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.conversation-card {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.conversation-card h3 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+}
+
+.messages-list {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.message {
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.message.user {
+  background: #f0f7f1;
+  margin-left: 20px;
+}
+
+.message.assistant {
+  background: #f5f5f5;
+  margin-right: 20px;
+}
+
+.message-role {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #666;
+}
+
+.message-content {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.message-time {
+  font-size: 11px;
+  color: #999;
+  margin-top: 8px;
+}
+
+/* Unknown Lead Detail additions */
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.status-badge.unknown {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.action-buttons {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-verify-large {
+  background: var(--primary-color, #4a9b5e);
+  color: white;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-verify-large:hover {
+  opacity: 0.9;
+}
+
+.btn-dismiss {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-dismiss:hover {
+  background: #e5e7eb;
+}

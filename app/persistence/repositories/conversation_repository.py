@@ -2,8 +2,9 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
-from app.persistence.models.conversation import Conversation
+from app.persistence.models.conversation import Conversation, Message
 from app.persistence.repositories.base import BaseRepository
 
 
@@ -13,6 +14,29 @@ class ConversationRepository(BaseRepository[Conversation]):
     def __init__(self, session: AsyncSession):
         """Initialize conversation repository."""
         super().__init__(Conversation, session)
+
+    async def get_by_id_with_messages(
+        self, tenant_id: int, conversation_id: int
+    ) -> Conversation | None:
+        """Get conversation by ID with messages eagerly loaded.
+        
+        Args:
+            tenant_id: Tenant ID
+            conversation_id: Conversation ID
+            
+        Returns:
+            Conversation with messages or None if not found
+        """
+        stmt = (
+            select(Conversation)
+            .options(selectinload(Conversation.messages))
+            .where(
+                Conversation.tenant_id == tenant_id,
+                Conversation.id == conversation_id
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def get_by_external_id(
         self, tenant_id: int, external_id: str
@@ -95,4 +119,3 @@ class ConversationRepository(BaseRepository[Conversation]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
-

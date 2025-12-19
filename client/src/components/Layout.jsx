@@ -28,7 +28,7 @@ export default function Layout() {
       )}
       <nav className="sidebar">
         <div className="logo">
-          <h2>Chatter Cheetah</h2>
+          <h2>🐆 Chatter Cheetah</h2>
         </div>
         
         {user?.is_global_admin && (
@@ -54,6 +54,9 @@ export default function Layout() {
           </li>
           <li>
             <NavLink to="/contacts">Contacts</NavLink>
+          </li>
+          <li>
+            <NavLink to="/unknown">Unknown</NavLink>
           </li>
           <li>
             <NavLink to="/sms">SMS</NavLink>

@@ -24,7 +24,6 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    // Add tenant impersonation header if global admin has selected a tenant
     const selectedTenant = this.getSelectedTenant();
     const userInfo = this.getUserInfo();
     if (userInfo?.is_global_admin && selectedTenant) {
@@ -37,7 +36,6 @@ class ApiClient {
     });
 
     if (response.status === 401) {
-      // Clear all auth state on 401 (token expired or invalid)
       this.setToken(null);
       localStorage.removeItem('userInfo');
       localStorage.removeItem('selectedTenantId');
@@ -61,7 +59,6 @@ class ApiClient {
     
     if (response.access_token) {
       this.setToken(response.access_token);
-      // Store user info for later use
       localStorage.setItem('userInfo', JSON.stringify({
         tenant_id: response.tenant_id,
         role: response.role,
@@ -104,6 +101,14 @@ class ApiClient {
   async getLeads(params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/leads${query ? `?${query}` : ''}`);
+  }
+
+  async getLead(leadId) {
+    return this.request(`/leads/${leadId}`);
+  }
+
+  async getLeadConversation(leadId) {
+    return this.request(`/leads/${leadId}/conversation`);
   }
 
   async getLeadsStats() {
@@ -195,6 +200,14 @@ class ApiClient {
   async getContacts(params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/contacts${query ? `?${query}` : ''}`);
+  }
+
+  async getContact(contactId) {
+    return this.request(`/contacts/${contactId}`);
+  }
+
+  async getContactConversation(contactId) {
+    return this.request(`/contacts/${contactId}/conversation`);
   }
 
   async getBusinessProfile() {

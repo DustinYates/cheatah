@@ -100,3 +100,25 @@ The application is designed to run on:
 
 See deployment documentation for GCP setup instructions.
 
+
+## Deployment Reference
+
+**Project Structure:**
+- Backend: `~/Desktop/chattercheetah/app`
+- Frontend: `~/Desktop/chattercheetah/client`
+
+**Cloud Run Services:**
+- Backend: `chattercheatah` → https://chattercheatah-900139201687.us-central1.run.app
+- Frontend: `chattercheatah-frontend` → https://chattercheatah-frontend-900139201687.us-central1.run.app
+
+**Deploy Commands:**
+```bash
+# Frontend
+cd ~/Desktop/chattercheetah/client
+npm run build
+gcloud run deploy chattercheatah-frontend --source . --region us-central1 --project chatbots-466618 --allow-unauthenticated
+
+# Backend
+cd ~/Desktop/chattercheetah
+gcloud run deploy chattercheatah --source . --region us-central1 --project chatbots-466618
+```

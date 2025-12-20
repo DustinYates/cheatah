@@ -1,15 +1,15 @@
 import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
+import ChatModal from '../components/ChatModal';
 import './Contacts.css';
 
 export default function Contacts() {
   const { user, selectedTenantId } = useAuth();
-  const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [selectedContact, setSelectedContact] = useState(null);
 
   const fetchContacts = useCallback(async () => {
     try {
@@ -33,8 +33,9 @@ export default function Contacts() {
     (contact.email || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleRowClick = (contactId) => {
-    navigate(`/contacts/${contactId}`);
+  const handleViewChat = (e, contact) => {
+    e.stopPropagation();
+    setSelectedContact(contact);
   };
 
   if (needsTenant) {
@@ -125,15 +126,12 @@ export default function Contacts() {
                 <th>Email</th>
                 <th>Status</th>
                 <th>Added</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredContacts.map((contact) => (
-                <tr 
-                  key={contact.id} 
-                  onClick={() => handleRowClick(contact.id)}
-                  className="clickable-row"
-                >
+                <tr key={contact.id}>
                   <td>
                     <div className="contact-name">
                       <div className="avatar">
@@ -150,6 +148,15 @@ export default function Contacts() {
                     </span>
                   </td>
                   <td>{new Date(contact.created_at).toLocaleDateString()}</td>
+                  <td>
+                    <button 
+                      className="btn-view-chat"
+                      onClick={(e) => handleViewChat(e, contact)}
+                      title="View conversation history"
+                    >
+                      💬 View Chat
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -163,6 +170,14 @@ export default function Contacts() {
             />
           )}
         </div>
+      )}
+
+      {/* Chat Modal */}
+      {selectedContact && (
+        <ChatModal 
+          contact={selectedContact} 
+          onClose={() => setSelectedContact(null)} 
+        />
       )}
     </div>
   );

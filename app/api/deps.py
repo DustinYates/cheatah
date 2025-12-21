@@ -84,7 +84,7 @@ async def get_current_user(
 
 async def get_current_tenant(
     current_user: Annotated[User, Depends(get_current_user)],
-    x_tenant_id: Annotated[str | None, Header()] = None,
+    x_tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
 ) -> int | None:
     """Get current tenant from user context or header override.
 

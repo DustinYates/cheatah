@@ -1,10 +1,13 @@
 """Base repository with tenant-scoped queries."""
 
+import logging
 from typing import Generic, TypeVar, Type
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.persistence.database import Base
+
+logger = logging.getLogger(__name__)
 
 ModelType = TypeVar("ModelType", bound=Base)
 
@@ -42,6 +45,13 @@ class BaseRepository(Generic[ModelType]):
         
         if tenant_id is not None:
             stmt = stmt.where(self.model.tenant_id == tenant_id)
+            logger.debug(f"Listing {self.model.__name__} for tenant_id={tenant_id}")
+        else:
+            # Log warning when tenant_id is None - could indicate a security issue
+            logger.warning(
+                f"Listing {self.model.__name__} without tenant_id filter - "
+                "ensure this is intended for global admin operations"
+            )
         
         # Apply additional filters
         for key, value in filters.items():

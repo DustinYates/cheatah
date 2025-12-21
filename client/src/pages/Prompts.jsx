@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import { getAllTemplates, cloneTemplateSections, TEMPLATE_CATEGORIES } from '../data/promptTemplates';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { ToastContainer } from '../components/ui/Toast';
 import './Prompts.css';
@@ -31,9 +30,6 @@ export default function Prompts() {
   const [bundles, setBundles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [editBundle, setEditBundle] = useState(null);
   const [testBundle, setTestBundle] = useState(null);
   const [testMessage, setTestMessage] = useState('');
@@ -48,13 +44,6 @@ export default function Prompts() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('updated');
   const [toasts, setToasts] = useState([]);
-
-  const [newBundle, setNewBundle] = useState({
-    name: '',
-    sections: [{ section_key: 'greeting', scope: 'custom', content: '', order: 0 }],
-  });
-
-  const templates = getAllTemplates();
 
   // Handle test parameter from URL (when redirecting from wizard)
   useEffect(() => {
@@ -84,31 +73,6 @@ export default function Prompts() {
       setError(err.message || 'Failed to load prompt bundles');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSelectTemplate = (template) => {
-    setSelectedTemplate(template);
-    const sections = cloneTemplateSections(template.id);
-    setNewBundle({
-      name: template.id === 'blank' ? '' : `${template.name} - Draft`,
-      sections: sections,
-    });
-    setShowTemplateSelector(false);
-    setShowCreate(true);
-  };
-
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    try {
-      const created = await api.createPromptBundle(newBundle);
-      setBundles([created, ...bundles]);
-      setNewBundle({ name: '', sections: [{ section_key: 'greeting', scope: 'custom', content: '', order: 0 }] });
-      setShowCreate(false);
-      setSelectedTemplate(null);
-      addToast('Prompt created successfully', 'success');
-    } catch (err) {
-      addToast('Failed to create prompt: ' + err.message, 'error');
     }
   };
 
@@ -319,7 +283,7 @@ export default function Prompts() {
         <div className="prompts-header__title">
           <h1>Prompts</h1>
           <p className="prompts-header__subtitle">
-            Base prompts are system-managed. Create custom prompts to personalize responses.
+            Use the AI Wizard to create custom prompts for your chatbot.
           </p>
         </div>
         <div className="prompts-header__actions">
@@ -329,13 +293,6 @@ export default function Prompts() {
           >
             <span className="btn__icon">✨</span>
             Build with AI
-          </button>
-          <button 
-            className="btn btn--primary"
-            onClick={() => setShowTemplateSelector(true)}
-          >
-            <span className="btn__icon">+</span>
-            Create Prompt
           </button>
         </div>
       </div>
@@ -386,270 +343,7 @@ export default function Prompts() {
         </div>
       </div>
 
-      {/* Template Selector Modal */}
-      {showTemplateSelector && (
-        <div className="modal-overlay" onClick={() => setShowTemplateSelector(false)}>
-          <div className="modal template-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Create New Prompt</h2>
-              <button className="modal-close" onClick={() => setShowTemplateSelector(false)}>×</button>
-            </div>
-            <p className="modal-subtitle">Choose how you want to create your prompt</p>
 
-            {/* AI Wizard - Recommended */}
-            <div 
-              className="ai-wizard-card"
-              onClick={() => {
-                setShowTemplateSelector(false);
-                navigate('/prompts/wizard');
-              }}
-            >
-              <div className="ai-wizard-card__badge">Recommended</div>
-              <div className="ai-wizard-card__icon">✨</div>
-              <div className="ai-wizard-card__content">
-                <h3>Build with AI Wizard</h3>
-                <p>Answer a few questions about your business and we'll create a customized prompt for you. Includes pricing, hours, FAQs, tone of voice, and more.</p>
-              </div>
-              <div className="ai-wizard-card__arrow">→</div>
-            </div>
-
-            <div className="template-divider">
-              <span>Or choose a template</span>
-            </div>
-
-            <div className="template-grid">
-              {templates.map((template) => (
-                <div
-                  key={template.id}
-                  className={`template-card ${template.id === 'blank' ? 'blank-template' : ''}`}
-                  onClick={() => handleSelectTemplate(template)}
-                >
-                  <div className="template-icon">
-                    {TEMPLATE_CATEGORIES[template.category]?.icon || '📝'}
-                  </div>
-                  <h3>{template.name}</h3>
-                  <p>{template.description}</p>
-                  <div className="template-meta">
-                    <span className="template-category">
-                      {TEMPLATE_CATEGORIES[template.category]?.name || template.category}
-                    </span>
-                    {template.id !== 'blank' && (
-                      <span className="template-sections-count">
-                        {template.sections.length} sections
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Two-Column Create/Edit Modal */}
-      {showCreate && selectedTemplate && (
-        <div className="modal-overlay" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>
-          <div className="modal two-column-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title-group">
-                <h2>Create Prompt: {selectedTemplate.name}</h2>
-                {selectedTemplate.id !== 'blank' && (
-                  <span className="template-badge">Using Template</span>
-                )}
-              </div>
-              <button className="modal-close" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>×</button>
-            </div>
-
-            <div className="two-column-info-banner">
-              <span className="info-icon">💡</span>
-              <span>Replace text in <code>[BRACKETS]</code> with your specific information. The left column shows the template reference.</span>
-            </div>
-
-            <form onSubmit={handleCreate}>
-              <div className="form-group bundle-name-input">
-                <label>Prompt Name</label>
-                <input
-                  type="text"
-                  value={newBundle.name}
-                  onChange={(e) => setNewBundle({ ...newBundle, name: e.target.value })}
-                  placeholder="e.g., Main Sales Prompt"
-                  required
-                />
-              </div>
-
-              <div className="two-column-sections">
-                {newBundle.sections.map((section, idx) => {
-                  const templateSection = selectedTemplate.sections?.[idx];
-                  const scopeInfo = getScopeInfo(section.scope);
-                  
-                  return (
-                    <div key={idx} className="two-column-section">
-                      <div className="section-label-row">
-                        <div className="section-label-left">
-                          <span className="scope-icon">{scopeInfo.icon}</span>
-                          <input
-                            type="text"
-                            className="section-key-input"
-                            placeholder="Section key"
-                            value={section.section_key}
-                            onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'section_key', e.target.value)}
-                            required
-                          />
-                          <select
-                            className="scope-select"
-                            value={section.scope}
-                            onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'scope', e.target.value)}
-                          >
-                            {EDITABLE_SCOPES.map(s => (
-                              <option key={s.value} value={s.value}>{s.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn-remove-section"
-                          onClick={() => removeSection(newBundle, setNewBundle, idx)}
-                          title="Remove section"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                      
-                      <div className="two-column-content">
-                        {/* Left Column: Template Reference (Read-only) */}
-                        <div className="column template-column">
-                          <div className="column-header">
-                            <span className="column-label">📖 Template Reference</span>
-                          </div>
-                          <div className="template-reference-content">
-                            {templateSection?.content || (
-                              <span className="no-template">No template content for this section</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Right Column: Your Content (Editable) */}
-                        <div className="column edit-column">
-                          <div className="column-header">
-                            <span className="column-label">✏️ Your Content</span>
-                          </div>
-                          <textarea
-                            value={section.content}
-                            onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'content', e.target.value)}
-                            placeholder="Enter your customized content here..."
-                            rows={10}
-                            required
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                className="btn-add-section"
-                onClick={() => addSection(newBundle, setNewBundle)}
-              >
-                + Add Section
-              </button>
-
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary">
-                  Create Draft
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Simple Create Modal (Blank Template) */}
-      {showCreate && selectedTemplate?.id === 'blank' && (
-        <div className="modal-overlay" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>
-          <div className="modal large-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Create New Prompt</h2>
-              <button className="modal-close" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>×</button>
-            </div>
-
-            <form onSubmit={handleCreate}>
-              <div className="form-group">
-                <label>Prompt Name</label>
-                <input
-                  type="text"
-                  value={newBundle.name}
-                  onChange={(e) => setNewBundle({ ...newBundle, name: e.target.value })}
-                  placeholder="e.g., Main Sales Prompt"
-                  required
-                />
-              </div>
-
-              <div className="sections-header">
-                <h3>Sections ({newBundle.sections.length})</h3>
-                <button
-                  type="button"
-                  className="btn-secondary btn-small"
-                  onClick={() => addSection(newBundle, setNewBundle)}
-                >
-                  + Add Section
-                </button>
-              </div>
-
-              <div className="sections-list">
-                {newBundle.sections.map((section, idx) => (
-                  <div key={idx} className="section-editor">
-                    <div className="section-editor-header">
-                      <input
-                        type="text"
-                        placeholder="Section key (e.g., greeting)"
-                        value={section.section_key}
-                        onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'section_key', e.target.value)}
-                        required
-                      />
-                      <select
-                        value={section.scope}
-                        onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'scope', e.target.value)}
-                      >
-                        {EDITABLE_SCOPES.map(s => (
-                          <option key={s.value} value={s.value}>{s.label}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="btn-danger-small"
-                        onClick={() => removeSection(newBundle, setNewBundle, idx)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <textarea
-                      value={section.content}
-                      onChange={(e) => updateSection(newBundle, setNewBundle, idx, 'content', e.target.value)}
-                      placeholder="Enter prompt content..."
-                      rows={6}
-                      required
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => { setShowCreate(false); setSelectedTemplate(null); }}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary">
-                  Create Draft
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Edit Bundle Modal */}
       {editBundle && (
@@ -874,7 +568,7 @@ export default function Prompts() {
           <div className="empty-state-wizard">
             <div className="empty-state-wizard__icon">💬</div>
             <h2>No custom prompts yet</h2>
-            <p>Create your first chatbot prompt. We recommend using the AI Wizard - just answer a few questions about your business!</p>
+            <p>Create your first chatbot prompt using the AI Wizard - just answer a few questions about your business!</p>
             <div className="empty-state-wizard__actions">
               <button 
                 className="btn btn--ai btn--lg"
@@ -882,12 +576,6 @@ export default function Prompts() {
               >
                 <span className="btn__icon">✨</span>
                 Build with AI Wizard
-              </button>
-              <button 
-                className="btn btn--ghost"
-                onClick={() => setShowTemplateSelector(true)}
-              >
-                Or use a template
               </button>
             </div>
           </div>

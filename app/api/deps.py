@@ -168,6 +168,8 @@ async def require_tenant_admin(
 ) -> tuple[User, int]:
     """Require tenant admin role.
 
+    Global admins impersonating a tenant are also allowed.
+
     Args:
         current_user: Current authenticated user
         tenant_id: Current tenant ID
@@ -176,7 +178,7 @@ async def require_tenant_admin(
         Tuple of (user, tenant_id)
 
     Raises:
-        HTTPException: If user is not tenant admin
+        HTTPException: If user is not tenant admin or global admin
     """
     if tenant_id is None:
         raise HTTPException(
@@ -184,7 +186,12 @@ async def require_tenant_admin(
             detail="Tenant context required",
         )
     
-    if current_user.tenant_id != tenant_id or current_user.role not in ("admin", "tenant_admin"):
+    # Global admins can impersonate any tenant
+    is_global = is_global_admin(current_user)
+    # Tenant admins must belong to the tenant and have admin role
+    is_tenant_admin = current_user.tenant_id == tenant_id and current_user.role in ("admin", "tenant_admin")
+    
+    if not (is_global or is_tenant_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tenant admin access required",

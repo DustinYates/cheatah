@@ -76,6 +76,10 @@ class ApiClient {
     localStorage.removeItem('selectedTenantId');
   }
 
+  async getMe() {
+    return this.request('/auth/me');
+  }
+
   setSelectedTenant(tenantId) {
     if (tenantId) {
       localStorage.setItem('selectedTenantId', tenantId.toString());

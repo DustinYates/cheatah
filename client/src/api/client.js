@@ -224,6 +224,25 @@ class ApiClient {
       body: JSON.stringify(data),
     });
   }
+
+  // Prompt Interview / Wizard methods
+  async startPromptInterview() {
+    return this.request('/prompts/interview/start');
+  }
+
+  async submitInterviewAnswer(data) {
+    return this.request('/prompts/interview/answer', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async generatePromptFromInterview(data) {
+    return this.request('/prompts/interview/generate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const api = new ApiClient();

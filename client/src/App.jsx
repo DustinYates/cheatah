@@ -13,6 +13,7 @@ import Onboarding from './pages/Onboarding';
 import Settings from './pages/Settings';
 import SmsSettings from './pages/SmsSettings';
 import ManageTenants from './pages/ManageTenants';
+import PromptWizard from './pages/PromptWizard';
 import './App.css';
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
           >
             <Route index element={<Dashboard />} />
             <Route path="prompts" element={<Prompts />} />
+            <Route path="prompts/wizard" element={<PromptWizard />} />
             <Route path="contacts" element={<Contacts />} />
             <Route path="contacts/:id" element={<ContactDetail />} />
             <Route path="unknown" element={<UnknownLeads />} />

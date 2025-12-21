@@ -65,6 +65,13 @@
   max-width: 600px;
 }
 
+.prompts-header__actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 /* ========================================
    Buttons - Modern Hierarchy
    ======================================== */
@@ -103,6 +110,28 @@
 .btn--primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn--ai {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(139, 92, 246, 0.3), 0 2px 8px rgba(99, 102, 241, 0.2);
+  border: none;
+}
+
+.btn--ai:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  box-shadow: 0 2px 4px rgba(139, 92, 246, 0.4), 0 4px 12px rgba(99, 102, 241, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn--ai:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn--lg {
+  padding: 12px 24px;
+  font-size: 16px;
 }
 
 .btn--ghost {
@@ -377,6 +406,43 @@
   font-size: 14px;
 }
 
+.empty-state-wizard {
+  padding: 80px 40px;
+  text-align: center;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.empty-state-wizard__icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-state-wizard h2 {
+  font-size: 22px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 12px;
+}
+
+.empty-state-wizard p {
+  font-size: 15px;
+  color: #64748b;
+  line-height: 1.6;
+  margin: 0 0 28px;
+}
+
+.empty-state-wizard__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.empty-state-wizard__actions .btn--ai {
+  min-width: 240px;
+}
+
 /* ========================================
    Modals - Keep existing modal styles but refine
    ======================================== */
@@ -573,6 +639,100 @@
 .btn-secondary.btn-small {
   padding: 6px 12px;
   font-size: 13px;
+}
+
+/* AI Wizard Card - Prominent option in modal */
+.ai-wizard-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  margin: 16px 24px;
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+  border: 2px solid #c4b5fd;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.ai-wizard-card:hover {
+  border-color: #8b5cf6;
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.2);
+  transform: translateY(-2px);
+}
+
+.ai-wizard-card__badge {
+  position: absolute;
+  top: -10px;
+  right: 16px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-wizard-card__icon {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+
+.ai-wizard-card__content {
+  flex: 1;
+}
+
+.ai-wizard-card__content h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #5b21b6;
+  margin: 0 0 6px;
+}
+
+.ai-wizard-card__content p {
+  font-size: 13px;
+  color: #7c3aed;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.ai-wizard-card__arrow {
+  font-size: 20px;
+  color: #8b5cf6;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.ai-wizard-card:hover .ai-wizard-card__arrow {
+  transform: translateX(4px);
+}
+
+/* Template Divider */
+.template-divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  margin: 8px 0;
+}
+
+.template-divider::before,
+.template-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e2e8f0;
+}
+
+.template-divider span {
+  font-size: 12px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
 }
 
 /* Template Grid */

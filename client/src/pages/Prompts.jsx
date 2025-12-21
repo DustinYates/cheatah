@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { getAllTemplates, cloneTemplateSections, TEMPLATE_CATEGORIES } from '../data/promptTemplates';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
@@ -24,6 +25,9 @@ const ALL_SCOPES = [
 ];
 
 export default function Prompts() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
   const [bundles, setBundles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -51,6 +55,19 @@ export default function Prompts() {
   });
 
   const templates = getAllTemplates();
+
+  // Handle test parameter from URL (when redirecting from wizard)
+  useEffect(() => {
+    const testBundleId = searchParams.get('test');
+    if (testBundleId && bundles.length > 0) {
+      const bundleToTest = bundles.find(b => b.id === parseInt(testBundleId, 10));
+      if (bundleToTest) {
+        setTestBundle(bundleToTest);
+        // Clear the parameter from URL
+        setSearchParams({});
+      }
+    }
+  }, [bundles, searchParams, setSearchParams]);
 
   useEffect(() => {
     fetchBundles();
@@ -305,13 +322,22 @@ export default function Prompts() {
             Base prompts are system-managed. Create custom prompts to personalize responses.
           </p>
         </div>
-        <button 
-          className="btn btn--primary"
-          onClick={() => setShowTemplateSelector(true)}
-        >
-          <span className="btn__icon">+</span>
-          Create Prompt
-        </button>
+        <div className="prompts-header__actions">
+          <button 
+            className="btn btn--ai"
+            onClick={() => navigate('/prompts/wizard')}
+          >
+            <span className="btn__icon">✨</span>
+            Build with AI
+          </button>
+          <button 
+            className="btn btn--primary"
+            onClick={() => setShowTemplateSelector(true)}
+          >
+            <span className="btn__icon">+</span>
+            Create Prompt
+          </button>
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -368,7 +394,28 @@ export default function Prompts() {
               <h2>Create New Prompt</h2>
               <button className="modal-close" onClick={() => setShowTemplateSelector(false)}>×</button>
             </div>
-            <p className="modal-subtitle">Choose a template to get started, or create from scratch</p>
+            <p className="modal-subtitle">Choose how you want to create your prompt</p>
+
+            {/* AI Wizard - Recommended */}
+            <div 
+              className="ai-wizard-card"
+              onClick={() => {
+                setShowTemplateSelector(false);
+                navigate('/prompts/wizard');
+              }}
+            >
+              <div className="ai-wizard-card__badge">Recommended</div>
+              <div className="ai-wizard-card__icon">✨</div>
+              <div className="ai-wizard-card__content">
+                <h3>Build with AI Wizard</h3>
+                <p>Answer a few questions about your business and we'll create a customized prompt for you. Includes pricing, hours, FAQs, tone of voice, and more.</p>
+              </div>
+              <div className="ai-wizard-card__arrow">→</div>
+            </div>
+
+            <div className="template-divider">
+              <span>Or choose a template</span>
+            </div>
 
             <div className="template-grid">
               {templates.map((template) => (
@@ -824,15 +871,26 @@ export default function Prompts() {
       {/* Prompts List */}
       <div className="prompts-content">
         {bundles.length === 0 ? (
-          <EmptyState
-            icon="💬"
-            title="No custom prompts yet"
-            description="Base prompts are automatically included. Create your first custom prompt to personalize how your chatbot responds to customers."
-            action={{
-              label: "+ Create Your First Custom Prompt",
-              onClick: () => setShowTemplateSelector(true)
-            }}
-          />
+          <div className="empty-state-wizard">
+            <div className="empty-state-wizard__icon">💬</div>
+            <h2>No custom prompts yet</h2>
+            <p>Create your first chatbot prompt. We recommend using the AI Wizard - just answer a few questions about your business!</p>
+            <div className="empty-state-wizard__actions">
+              <button 
+                className="btn btn--ai btn--lg"
+                onClick={() => navigate('/prompts/wizard')}
+              >
+                <span className="btn__icon">✨</span>
+                Build with AI Wizard
+              </button>
+              <button 
+                className="btn btn--ghost"
+                onClick={() => setShowTemplateSelector(true)}
+              >
+                Or use a template
+              </button>
+            </div>
+          </div>
         ) : filteredAndSortedBundles.length === 0 ? (
           <div className="prompts-empty-filter">
             <p>No prompts match your filters.</p>

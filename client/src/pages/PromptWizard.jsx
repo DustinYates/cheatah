@@ -59,8 +59,13 @@ export default function PromptWizard() {
     }
   };
 
+  // Define optional steps that allow empty answers
+  const optionalSteps = ['anything_else', 'faq', 'policies', 'requirements'];
+  
   const submitAnswer = async (answer) => {
-    if (!answer.trim() && questionType === 'text') return;
+    // Block empty answers for required text questions only
+    const isOptionalStep = optionalSteps.includes(currentStep);
+    if (!answer.trim() && questionType === 'text' && !isOptionalStep) return;
     
     // Add user message
     const userMessage = questionType === 'choice' 
@@ -83,7 +88,9 @@ export default function PromptWizard() {
       setChoices(response.choices);
       setCollectedData(response.collected_data);
       setProgress(response.progress);
-      setIsComplete(response.is_complete);
+      // Set isComplete based on both is_complete flag and question_type
+      const interviewComplete = response.is_complete || response.question_type === 'complete';
+      setIsComplete(interviewComplete);
 
       // Add assistant message
       setMessages(prev => [...prev, { type: 'assistant', content: response.question }]);
@@ -214,7 +221,7 @@ export default function PromptWizard() {
             </div>
           )}
           
-          {!isComplete ? (
+          {!isComplete && questionType !== 'complete' ? (
             questionType === 'choice' && choices ? (
               <div className="choices-container">
                 {choices.map((choice) => (
@@ -243,9 +250,9 @@ export default function PromptWizard() {
                 <button 
                   className="send-button"
                   onClick={() => submitAnswer(inputValue)}
-                  disabled={loading || !inputValue.trim()}
+                  disabled={loading || (!inputValue.trim() && !optionalSteps.includes(currentStep))}
                 >
-                  Send
+                  {optionalSteps.includes(currentStep) && !inputValue.trim() ? 'Skip' : 'Send'}
                 </button>
               </div>
             )

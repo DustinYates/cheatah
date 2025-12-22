@@ -43,6 +43,8 @@ This is the foundational backend architecture phase, focusing on:
    cp .env.example .env
    ```
 
+   **Important:** For debugging scripts and local development, always use the production database connection string. Local database connections may point to different databases or stale data. Use the production `DATABASE_URL` from GCP Secret Manager.
+
 4. Start local services (Postgres + Redis):
    ```bash
    docker-compose up -d
@@ -65,6 +67,9 @@ Set the following in `.env`:
 | Variable | Description | Example |
 | --- | --- | --- |
 | `DATABASE_URL` | Postgres URL (asyncpg) | `postgresql+asyncpg://user:pass@localhost:5432/chattercheatah` |
+
+**Note:** When running debug scripts or local development tools, always use the production database connection string from GCP Secret Manager. Local `.env` files may point to different databases or contain stale data, which can cause confusion when debugging production issues.
+
 | `REDIS_URL` | Redis connection (optional for dev) | `redis://localhost:6379/0` |
 | `REDIS_ENABLED` | Toggle Redis use | `false` |
 | `JWT_SECRET_KEY` | JWT signing key | `change-me` |

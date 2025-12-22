@@ -270,7 +270,16 @@ async def get_contact_conversation(
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> ConversationResponse:
-    """Get the conversation associated with a contact (via its lead)."""
+    """Get the conversation associated with a contact.
+    
+    Uses multiple fallback strategies:
+    1. Primary: contact.lead_id -> lead.conversation_id
+    2. Fallback: Find leads with matching email/phone that have conversations
+    3. Fallback: For SMS, find conversations by phone number directly
+    """
+    from app.persistence.repositories.lead_repository import LeadRepository
+    from app.persistence.repositories.conversation_repository import ConversationRepository
+    
     contact_repo = ContactRepository(db)
     contact = await contact_repo.get_by_id(tenant_id, contact_id)
     
@@ -280,31 +289,41 @@ async def get_contact_conversation(
             detail="Contact not found",
         )
     
-    # Contact links to Lead which links to Conversation
-    if not contact.lead_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No lead associated with this contact",
-        )
-    
-    # Get the lead to find conversation_id
-    from app.persistence.repositories.lead_repository import LeadRepository
+    conversation = None
     lead_repo = LeadRepository(db)
-    lead = await lead_repo.get_by_id(tenant_id, contact.lead_id)
-    
-    if not lead or not lead.conversation_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No conversation associated with this contact",
-        )
-    
     conversation_service = ConversationService(db)
-    conversation = await conversation_service.get_conversation(tenant_id, lead.conversation_id)
+    
+    # Strategy 1: Try via contact.lead_id -> lead.conversation_id
+    if contact.lead_id:
+        lead = await lead_repo.get_by_id(tenant_id, contact.lead_id)
+        if lead and lead.conversation_id:
+            conversation = await conversation_service.get_conversation(tenant_id, lead.conversation_id)
+    
+    # Strategy 2: Find leads with matching email/phone that have conversations
+    if not conversation and (contact.email or contact.phone):
+        matching_leads = await lead_repo.find_leads_with_conversation_by_email_or_phone(
+            tenant_id, email=contact.email, phone=contact.phone
+        )
+        for lead in matching_leads:
+            if lead.conversation_id:
+                conversation = await conversation_service.get_conversation(tenant_id, lead.conversation_id)
+                if conversation:
+                    break
+    
+    # Strategy 3: For SMS, try to find conversation by phone number directly
+    if not conversation and contact.phone:
+        conversation_repo = ConversationRepository(db)
+        sms_conversation = await conversation_repo.get_by_phone_number(
+            tenant_id, contact.phone, channel="sms"
+        )
+        if sms_conversation:
+            # Load with messages
+            conversation = await conversation_service.get_conversation(tenant_id, sms_conversation.id)
     
     if not conversation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Conversation not found",
+            detail="No conversation found for this contact",
         )
     
     return ConversationResponse(

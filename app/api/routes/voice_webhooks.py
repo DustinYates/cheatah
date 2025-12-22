@@ -446,15 +446,16 @@ def _generate_greeting_twiml(call_sid: str, tenant_id: int, conversation_id: int
         "conversation_id": conversation_id,
         "turn": 0,
     })
-    action_url = f"{base_url}/api/v1/voice/gather?{params}"
+    # Escape & to &amp; for valid XML
+    action_url = f"{base_url}/api/v1/voice/gather?{params}".replace("&", "&amp;")
     
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Joanna">Hello! Thank you for calling. I'm an AI assistant and I'm here to help you. How can I assist you today?</Say>
-    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="3" language="en-US" enhanced="true">
-        <Say voice="Polly.Joanna"></Say>
+    <Say>Hello! Thank you for calling. I'm an AI assistant and I'm here to help you. How can I assist you today?</Say>
+    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="3" language="en-US">
+        <Say></Say>
     </Gather>
-    <Say voice="Polly.Joanna">I didn't catch that. Please call back if you need assistance. Goodbye!</Say>
+    <Say>I didn't catch that. Please call back if you need assistance. Goodbye!</Say>
     <Hangup/>
 </Response>'''
 
@@ -484,7 +485,8 @@ def _generate_gather_twiml(
         "conversation_id": conversation_id or "",
         "turn": turn,
     })
-    action_url = f"{base_url}/api/v1/voice/gather?{params}"
+    # Escape & to &amp; for valid XML
+    action_url = f"{base_url}/api/v1/voice/gather?{params}".replace("&", "&amp;")
     
     # Escape XML special characters in message
     escaped_message = (
@@ -498,11 +500,11 @@ def _generate_gather_twiml(
     
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Joanna">{escaped_message}</Say>
-    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="3" language="en-US" enhanced="true">
-        <Say voice="Polly.Joanna"></Say>
+    <Say>{escaped_message}</Say>
+    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="3" language="en-US">
+        <Say></Say>
     </Gather>
-    <Say voice="Polly.Joanna">I didn't hear a response. Thank you for calling. Goodbye!</Say>
+    <Say>I didn't hear a response. Thank you for calling. Goodbye!</Say>
     <Hangup/>
 </Response>'''
 
@@ -528,7 +530,7 @@ def _generate_goodbye_twiml(message: str) -> str:
     
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Joanna">{escaped_message}</Say>
+    <Say>{escaped_message}</Say>
     <Hangup/>
 </Response>'''
 
@@ -541,8 +543,8 @@ def _generate_voicemail_twiml() -> str:
     """
     return '''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Joanna">Thank you for calling. We're currently outside our business hours. Please leave a message after the tone, and we'll get back to you as soon as possible.</Say>
+    <Say>Thank you for calling. We're currently outside our business hours. Please leave a message after the tone, and we'll get back to you as soon as possible.</Say>
     <Record maxLength="300" finishOnKey="#"/>
-    <Say voice="Polly.Joanna">Thank you for your message. We'll contact you soon. Goodbye.</Say>
+    <Say>Thank you for your message. We'll contact you soon. Goodbye.</Say>
     <Hangup/>
 </Response>'''

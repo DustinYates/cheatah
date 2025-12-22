@@ -82,3 +82,17 @@
 .btn-verify:hover {
   opacity: 0.9;
 }
+
+.btn-delete {
+  background: #ffebee;
+  color: #c62828;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn-delete:hover {
+  background: #ffcdd2;
+}

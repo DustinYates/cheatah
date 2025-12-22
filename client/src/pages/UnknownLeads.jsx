@@ -39,6 +39,19 @@ export default function UnknownLeads() {
     }
   };
 
+  const handleDelete = async (leadId, leadName) => {
+    if (!confirm(`Are you sure you want to delete "${leadName || 'this lead'}"? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      await api.deleteLead(leadId);
+      refetch();
+    } catch (err) {
+      console.error('Failed to delete lead:', err);
+    }
+  };
+
   if (needsTenant) {
     return (
       <div className="unknown-leads-page">
@@ -117,6 +130,12 @@ export default function UnknownLeads() {
                       onClick={() => handleMarkVerified(lead.id)}
                     >
                       ✓ Verify
+                    </button>
+                    <button
+                      className="btn-delete"
+                      onClick={() => handleDelete(lead.id, lead.name)}
+                    >
+                      ✕ Delete
                     </button>
                   </td>
                 </tr>

@@ -219,3 +219,33 @@ async def update_lead_status(
         extra_data=lead.extra_data,
         created_at=lead.created_at.isoformat() if lead.created_at else None,
     )
+
+
+@router.delete("/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_lead(
+    lead_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> None:
+    """Delete a lead by ID."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        lead_service = LeadService(db)
+        deleted = await lead_service.delete_lead(tenant_id, lead_id)
+        
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lead not found",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting lead {lead_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete lead: {str(e)}",
+        )

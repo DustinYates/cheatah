@@ -150,6 +150,15 @@
   background: #ffe0b2;
 }
 
+.btn-delete {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.btn-delete:hover:not(:disabled) {
+  background: #ffcdd2;
+}
+
 .action-done {
   color: var(--color-text-muted);
 }

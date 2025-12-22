@@ -9,8 +9,10 @@ from sqlalchemy.orm import relationship
 from app.persistence.database import Base
 
 if TYPE_CHECKING:
+    from app.persistence.models.contact_alias import ContactAlias
+    from app.persistence.models.contact_merge_log import ContactMergeLog
     from app.persistence.models.lead import Lead
-    from app.persistence.models.tenant import Tenant
+    from app.persistence.models.tenant import Tenant, User
 
 
 class Contact(Base):
@@ -26,10 +28,46 @@ class Contact(Base):
     name = Column(String(255), nullable=True)
     source = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Soft delete columns
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    # Merge tracking columns
+    merged_into_contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=True)
+    merged_at = Column(DateTime, nullable=True)
+    merged_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Relationships
     tenant = relationship("Tenant", back_populates="contacts")
     lead = relationship("Lead", back_populates="contact")
+    
+    # Alias relationships
+    aliases = relationship(
+        "ContactAlias",
+        back_populates="contact",
+        foreign_keys="ContactAlias.contact_id",
+        cascade="all, delete-orphan"
+    )
+    
+    # Merge log relationships
+    merge_logs_as_primary = relationship(
+        "ContactMergeLog",
+        back_populates="primary_contact",
+        foreign_keys="ContactMergeLog.primary_contact_id"
+    )
+    
+    # Self-referential relationship for merged contacts
+    merged_into = relationship(
+        "Contact",
+        remote_side="Contact.id",
+        foreign_keys=[merged_into_contact_id],
+        backref="merged_contacts"
+    )
+    
+    # User relationships for audit
+    deleted_by_user = relationship("User", foreign_keys=[deleted_by])
+    merged_by_user = relationship("User", foreign_keys=[merged_by])
 
     def __repr__(self) -> str:
         return f"<Contact(id={self.id}, tenant_id={self.tenant_id}, email={self.email}, phone={self.phone})>"

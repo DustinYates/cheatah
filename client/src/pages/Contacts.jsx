@@ -4,12 +4,19 @@ import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import ChatModal from '../components/ChatModal';
+import EditContactModal from '../components/EditContactModal';
+import MergeContactsModal from '../components/MergeContactsModal';
 import './Contacts.css';
 
 export default function Contacts() {
   const { user, selectedTenantId } = useAuth();
   const [search, setSearch] = useState('');
   const [selectedContact, setSelectedContact] = useState(null);
+  const [editingContact, setEditingContact] = useState(null);
+  const [selectedForMerge, setSelectedForMerge] = useState([]);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchContacts = useCallback(async () => {
     try {
@@ -36,6 +43,49 @@ export default function Contacts() {
   const handleViewChat = (e, contact) => {
     e.stopPropagation();
     setSelectedContact(contact);
+  };
+
+  const handleEdit = (e, contact) => {
+    e.stopPropagation();
+    setEditingContact(contact);
+  };
+
+  const handleEditSuccess = () => {
+    setEditingContact(null);
+    refetch();
+  };
+
+  const handleDelete = async (contact) => {
+    setDeleting(true);
+    try {
+      await api.deleteContact(contact.id);
+      setDeleteConfirm(null);
+      refetch();
+    } catch (err) {
+      alert(err.message || 'Failed to delete contact');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const toggleMergeSelection = (contact) => {
+    setSelectedForMerge(prev => {
+      const isSelected = prev.some(c => c.id === contact.id);
+      if (isSelected) {
+        return prev.filter(c => c.id !== contact.id);
+      }
+      return [...prev, contact];
+    });
+  };
+
+  const handleMergeSuccess = () => {
+    setShowMergeModal(false);
+    setSelectedForMerge([]);
+    refetch();
+  };
+
+  const cancelMergeSelection = () => {
+    setSelectedForMerge([]);
   };
 
   if (needsTenant) {
@@ -100,15 +150,41 @@ export default function Contacts() {
     <div className="contacts-page">
       <div className="page-header">
         <h1>Contacts</h1>
-        <div className="search-box">
-          <input
-            type="text"
-            placeholder="Search contacts..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="header-actions">
+          <div className="search-box">
+            <input
+              type="text"
+              placeholder="Search contacts..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
         </div>
       </div>
+
+      {/* Merge Selection Bar */}
+      {selectedForMerge.length > 0 && (
+        <div className="merge-selection-bar">
+          <span className="merge-count">
+            {selectedForMerge.length} contact{selectedForMerge.length > 1 ? 's' : ''} selected
+          </span>
+          <div className="merge-actions">
+            <button 
+              className="btn-cancel-merge"
+              onClick={cancelMergeSelection}
+            >
+              Cancel
+            </button>
+            <button 
+              className="btn-merge"
+              onClick={() => setShowMergeModal(true)}
+              disabled={selectedForMerge.length < 2}
+            >
+              Merge Selected
+            </button>
+          </div>
+        </div>
+      )}
 
       {contacts.length === 0 ? (
         <EmptyState 
@@ -121,6 +197,11 @@ export default function Contacts() {
           <table className="contacts-table">
             <thead>
               <tr>
+                <th className="th-checkbox">
+                  <span className="merge-hint" title="Select contacts to merge">
+                    Merge
+                  </span>
+                </th>
                 <th>Name</th>
                 <th>Phone</th>
                 <th>Email</th>
@@ -130,35 +211,65 @@ export default function Contacts() {
               </tr>
             </thead>
             <tbody>
-              {filteredContacts.map((contact) => (
-                <tr key={contact.id}>
-                  <td>
-                    <div className="contact-name">
-                      <div className="avatar">
-                        {(contact.name || 'U')[0].toUpperCase()}
+              {filteredContacts.map((contact) => {
+                const isSelectedForMerge = selectedForMerge.some(c => c.id === contact.id);
+                return (
+                  <tr key={contact.id} className={isSelectedForMerge ? 'selected-for-merge' : ''}>
+                    <td className="td-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={isSelectedForMerge}
+                        onChange={() => toggleMergeSelection(contact)}
+                        title="Select for merge"
+                      />
+                    </td>
+                    <td>
+                      <div className="contact-name">
+                        <div className="avatar">
+                          {(contact.name || 'U')[0].toUpperCase()}
+                        </div>
+                        {contact.name || 'Unknown'}
                       </div>
-                      {contact.name || 'Unknown'}
-                    </div>
-                  </td>
-                  <td>{contact.phone_number || '-'}</td>
-                  <td>{contact.email || '-'}</td>
-                  <td>
-                    <span className={`status ${contact.opt_in_status || 'verified'}`}>
-                      {contact.opt_in_status || 'Verified'}
-                    </span>
-                  </td>
-                  <td>{new Date(contact.created_at).toLocaleDateString()}</td>
-                  <td>
-                    <button 
-                      className="btn-view-chat"
-                      onClick={(e) => handleViewChat(e, contact)}
-                      title="View conversation history"
-                    >
-                      💬 View Chat
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td>{contact.phone_number || '-'}</td>
+                    <td>{contact.email || '-'}</td>
+                    <td>
+                      <span className={`status ${contact.opt_in_status || 'verified'}`}>
+                        {contact.opt_in_status || 'Verified'}
+                      </span>
+                    </td>
+                    <td>{new Date(contact.created_at).toLocaleDateString()}</td>
+                    <td>
+                      <div className="action-buttons">
+                        <button 
+                          className="btn-action btn-chat"
+                          onClick={(e) => handleViewChat(e, contact)}
+                          title="View conversation history"
+                        >
+                          💬
+                        </button>
+                        <button 
+                          className="btn-action btn-edit"
+                          onClick={(e) => handleEdit(e, contact)}
+                          title="Edit contact"
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          className="btn-action btn-delete"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirm(contact);
+                          }}
+                          title="Delete contact"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           
@@ -178,6 +289,68 @@ export default function Contacts() {
           contact={selectedContact} 
           onClose={() => setSelectedContact(null)} 
         />
+      )}
+
+      {/* Edit Modal */}
+      {editingContact && (
+        <EditContactModal
+          contact={editingContact}
+          onSuccess={handleEditSuccess}
+          onCancel={() => setEditingContact(null)}
+        />
+      )}
+
+      {/* Merge Modal */}
+      {showMergeModal && selectedForMerge.length >= 2 && (
+        <MergeContactsModal
+          contacts={selectedForMerge}
+          onSuccess={handleMergeSuccess}
+          onCancel={() => setShowMergeModal(false)}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={() => !deleting && setDeleteConfirm(null)}>
+          <div className="modal delete-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Delete Contact</h2>
+              <button 
+                className="close-btn" 
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleting}
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to permanently delete this contact?</p>
+              <div className="delete-contact-info">
+                <strong>{deleteConfirm.name || 'Unknown'}</strong>
+                <span>{deleteConfirm.email || deleteConfirm.phone_number || 'No contact info'}</span>
+              </div>
+              <p className="warning-text">
+                This action cannot be undone. All associated data will be permanently removed.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button 
+                className="btn-cancel" 
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn-delete-confirm"
+                onClick={() => handleDelete(deleteConfirm)}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete Contact'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

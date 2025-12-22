@@ -60,6 +60,29 @@ export default function Dashboard() {
     }
   };
 
+  const handleDelete = async (leadId, leadName) => {
+    if (!confirm(`Are you sure you want to delete "${leadName || 'this lead'}"? This action cannot be undone.`)) {
+      return;
+    }
+    
+    setActionLoading(leadId);
+    try {
+      await api.deleteLead(leadId);
+      // Remove from local state using functional update to ensure we have latest state
+      setLeads(prevLeads => prevLeads.filter(lead => lead.id !== leadId));
+      setError(''); // Clear any previous errors
+    } catch (err) {
+      console.error('Delete error details:', {
+        message: err.message,
+        stack: err.stack,
+        error: err
+      });
+      setError(`Failed to delete lead: ${err.message || 'Unknown error'}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   if (loading) {
     return <LoadingState message="Loading dashboard..." fullPage />;
   }
@@ -136,6 +159,13 @@ export default function Dashboard() {
                         ) : (
                           <span className="action-done">—</span>
                         )}
+                        <button
+                          className="btn-action btn-delete"
+                          onClick={() => handleDelete(lead.id, lead.name)}
+                          disabled={actionLoading === lead.id}
+                        >
+                          {actionLoading === lead.id ? '...' : '✕ Delete'}
+                        </button>
                       </td>
                     </tr>
                   ))}

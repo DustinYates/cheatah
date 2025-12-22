@@ -2,10 +2,11 @@
 set -e
 
 GCP_PROJECT="${GCP_PROJECT:-chatbots-466618}"
-SERVICE_NAME="${SERVICE_NAME:-chattercheatah-frontend}"
+# Explicitly set to frontend service - don't inherit from environment
+SERVICE_NAME="chattercheatah-frontend"
 REGION="${REGION:-us-central1}"
 REPO_NAME="cloud-run-builds"
-API_URL="${API_URL:-https://chattercheatah-iyv6z6wp7a-uc.a.run.app}"
+API_URL="${API_URL:-https://chattercheatah-900139201687.us-central1.run.app}"
 IMAGE_NAME="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO_NAME}/${SERVICE_NAME}"
 
 echo "=== Deploying Frontend to Cloud Run ==="

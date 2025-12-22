@@ -126,6 +126,60 @@ class ApiClient {
     });
   }
 
+  async deleteLead(leadId) {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    
+    const selectedTenant = this.getSelectedTenant();
+    const userInfo = this.getUserInfo();
+    if (userInfo?.is_global_admin && selectedTenant) {
+      headers['X-Tenant-Id'] = selectedTenant.toString();
+    }
+
+    const response = await fetch(`${API_BASE}/leads/${leadId}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (response.status === 401) {
+      this.setToken(null);
+      localStorage.removeItem('userInfo');
+      localStorage.removeItem('selectedTenantId');
+      window.location.href = '/login';
+      throw new Error('Unauthorized');
+    }
+
+    if (response.status === 204) {
+      return true;
+    }
+
+    if (!response.ok) {
+      let errorMessage = `Delete failed (${response.status})`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.detail || errorData.message || errorMessage;
+      } catch (e) {
+        // If response is not JSON, try to get text
+        try {
+          const text = await response.text();
+          if (text) {
+            errorMessage = text;
+          }
+        } catch (e2) {
+          // Ignore
+        }
+      }
+      throw new Error(errorMessage);
+    }
+
+    return true;
+  }
+
   async getPromptBundles() {
     return this.request('/prompts/bundles');
   }
@@ -206,12 +260,141 @@ class ApiClient {
     return this.request(`/contacts${query ? `?${query}` : ''}`);
   }
 
-  async getContact(contactId) {
-    return this.request(`/contacts/${contactId}`);
+  async getContact(contactId, includeAliases = false) {
+    const query = includeAliases ? '?include_aliases=true' : '';
+    return this.request(`/contacts/${contactId}${query}`);
+  }
+
+  async updateContact(contactId, data) {
+    return this.request(`/contacts/${contactId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteContact(contactId) {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    
+    const selectedTenant = this.getSelectedTenant();
+    const userInfo = this.getUserInfo();
+    if (userInfo?.is_global_admin && selectedTenant) {
+      headers['X-Tenant-Id'] = selectedTenant.toString();
+    }
+
+    const response = await fetch(`${API_BASE}/contacts/${contactId}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (response.status === 401) {
+      this.setToken(null);
+      localStorage.removeItem('userInfo');
+      localStorage.removeItem('selectedTenantId');
+      window.location.href = '/login';
+      throw new Error('Unauthorized');
+    }
+
+    if (response.status === 204) {
+      return true;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Delete failed' }));
+      throw new Error(error.detail || 'Delete failed');
+    }
+
+    return true;
   }
 
   async getContactConversation(contactId) {
     return this.request(`/contacts/${contactId}/conversation`);
+  }
+
+  // Contact merge methods
+  async getMergePreview(contactIds) {
+    return this.request('/contacts/merge/preview', {
+      method: 'POST',
+      body: JSON.stringify({ contact_ids: contactIds }),
+    });
+  }
+
+  async mergeContacts(primaryContactId, secondaryContactIds, fieldResolutions = {}) {
+    return this.request(`/contacts/${primaryContactId}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({
+        secondary_contact_ids: secondaryContactIds,
+        field_resolutions: fieldResolutions,
+      }),
+    });
+  }
+
+  async getMergeHistory(contactId) {
+    return this.request(`/contacts/${contactId}/merge-history`);
+  }
+
+  // Contact alias methods
+  async getContactAliases(contactId, aliasType = null) {
+    const query = aliasType ? `?alias_type=${aliasType}` : '';
+    return this.request(`/contacts/${contactId}/aliases${query}`);
+  }
+
+  async addContactAlias(contactId, aliasData) {
+    return this.request(`/contacts/${contactId}/aliases`, {
+      method: 'POST',
+      body: JSON.stringify(aliasData),
+    });
+  }
+
+  async setPrimaryAlias(contactId, aliasId) {
+    return this.request(`/contacts/${contactId}/aliases/${aliasId}/primary`, {
+      method: 'PUT',
+    });
+  }
+
+  async removeContactAlias(contactId, aliasId) {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    
+    const selectedTenant = this.getSelectedTenant();
+    const userInfo = this.getUserInfo();
+    if (userInfo?.is_global_admin && selectedTenant) {
+      headers['X-Tenant-Id'] = selectedTenant.toString();
+    }
+
+    const response = await fetch(`${API_BASE}/contacts/${contactId}/aliases/${aliasId}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (response.status === 401) {
+      this.setToken(null);
+      localStorage.removeItem('userInfo');
+      localStorage.removeItem('selectedTenantId');
+      window.location.href = '/login';
+      throw new Error('Unauthorized');
+    }
+
+    if (response.status === 204) {
+      return true;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Delete failed' }));
+      throw new Error(error.detail || 'Delete failed');
+    }
+
+    return true;
   }
 
   async getBusinessProfile() {

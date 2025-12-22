@@ -1,5 +1,6 @@
 """Lead service for managing lead capture (schema + state only)."""
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.persistence.models.contact import Contact
@@ -145,3 +146,42 @@ class LeadService:
         )
         self.session.add(contact)
         return contact
+
+    async def delete_lead(self, tenant_id: int, lead_id: int) -> bool:
+        """Delete a lead by ID.
+        
+        Before deleting, nullifies any contact's lead_id that references this lead
+        to prevent foreign key constraint violations.
+        
+        Uses raw SQL to avoid ORM relationship loading which would query
+        non-existent columns in the Contact model.
+
+        Args:
+            tenant_id: Tenant ID
+            lead_id: Lead ID
+
+        Returns:
+            True if deleted, False if not found
+        """
+        # First, check if lead exists using raw SQL to avoid relationship loading
+        result = await self.session.execute(
+            text("SELECT id FROM leads WHERE id = :lead_id AND tenant_id = :tenant_id"),
+            {"lead_id": lead_id, "tenant_id": tenant_id}
+        )
+        if result.scalar_one_or_none() is None:
+            return False
+        
+        # Nullify any contact's lead_id that references this lead using raw SQL
+        await self.session.execute(
+            text("UPDATE contacts SET lead_id = NULL WHERE tenant_id = :tenant_id AND lead_id = :lead_id"),
+            {"tenant_id": tenant_id, "lead_id": lead_id}
+        )
+        
+        # Delete the lead using raw SQL to avoid relationship loading
+        await self.session.execute(
+            text("DELETE FROM leads WHERE id = :lead_id AND tenant_id = :tenant_id"),
+            {"lead_id": lead_id, "tenant_id": tenant_id}
+        )
+        
+        await self.session.commit()
+        return True

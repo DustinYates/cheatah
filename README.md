@@ -22,7 +22,7 @@ This is the foundational backend architecture phase, focusing on:
 - **Deployment**: Cloud Run
 - **LLM**: Gemini Flash 2.5 via Google Generative AI
 
-## Setup
+## Setup (Backend)
 
 ### Prerequisites
 
@@ -30,7 +30,7 @@ This is the foundational backend architecture phase, focusing on:
 - uv (https://github.com/astral-sh/uv)
 - Docker and Docker Compose (for local services)
 
-### Installation
+### Installation (API)
 
 1. Clone the repository
 2. Install dependencies:
@@ -58,6 +58,24 @@ This is the foundational backend architecture phase, focusing on:
    uv run uvicorn app.main:app --reload
    ```
 
+### Environment variables
+
+Set the following in `.env`:
+
+| Variable | Description | Example |
+| --- | --- | --- |
+| `DATABASE_URL` | Postgres URL (asyncpg) | `postgresql+asyncpg://user:pass@localhost:5432/chattercheatah` |
+| `REDIS_URL` | Redis connection (optional for dev) | `redis://localhost:6379/0` |
+| `REDIS_ENABLED` | Toggle Redis use | `false` |
+| `JWT_SECRET_KEY` | JWT signing key | `change-me` |
+| `JWT_ALGORITHM` | JWT algorithm | `HS256` |
+| `GEMINI_API_KEY` | Google AI key | `...` |
+| `GEMINI_MODEL` | Gemini model | `gemini-2.5-flash` |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | SMS credentials (optional) | `...` |
+| `CLOUD_TASKS_WORKER_URL` | Cloud Tasks worker endpoint (prod) | `https://.../workers/sms` |
+
+The API will still start with Redis disabled or LLM keys missing; related features will be no-ops.
+
 ## Project Structure
 
 - `app/` - Main application code
@@ -71,13 +89,33 @@ This is the foundational backend architecture phase, focusing on:
 - `tests/` - Test suite
 - `notebooks/` - Jupyter notebooks for analysis (Vertex AI Workbench)
 - `scripts/` - Python analysis scripts
+- `client/` - React frontend (Vite)
 
-## Development
+## Frontend (Vite React)
+
+```bash
+cd client
+npm install
+npm run dev   # http://localhost:5173
+```
+
+Configure API base in `client/.env`:
+```
+VITE_API_URL=http://localhost:8000/api/v1
+```
+
+## Development Tasks
 
 ### Running Tests
 
 ```bash
 uv run pytest
+```
+
+Frontend tests:
+```bash
+cd client
+npm run test
 ```
 
 ### Database Migrations
@@ -100,7 +138,6 @@ The application is designed to run on:
 
 See deployment documentation for GCP setup instructions.
 
-
 ## Deployment Reference
 
 **Project Structure:**
@@ -122,3 +159,8 @@ gcloud run deploy chattercheatah-frontend --source . --region us-central1 --proj
 cd ~/Desktop/chattercheetah
 gcloud run deploy chattercheatah --source . --region us-central1 --project chatbots-466618
 ```
+
+## Additional Docs
+
+- `DEVELOPMENT.md` — sync workflow between local and GCP Vertex AI Workbench
+- `DEPLOYMENT.md` — Cloud Run deployment, secrets, and troubleshooting

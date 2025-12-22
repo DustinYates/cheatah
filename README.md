@@ -148,6 +148,10 @@ See deployment documentation for GCP setup instructions.
 - Backend: `chattercheatah` → https://chattercheatah-900139201687.us-central1.run.app
 - Frontend: `chattercheatah-frontend` → https://chattercheatah-frontend-900139201687.us-central1.run.app
 
+**Database:**
+- Cloud SQL Instance: `chattercheatah-db` (PostgreSQL 15) in `us-central1-c`
+- Database Name: `chattercheatah`
+
 **Deploy Commands:**
 ```bash
 # Frontend

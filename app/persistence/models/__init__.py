@@ -1,6 +1,7 @@
 """Database models."""
 
 from app.persistence.models.call import Call
+from app.persistence.models.call_summary import CallSummary
 from app.persistence.models.contact import Contact
 from app.persistence.models.contact_alias import ContactAlias
 from app.persistence.models.contact_merge_log import ContactMergeLog
@@ -14,6 +15,7 @@ from app.persistence.models.tenant_sms_config import TenantSmsConfig
 
 __all__ = [
     "Call",
+    "CallSummary",
     "Tenant",
     "User",
     "Conversation",

@@ -6,6 +6,25 @@ import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import EditContactModal from '../components/EditContactModal';
 import './ContactDetail.css';
 
+// Format duration as mm:ss
+function formatDuration(seconds) {
+  if (!seconds) return '-';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Intent display labels
+const INTENT_LABELS = {
+  pricing_info: 'Pricing',
+  hours_location: 'Hours/Location',
+  booking_request: 'Booking',
+  support_request: 'Support',
+  wrong_number: 'Wrong Number',
+  general_inquiry: 'General',
+  unknown: 'Unknown',
+};
+
 export default function ContactDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -17,6 +36,9 @@ export default function ContactDetail() {
   const [newAlias, setNewAlias] = useState({ alias_type: 'email', value: '' });
   const [addingAlias, setAddingAlias] = useState(false);
   const [error, setError] = useState('');
+  const [calls, setCalls] = useState([]);
+  const [loadingCalls, setLoadingCalls] = useState(true);
+  const [selectedCall, setSelectedCall] = useState(null);
 
   const fetchContact = useCallback(async () => {
     const data = await api.getContact(id, true);
@@ -39,8 +61,21 @@ export default function ContactDetail() {
     if (id) {
       fetchAliases();
       fetchMergeHistory();
+      fetchCalls();
     }
   }, [id]);
+
+  const fetchCalls = async () => {
+    setLoadingCalls(true);
+    try {
+      const data = await api.getCallsForContact(id);
+      setCalls(data || []);
+    } catch (err) {
+      console.error('Failed to fetch calls:', err);
+    } finally {
+      setLoadingCalls(false);
+    }
+  };
 
   const fetchAliases = async () => {
     setLoadingAliases(true);
@@ -360,6 +395,52 @@ export default function ContactDetail() {
           </div>
         )}
 
+        {/* Voice Calls Card */}
+        <div className="calls-card">
+          <h3>📞 Voice Calls</h3>
+          {loadingCalls ? (
+            <LoadingState message="Loading calls..." />
+          ) : calls.length > 0 ? (
+            <div className="calls-list">
+              {calls.map((call) => (
+                <div 
+                  key={call.id} 
+                  className="call-item"
+                  onClick={() => setSelectedCall(call)}
+                >
+                  <div className="call-item-header">
+                    <span className="call-date">
+                      {new Date(call.created_at).toLocaleDateString(undefined, {
+                        month: 'short', day: 'numeric', year: 'numeric'
+                      })}
+                    </span>
+                    <span className="call-time">
+                      {new Date(call.created_at).toLocaleTimeString(undefined, {
+                        hour: '2-digit', minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  <div className="call-item-body">
+                    <span className="call-duration">{formatDuration(call.duration)}</span>
+                    {call.intent && (
+                      <span className="call-intent">{INTENT_LABELS[call.intent] || call.intent}</span>
+                    )}
+                  </div>
+                  {call.summary_preview && (
+                    <div className="call-summary-preview">{call.summary_preview}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState 
+              icon="📞" 
+              title="No voice calls" 
+              description="No voice calls found for this contact."
+            />
+          )}
+        </div>
+
         {/* Conversation Card */}
         <div className="conversation-card">
           <h3>Conversation History</h3>
@@ -386,6 +467,62 @@ export default function ContactDetail() {
           )}
         </div>
       </div>
+
+      {/* Call Detail Modal */}
+      {selectedCall && (
+        <div className="call-detail-modal-overlay" onClick={() => setSelectedCall(null)}>
+          <div className="call-detail-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="call-detail-modal-header">
+              <h3>Call Details</h3>
+              <button className="btn-close" onClick={() => setSelectedCall(null)}>×</button>
+            </div>
+            <div className="call-detail-modal-body">
+              <div className="call-detail-row">
+                <span className="label">Date:</span>
+                <span className="value">{new Date(selectedCall.created_at).toLocaleString()}</span>
+              </div>
+              <div className="call-detail-row">
+                <span className="label">Duration:</span>
+                <span className="value">{formatDuration(selectedCall.duration)}</span>
+              </div>
+              <div className="call-detail-row">
+                <span className="label">Status:</span>
+                <span className="value">{selectedCall.status}</span>
+              </div>
+              {selectedCall.intent && (
+                <div className="call-detail-row">
+                  <span className="label">Intent:</span>
+                  <span className="value">{INTENT_LABELS[selectedCall.intent] || selectedCall.intent}</span>
+                </div>
+              )}
+              {selectedCall.outcome && (
+                <div className="call-detail-row">
+                  <span className="label">Outcome:</span>
+                  <span className="value">{selectedCall.outcome.replace('_', ' ')}</span>
+                </div>
+              )}
+              {selectedCall.summary_preview && (
+                <div className="call-detail-summary">
+                  <span className="label">Summary:</span>
+                  <p>{selectedCall.summary_preview}</p>
+                </div>
+              )}
+              {selectedCall.recording_url && (
+                <div className="call-detail-recording">
+                  <a 
+                    href={selectedCall.recording_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-listen"
+                  >
+                    🎧 Listen to Recording
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {showEditModal && (

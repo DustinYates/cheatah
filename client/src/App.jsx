@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Prompts from './pages/Prompts';
 import Contacts from './pages/Contacts';
 import ContactDetail from './pages/ContactDetail';
+import Calls from './pages/Calls';
 import UnknownLeads from './pages/UnknownLeads';
 import UnknownLeadDetail from './pages/UnknownLeadDetail';
 import Onboarding from './pages/Onboarding';
@@ -40,6 +41,7 @@ function App() {
             <Route path="prompts/wizard" element={<PromptWizard />} />
             <Route path="contacts" element={<Contacts />} />
             <Route path="contacts/:id" element={<ContactDetail />} />
+            <Route path="calls" element={<Calls />} />
             <Route path="unknown" element={<UnknownLeads />} />
             <Route path="unknown/:id" element={<UnknownLeadDetail />} />
             <Route path="settings" element={<Settings />} />

@@ -432,6 +432,26 @@ class ApiClient {
       body: JSON.stringify(data),
     });
   }
+
+  // Calls methods
+  async getCalls(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/calls${query ? `?${query}` : ''}`);
+  }
+
+  async getCall(callId) {
+    return this.request(`/calls/${callId}`);
+  }
+
+  async getCallsForContact(contactId, params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/calls/by-contact/${contactId}${query ? `?${query}` : ''}`);
+  }
+
+  async getCallsForPhone(phoneNumber, params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/calls/by-phone/${encodeURIComponent(phoneNumber)}${query ? `?${query}` : ''}`);
+  }
 }
 
 export const api = new ApiClient();

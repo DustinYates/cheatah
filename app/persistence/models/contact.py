@@ -9,6 +9,7 @@ from sqlalchemy.orm import relationship
 from app.persistence.database import Base
 
 if TYPE_CHECKING:
+    from app.persistence.models.call_summary import CallSummary
     from app.persistence.models.contact_alias import ContactAlias
     from app.persistence.models.contact_merge_log import ContactMergeLog
     from app.persistence.models.lead import Lead
@@ -68,6 +69,9 @@ class Contact(Base):
     # User relationships for audit
     deleted_by_user = relationship("User", foreign_keys=[deleted_by])
     merged_by_user = relationship("User", foreign_keys=[merged_by])
+    
+    # Call summaries
+    call_summaries = relationship("CallSummary", back_populates="contact")
 
     def __repr__(self) -> str:
         return f"<Contact(id={self.id}, tenant_id={self.tenant_id}, email={self.email}, phone={self.phone})>"

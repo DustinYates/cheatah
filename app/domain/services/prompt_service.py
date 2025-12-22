@@ -131,3 +131,56 @@ class PromptService:
         
         return base_prompt + sms_instructions
 
+    async def compose_prompt_voice(
+        self, tenant_id: int | None, context: dict | None = None
+    ) -> str | None:
+        """Compose voice-specific prompt with constraints for phone calls.
+        
+        Voice prompts are optimized for:
+        - Natural spoken language (no markdown, links, etc.)
+        - Short responses (1-2 sentences + question)
+        - Clear pronunciation
+        - Guardrails against sensitive content
+        
+        Returns:
+            Composed prompt string with voice constraints, or None if no prompt is configured
+        """
+        base_prompt = await self.compose_prompt(tenant_id, context)
+        
+        if base_prompt is None:
+            return None
+        
+        voice_instructions = """
+
+IMPORTANT VOICE CALL CONSTRAINTS:
+
+Response Style:
+- Keep responses to 1-2 SHORT sentences maximum, then ask a question
+- Speak naturally as if on a phone call
+- NO markdown, bullet points, links, or special formatting
+- Use conversational language, not formal writing
+- End with a question to keep the conversation moving
+
+Prohibited Topics (DO NOT):
+- Process payments or discuss credit card information
+- Provide legal advice or specific legal guidance
+- Provide medical advice or diagnoses
+- Make guarantees or binding promises
+- Discuss specific pricing without verified information
+- Share confidential business information
+
+If Asked About Prohibited Topics:
+- Politely redirect to speak with a team member
+- Offer to have someone follow up with them
+
+Lead Capture:
+- Listen for name, email, and callback preferences
+- If caller mentions contact info, acknowledge you've noted it
+- Ask for name and best way to reach them when appropriate
+
+Call Ending:
+- If caller says goodbye, thank them warmly and end professionally
+- Always confirm any follow-up actions before ending"""
+        
+        return base_prompt + voice_instructions
+

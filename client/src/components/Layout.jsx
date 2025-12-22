@@ -56,6 +56,9 @@ export default function Layout() {
             <NavLink to="/contacts">Contacts</NavLink>
           </li>
           <li>
+            <NavLink to="/calls">Calls</NavLink>
+          </li>
+          <li>
             <NavLink to="/unknown">Unknown</NavLink>
           </li>
           <li>

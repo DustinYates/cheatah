@@ -9,6 +9,7 @@ from sqlalchemy.orm import relationship
 from app.persistence.database import Base
 
 if TYPE_CHECKING:
+    from app.persistence.models.call_summary import CallSummary
     from app.persistence.models.contact import Contact
     from app.persistence.models.conversation import Conversation
     from app.persistence.models.tenant import Tenant
@@ -33,6 +34,7 @@ class Lead(Base):
     tenant = relationship("Tenant", back_populates="leads")
     conversation = relationship("Conversation", back_populates="leads")
     contact = relationship("Contact", back_populates="lead", uselist=False)
+    call_summaries = relationship("CallSummary", back_populates="lead")
 
     def __repr__(self) -> str:
         return f"<Lead(id={self.id}, tenant_id={self.tenant_id}, email={self.email}, phone={self.phone}, status={self.status})>"

@@ -9,6 +9,7 @@ from sqlalchemy.orm import relationship
 from app.persistence.database import Base
 
 if TYPE_CHECKING:
+    from app.persistence.models.call_summary import CallSummary
     from app.persistence.models.tenant import Tenant
 
 
@@ -34,6 +35,7 @@ class Call(Base):
 
     # Relationships
     tenant = relationship("Tenant", back_populates="calls")
+    summary = relationship("CallSummary", back_populates="call", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Call(id={self.id}, tenant_id={self.tenant_id}, call_sid={self.call_sid}, status={self.status})>"

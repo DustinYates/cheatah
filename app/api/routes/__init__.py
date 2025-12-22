@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_sms, auth, chat, contacts, conversations, leads, profile, prompts, prompt_interview, sms_webhooks, tenant_setup, tenants, users, tenant_sms
+from app.api.routes import admin, admin_sms, admin_voice, auth, chat, contacts, conversations, leads, profile, prompts, prompt_interview, sms_webhooks, tenant_setup, tenants, users, tenant_sms, voice_webhooks
 
 api_router = APIRouter()
 
@@ -10,6 +10,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(sms_webhooks.router, prefix="/sms", tags=["sms-webhooks"])
+api_router.include_router(voice_webhooks.router, prefix="/voice", tags=["voice-webhooks"])
 
 # Protected routes (auth required)
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
@@ -21,6 +22,7 @@ api_router.include_router(prompt_interview.router, prefix="/prompts", tags=["pro
 api_router.include_router(profile.router, prefix="/tenant", tags=["profile"])
 api_router.include_router(tenant_setup.router, prefix="/tenant-setup", tags=["tenant-setup"])
 api_router.include_router(admin_sms.router, prefix="/admin/sms", tags=["admin-sms"])
+api_router.include_router(admin_voice.router, prefix="/admin/voice", tags=["admin-voice"])
 
 # Tenant SMS settings (no Twilio creds exposed)
 api_router.include_router(tenant_sms.router, prefix="/sms", tags=["sms"])

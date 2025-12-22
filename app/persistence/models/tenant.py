@@ -50,6 +50,9 @@ class Tenant(Base):
     contacts = relationship(
         "Contact", back_populates="tenant", cascade="all, delete-orphan"
     )
+    calls = relationship(
+        "Call", back_populates="tenant", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Tenant(id={self.id}, name={self.name}, subdomain={self.subdomain})>"
@@ -67,6 +70,7 @@ class TenantBusinessProfile(Base):
     website_url = Column(Text, nullable=True)
     phone_number = Column(String(50), nullable=True)
     twilio_phone = Column(String(50), nullable=True)
+    twilio_voice_phone = Column(String(50), nullable=True)
     email = Column(String(255), nullable=True)
     
     profile_complete = Column(Boolean, default=False, nullable=False)

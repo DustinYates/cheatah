@@ -30,6 +30,11 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         # Only check idempotency for POST, PUT, PATCH, DELETE
         if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
             return await call_next(request)
+        
+        # Skip idempotency for webhook endpoints (SMS, Voice) - they return XML
+        path = str(request.url.path)
+        if "/sms/" in path or "/voice/" in path:
+            return await call_next(request)
 
         # Get idempotency key from header
         idempotency_key = request.headers.get("Idempotency-Key")

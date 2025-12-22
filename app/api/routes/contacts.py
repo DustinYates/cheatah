@@ -132,6 +132,12 @@ class AddAliasRequest(BaseModel):
     is_primary: bool = False
 
 
+class MergePreviewRequest(BaseModel):
+    """Merge preview request."""
+    
+    contact_ids: list[int]
+
+
 # ============== Helper Functions ==============
 
 def _contact_to_response(contact, include_aliases: bool = False) -> ContactResponse:
@@ -321,13 +327,13 @@ async def get_contact_conversation(
 
 @router.post("/merge/preview", response_model=MergePreviewResponse)
 async def get_merge_preview(
-    contact_ids: list[int] = Body(..., embed=True),
-    db: Annotated[AsyncSession, Depends(get_db)] = None,
-    current_user: Annotated[User, Depends(get_current_user)] = None,
-    tenant_id: Annotated[int, Depends(require_tenant_context)] = None,
+    request: MergePreviewRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> MergePreviewResponse:
     """Get a preview of merging multiple contacts."""
-    if len(contact_ids) < 2:
+    if len(request.contact_ids) < 2:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least 2 contacts required for merge",
@@ -336,7 +342,7 @@ async def get_merge_preview(
     merge_service = ContactMergeService(db)
     
     try:
-        preview = await merge_service.get_merge_preview(tenant_id, contact_ids)
+        preview = await merge_service.get_merge_preview(tenant_id, request.contact_ids)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

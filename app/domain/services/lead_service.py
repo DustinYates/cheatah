@@ -134,17 +134,25 @@ class LeadService:
         )
         
         if existing_contact:
-            return None
+            # If contact exists but doesn't have lead_id, link it
+            if not existing_contact.lead_id:
+                existing_contact.lead_id = lead.id
+                await self.session.commit()
+                await self.session.refresh(existing_contact)
+            return existing_contact
         
         # Create new contact from lead data
         contact = Contact(
             tenant_id=tenant_id,
+            lead_id=lead.id,
             email=lead.email,
             phone=lead.phone,
             name=lead.name,
             source='web_chat_lead',
         )
         self.session.add(contact)
+        await self.session.commit()
+        await self.session.refresh(contact)
         return contact
 
     async def delete_lead(self, tenant_id: int, lead_id: int) -> bool:

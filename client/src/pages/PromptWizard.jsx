@@ -19,6 +19,8 @@ export default function PromptWizard() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(null);
   const [generatedPrompt, setGeneratedPrompt] = useState(null);
+  const [publishing, setPublishing] = useState(false);
+  const [isPublished, setIsPublished] = useState(false);
 
   // Start the interview on mount
   useEffect(() => {
@@ -123,6 +125,28 @@ export default function PromptWizard() {
       }]);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!generatedPrompt?.bundle_id) return;
+    
+    setPublishing(true);
+    try {
+      await api.publishPromptBundle(generatedPrompt.bundle_id);
+      setIsPublished(true);
+      setMessages(prev => [...prev, { 
+        type: 'assistant', 
+        content: '🚀 Your chatbot is now live! Visitors to your website will start seeing responses from your new prompt.' 
+      }]);
+    } catch (err) {
+      setError(err.message || 'Failed to publish prompt');
+      setMessages(prev => [...prev, { 
+        type: 'error', 
+        content: 'Failed to publish prompt. Please try again or publish from the Prompts page.' 
+      }]);
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -244,24 +268,71 @@ export default function PromptWizard() {
                 </button>
               ) : (
                 <div className="success-actions">
-                  <div className="success-message">
-                    <span className="success-icon">✅</span>
-                    Prompt created successfully!
-                  </div>
-                  <div className="action-buttons">
-                    <button 
-                      className="secondary-button"
-                      onClick={goToPrompts}
-                    >
-                      View All Prompts
-                    </button>
-                    <button 
-                      className="primary-button"
-                      onClick={() => navigate(`/prompts?test=${generatedPrompt.bundle_id}`)}
-                    >
-                      Test Your Chatbot
-                    </button>
-                  </div>
+                  {!isPublished ? (
+                    <>
+                      <div className="success-message">
+                        <span className="success-icon">✅</span>
+                        Prompt created successfully!
+                      </div>
+                      <div className="publish-prompt">
+                        <p className="publish-description">
+                          Your prompt is ready! Publish it now to make your chatbot live on your website.
+                        </p>
+                        <button 
+                          className="publish-button"
+                          onClick={handlePublish}
+                          disabled={publishing}
+                        >
+                          {publishing ? (
+                            <>
+                              <span className="spinner"></span>
+                              Publishing...
+                            </>
+                          ) : (
+                            '🚀 Publish Now'
+                          )}
+                        </button>
+                      </div>
+                      <div className="action-buttons">
+                        <button 
+                          className="secondary-button"
+                          onClick={() => navigate(`/prompts?test=${generatedPrompt.bundle_id}`)}
+                        >
+                          Test First
+                        </button>
+                        <button 
+                          className="ghost-button"
+                          onClick={goToPrompts}
+                        >
+                          Publish Later
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="success-message published">
+                        <span className="success-icon">🚀</span>
+                        Your chatbot is now live!
+                      </div>
+                      <p className="published-description">
+                        Visitors to your website will now see responses from your new chatbot prompt.
+                      </p>
+                      <div className="action-buttons">
+                        <button 
+                          className="primary-button"
+                          onClick={() => navigate(`/prompts?test=${generatedPrompt.bundle_id}`)}
+                        >
+                          Test Your Chatbot
+                        </button>
+                        <button 
+                          className="secondary-button"
+                          onClick={goToPrompts}
+                        >
+                          View All Prompts
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

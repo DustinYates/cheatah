@@ -208,6 +208,12 @@ class ApiClient {
     });
   }
 
+  async deactivatePromptBundle(bundleId) {
+    return this.request(`/prompts/bundles/${bundleId}/deactivate`, {
+      method: 'PUT',
+    });
+  }
+
   async deletePromptBundle(bundleId) {
     const headers = {
       'Content-Type': 'application/json',

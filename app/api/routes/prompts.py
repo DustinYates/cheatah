@@ -336,6 +336,36 @@ async def publish_prompt_bundle(
     )
 
 
+@router.put("/bundles/{bundle_id}/deactivate", response_model=PromptBundleResponse)
+async def deactivate_prompt_bundle(
+    bundle_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PromptBundleResponse:
+    """Deactivate a bundle (move from production to draft)."""
+    prompt_service = PromptService(db)
+    bundle = await prompt_service.deactivate_bundle(tenant_id, bundle_id)
+    
+    if bundle is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prompt bundle not found",
+        )
+    
+    return PromptBundleResponse(
+        id=bundle.id,
+        tenant_id=bundle.tenant_id,
+        name=bundle.name,
+        version=bundle.version,
+        status=bundle.status,
+        is_active=bundle.is_active,
+        published_at=bundle.published_at.isoformat() if bundle.published_at else None,
+        created_at=bundle.created_at.isoformat(),
+        updated_at=bundle.updated_at.isoformat(),
+    )
+
+
 @router.post("/test", response_model=PromptTestResponse)
 async def test_prompt(
     test_request: PromptTestRequest,

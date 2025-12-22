@@ -102,6 +102,10 @@ class PromptService:
         """Set a bundle to testing status."""
         return await self.prompt_repo.set_testing(tenant_id, bundle_id)
 
+    async def deactivate_bundle(self, tenant_id: int | None, bundle_id: int) -> PromptBundle | None:
+        """Deactivate a bundle (move from production to draft)."""
+        return await self.prompt_repo.deactivate_bundle(tenant_id, bundle_id)
+
     async def compose_prompt_sms(
         self, tenant_id: int | None, context: dict | None = None
     ) -> str | None:

@@ -129,12 +129,9 @@ export default function Prompts() {
     
     setDeactivating(bundle.id);
     try {
-      // Call API to demote from production to draft
-      const updated = await api.updatePromptBundle(bundle.id, {
-        ...bundle,
-        status: 'draft'
-      });
-      setBundles(bundles.map(b => b.id === updated.id ? { ...updated, status: 'draft' } : b));
+      // Call dedicated deactivate endpoint
+      const updated = await api.deactivatePromptBundle(bundle.id);
+      setBundles(bundles.map(b => b.id === updated.id ? updated : b));
       addToast('Prompt deactivated successfully', 'success');
     } catch (err) {
       addToast('Failed to deactivate prompt: ' + err.message, 'error');

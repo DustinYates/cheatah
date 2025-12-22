@@ -102,3 +102,14 @@ class PromptRepository(BaseRepository[PromptBundle]):
         await self.session.refresh(bundle)
         return bundle
 
+    async def deactivate_bundle(self, tenant_id: int | None, bundle_id: int) -> PromptBundle | None:
+        """Deactivate a bundle (move from production to draft)."""
+        bundle = await self.get_by_id(tenant_id, bundle_id)
+        if not bundle:
+            return None
+        bundle.status = PromptStatus.DRAFT.value
+        bundle.is_active = False
+        await self.session.commit()
+        await self.session.refresh(bundle)
+        return bundle
+

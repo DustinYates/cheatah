@@ -345,7 +345,10 @@ export default function Prompts() {
       {/* Edit Bundle Modal */}
       {editBundle && (
         <div className="modal-overlay" onClick={() => setEditBundle(null)}>
-          <div className="modal large-modal" onClick={(e) => e.stopPropagation()}>
+          <div 
+            className="modal large-modal" 
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <div className="modal-title-group">
                 <h2>{editBundle.status === 'production' ? 'View Prompt' : 'Edit Prompt'}: {editBundle.name}</h2>
@@ -360,23 +363,23 @@ export default function Prompts() {
                   <span className="warning-icon">⚠️</span>
                   <span>This prompt is currently live. To make changes, deactivate it first or create a new draft.</span>
                 </div>
-                <div className="readonly-sections">
-                  {editBundle.sections?.map((section, idx) => {
-                    const scopeInfo = getScopeInfo(section.scope);
-                    const isBase = isBaseScope(section.scope);
-                    return (
-                      <div key={idx} className={`section-readonly ${isBase ? 'section-readonly--base' : ''}`}>
-                        <div className="section-readonly-header">
-                          <span className="scope-icon">{scopeInfo.icon}</span>
-                          <span className="section-key-display">{section.section_key}</span>
-                          <span className="section-scope-badge">{scopeInfo.label}</span>
-                          {isBase && <span className="base-badge">Base (Read-only)</span>}
+                <div className="readonly-sections" tabIndex={0}>
+                    {editBundle.sections?.map((section, idx) => {
+                      const scopeInfo = getScopeInfo(section.scope);
+                      const isBase = isBaseScope(section.scope);
+                      return (
+                        <div key={idx} className={`section-readonly ${isBase ? 'section-readonly--base' : ''}`}>
+                          <div className="section-readonly-header">
+                            <span className="scope-icon">{scopeInfo.icon}</span>
+                            <span className="section-key-display">{section.section_key}</span>
+                            <span className="section-scope-badge">{scopeInfo.label}</span>
+                            {isBase && <span className="base-badge">Base (Read-only)</span>}
+                          </div>
+                          <pre className="section-readonly-content">{section.content}</pre>
                         </div>
-                        <pre className="section-readonly-content">{section.content}</pre>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
                 <div className="modal-actions">
                   <button
                     type="button"

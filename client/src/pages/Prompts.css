@@ -460,6 +460,7 @@
   z-index: 1000;
   padding: 20px;
   animation: fadeIn 0.2s ease;
+  overflow: hidden;
 }
 
 @keyframes fadeIn {
@@ -474,6 +475,7 @@
   width: 100%;
   max-width: 800px;
   max-height: 90vh;
+  height: 90vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -497,6 +499,7 @@
   align-items: center;
   padding: 24px;
   border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
 
 .modal-header h2 {
@@ -835,6 +838,7 @@
   padding: 24px;
   border-top: 1px solid #e2e8f0;
   margin-top: auto;
+  flex-shrink: 0;
 }
 
 /* Sections */
@@ -1031,6 +1035,39 @@
   color: #92400e;
   font-size: 14px;
   border-bottom: 1px solid #fcd34d;
+  flex-shrink: 0;
+}
+
+/* Readonly Sections Container - Scrollable (matches ChatModal pattern) */
+.readonly-sections {
+  flex: 1 1 0%;
+  overflow-y: scroll !important;
+  overflow-x: hidden;
+  padding: 24px;
+  min-height: 0;
+  max-height: 100%;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+/* Ensure scrollbar is visible */
+.readonly-sections::-webkit-scrollbar {
+  width: 8px;
+}
+
+.readonly-sections::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.readonly-sections::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.readonly-sections::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 /* Two Column Modal */
@@ -1226,6 +1263,8 @@
 /* Large Modal */
 .large-modal {
   max-width: 700px;
+  height: 90vh;
+  max-height: 90vh;
 }
 
 .large-modal form {

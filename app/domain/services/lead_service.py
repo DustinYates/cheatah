@@ -144,21 +144,40 @@ class LeadService:
             
             if existing_contact:
                 logger.info(f"Found existing contact {existing_contact.id} for lead {lead.id}")
+                updated = False
                 # If contact exists but doesn't have lead_id, link it
                 if not existing_contact.lead_id:
                     existing_contact.lead_id = lead.id
-                    # Don't commit here - let the caller commit
+                    updated = True
+                # Update missing fields from lead
+                if lead.phone and not existing_contact.phone:
+                    existing_contact.phone = lead.phone
+                    updated = True
+                    logger.info(f"Updated contact {existing_contact.id} with phone from lead {lead.id}")
+                if lead.email and not existing_contact.email:
+                    existing_contact.email = lead.email
+                    updated = True
+                    logger.info(f"Updated contact {existing_contact.id} with email from lead {lead.id}")
+                if lead.name and not existing_contact.name:
+                    existing_contact.name = lead.name
+                    updated = True
+                    logger.info(f"Updated contact {existing_contact.id} with name from lead {lead.id}")
+                # Don't commit here - let the caller commit
                 return existing_contact
             
             # Create new contact from lead data
             logger.info(f"Creating new contact for lead {lead.id}")
+            # Determine source from lead metadata
+            source = 'web_chat_lead'
+            if lead.extra_data and lead.extra_data.get('source') == 'voice_call':
+                source = 'voice_call'
             contact = Contact(
                 tenant_id=tenant_id,
                 lead_id=lead.id,
                 email=lead.email,
                 phone=lead.phone,
                 name=lead.name,
-                source='web_chat_lead',
+                source=source,
             )
             self.session.add(contact)
             # Don't commit here - let the caller commit to maintain transaction integrity

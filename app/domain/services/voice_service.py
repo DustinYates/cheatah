@@ -731,8 +731,13 @@ Write a professional summary (2-3 sentences):"""
             
             if existing_lead:
                 lead_id = existing_lead.id
+                # Auto-verify existing leads from voice calls (we have confirmed phone from caller ID)
+                if existing_lead.status != 'verified':
+                    existing_lead.status = 'verified'
+                    await self.session.commit()
+                    logger.info(f"Auto-verified lead from voice call: lead_id={lead_id}")
             elif extracted_data.name or extracted_data.email or phone:
-                # Create new lead
+                # Create new lead - auto-verified since we have phone from caller ID
                 lead = await self.lead_service.capture_lead(
                     tenant_id=tenant_id,
                     conversation_id=conversation_id,
@@ -746,8 +751,29 @@ Write a professional summary (2-3 sentences):"""
                         "preferred_callback_time": extracted_data.preferred_callback_time,
                     },
                 )
+                # Auto-verify voice call leads since we have confirmed phone from caller ID
+                lead.status = 'verified'
+                await self.session.commit()
                 lead_id = lead.id
-                logger.info(f"Created lead from voice call: lead_id={lead_id}")
+                logger.info(f"Created and auto-verified lead from voice call: lead_id={lead_id}")
+            
+            # If no existing contact but we have a phone number, create one
+            # Voice calls always have a phone number from caller ID
+            if not contact_id and phone:
+                from app.persistence.models.contact import Contact
+                contact = Contact(
+                    tenant_id=tenant_id,
+                    lead_id=lead_id,
+                    email=extracted_data.email,
+                    phone=phone,
+                    name=extracted_data.name,
+                    source='voice_call',
+                )
+                self.session.add(contact)
+                await self.session.commit()
+                await self.session.refresh(contact)
+                contact_id = contact.id
+                logger.info(f"Created contact from voice call: contact_id={contact_id}, phone={phone}")
                 
         except Exception as e:
             logger.error(f"Failed to create/update lead/contact: {e}", exc_info=True)

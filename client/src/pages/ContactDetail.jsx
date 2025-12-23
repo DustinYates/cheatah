@@ -205,7 +205,7 @@ export default function ContactDetail() {
             </div>
             <div className="detail-row">
               <span className="label">Phone:</span>
-              <span className="value">{contact.phone_number || '-'}</span>
+              <span className="value">{contact.phone || '-'}</span>
             </div>
             <div className="detail-row">
               <span className="label">Source:</span>

@@ -38,7 +38,7 @@ export default function DeleteContactModal({ contact, onConfirm, onCancel, isDel
             </div>
             <div className="contact-info">
               <strong>{contact.name || 'Unknown'}</strong>
-              <span>{contact.email || contact.phone_number || 'No contact info'}</span>
+              <span>{contact.email || contact.phone || 'No contact info'}</span>
             </div>
           </div>
           

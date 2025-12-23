@@ -52,7 +52,7 @@ export default function ChatModal({ contact, onClose }) {
             </div>
             <div className="chat-modal-info">
               <h3>{contact.name || 'Unknown'}</h3>
-              <span className="chat-modal-email">{contact.email || contact.phone_number || '-'}</span>
+              <span className="chat-modal-email">{contact.email || contact.phone || '-'}</span>
             </div>
           </div>
           <button className="chat-modal-close" onClick={onClose}>×</button>

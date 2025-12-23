@@ -124,7 +124,7 @@ export default function MergeContactsModal({ contacts, onSuccess, onCancel }) {
               <div className="contact-details">
                 <strong>{contact.name || 'Unknown'}</strong>
                 {contact.email && <span>📧 {contact.email}</span>}
-                {contact.phone_number && <span>📱 {contact.phone_number}</span>}
+                {contact.phone && <span>📱 {contact.phone}</span>}
                 <span className="created-date">
                   Created: {new Date(contact.created_at).toLocaleDateString()}
                 </span>
@@ -218,7 +218,7 @@ export default function MergeContactsModal({ contacts, onSuccess, onCancel }) {
               <div className="contact-info">
                 <strong>{primary?.name || 'Unknown'}</strong>
                 <span>{primary?.email || '-'}</span>
-                <span>{primary?.phone_number || '-'}</span>
+                <span>{primary?.phone || '-'}</span>
               </div>
             </div>
           </div>
@@ -237,7 +237,7 @@ export default function MergeContactsModal({ contacts, onSuccess, onCancel }) {
                 <div className="contact-info">
                   <strong>{contact.name || 'Unknown'}</strong>
                   <span>{contact.email || '-'}</span>
-                  <span>{contact.phone_number || '-'}</span>
+                  <span>{contact.phone || '-'}</span>
                 </div>
               </div>
             ))}

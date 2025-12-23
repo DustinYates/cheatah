@@ -8,7 +8,7 @@ export default function EditContactModal({ contact, onSuccess, onCancel }) {
   const [formData, setFormData] = useState({
     name: contact?.name || '',
     email: contact?.email || '',
-    phone: contact?.phone_number || '',
+    phone: contact?.phone || '',
   });
   const [aliases, setAliases] = useState([]);
   const [loadingAliases, setLoadingAliases] = useState(true);

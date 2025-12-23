@@ -54,7 +54,7 @@ export default function Contacts() {
 
   const filteredContacts = contacts.filter(contact => 
     (contact.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (contact.phone_number || '').includes(search) ||
+    (contact.phone || '').includes(search) ||
     (contact.email || '').toLowerCase().includes(search.toLowerCase())
   );
 
@@ -249,7 +249,7 @@ export default function Contacts() {
                         {contact.name || 'Unknown'}
                       </div>
                     </td>
-                    <td>{contact.phone_number || '-'}</td>
+                    <td>{contact.phone || '-'}</td>
                     <td>{contact.email || '-'}</td>
                     <td>
                       <span className={`status ${contact.opt_in_status || 'verified'}`}>
@@ -345,7 +345,7 @@ export default function Contacts() {
               <p>Are you sure you want to permanently delete this contact?</p>
               <div className="delete-contact-info">
                 <strong>{deleteConfirm.name || 'Unknown'}</strong>
-                <span>{deleteConfirm.email || deleteConfirm.phone_number || 'No contact info'}</span>
+                <span>{deleteConfirm.email || deleteConfirm.phone || 'No contact info'}</span>
               </div>
               <p className="warning-text">
                 This action cannot be undone. All associated data will be permanently removed.

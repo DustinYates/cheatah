@@ -73,9 +73,9 @@ class ExtractedCallData:
 class VoiceService:
     """Service for processing voice calls."""
 
-    # Voice-specific guardrails
-    MAX_RESPONSE_SENTENCES = 3  # Keep responses short for voice
-    MAX_RESPONSE_CHARS = 300  # Approximate max characters
+    # Voice-specific guardrails - relaxed for more natural, complete responses
+    MAX_RESPONSE_SENTENCES = 5  # Allow fuller responses for voice
+    MAX_RESPONSE_CHARS = 550  # Allow complete, helpful answers
     
     # Blocked content patterns
     BLOCKED_PATTERNS = [
@@ -164,6 +164,9 @@ class VoiceService:
     async def _detect_intent(self, text: str) -> str:
         """Detect intent from transcribed text.
         
+        Uses pattern-based detection for clear cases, with LLM fallback
+        for ambiguous messages to improve accuracy.
+        
         Args:
             text: Transcribed speech
             
@@ -172,23 +175,112 @@ class VoiceService:
         """
         lower_text = text.lower()
         
-        # Pattern-based intent detection (fast path)
-        if any(word in lower_text for word in ["price", "cost", "how much", "rate", "fee", "pricing"]):
-            return VoiceIntent.PRICING_INFO
+        # Pattern-based intent detection (fast path for clear intents)
+        pattern_scores = {
+            VoiceIntent.PRICING_INFO: 0,
+            VoiceIntent.HOURS_LOCATION: 0,
+            VoiceIntent.BOOKING_REQUEST: 0,
+            VoiceIntent.SUPPORT_REQUEST: 0,
+            VoiceIntent.WRONG_NUMBER: 0,
+        }
         
-        if any(word in lower_text for word in ["hours", "open", "close", "location", "address", "where"]):
-            return VoiceIntent.HOURS_LOCATION
+        # Score each intent based on keyword matches
+        pricing_words = ["price", "cost", "how much", "rate", "fee", "pricing", "charge", "pay", "expensive", "afford"]
+        hours_words = ["hours", "open", "close", "location", "address", "where", "directions", "time", "when"]
+        booking_words = ["book", "schedule", "appointment", "reserve", "sign up", "register", "enroll", "start", "begin", "join"]
+        support_words = ["help", "problem", "issue", "not working", "broken", "complaint", "fix", "wrong", "error", "trouble"]
+        wrong_number_words = ["wrong number", "wrong person", "who is this", "who are you", "didn't call"]
         
-        if any(word in lower_text for word in ["book", "schedule", "appointment", "reserve", "sign up"]):
-            return VoiceIntent.BOOKING_REQUEST
+        for word in pricing_words:
+            if word in lower_text:
+                pattern_scores[VoiceIntent.PRICING_INFO] += 1
+                
+        for word in hours_words:
+            if word in lower_text:
+                pattern_scores[VoiceIntent.HOURS_LOCATION] += 1
+                
+        for word in booking_words:
+            if word in lower_text:
+                pattern_scores[VoiceIntent.BOOKING_REQUEST] += 1
+                
+        for word in support_words:
+            if word in lower_text:
+                pattern_scores[VoiceIntent.SUPPORT_REQUEST] += 1
+                
+        for phrase in wrong_number_words:
+            if phrase in lower_text:
+                pattern_scores[VoiceIntent.WRONG_NUMBER] += 2  # Higher weight for wrong number
         
-        if any(word in lower_text for word in ["help", "problem", "issue", "not working", "broken", "complaint"]):
-            return VoiceIntent.SUPPORT_REQUEST
+        # Find highest scoring intent
+        max_score = max(pattern_scores.values())
         
-        if any(word in lower_text for word in ["wrong number", "wrong person", "not", "who is this"]):
-            return VoiceIntent.WRONG_NUMBER
+        # If we have a clear winner (score >= 2), use it
+        if max_score >= 2:
+            for intent, score in pattern_scores.items():
+                if score == max_score:
+                    return intent
+        
+        # If score is 1 or ambiguous (multiple intents tied), use LLM for better detection
+        if max_score >= 1:
+            # Check for ties
+            top_intents = [intent for intent, score in pattern_scores.items() if score == max_score]
+            if len(top_intents) == 1:
+                return top_intents[0]
+            # Multiple intents tied - use LLM
+            return await self._detect_intent_with_llm(text)
+        
+        # No pattern matches - use LLM for general inquiry classification
+        if len(text.split()) >= 5:  # Only use LLM for longer messages worth analyzing
+            return await self._detect_intent_with_llm(text)
         
         return VoiceIntent.GENERAL_INQUIRY
+
+    async def _detect_intent_with_llm(self, text: str) -> str:
+        """Use LLM to detect intent for ambiguous messages.
+        
+        Args:
+            text: Transcribed speech
+            
+        Returns:
+            Intent category string
+        """
+        try:
+            intent_prompt = f"""Classify this phone call message into ONE category:
+
+Message: "{text}"
+
+Categories:
+- pricing_info: Asking about prices, costs, rates, or fees
+- hours_location: Asking about business hours, location, or directions
+- booking_request: Wanting to book, schedule, sign up, or register
+- support_request: Reporting a problem, complaint, or needing help with an issue
+- wrong_number: Caller reached wrong number or is confused about who they called
+- general_inquiry: General questions or conversation
+
+Respond with ONLY the category name (e.g., "pricing_info"):"""
+
+            response = await self.llm_orchestrator.generate(
+                intent_prompt,
+                context={"temperature": 0.0, "max_tokens": 20},
+            )
+            
+            detected = response.strip().lower().replace('"', '').replace("'", "")
+            
+            # Map to our intent constants
+            intent_map = {
+                "pricing_info": VoiceIntent.PRICING_INFO,
+                "hours_location": VoiceIntent.HOURS_LOCATION,
+                "booking_request": VoiceIntent.BOOKING_REQUEST,
+                "support_request": VoiceIntent.SUPPORT_REQUEST,
+                "wrong_number": VoiceIntent.WRONG_NUMBER,
+                "general_inquiry": VoiceIntent.GENERAL_INQUIRY,
+            }
+            
+            return intent_map.get(detected, VoiceIntent.GENERAL_INQUIRY)
+            
+        except Exception as e:
+            logger.warning(f"LLM intent detection failed: {e}")
+            return VoiceIntent.GENERAL_INQUIRY
 
     def _should_escalate(self, text: str, intent: str) -> bool:
         """Check if call should be escalated to human.
@@ -253,7 +345,7 @@ class VoiceService:
             llm_start = time.time()
             response = await self.llm_orchestrator.generate(
                 conversation_context,
-                context={"temperature": 0.4, "max_tokens": 150},  # Short responses
+                context={"temperature": 0.7, "max_tokens": 350},  # Natural, complete responses
             )
             llm_latency = (time.time() - llm_start) * 1000
             logger.info(f"Voice LLM latency: {llm_latency:.1f}ms")
@@ -291,15 +383,58 @@ class VoiceService:
         
         history.append(f"Caller: {current_message}")
         
+        # Build response instruction based on intent
+        response_instruction = self._get_response_instruction(intent, current_message)
+        
         prompt_parts = [
             system_prompt,
             f"\n\nDetected Intent: {intent}",
             "\n\nConversation:",
             "\n".join(history),
-            "\n\nYou (respond in 1-2 short sentences, end with a question if appropriate):",
+            f"\n\n{response_instruction}",
         ]
         
         return "\n".join(prompt_parts)
+
+    def _get_response_instruction(self, intent: str, current_message: str) -> str:
+        """Get tailored response instruction based on intent and message.
+        
+        Args:
+            intent: Detected intent category
+            current_message: Current user message
+            
+        Returns:
+            Response instruction for the LLM
+        """
+        # Check if user is asking a question
+        is_question = any(word in current_message.lower() for word in [
+            "what", "when", "where", "how", "why", "which", "who", "can", "do", "does", "is", "are", "?",
+        ])
+        
+        if is_question:
+            return """You (answer the caller's question completely and naturally):
+- First, directly answer their question with the specific information they need
+- Use 2-4 natural sentences, speaking as you would on a friendly phone call
+- If helpful, add relevant context or next steps
+- Only ask a follow-up question if it naturally continues the conversation"""
+        
+        if intent == VoiceIntent.BOOKING_REQUEST:
+            return """You (help the caller with their booking request):
+- Acknowledge their interest warmly
+- Provide clear information about booking or next steps
+- Ask any clarifying questions needed to help them"""
+        
+        if intent == VoiceIntent.PRICING_INFO:
+            return """You (provide pricing information naturally):
+- Share the pricing details they asked about
+- Keep it conversational and easy to understand
+- Offer to explain or clarify anything"""
+        
+        # Default instruction for general conversation
+        return """You (respond naturally and helpfully):
+- Speak conversationally, as you would on a friendly phone call
+- Provide complete, helpful information in 2-4 sentences
+- Ask a natural follow-up question only if it genuinely helps the conversation"""
 
     def _apply_response_guardrails(self, response: str) -> str:
         """Apply guardrails to voice response.

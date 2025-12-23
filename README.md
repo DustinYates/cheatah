@@ -8,7 +8,7 @@ This is the foundational backend architecture phase, focusing on:
 - Multi-tenant architecture with strict tenant isolation
 - Core persistence (Tenants, Users, Conversations, Messages, Leads, Prompts)
 - Prompt system with global base and tenant overrides
-- LLM abstraction layer (Gemini Flash 2.5)
+- LLM abstraction layer (Gemini 2.5 Flash)
 - Redis caching and idempotency
 - Analytics event hooks
 
@@ -28,7 +28,7 @@ Phase 1 now assumes every tenant is mapped to a Twilio subaccount under the glo
 - **Cache**: Redis (MemoryStore)
 - **Package Manager**: uv
 - **Deployment**: Cloud Run
-- **LLM**: Gemini Flash 2.5 via Google Generative AI
+- **LLM**: Gemini 2.5 Flash via Google Generative AI
 
 ## Setup (Backend)
 
@@ -83,7 +83,7 @@ Set the following in `.env`:
 | `JWT_SECRET_KEY` | JWT signing key | `change-me` |
 | `JWT_ALGORITHM` | JWT algorithm | `HS256` |
 | `GEMINI_API_KEY` | Google AI key | `...` |
-| `GEMINI_MODEL` | Gemini model | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | Gemini model | `gemini-3-flash-preview` |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | SMS credentials (optional) | `...` |
 | `CLOUD_TASKS_WORKER_URL` | Cloud Tasks worker endpoint (prod) | `https://.../workers/sms` |
 

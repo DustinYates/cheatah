@@ -20,7 +20,7 @@ gcloud secrets create database-url --data-file=-
 |----------|-------------|---------|
 | DATABASE_URL | PostgreSQL connection string | `postgresql+asyncpg://user:pass@/dbname?host=/cloudsql/project:region:instance` |
 | GEMINI_API_KEY | Google AI API key | From Secret Manager |
-| GEMINI_MODEL | Model to use | `gemini-2.5-flash` |
+| GEMINI_MODEL | Model to use | `gemini-3-flash-preview` |
 
 ### Common Issues & Fixes
 
@@ -103,4 +103,4 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
 - **Service URL:** https://chattercheatah-iyv6z6wp7a-uc.a.run.app
 - **Region:** us-central1
 - **Cloud SQL:** chatbots-466618:us-central1:chattercheatah-db
-- **Model:** gemini-2.5-flash
+- **Model:** gemini-3-flash-preview

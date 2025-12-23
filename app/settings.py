@@ -53,7 +53,7 @@ class Settings(BaseSettings):
 
     # LLM (Gemini) - optional for basic functionality
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"  # Using Flash 2.0 (Flash 2.5 not yet available, will update when released)
+    gemini_model: str = "gemini-3-flash-preview"  # Using Gemini 3 Flash for faster, higher quality voice responses
     
     # Chat guardrails
     chat_max_turns: int = 20

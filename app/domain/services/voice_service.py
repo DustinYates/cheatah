@@ -51,12 +51,37 @@ class CallOutcome:
 
 
 @dataclass
+class VoiceLatencyMetrics:
+    """Latency tracking metrics for voice processing."""
+    total_ms: float = 0.0
+    intent_detection_ms: float = 0.0
+    prompt_composition_ms: float = 0.0
+    llm_first_token_ms: float | None = None  # Time to first token (streaming only)
+    llm_full_ms: float = 0.0  # Time to complete LLM response
+    post_processing_ms: float = 0.0
+    
+    def log_summary(self, call_sid: str) -> None:
+        """Log a summary of latency metrics."""
+        ttft_str = f"{self.llm_first_token_ms:.1f}ms" if self.llm_first_token_ms else "n/a"
+        logger.info(
+            f"Voice latency metrics for {call_sid}: "
+            f"total={self.total_ms:.1f}ms, "
+            f"intent={self.intent_detection_ms:.1f}ms, "
+            f"prompt={self.prompt_composition_ms:.1f}ms, "
+            f"llm_first_token={ttft_str}, "
+            f"llm_full={self.llm_full_ms:.1f}ms, "
+            f"post_proc={self.post_processing_ms:.1f}ms"
+        )
+
+
+@dataclass
 class VoiceResult:
     """Result of processing a voice turn."""
     response_text: str
     intent: str | None = None
     requires_escalation: bool = False
     extracted_data: dict | None = None
+    latency_metrics: VoiceLatencyMetrics | None = None
 
 
 @dataclass
@@ -73,9 +98,10 @@ class ExtractedCallData:
 class VoiceService:
     """Service for processing voice calls."""
 
-    # Voice-specific guardrails - relaxed for more natural, complete responses
-    MAX_RESPONSE_SENTENCES = 5  # Allow fuller responses for voice
-    MAX_RESPONSE_CHARS = 550  # Allow complete, helpful answers
+    # Voice-specific guardrails - optimized for natural, concise responses
+    # Shorter responses = faster TTS = lower latency
+    MAX_RESPONSE_SENTENCES = 3  # Concise, focused responses
+    MAX_RESPONSE_CHARS = 350  # Short enough for fast TTS, long enough to be helpful
     
     # Blocked content patterns
     BLOCKED_PATTERNS = [
@@ -114,8 +140,11 @@ class VoiceService:
             transcribed_text: Transcribed speech from caller
             
         Returns:
-            VoiceResult with response and metadata
+            VoiceResult with response and metadata including latency metrics
         """
+        total_start = time.time()
+        metrics = VoiceLatencyMetrics()
+        
         if not tenant_id or not conversation_id:
             logger.warning(f"Missing tenant_id or conversation_id: tenant_id={tenant_id}, conversation_id={conversation_id}")
             return VoiceResult(
@@ -127,31 +156,56 @@ class VoiceService:
             # Get conversation history
             messages = await self._get_conversation_messages(conversation_id)
             
-            # Detect intent from current message
+            # Detect intent from current message (with timing)
+            intent_start = time.time()
             intent = await self._detect_intent(transcribed_text)
+            metrics.intent_detection_ms = (time.time() - intent_start) * 1000
             
             # Check for escalation triggers
             if self._should_escalate(transcribed_text, intent):
+                metrics.total_ms = (time.time() - total_start) * 1000
+                logger.info(
+                    f"Voice escalation for {call_sid}: "
+                    f"total={metrics.total_ms:.1f}ms, intent={metrics.intent_detection_ms:.1f}ms"
+                )
                 return VoiceResult(
                     response_text="I understand you'd like to speak with someone on our team. Let me connect you with a team member who can help.",
                     intent=intent,
                     requires_escalation=True,
+                    latency_metrics=metrics,
                 )
             
-            # Generate response using LLM
+            # Generate response using LLM (timing tracked inside _generate_voice_response)
+            llm_start = time.time()
             response_text = await self._generate_voice_response(
                 tenant_id=tenant_id,
                 messages=messages,
                 current_message=transcribed_text,
                 intent=intent,
             )
+            metrics.llm_full_ms = (time.time() - llm_start) * 1000
             
-            # Apply guardrails
+            # Apply guardrails (with timing)
+            post_start = time.time()
             response_text = self._apply_response_guardrails(response_text)
+            metrics.post_processing_ms = (time.time() - post_start) * 1000
+            
+            # Calculate total
+            metrics.total_ms = (time.time() - total_start) * 1000
+            
+            # Log comprehensive latency metrics
+            logger.info(
+                f"Voice turn latency for {call_sid}: "
+                f"total={metrics.total_ms:.1f}ms, "
+                f"intent={metrics.intent_detection_ms:.1f}ms, "
+                f"llm={metrics.llm_full_ms:.1f}ms, "
+                f"post_proc={metrics.post_processing_ms:.1f}ms"
+            )
             
             return VoiceResult(
                 response_text=response_text,
                 intent=intent,
+                latency_metrics=metrics,
             )
             
         except Exception as e:
@@ -159,6 +213,187 @@ class VoiceService:
             return VoiceResult(
                 response_text="I apologize, but I'm having some difficulty right now. Could you please repeat that?",
                 intent=VoiceIntent.UNKNOWN,
+            )
+
+    async def process_voice_turn_streaming(
+        self,
+        tenant_id: int | None,
+        call_sid: str,
+        conversation_id: int | None,
+        transcribed_text: str,
+    ):
+        """Process a voice turn with streaming LLM response.
+        
+        This method uses streaming to reduce perceived latency by yielding
+        response chunks as soon as they form complete clauses. This allows
+        TTS to start speaking before the full response is generated.
+        
+        Args:
+            tenant_id: Tenant ID
+            call_sid: Twilio call SID
+            conversation_id: Conversation ID
+            transcribed_text: Transcribed speech from caller
+            
+        Yields:
+            StreamingVoiceChunk with text chunk, intent, and completion status
+        """
+        from dataclasses import dataclass
+        
+        @dataclass
+        class StreamingVoiceChunk:
+            """A chunk of streaming voice response."""
+            text: str
+            intent: str | None = None
+            is_first_chunk: bool = False
+            is_final_chunk: bool = False
+            requires_escalation: bool = False
+        
+        if not tenant_id or not conversation_id:
+            logger.warning(f"Missing tenant_id or conversation_id: tenant_id={tenant_id}, conversation_id={conversation_id}")
+            yield StreamingVoiceChunk(
+                text="I'm sorry, I'm having trouble processing your request. Please try calling back.",
+                intent=VoiceIntent.UNKNOWN,
+                is_first_chunk=True,
+                is_final_chunk=True,
+            )
+            return
+        
+        try:
+            # Get conversation history
+            messages = await self._get_conversation_messages(conversation_id)
+            
+            # Detect intent from current message
+            intent = await self._detect_intent(transcribed_text)
+            
+            # Check for escalation triggers
+            if self._should_escalate(transcribed_text, intent):
+                yield StreamingVoiceChunk(
+                    text="I understand you'd like to speak with someone on our team. Let me connect you with a team member who can help.",
+                    intent=intent,
+                    is_first_chunk=True,
+                    is_final_chunk=True,
+                    requires_escalation=True,
+                )
+                return
+            
+            # Get voice-specific prompt
+            system_prompt = await self.prompt_service.compose_prompt_voice(tenant_id)
+            
+            if not system_prompt:
+                yield StreamingVoiceChunk(
+                    text="Thank you for calling. How may I help you today?",
+                    intent=intent,
+                    is_first_chunk=True,
+                    is_final_chunk=True,
+                )
+                return
+            
+            # Build conversation context
+            conversation_context = self._build_voice_context(
+                system_prompt=system_prompt,
+                messages=messages,
+                current_message=transcribed_text,
+                intent=intent,
+            )
+            
+            # Stream response and chunk into speakable segments
+            llm_start = time.time()
+            buffer = ""
+            is_first = True
+            chunk_count = 0
+            
+            # Sentence-ending patterns for chunking
+            sentence_enders = ('.', '!', '?', '—')
+            clause_enders = (',', ';', ':', '—')
+            
+            async for token in self.llm_orchestrator.generate_stream(
+                conversation_context,
+                context={"temperature": 0.7, "max_tokens": 350},
+            ):
+                buffer += token
+                
+                # Check if we have a complete chunk to yield
+                # First chunk: yield after first sentence or clause (for fast start)
+                # Subsequent chunks: yield after sentences for natural flow
+                
+                should_yield = False
+                yield_text = ""
+                
+                if is_first:
+                    # For first chunk, yield after first sentence OR if we have enough for a clause
+                    for ender in sentence_enders:
+                        if ender in buffer:
+                            idx = buffer.rfind(ender)
+                            yield_text = buffer[:idx + 1].strip()
+                            buffer = buffer[idx + 1:].lstrip()
+                            should_yield = True
+                            break
+                    
+                    # If no sentence ender but we have a clause and enough text, yield it
+                    if not should_yield and len(buffer) > 50:
+                        for ender in clause_enders:
+                            if ender in buffer:
+                                idx = buffer.rfind(ender)
+                                yield_text = buffer[:idx + 1].strip()
+                                buffer = buffer[idx + 1:].lstrip()
+                                should_yield = True
+                                break
+                else:
+                    # For subsequent chunks, prefer complete sentences
+                    for ender in sentence_enders:
+                        if ender in buffer:
+                            idx = buffer.rfind(ender)
+                            yield_text = buffer[:idx + 1].strip()
+                            buffer = buffer[idx + 1:].lstrip()
+                            should_yield = True
+                            break
+                
+                if should_yield and yield_text:
+                    # Apply post-processing to the chunk
+                    processed_text = self._post_process_for_speech(yield_text)
+                    chunk_count += 1
+                    
+                    yield StreamingVoiceChunk(
+                        text=processed_text,
+                        intent=intent,
+                        is_first_chunk=is_first,
+                        is_final_chunk=False,
+                    )
+                    is_first = False
+            
+            # Yield any remaining buffer as final chunk
+            if buffer.strip():
+                processed_text = self._post_process_for_speech(buffer.strip())
+                processed_text = self._apply_response_guardrails(processed_text)
+                
+                yield StreamingVoiceChunk(
+                    text=processed_text,
+                    intent=intent,
+                    is_first_chunk=is_first,
+                    is_final_chunk=True,
+                )
+            elif chunk_count > 0:
+                # Mark last yielded chunk as final
+                pass  # Already yielded, caller should handle
+            else:
+                # No chunks yielded, yield error message
+                yield StreamingVoiceChunk(
+                    text="I apologize, but I couldn't generate a response. Could you please repeat that?",
+                    intent=intent,
+                    is_first_chunk=True,
+                    is_final_chunk=True,
+                )
+            
+            llm_latency = (time.time() - llm_start) * 1000
+            logger.info(f"Voice streaming LLM latency: {llm_latency:.1f}ms, chunks: {chunk_count}")
+            
+        except Exception as e:
+            logger.error(f"Error processing streaming voice turn: {e}", exc_info=True)
+            yield StreamingVoiceChunk(
+                text="I apologize, but I'm having some difficulty right now. Could you please repeat that?",
+                intent=VoiceIntent.UNKNOWN,
+                is_first_chunk=True,
+                is_final_chunk=True,
             )
 
     async def _detect_intent(self, text: str) -> str:
@@ -353,7 +588,14 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
             return response.strip()
             
         except Exception as e:
+            error_str = str(e)
             logger.error(f"LLM generation failed for voice: {e}", exc_info=True)
+            
+            # Check for quota exhaustion and provide more helpful response
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower():
+                logger.warning("LLM quota exhausted - returning quota-specific message")
+                return "I'm sorry, but our AI system is currently at capacity. Please try calling back in a few minutes, or leave a message and we'll get back to you."
+            
             return "I apologize, but I'm having trouble right now. Could you please repeat that?"
 
     def _build_voice_context(
@@ -471,7 +713,167 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
             if not response.endswith('.') and not response.endswith('?'):
                 response += '.'
         
+        # Apply speech post-processing for natural voice output
+        response = self._post_process_for_speech(response)
+        
         return response
+
+    def _post_process_for_speech(self, text: str) -> str:
+        """Transform formal text into natural conversational speech.
+        
+        This method applies various transformations to make the text sound
+        more natural when spoken by TTS, reducing the "robotic" feel.
+        
+        Args:
+            text: The formal LLM response text
+            
+        Returns:
+            Text optimized for natural speech synthesis
+        """
+        if not text:
+            return text
+        
+        # --- Contractions: Make speech more natural ---
+        contraction_map = {
+            r"\bI am\b": "I'm",
+            r"\bI will\b": "I'll",
+            r"\bI would\b": "I'd",
+            r"\bI have\b": "I've",
+            r"\bI had\b": "I'd",
+            r"\byou are\b": "you're",
+            r"\byou will\b": "you'll",
+            r"\byou would\b": "you'd",
+            r"\byou have\b": "you've",
+            r"\bwe are\b": "we're",
+            r"\bwe will\b": "we'll",
+            r"\bwe would\b": "we'd",
+            r"\bwe have\b": "we've",
+            r"\bthey are\b": "they're",
+            r"\bthey will\b": "they'll",
+            r"\bthey would\b": "they'd",
+            r"\bthey have\b": "they've",
+            r"\bthat is\b": "that's",
+            r"\bthat will\b": "that'll",
+            r"\bthat would\b": "that'd",
+            r"\bwhat is\b": "what's",
+            r"\bwhere is\b": "where's",
+            r"\bwho is\b": "who's",
+            r"\bhow is\b": "how's",
+            r"\bit is\b": "it's",
+            r"\bit will\b": "it'll",
+            r"\bit would\b": "it'd",
+            r"\bthere is\b": "there's",
+            r"\bthere are\b": "there're",
+            r"\bhere is\b": "here's",
+            r"\blet us\b": "let's",
+            r"\bcannot\b": "can't",
+            r"\bwill not\b": "won't",
+            r"\bwould not\b": "wouldn't",
+            r"\bcould not\b": "couldn't",
+            r"\bshould not\b": "shouldn't",
+            r"\bdo not\b": "don't",
+            r"\bdoes not\b": "doesn't",
+            r"\bdid not\b": "didn't",
+            r"\bis not\b": "isn't",
+            r"\bare not\b": "aren't",
+            r"\bwas not\b": "wasn't",
+            r"\bwere not\b": "weren't",
+            r"\bhas not\b": "hasn't",
+            r"\bhave not\b": "haven't",
+            r"\bhad not\b": "hadn't",
+        }
+        
+        for pattern, replacement in contraction_map.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        
+        # --- Convert numbered lists to natural flow ---
+        # "1. First item 2. Second item" -> "First, first item. Then, second item."
+        text = re.sub(r'\b1\.\s*', 'First, ', text)
+        text = re.sub(r'\b2\.\s*', 'Then, ', text)
+        text = re.sub(r'\b3\.\s*', 'Also, ', text)
+        text = re.sub(r'\b4\.\s*', 'And finally, ', text)
+        text = re.sub(r'\b[5-9]\.\s*', 'Additionally, ', text)
+        
+        # Remove bullet points
+        text = re.sub(r'^\s*[-•]\s*', '', text, flags=re.MULTILINE)
+        
+        # --- Replace formal phrases with conversational ones ---
+        formal_to_casual = [
+            (r"\bI would be happy to\b", "I'd be glad to"),
+            (r"\bI would like to\b", "I'd like to"),
+            (r"\bPlease do not hesitate to\b", "Feel free to"),
+            (r"\bDo not hesitate to\b", "Feel free to"),
+            (r"\bAt this time\b", "Right now"),
+            (r"\bAt this moment\b", "Right now"),
+            (r"\bIn order to\b", "To"),
+            (r"\bPrior to\b", "Before"),
+            (r"\bSubsequently\b", "Then"),
+            (r"\bAdditionally\b", "Also"),
+            (r"\bFurthermore\b", "Also"),
+            (r"\bNevertheless\b", "Still"),
+            (r"\bNotwithstanding\b", "Even so"),
+            (r"\bWith regard to\b", "About"),
+            (r"\bWith respect to\b", "About"),
+            (r"\bIn the event that\b", "If"),
+            (r"\bDue to the fact that\b", "Because"),
+            (r"\bFor the purpose of\b", "To"),
+            (r"\bIn accordance with\b", "Following"),
+            (r"\bAs per your request\b", "As you asked"),
+            (r"\bKindly\b", "Please"),
+            (r"\bUtilize\b", "Use"),
+            (r"\bPurchase\b", "Buy"),
+            (r"\bAssist\b", "Help"),
+            (r"\bEnquire\b", "Ask"),
+            (r"\bInquire\b", "Ask"),
+            (r"\bCommence\b", "Start"),
+            (r"\bTerminate\b", "End"),
+            (r"\bFacilitate\b", "Help with"),
+            (r"\bI apologize for any inconvenience\b", "Sorry about that"),
+            (r"\bWe apologize for any inconvenience\b", "Sorry about that"),
+        ]
+        
+        for pattern, replacement in formal_to_casual:
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        
+        # --- Add natural sentence starters (sparingly) ---
+        # Only add fillers to sentences that start with very abrupt responses
+        # This makes it feel more conversational
+        sentences = text.split('. ')
+        processed_sentences = []
+        
+        for i, sentence in enumerate(sentences):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # For the first sentence, add a soft opener if it starts abruptly
+            if i == 0 and len(sentence) > 10:
+                # Check if it starts with an affirmative response pattern
+                if re.match(r'^(Yes|Sure|Absolutely|Definitely|Of course)', sentence, re.IGNORECASE):
+                    # Add a softer version
+                    sentence = re.sub(r'^Yes,?\s*', "Yeah, ", sentence, flags=re.IGNORECASE)
+                    sentence = re.sub(r'^Absolutely,?\s*', "Absolutely — ", sentence, flags=re.IGNORECASE)
+                    sentence = re.sub(r'^Definitely,?\s*', "Definitely — ", sentence, flags=re.IGNORECASE)
+            
+            processed_sentences.append(sentence)
+        
+        text = '. '.join(processed_sentences)
+        
+        # --- Replace commas with dashes for natural pauses ---
+        # Only for longer pauses (commas followed by conjunctions)
+        text = re.sub(r',\s+(and|but|so|or)\s+', r' — \1 ', text)
+        
+        # --- Clean up spacing and punctuation ---
+        text = re.sub(r'\s+', ' ', text)  # Multiple spaces to single
+        text = re.sub(r'\s+([.,!?])', r'\1', text)  # No space before punctuation
+        text = re.sub(r'([.,!?])\s*([.,!?])', r'\1', text)  # Remove duplicate punctuation
+        text = text.strip()
+        
+        # Ensure proper ending
+        if text and not text[-1] in '.!?':
+            text += '.'
+        
+        return text
 
     async def _get_conversation_messages(self, conversation_id: int) -> list[Message]:
         """Get messages for a conversation.

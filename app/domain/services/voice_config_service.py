@@ -1,8 +1,9 @@
 """Voice configuration service for tenant voice settings."""
 
 import logging
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,46 @@ from app.persistence.models.tenant_voice_config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class VoiceConfigCache:
+    """In-memory cache for voice configurations with short TTL.
+    
+    Reduces database queries for frequently accessed voice configs
+    during active calls. Uses a shorter TTL than prompt cache since
+    voice settings may need to be updated more frequently.
+    """
+    
+    # Cache structure: {cache_key: (config_dict, timestamp)}
+    _cache: ClassVar[dict[str, tuple[dict, float]]] = {}
+    _ttl_seconds: ClassVar[int] = 60  # 1 minute cache TTL for voice configs
+    
+    @classmethod
+    def get(cls, key: str) -> dict | None:
+        """Get cached config if not expired."""
+        if key in cls._cache:
+            config, timestamp = cls._cache[key]
+            if time.time() - timestamp < cls._ttl_seconds:
+                return config
+            # Expired - remove from cache
+            del cls._cache[key]
+        return None
+    
+    @classmethod
+    def set(cls, key: str, config: dict) -> None:
+        """Cache a config with current timestamp."""
+        cls._cache[key] = (config, time.time())
+    
+    @classmethod
+    def invalidate(cls, tenant_id: int | None = None) -> None:
+        """Invalidate cache entries for a tenant, or all if tenant_id is None."""
+        if tenant_id is None:
+            cls._cache.clear()
+        else:
+            # Remove all keys containing this tenant_id
+            keys_to_remove = [k for k in cls._cache if f"tenant:{tenant_id}" in k]
+            for key in keys_to_remove:
+                del cls._cache[key]
 
 
 @dataclass
@@ -119,11 +160,16 @@ class VoiceConfigService:
         await self.session.commit()
         await self.session.refresh(config)
         
+        # Invalidate cache for this tenant
+        VoiceConfigCache.invalidate(tenant_id)
+        
         logger.info(f"Updated voice config for tenant {tenant_id}")
         return config
 
     async def get_handoff_config(self, tenant_id: int) -> dict[str, Any]:
         """Get handoff configuration for a tenant.
+        
+        Uses caching to reduce database queries during active calls.
         
         Args:
             tenant_id: Tenant ID
@@ -131,23 +177,35 @@ class VoiceConfigService:
         Returns:
             Dictionary with handoff settings
         """
+        # Check cache first
+        cache_key = f"handoff:tenant:{tenant_id}"
+        cached = VoiceConfigCache.get(cache_key)
+        if cached is not None:
+            return cached
+        
         config = await self.get_voice_config(tenant_id)
         
         if not config:
-            return {
+            result = {
                 "mode": "take_message",
                 "transfer_number": None,
                 "enabled": False,
             }
+        else:
+            result = {
+                "mode": config.handoff_mode,
+                "transfer_number": config.live_transfer_number,
+                "enabled": config.is_enabled,
+            }
         
-        return {
-            "mode": config.handoff_mode,
-            "transfer_number": config.live_transfer_number,
-            "enabled": config.is_enabled,
-        }
+        # Cache the result
+        VoiceConfigCache.set(cache_key, result)
+        return result
 
     async def get_escalation_rules(self, tenant_id: int) -> dict[str, Any]:
         """Get escalation rules for a tenant.
+        
+        Uses caching to reduce database queries during active calls.
         
         Args:
             tenant_id: Tenant ID
@@ -155,15 +213,27 @@ class VoiceConfigService:
         Returns:
             Dictionary with escalation rules
         """
+        # Check cache first
+        cache_key = f"escalation:tenant:{tenant_id}"
+        cached = VoiceConfigCache.get(cache_key)
+        if cached is not None:
+            return cached
+        
         config = await self.get_voice_config(tenant_id)
         
         if not config or not config.escalation_rules:
-            return DEFAULT_ESCALATION_RULES.copy()
+            result = DEFAULT_ESCALATION_RULES.copy()
+        else:
+            result = config.escalation_rules
         
-        return config.escalation_rules
+        # Cache the result
+        VoiceConfigCache.set(cache_key, result)
+        return result
 
     async def get_notification_config(self, tenant_id: int) -> dict[str, Any]:
         """Get notification configuration for a tenant.
+        
+        Uses caching to reduce database queries during active calls.
         
         Args:
             tenant_id: Tenant ID
@@ -171,21 +241,33 @@ class VoiceConfigService:
         Returns:
             Dictionary with notification settings
         """
+        # Check cache first
+        cache_key = f"notification:tenant:{tenant_id}"
+        cached = VoiceConfigCache.get(cache_key)
+        if cached is not None:
+            return cached
+        
         config = await self.get_voice_config(tenant_id)
         
         if not config:
-            return {
+            result = {
                 "methods": DEFAULT_NOTIFICATION_METHODS,
                 "recipients": [],
             }
+        else:
+            result = {
+                "methods": config.notification_methods or DEFAULT_NOTIFICATION_METHODS,
+                "recipients": config.notification_recipients or [],
+            }
         
-        return {
-            "methods": config.notification_methods or DEFAULT_NOTIFICATION_METHODS,
-            "recipients": config.notification_recipients or [],
-        }
+        # Cache the result
+        VoiceConfigCache.set(cache_key, result)
+        return result
 
     async def get_greeting_and_disclosure(self, tenant_id: int) -> dict[str, str]:
         """Get greeting and disclosure text for a tenant.
+        
+        Uses caching to reduce database queries during active calls.
         
         Args:
             tenant_id: Tenant ID
@@ -193,6 +275,12 @@ class VoiceConfigService:
         Returns:
             Dictionary with greeting and disclosure text
         """
+        # Check cache first
+        cache_key = f"greeting:tenant:{tenant_id}"
+        cached = VoiceConfigCache.get(cache_key)
+        if cached is not None:
+            return cached
+        
         config = await self.get_voice_config(tenant_id)
         
         default_greeting = (
@@ -206,15 +294,19 @@ class VoiceConfigService:
         )
         
         if not config:
-            return {
+            result = {
                 "greeting": default_greeting,
                 "disclosure": default_disclosure,
                 "after_hours_message": default_after_hours,
             }
+        else:
+            result = {
+                "greeting": config.default_greeting or default_greeting,
+                "disclosure": config.disclosure_line or default_disclosure,
+                "after_hours_message": config.after_hours_message or default_after_hours,
+            }
         
-        return {
-            "greeting": config.default_greeting or default_greeting,
-            "disclosure": config.disclosure_line or default_disclosure,
-            "after_hours_message": config.after_hours_message or default_after_hours,
-        }
+        # Cache the result
+        VoiceConfigCache.set(cache_key, result)
+        return result
 

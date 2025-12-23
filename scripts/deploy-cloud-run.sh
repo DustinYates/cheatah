@@ -56,7 +56,7 @@ DEPLOY_CMD="gcloud run deploy ${SERVICE_NAME} \
   --port=8080 \
   --memory=1Gi \
   --cpu=1 \
-  --min-instances=0 \
+  --min-instances=1 \
   --max-instances=10 \
   --timeout=300 \
   --set-env-vars=ENVIRONMENT=production \

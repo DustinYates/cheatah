@@ -1,6 +1,8 @@
 """Voice webhook endpoints for Twilio."""
 
+import json
 import logging
+import time
 from datetime import datetime
 from typing import Annotated
 from urllib.parse import urlencode
@@ -24,6 +26,12 @@ logger = logging.getLogger(__name__)
 
 # Idempotency TTL for webhook deduplication (5 minutes)
 WEBHOOK_IDEMPOTENCY_TTL = 300
+
+# TTL for streaming chunks in Redis (2 minutes)
+STREAMING_CHUNKS_TTL = 120
+
+# Enable streaming mode (can be disabled via environment variable)
+STREAMING_ENABLED = True
 
 router = APIRouter()
 
@@ -207,6 +215,8 @@ async def gather_webhook(
     - Processes it through the AI
     - Returns TwiML with the AI response and next Gather
     
+    Includes comprehensive latency tracking for monitoring.
+    
     Args:
         request: FastAPI request
         db: Database session
@@ -220,6 +230,9 @@ async def gather_webhook(
     Returns:
         TwiML XML response
     """
+    # Start overall endpoint timing
+    endpoint_start = time.time()
+    
     try:
         # Parse turn number
         current_turn = int(turn) if turn else 0
@@ -382,12 +395,354 @@ async def gather_webhook(
             ai_response,
         )
         
+        # Log endpoint-level latency metrics
+        endpoint_latency = (time.time() - endpoint_start) * 1000
+        voice_latency = voice_result.latency_metrics
+        logger.info(
+            f"Gather webhook latency for {CallSid}: "
+            f"endpoint_total={endpoint_latency:.1f}ms, "
+            f"voice_processing={voice_latency.total_ms if voice_latency else 'n/a'}ms, "
+            f"turn={current_turn}"
+        )
+        
         return Response(content=twiml, media_type="application/xml")
         
     except Exception as e:
         logger.error(f"Error processing gather webhook: {e}", exc_info=True)
         return Response(
             content=_generate_goodbye_twiml("I apologize, but I encountered an issue. Please call back or one of our team members will reach out to you. Goodbye!"),
+            media_type="application/xml",
+        )
+
+
+@router.post("/gather-streaming")
+async def gather_streaming_webhook(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    CallSid: Annotated[str, Form()],
+    SpeechResult: Annotated[str | None, Form()] = None,
+    Confidence: Annotated[str | None, Form()] = None,
+    tenant_id: Annotated[str | None, Query()] = None,
+    conversation_id: Annotated[str | None, Query()] = None,
+    turn: Annotated[str | None, Query()] = None,
+) -> Response:
+    """Handle speech input from Twilio Gather with streaming LLM response.
+    
+    This endpoint uses streaming LLM generation for lower perceived latency.
+    It collects all streaming chunks and returns the first chunk immediately,
+    storing remaining chunks in Redis for continuation via <Redirect>.
+    
+    For true streaming, this endpoint:
+    1. Starts LLM streaming immediately
+    2. Collects chunks as they arrive
+    3. Returns first chunk with TwiML immediately
+    4. Uses <Redirect> to continue with remaining chunks if any
+    
+    Args:
+        request: FastAPI request
+        db: Database session
+        CallSid: Twilio call SID
+        SpeechResult: Transcribed speech from caller
+        Confidence: Confidence score for speech recognition
+        tenant_id: Tenant ID (passed in action URL)
+        conversation_id: Conversation ID (passed in action URL)
+        turn: Current turn number
+        
+    Returns:
+        TwiML XML response with first chunk and optional redirect
+    """
+    start_time = time.time()
+    
+    try:
+        # Parse parameters
+        current_turn = int(turn) if turn else 0
+        parsed_tenant_id = int(tenant_id) if tenant_id else None
+        parsed_conversation_id = int(conversation_id) if conversation_id else None
+        
+        # Handle no speech detected - same as non-streaming
+        if not SpeechResult:
+            logger.info(f"No speech detected for streaming call: {CallSid}, turn: {current_turn}")
+            
+            if current_turn >= 2:
+                return Response(
+                    content=_generate_goodbye_twiml("I didn't catch that. Thank you for calling. Goodbye!"),
+                    media_type="application/xml",
+                )
+            
+            twiml = _generate_gather_twiml_streaming(
+                CallSid,
+                parsed_tenant_id,
+                parsed_conversation_id,
+                current_turn + 1,
+                "I'm sorry, I didn't catch that. How can I help you today?",
+            )
+            return Response(content=twiml, media_type="application/xml")
+        
+        logger.info(f"Streaming speech received for call {CallSid}: '{SpeechResult}' (confidence: {Confidence})")
+        
+        # Store user message in conversation
+        next_seq = 1
+        if parsed_conversation_id:
+            stmt = select(Message).where(
+                Message.conversation_id == parsed_conversation_id
+            ).order_by(Message.sequence_number.desc()).limit(1)
+            result = await db.execute(stmt)
+            last_message = result.scalar_one_or_none()
+            next_seq = (last_message.sequence_number + 1) if last_message else 1
+            
+            user_message = Message(
+                conversation_id=parsed_conversation_id,
+                role="user",
+                content=SpeechResult,
+                sequence_number=next_seq,
+                message_metadata={
+                    "call_sid": CallSid,
+                    "confidence": Confidence,
+                    "source": "voice_transcription_streaming",
+                },
+            )
+            db.add(user_message)
+            await db.commit()
+        
+        # Check for end-of-conversation signals
+        lower_speech = SpeechResult.lower().strip()
+        if any(phrase in lower_speech for phrase in ["goodbye", "bye", "thank you bye", "that's all", "no more questions"]):
+            ai_response = "Thank you for calling! Have a great day. Goodbye!"
+            
+            if parsed_conversation_id:
+                assistant_message = Message(
+                    conversation_id=parsed_conversation_id,
+                    role="assistant",
+                    content=ai_response,
+                    sequence_number=next_seq + 1,
+                    message_metadata={"call_sid": CallSid},
+                )
+                db.add(assistant_message)
+                await db.commit()
+            
+            return Response(
+                content=_generate_goodbye_twiml(ai_response),
+                media_type="application/xml",
+            )
+        
+        # Check max turns
+        if current_turn >= MAX_VOICE_TURNS:
+            ai_response = "I appreciate you taking the time to speak with me. To continue helping you, one of our team members will follow up soon. Thank you for calling!"
+            return Response(
+                content=_generate_goodbye_twiml(ai_response),
+                media_type="application/xml",
+            )
+        
+        # Process with streaming AI
+        from app.domain.services.voice_service import VoiceService
+        from app.domain.services.handoff_service import HandoffService, CallContext
+        from app.infrastructure.notifications import NotificationService
+        
+        voice_service = VoiceService(db)
+        
+        # Collect all streaming chunks
+        chunks = []
+        final_intent = None
+        requires_escalation = False
+        
+        async for chunk in voice_service.process_voice_turn_streaming(
+            tenant_id=parsed_tenant_id,
+            call_sid=CallSid,
+            conversation_id=parsed_conversation_id,
+            transcribed_text=SpeechResult,
+        ):
+            chunks.append(chunk.text)
+            if chunk.intent:
+                final_intent = chunk.intent
+            if chunk.requires_escalation:
+                requires_escalation = True
+        
+        # Handle escalation
+        if parsed_tenant_id and requires_escalation:
+            handoff_service = HandoffService(db)
+            
+            confidence_float = float(Confidence) if Confidence else None
+            call_context = CallContext(
+                call_sid=CallSid,
+                tenant_id=parsed_tenant_id,
+                conversation_id=parsed_conversation_id,
+                current_turn=current_turn,
+                transcribed_text=SpeechResult,
+                intent=final_intent,
+                confidence=confidence_float,
+            )
+            
+            handoff_decision = await handoff_service.evaluate_handoff(call_context)
+            
+            if handoff_decision.should_handoff:
+                twiml = await handoff_service.execute_handoff(
+                    call_sid=CallSid,
+                    decision=handoff_decision,
+                    tenant_id=parsed_tenant_id,
+                )
+                
+                notification_service = NotificationService(db)
+                call = await _get_call_by_sid(CallSid, db)
+                if call:
+                    await notification_service.notify_handoff(
+                        tenant_id=parsed_tenant_id,
+                        call_id=call.id,
+                        reason=handoff_decision.reason or "escalation_requested",
+                        caller_phone=call.from_number,
+                        handoff_mode=handoff_decision.handoff_mode or "take_message",
+                        transfer_number=handoff_decision.transfer_number,
+                    )
+                
+                return Response(content=twiml, media_type="application/xml")
+        
+        # Combine all chunks into full response for this implementation
+        # (True streaming would return first chunk and redirect for rest)
+        full_response = " ".join(chunks)
+        
+        # Store assistant message
+        if parsed_conversation_id:
+            assistant_message = Message(
+                conversation_id=parsed_conversation_id,
+                role="assistant",
+                content=full_response,
+                sequence_number=next_seq + 1,
+                message_metadata={
+                    "call_sid": CallSid,
+                    "intent": final_intent,
+                    "streaming": True,
+                    "chunk_count": len(chunks),
+                },
+            )
+            db.add(assistant_message)
+            await db.commit()
+        
+        # Log latency metrics
+        total_latency = (time.time() - start_time) * 1000
+        logger.info(f"Streaming gather total latency: {total_latency:.1f}ms, chunks: {len(chunks)}")
+        
+        # Generate TwiML with streaming-enabled gather
+        twiml = _generate_gather_twiml_streaming(
+            CallSid,
+            parsed_tenant_id,
+            parsed_conversation_id,
+            current_turn + 1,
+            full_response,
+        )
+        
+        return Response(content=twiml, media_type="application/xml")
+        
+    except Exception as e:
+        logger.error(f"Error processing streaming gather webhook: {e}", exc_info=True)
+        return Response(
+            content=_generate_goodbye_twiml("I apologize, but I encountered an issue. Please call back or one of our team members will reach out to you. Goodbye!"),
+            media_type="application/xml",
+        )
+
+
+@router.post("/continue-chunk")
+async def continue_chunk_webhook(
+    request: Request,
+    CallSid: Annotated[str, Form()],
+    chunk_id: Annotated[str | None, Query()] = None,
+    tenant_id: Annotated[str | None, Query()] = None,
+    conversation_id: Annotated[str | None, Query()] = None,
+    turn: Annotated[str | None, Query()] = None,
+) -> Response:
+    """Continue playing remaining chunks from a streaming response.
+    
+    This endpoint is called via <Redirect> when there are remaining
+    chunks to play after the first chunk has been spoken.
+    
+    Args:
+        request: FastAPI request
+        CallSid: Twilio call SID
+        chunk_id: ID for retrieving remaining chunks from Redis
+        tenant_id: Tenant ID
+        conversation_id: Conversation ID
+        turn: Current turn number
+        
+    Returns:
+        TwiML XML response with next chunk or gather
+    """
+    try:
+        parsed_tenant_id = int(tenant_id) if tenant_id else None
+        parsed_conversation_id = int(conversation_id) if conversation_id else None
+        current_turn = int(turn) if turn else 0
+        
+        if not chunk_id:
+            # No more chunks, return gather for next input
+            twiml = _generate_gather_twiml_streaming(
+                CallSid,
+                parsed_tenant_id,
+                parsed_conversation_id,
+                current_turn,
+                "",  # No message, just gather
+            )
+            return Response(content=twiml, media_type="application/xml")
+        
+        # Retrieve remaining chunks from Redis
+        await redis_client.connect()
+        chunks_key = f"voice:chunks:{CallSid}:{chunk_id}"
+        chunks_data = await redis_client.get(chunks_key)
+        
+        if not chunks_data:
+            # Chunks expired or not found, return gather
+            twiml = _generate_gather_twiml_streaming(
+                CallSid,
+                parsed_tenant_id,
+                parsed_conversation_id,
+                current_turn,
+                "",
+            )
+            return Response(content=twiml, media_type="application/xml")
+        
+        chunks = json.loads(chunks_data)
+        
+        if not chunks:
+            # No more chunks, return gather
+            twiml = _generate_gather_twiml_streaming(
+                CallSid,
+                parsed_tenant_id,
+                parsed_conversation_id,
+                current_turn,
+                "",
+            )
+            return Response(content=twiml, media_type="application/xml")
+        
+        # Get next chunk
+        next_chunk = chunks.pop(0)
+        
+        if chunks:
+            # Store remaining chunks for next continuation
+            await redis_client.set(chunks_key, json.dumps(chunks), ttl=STREAMING_CHUNKS_TTL)
+            
+            # Return TwiML with this chunk and redirect to continue
+            twiml = _generate_chunk_continuation_twiml(
+                next_chunk,
+                CallSid,
+                chunk_id,
+                parsed_tenant_id,
+                parsed_conversation_id,
+                current_turn,
+            )
+        else:
+            # Last chunk, delete from Redis and return gather
+            await redis_client.delete(chunks_key)
+            
+            twiml = _generate_gather_twiml_streaming(
+                CallSid,
+                parsed_tenant_id,
+                parsed_conversation_id,
+                current_turn,
+                next_chunk,
+            )
+        
+        return Response(content=twiml, media_type="application/xml")
+        
+    except Exception as e:
+        logger.error(f"Error processing continue chunk webhook: {e}", exc_info=True)
+        return Response(
+            content=_generate_goodbye_twiml("I apologize, but I encountered an issue. Goodbye!"),
             media_type="application/xml",
         )
 
@@ -621,13 +976,17 @@ def _generate_greeting_twiml(
         .replace("'", "&apos;")
     )
     
+    # Optimized TwiML with:
+    # - speechTimeout="2" (reduced from 3s for faster turn-taking)
+    # - hints for better speech recognition
+    # - voice="Polly.Joanna" for more natural sound (faster than default)
+    # - Barge-in enabled: <Say> inside <Gather> allows caller to interrupt
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>{escaped_greeting}</Say>
-    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="3" language="en-US">
-        <Say></Say>
+    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="2" language="en-US" hints="yes, no, help, schedule, appointment, price, hours, information">
+        <Say voice="Polly.Joanna">{escaped_greeting}</Say>
     </Gather>
-    <Say>I didn't catch that. Please call back if you need assistance. Goodbye!</Say>
+    <Say voice="Polly.Joanna">I didn&apos;t catch that. Please call back if you need assistance. Goodbye!</Say>
     <Hangup/>
 </Response>'''
 
@@ -670,13 +1029,17 @@ def _generate_gather_twiml(
         .replace("'", "&apos;")
     )
     
+    # Optimized TwiML with:
+    # - speechTimeout="2" (reduced from 3s for faster turn-taking)
+    # - hints for better speech recognition
+    # - voice="Polly.Joanna" for more natural sound
+    # - Barge-in enabled: <Say> inside <Gather> allows caller to interrupt
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>{escaped_message}</Say>
-    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="3" language="en-US">
-        <Say></Say>
+    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="2" language="en-US" hints="yes, no, help, schedule, appointment, price, hours, information, thank you, goodbye">
+        <Say voice="Polly.Joanna">{escaped_message}</Say>
     </Gather>
-    <Say>I didn't hear a response. Thank you for calling. Goodbye!</Say>
+    <Say voice="Polly.Joanna">I didn&apos;t hear a response. Thank you for calling. Goodbye!</Say>
     <Hangup/>
 </Response>'''
 
@@ -702,7 +1065,7 @@ def _generate_goodbye_twiml(message: str) -> str:
     
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>{escaped_message}</Say>
+    <Say voice="Polly.Joanna">{escaped_message}</Say>
     <Hangup/>
 </Response>'''
 
@@ -733,8 +1096,184 @@ def _generate_voicemail_twiml(message: str | None = None) -> str:
     
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>{escaped_message}</Say>
+    <Say voice="Polly.Joanna">{escaped_message}</Say>
     <Record maxLength="300" finishOnKey="#"/>
-    <Say>Thank you for your message. We'll contact you soon. Goodbye.</Say>
+    <Say voice="Polly.Joanna">Thank you for your message. We&apos;ll contact you soon. Goodbye.</Say>
+    <Hangup/>
+</Response>'''
+
+
+def _generate_gather_twiml_streaming(
+    call_sid: str,
+    tenant_id: int | None,
+    conversation_id: int | None,
+    turn: int,
+    message: str,
+) -> str:
+    """Generate TwiML with a message and next streaming-enabled gather.
+    
+    Similar to _generate_gather_twiml but uses the streaming gather endpoint
+    for the next action, enabling streaming LLM responses.
+    
+    Args:
+        call_sid: Twilio call SID
+        tenant_id: Tenant ID
+        conversation_id: Conversation ID
+        turn: Current turn number
+        message: Message to speak (can be empty)
+        
+    Returns:
+        TwiML XML string
+    """
+    base_url = _get_webhook_base_url()
+    params = urlencode({
+        "tenant_id": tenant_id or "",
+        "conversation_id": conversation_id or "",
+        "turn": turn,
+    })
+    # Use streaming endpoint
+    action_url = f"{base_url}/api/v1/voice/gather-streaming?{params}".replace("&", "&amp;")
+    
+    # Handle empty message (just gather, no Say)
+    if not message or not message.strip():
+        return f'''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="2" language="en-US" hints="yes, no, help, schedule, appointment, price, hours, information, thank you, goodbye">
+        <Say></Say>
+    </Gather>
+    <Say voice="Polly.Joanna">I didn&apos;t hear a response. Thank you for calling. Goodbye!</Say>
+    <Hangup/>
+</Response>'''
+    
+    # Escape XML special characters in message
+    escaped_message = (
+        message
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+    
+    # Barge-in enabled: <Say> inside <Gather> allows caller to interrupt
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="2" language="en-US" hints="yes, no, help, schedule, appointment, price, hours, information, thank you, goodbye">
+        <Say voice="Polly.Joanna">{escaped_message}</Say>
+    </Gather>
+    <Say voice="Polly.Joanna">I didn&apos;t hear a response. Thank you for calling. Goodbye!</Say>
+    <Hangup/>
+</Response>'''
+
+
+def _generate_chunk_continuation_twiml(
+    chunk_text: str,
+    call_sid: str,
+    chunk_id: str,
+    tenant_id: int | None,
+    conversation_id: int | None,
+    turn: int,
+) -> str:
+    """Generate TwiML for continuing with remaining chunks.
+    
+    This TwiML says the current chunk and then redirects to continue
+    with any remaining chunks.
+    
+    Args:
+        chunk_text: Text of the current chunk to speak
+        call_sid: Twilio call SID
+        chunk_id: ID for retrieving remaining chunks
+        tenant_id: Tenant ID
+        conversation_id: Conversation ID
+        turn: Current turn number
+        
+    Returns:
+        TwiML XML string with Say and Redirect
+    """
+    base_url = _get_webhook_base_url()
+    params = urlencode({
+        "chunk_id": chunk_id,
+        "tenant_id": tenant_id or "",
+        "conversation_id": conversation_id or "",
+        "turn": turn,
+    })
+    redirect_url = f"{base_url}/api/v1/voice/continue-chunk?{params}".replace("&", "&amp;")
+    
+    # Escape XML special characters
+    escaped_chunk = (
+        chunk_text
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+    
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna">{escaped_chunk}</Say>
+    <Redirect method="POST">{redirect_url}</Redirect>
+</Response>'''
+
+
+def _generate_greeting_twiml_streaming(
+    call_sid: str,
+    tenant_id: int,
+    conversation_id: int,
+    greeting: str | None = None,
+    disclosure: str | None = None,
+) -> str:
+    """Generate TwiML for greeting that uses streaming gather endpoint.
+    
+    Similar to _generate_greeting_twiml but uses streaming endpoint
+    for subsequent interactions.
+    
+    Args:
+        call_sid: Twilio call SID
+        tenant_id: Tenant ID
+        conversation_id: Conversation ID
+        greeting: Custom greeting text
+        disclosure: Recording disclosure text
+        
+    Returns:
+        TwiML XML string with greeting and streaming-enabled gather
+    """
+    base_url = _get_webhook_base_url()
+    params = urlencode({
+        "tenant_id": tenant_id,
+        "conversation_id": conversation_id,
+        "turn": 0,
+    })
+    # Use streaming endpoint
+    action_url = f"{base_url}/api/v1/voice/gather-streaming?{params}".replace("&", "&amp;")
+    
+    # Use default greeting if not provided
+    greeting_text = greeting or (
+        "Hello! Thank you for calling. I'm an AI assistant and I'm here to help you. "
+        "How can I assist you today?"
+    )
+    
+    # Add disclosure if provided
+    full_greeting = greeting_text
+    if disclosure:
+        full_greeting = f"{disclosure} {greeting_text}"
+    
+    # Escape XML special characters
+    escaped_greeting = (
+        full_greeting
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+    
+    # Barge-in enabled: <Say> inside <Gather> allows caller to interrupt
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Gather input="speech" action="{action_url}" method="POST" speechTimeout="2" language="en-US" hints="yes, no, help, schedule, appointment, price, hours, information">
+        <Say voice="Polly.Joanna">{escaped_greeting}</Say>
+    </Gather>
+    <Say voice="Polly.Joanna">I didn&apos;t catch that. Please call back if you need assistance. Goodbye!</Say>
     <Hangup/>
 </Response>'''

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -134,9 +134,9 @@ async def gather_webhook(
     CallSid: Annotated[str, Form()],
     SpeechResult: Annotated[str | None, Form()] = None,
     Confidence: Annotated[str | None, Form()] = None,
-    tenant_id: Annotated[str | None, Form()] = None,
-    conversation_id: Annotated[str | None, Form()] = None,
-    turn: Annotated[str | None, Form()] = None,
+    tenant_id: Annotated[str | None, Query()] = None,
+    conversation_id: Annotated[str | None, Query()] = None,
+    turn: Annotated[str | None, Query()] = None,
 ) -> Response:
     """Handle speech input from Twilio Gather.
     
@@ -188,10 +188,10 @@ async def gather_webhook(
         
         # Store user message in conversation
         if parsed_conversation_id:
-            # Get next sequence number
+            # Get next sequence number - use limit(1) to get only the latest message
             stmt = select(Message).where(
                 Message.conversation_id == parsed_conversation_id
-            ).order_by(Message.sequence_number.desc())
+            ).order_by(Message.sequence_number.desc()).limit(1)
             result = await db.execute(stmt)
             last_message = result.scalar_one_or_none()
             next_seq = (last_message.sequence_number + 1) if last_message else 1
@@ -381,25 +381,44 @@ async def _get_tenant_from_voice_number(
     Returns:
         Tenant ID or None if not found
     """
-    # Try to find tenant by voice phone number in TenantBusinessProfile
-    stmt = select(TenantBusinessProfile).where(
-        TenantBusinessProfile.twilio_voice_phone == phone_number
-    )
-    result = await db.execute(stmt)
-    profile = result.scalar_one_or_none()
+    # Normalize phone number - Twilio may send with or without + prefix
+    # Try multiple formats to handle inconsistencies
+    phone_variants = [phone_number]
+    if phone_number.startswith("+"):
+        # Also try without the + prefix
+        phone_variants.append(phone_number[1:])
+    else:
+        # Also try with the + prefix
+        phone_variants.append(f"+{phone_number}")
     
-    if profile:
-        return profile.tenant_id
+    # Also handle spaces that might appear in logs (e.g., " 18333615689")
+    phone_variants = [p.strip() for p in phone_variants]
+    
+    logger.info(f"Looking up tenant for phone variants: {phone_variants}")
+    
+    # Try to find tenant by voice phone number in TenantBusinessProfile
+    for phone in phone_variants:
+        stmt = select(TenantBusinessProfile).where(
+            TenantBusinessProfile.twilio_voice_phone == phone
+        )
+        result = await db.execute(stmt)
+        profile = result.scalar_one_or_none()
+        
+        if profile:
+            logger.info(f"Found tenant {profile.tenant_id} via TenantBusinessProfile for phone {phone}")
+            return profile.tenant_id
     
     # Fallback: Try SMS config phone number (some tenants might use same number)
-    stmt = select(TenantSmsConfig).where(
-        TenantSmsConfig.twilio_phone_number == phone_number
-    )
-    result = await db.execute(stmt)
-    config = result.scalar_one_or_none()
-    
-    if config:
-        return config.tenant_id
+    for phone in phone_variants:
+        stmt = select(TenantSmsConfig).where(
+            TenantSmsConfig.twilio_phone_number == phone
+        )
+        result = await db.execute(stmt)
+        config = result.scalar_one_or_none()
+        
+        if config:
+            logger.info(f"Found tenant {config.tenant_id} via TenantSmsConfig for phone {phone}")
+            return config.tenant_id
     
     return None
 

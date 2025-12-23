@@ -113,6 +113,7 @@ class VoiceService:
             VoiceResult with response and metadata
         """
         if not tenant_id or not conversation_id:
+            logger.warning(f"Missing tenant_id or conversation_id: tenant_id={tenant_id}, conversation_id={conversation_id}")
             return VoiceResult(
                 response_text="I'm sorry, I'm having trouble processing your request. Please try calling back.",
                 intent=VoiceIntent.UNKNOWN,

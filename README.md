@@ -12,6 +12,14 @@ This is the foundational backend architecture phase, focusing on:
 - Redis caching and idempotency
 - Analytics event hooks
 
+## Twilio Subaccount Plan
+
+Phase 1 now assumes every tenant is mapped to a Twilio subaccount under the global admin account so that inbound/outbound chat, SMS, voice, and eventually email bots are isolated by `AccountSid` instead of only by shared phone numbers. The detailed implementation plan is tracked in `phase_1_mvp_ai_receptionist_80f03ecc.plan.md`, but the summary is:
+
+1. Provision a Twilio subaccount per tenant and persist its SID/credentials in the tenant profile.
+2. Map incoming webhooks to tenants using the subaccount `AccountSid` (with fallbacks to configured numbers) before creating conversations or leads.
+3. Use the tenant-specific credentials for outbound interactions so chat/SMS/voice requests stay within that tenant’s sandbox.
+
 ## Technology Stack
 
 - **Language**: Python 3.11+

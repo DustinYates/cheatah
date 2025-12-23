@@ -306,6 +306,85 @@ async def get_contact(
     return _contact_to_response(contact)
 
 
+class ContactConversationResponse(BaseModel):
+    """Contact conversation response with messages."""
+    
+    id: int
+    channel: str
+    created_at: str
+    messages: list[dict]
+    
+    class Config:
+        from_attributes = True
+
+
+@router.get("/{contact_id}/conversation")
+async def get_contact_conversation(
+    contact_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> ContactConversationResponse:
+    """Get the conversation history for a contact.
+    
+    This finds the conversation via the contact's linked lead.
+    """
+    from app.persistence.repositories.lead_repository import LeadRepository
+    from app.domain.services.conversation_service import ConversationService
+    
+    repo = ContactRepository(db)
+    contact = await repo.get_by_id(tenant_id, contact_id)
+    
+    if not contact:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contact not found",
+        )
+    
+    # Get the lead to find the conversation
+    if not contact.lead_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No conversation found for this contact",
+        )
+    
+    lead_repo = LeadRepository(db)
+    lead = await lead_repo.get_by_id(tenant_id, contact.lead_id)
+    
+    if not lead or not lead.conversation_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No conversation found for this contact",
+        )
+    
+    # Get the conversation with messages
+    conversation_service = ConversationService(db)
+    conversation = await conversation_service.get_conversation(tenant_id, lead.conversation_id)
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+    
+    messages = await conversation_service.get_conversation_history(tenant_id, lead.conversation_id)
+    
+    return ContactConversationResponse(
+        id=conversation.id,
+        channel=conversation.channel,
+        created_at=conversation.created_at.isoformat() if conversation.created_at else "",
+        messages=[
+            {
+                "id": msg.id,
+                "role": msg.role,
+                "content": msg.content,
+                "created_at": msg.created_at.isoformat() if msg.created_at else "",
+            }
+            for msg in messages
+        ],
+    )
+
+
 @router.post("", response_model=ContactResponse, status_code=status.HTTP_201_CREATED)
 async def create_contact(
     request: CreateContactRequest,

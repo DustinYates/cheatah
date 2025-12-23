@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.persistence.database import Base
@@ -30,6 +30,12 @@ class Call(Base):
     duration = Column(Integer, nullable=True)  # Duration in seconds
     recording_sid = Column(String(255), nullable=True)
     recording_url = Column(Text, nullable=True)
+    
+    # Handoff tracking (Phase 2)
+    handoff_attempted = Column(Boolean, default=False, nullable=False)
+    handoff_number = Column(String(50), nullable=True)  # Number transferred to
+    handoff_reason = Column(String(100), nullable=True)  # Reason for handoff
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

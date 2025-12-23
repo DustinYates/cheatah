@@ -12,7 +12,9 @@ if TYPE_CHECKING:
     from app.persistence.models.contact import Contact
     from app.persistence.models.conversation import Conversation
     from app.persistence.models.lead import Lead
+    from app.persistence.models.notification import Notification
     from app.persistence.models.prompt import PromptBundle
+    from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 
 
 class Tenant(Base):
@@ -52,6 +54,12 @@ class Tenant(Base):
     )
     calls = relationship(
         "Call", back_populates="tenant", cascade="all, delete-orphan"
+    )
+    voice_config = relationship(
+        "TenantVoiceConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
+    )
+    notifications = relationship(
+        "Notification", back_populates="tenant", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
@@ -98,6 +106,7 @@ class User(Base):
 
     # Relationships
     tenant = relationship("Tenant", back_populates="users")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, tenant_id={self.tenant_id}, role={self.role})>"

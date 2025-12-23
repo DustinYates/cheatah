@@ -89,6 +89,7 @@ export default function MergeContactsModal({ contacts, onSuccess, onCancel }) {
       await api.mergeContacts(primaryContactId, secondaryIds, fieldResolutions);
       onSuccess();
     } catch (err) {
+      console.error('Merge failed:', err);
       setError(err.message || 'Failed to merge contacts');
       setMerging(false);
     }

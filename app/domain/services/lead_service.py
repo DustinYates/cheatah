@@ -1,5 +1,6 @@
 """Lead service for managing lead capture (schema + state only)."""
 
+import logging
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +8,8 @@ from app.persistence.models.contact import Contact
 from app.persistence.models.lead import Lead
 from app.persistence.repositories.contact_repository import ContactRepository
 from app.persistence.repositories.lead_repository import LeadRepository
+
+logger = logging.getLogger(__name__)
 
 
 class LeadService:
@@ -108,9 +111,12 @@ class LeadService:
         if not lead:
             return None
         
+        old_status = lead.status
         lead.status = status
         
-        # If verified, create a Contact record if one doesn't exist
+        # If verified (or re-verified), create a Contact record if one doesn't exist
+        # This handles both new verifications and re-attempts for leads that were
+        # verified before but failed to create contacts
         if status == 'verified':
             await self._create_contact_from_lead(tenant_id, lead)
         
@@ -128,32 +134,40 @@ class LeadService:
         Returns:
             Created Contact or None if contact already exists
         """
-        # Check if a contact already exists with this email or phone
-        existing_contact = await self.contact_repo.get_by_email_or_phone(
-            tenant_id, email=lead.email, phone=lead.phone
-        )
+        logger.info(f"Creating contact from lead {lead.id}: email={lead.email}, phone={lead.phone}, name={lead.name}")
         
-        if existing_contact:
-            # If contact exists but doesn't have lead_id, link it
-            if not existing_contact.lead_id:
-                existing_contact.lead_id = lead.id
-                await self.session.commit()
-                await self.session.refresh(existing_contact)
-            return existing_contact
-        
-        # Create new contact from lead data
-        contact = Contact(
-            tenant_id=tenant_id,
-            lead_id=lead.id,
-            email=lead.email,
-            phone=lead.phone,
-            name=lead.name,
-            source='web_chat_lead',
-        )
-        self.session.add(contact)
-        await self.session.commit()
-        await self.session.refresh(contact)
-        return contact
+        try:
+            # Check if a contact already exists with this email or phone
+            existing_contact = await self.contact_repo.get_by_email_or_phone(
+                tenant_id, email=lead.email, phone=lead.phone
+            )
+            
+            if existing_contact:
+                logger.info(f"Found existing contact {existing_contact.id} for lead {lead.id}")
+                # If contact exists but doesn't have lead_id, link it
+                if not existing_contact.lead_id:
+                    existing_contact.lead_id = lead.id
+                    # Don't commit here - let the caller commit
+                return existing_contact
+            
+            # Create new contact from lead data
+            logger.info(f"Creating new contact for lead {lead.id}")
+            contact = Contact(
+                tenant_id=tenant_id,
+                lead_id=lead.id,
+                email=lead.email,
+                phone=lead.phone,
+                name=lead.name,
+                source='web_chat_lead',
+            )
+            self.session.add(contact)
+            # Don't commit here - let the caller commit to maintain transaction integrity
+            # The caller (update_lead_status) will commit both the lead status change and contact creation
+            logger.info(f"Added contact to session for lead {lead.id}")
+            return contact
+        except Exception as e:
+            logger.error(f"Error creating contact from lead {lead.id}: {e}", exc_info=True)
+            raise
 
     async def delete_lead(self, tenant_id: int, lead_id: int) -> bool:
         """Delete a lead by ID.

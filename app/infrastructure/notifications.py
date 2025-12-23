@@ -1,18 +1,22 @@
-"""Notification service for admin alerts (SMS + Email)."""
+"""Notification service for admin alerts (SMS + Email + In-App)."""
 
 import logging
+from datetime import datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.persistence.models.notification import Notification, NotificationPriority, NotificationType
 from app.persistence.models.tenant import User
 from app.persistence.repositories.user_repository import UserRepository
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
 class NotificationService:
-    """Service for sending admin notifications."""
+    """Service for sending admin notifications via multiple channels."""
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize notification service."""
@@ -24,8 +28,11 @@ class NotificationService:
         tenant_id: int,
         subject: str,
         message: str,
-        methods: list[str] = ["email", "sms"],
+        methods: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        notification_type: str = NotificationType.SYSTEM,
+        priority: str = NotificationPriority.NORMAL,
+        action_url: str | None = None,
     ) -> dict[str, Any]:
         """Notify tenant admins of an event.
         
@@ -33,12 +40,18 @@ class NotificationService:
             tenant_id: Tenant ID
             subject: Notification subject
             message: Notification message
-            methods: Notification methods (email, sms)
+            methods: Notification methods (email, sms, in_app). Defaults to ["email", "in_app"]
             metadata: Additional metadata
+            notification_type: Type of notification (call_summary, escalation, etc.)
+            priority: Priority level (low, normal, high, urgent)
+            action_url: Optional deep link URL within the app
             
         Returns:
             Dictionary with notification status for each method
         """
+        if methods is None:
+            methods = ["email", "in_app"]
+        
         # Get tenant admins
         users = await self.user_repo.list(tenant_id, skip=0, limit=100)
         admins = [u for u in users if u.role in ("admin", "tenant_admin")]
@@ -52,6 +65,30 @@ class NotificationService:
         for admin in admins:
             admin_notifications = {}
             
+            # Create in-app notification
+            if "in_app" in methods:
+                try:
+                    in_app_result = await self._create_in_app_notification(
+                        tenant_id=tenant_id,
+                        user_id=admin.id,
+                        title=subject,
+                        message=message,
+                        notification_type=notification_type,
+                        priority=priority,
+                        extra_data=metadata,
+                        action_url=action_url,
+                    )
+                    admin_notifications["in_app"] = {
+                        "status": "created" if in_app_result else "failed",
+                        "notification_id": in_app_result.id if in_app_result else None,
+                    }
+                except Exception as e:
+                    logger.error(f"Failed to create in-app notification for user {admin.id}: {e}", exc_info=True)
+                    admin_notifications["in_app"] = {
+                        "status": "error",
+                        "error": str(e),
+                    }
+            
             # Send email notification
             if "email" in methods and admin.email:
                 try:
@@ -59,6 +96,7 @@ class NotificationService:
                         to=admin.email,
                         subject=subject,
                         body=message,
+                        metadata=metadata,
                     )
                     admin_notifications["email"] = {
                         "status": "sent" if email_result else "failed",
@@ -72,15 +110,21 @@ class NotificationService:
                         "error": str(e),
                     }
             
-            # Send SMS notification (if admin has phone number)
+            # Send SMS notification
             if "sms" in methods:
-                # Note: In production, you'd need to store admin phone numbers
-                # For now, we'll log that SMS notification would be sent
-                logger.info(f"SMS notification would be sent to admin {admin.id} for tenant {tenant_id}")
-                admin_notifications["sms"] = {
-                    "status": "not_implemented",
-                    "note": "Admin phone numbers not stored",
-                }
+                try:
+                    sms_result = await self._send_sms_notification(
+                        tenant_id=tenant_id,
+                        user_id=admin.id,
+                        message=f"{subject}: {message[:140]}",  # Truncate for SMS
+                    )
+                    admin_notifications["sms"] = sms_result
+                except Exception as e:
+                    logger.error(f"Failed to send SMS to admin {admin.id}: {e}", exc_info=True)
+                    admin_notifications["sms"] = {
+                        "status": "error",
+                        "error": str(e),
+                    }
             
             notification_results.append({
                 "admin_id": admin.id,
@@ -93,11 +137,214 @@ class NotificationService:
             "notifications": notification_results,
         }
 
+    async def notify_call_summary(
+        self,
+        tenant_id: int,
+        call_id: int,
+        summary_text: str,
+        intent: str | None,
+        outcome: str | None,
+        caller_phone: str,
+        recording_url: str | None = None,
+        methods: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Send notification for a completed call summary.
+        
+        Args:
+            tenant_id: Tenant ID
+            call_id: Call ID
+            summary_text: Summary of the call
+            intent: Detected intent
+            outcome: Call outcome
+            caller_phone: Caller's phone number
+            recording_url: URL to call recording
+            methods: Notification methods
+            
+        Returns:
+            Notification result
+        """
+        subject = f"Call Summary - {outcome or 'Completed'}"
+        
+        message = (
+            f"New call from {caller_phone}\n\n"
+            f"Summary: {summary_text}\n"
+        )
+        if intent:
+            message += f"Intent: {intent.replace('_', ' ').title()}\n"
+        if outcome:
+            message += f"Outcome: {outcome.replace('_', ' ').title()}\n"
+        if recording_url:
+            message += f"\nRecording available at: {recording_url}"
+        
+        metadata = {
+            "call_id": call_id,
+            "intent": intent,
+            "outcome": outcome,
+            "caller_phone": caller_phone,
+            "recording_url": recording_url,
+        }
+        
+        # Determine priority based on outcome
+        priority = NotificationPriority.NORMAL
+        if outcome in ("booking_requested", "lead_created"):
+            priority = NotificationPriority.HIGH
+        
+        return await self.notify_admins(
+            tenant_id=tenant_id,
+            subject=subject,
+            message=message,
+            methods=methods,
+            metadata=metadata,
+            notification_type=NotificationType.CALL_SUMMARY,
+            priority=priority,
+            action_url=f"/calls/{call_id}",
+        )
+
+    async def notify_handoff(
+        self,
+        tenant_id: int,
+        call_id: int,
+        reason: str,
+        caller_phone: str,
+        handoff_mode: str,
+        transfer_number: str | None = None,
+        methods: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Send notification for a call handoff.
+        
+        Args:
+            tenant_id: Tenant ID
+            call_id: Call ID
+            reason: Reason for handoff
+            caller_phone: Caller's phone number
+            handoff_mode: Type of handoff (live_transfer, take_message, etc.)
+            transfer_number: Number transferred to (if applicable)
+            methods: Notification methods
+            
+        Returns:
+            Notification result
+        """
+        subject = f"Call Handoff - {reason.replace('_', ' ').title()}"
+        
+        message = f"A call from {caller_phone} was handed off.\n\n"
+        message += f"Reason: {reason.replace('_', ' ').title()}\n"
+        message += f"Handoff Mode: {handoff_mode.replace('_', ' ').title()}\n"
+        if transfer_number:
+            message += f"Transferred to: {transfer_number}\n"
+        
+        metadata = {
+            "call_id": call_id,
+            "reason": reason,
+            "caller_phone": caller_phone,
+            "handoff_mode": handoff_mode,
+            "transfer_number": transfer_number,
+        }
+        
+        return await self.notify_admins(
+            tenant_id=tenant_id,
+            subject=subject,
+            message=message,
+            methods=methods,
+            metadata=metadata,
+            notification_type=NotificationType.HANDOFF,
+            priority=NotificationPriority.HIGH,
+            action_url=f"/calls/{call_id}",
+        )
+
+    async def notify_voicemail(
+        self,
+        tenant_id: int,
+        call_id: int,
+        caller_phone: str,
+        recording_url: str | None = None,
+        methods: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Send notification for a new voicemail.
+        
+        Args:
+            tenant_id: Tenant ID
+            call_id: Call ID
+            caller_phone: Caller's phone number
+            recording_url: URL to voicemail recording
+            methods: Notification methods
+            
+        Returns:
+            Notification result
+        """
+        subject = "New Voicemail"
+        
+        message = f"You have a new voicemail from {caller_phone}.\n"
+        if recording_url:
+            message += f"\nListen at: {recording_url}"
+        
+        metadata = {
+            "call_id": call_id,
+            "caller_phone": caller_phone,
+            "recording_url": recording_url,
+        }
+        
+        return await self.notify_admins(
+            tenant_id=tenant_id,
+            subject=subject,
+            message=message,
+            methods=methods,
+            metadata=metadata,
+            notification_type=NotificationType.VOICEMAIL,
+            priority=NotificationPriority.NORMAL,
+            action_url=f"/calls/{call_id}",
+        )
+
+    async def _create_in_app_notification(
+        self,
+        tenant_id: int,
+        user_id: int,
+        title: str,
+        message: str,
+        notification_type: str = NotificationType.SYSTEM,
+        priority: str = NotificationPriority.NORMAL,
+        extra_data: dict[str, Any] | None = None,
+        action_url: str | None = None,
+    ) -> Notification:
+        """Create an in-app notification.
+        
+        Args:
+            tenant_id: Tenant ID
+            user_id: User ID to notify
+            title: Notification title
+            message: Notification message
+            notification_type: Type of notification
+            priority: Priority level
+            extra_data: Additional data for the notification
+            action_url: Optional deep link URL
+            
+        Returns:
+            Created Notification
+        """
+        notification = Notification(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            notification_type=notification_type,
+            title=title,
+            message=message,
+            extra_data=extra_data,
+            priority=priority,
+            action_url=action_url,
+            is_read=False,
+        )
+        
+        self.session.add(notification)
+        await self.session.commit()
+        await self.session.refresh(notification)
+        
+        logger.info(f"Created in-app notification {notification.id} for user {user_id}")
+        return notification
+
     async def _send_email(
         self,
         to: str,
         subject: str,
         body: str,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Send email notification.
         
@@ -105,6 +352,7 @@ class NotificationService:
             to: Recipient email address
             subject: Email subject
             body: Email body
+            metadata: Additional metadata for templating
             
         Returns:
             True if sent successfully
@@ -120,6 +368,201 @@ class NotificationService:
         # - Use SendGrid, AWS SES, or GCP SendGrid
         # - Handle errors and retries
         # - Track delivery status
+        # - Use HTML templates for rich emails
         
         return True
 
+    async def _send_sms_notification(
+        self,
+        tenant_id: int,
+        user_id: int,
+        message: str,
+    ) -> dict[str, Any]:
+        """Send SMS notification to a user.
+        
+        Args:
+            tenant_id: Tenant ID
+            user_id: User ID to notify
+            message: SMS message (will be truncated to 160 chars)
+            
+        Returns:
+            Result dictionary
+        """
+        # Get tenant SMS config to use for sending
+        from app.persistence.models.tenant_sms_config import TenantSmsConfig
+        
+        stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
+        result = await self.session.execute(stmt)
+        sms_config = result.scalar_one_or_none()
+        
+        if not sms_config or not sms_config.twilio_phone_number:
+            logger.warning(f"No SMS config for tenant {tenant_id}, cannot send SMS notification")
+            return {
+                "status": "not_configured",
+                "note": "Tenant SMS not configured",
+            }
+        
+        # In a full implementation, we'd need to store admin phone numbers
+        # For now, log that we would send and return a placeholder
+        logger.info(f"SMS notification would be sent to user {user_id}: {message[:50]}...")
+        
+        # TODO: When admin phone numbers are available, use TwilioSmsClient:
+        # from app.infrastructure.twilio_client import TwilioSmsClient
+        # twilio_client = TwilioSmsClient()
+        # result = twilio_client.send_sms(to=admin_phone, from_=sms_config.twilio_phone_number, body=message)
+        
+        return {
+            "status": "pending",
+            "note": "Admin phone numbers not stored - SMS notification logged",
+        }
+
+    async def get_unread_notifications(
+        self,
+        tenant_id: int,
+        user_id: int,
+        limit: int = 50,
+    ) -> list[Notification]:
+        """Get unread notifications for a user.
+        
+        Args:
+            tenant_id: Tenant ID
+            user_id: User ID
+            limit: Maximum number to return
+            
+        Returns:
+            List of unread Notification objects
+        """
+        stmt = (
+            select(Notification)
+            .where(
+                Notification.tenant_id == tenant_id,
+                Notification.user_id == user_id,
+                Notification.is_read == False,
+            )
+            .order_by(Notification.created_at.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_notifications(
+        self,
+        tenant_id: int,
+        user_id: int,
+        limit: int = 50,
+        include_read: bool = True,
+    ) -> list[Notification]:
+        """Get notifications for a user.
+        
+        Args:
+            tenant_id: Tenant ID
+            user_id: User ID
+            limit: Maximum number to return
+            include_read: Include read notifications
+            
+        Returns:
+            List of Notification objects
+        """
+        stmt = (
+            select(Notification)
+            .where(
+                Notification.tenant_id == tenant_id,
+                Notification.user_id == user_id,
+            )
+            .order_by(Notification.created_at.desc())
+            .limit(limit)
+        )
+        
+        if not include_read:
+            stmt = stmt.where(Notification.is_read == False)
+        
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def mark_notification_read(
+        self,
+        tenant_id: int,
+        user_id: int,
+        notification_id: int,
+    ) -> bool:
+        """Mark a notification as read.
+        
+        Args:
+            tenant_id: Tenant ID
+            user_id: User ID
+            notification_id: Notification ID
+            
+        Returns:
+            True if marked, False if not found
+        """
+        stmt = select(Notification).where(
+            Notification.id == notification_id,
+            Notification.tenant_id == tenant_id,
+            Notification.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        notification = result.scalar_one_or_none()
+        
+        if not notification:
+            return False
+        
+        notification.mark_as_read()
+        await self.session.commit()
+        return True
+
+    async def mark_all_notifications_read(
+        self,
+        tenant_id: int,
+        user_id: int,
+    ) -> int:
+        """Mark all notifications as read for a user.
+        
+        Args:
+            tenant_id: Tenant ID
+            user_id: User ID
+            
+        Returns:
+            Number of notifications marked as read
+        """
+        from sqlalchemy import update
+        
+        stmt = (
+            update(Notification)
+            .where(
+                Notification.tenant_id == tenant_id,
+                Notification.user_id == user_id,
+                Notification.is_read == False,
+            )
+            .values(is_read=True, read_at=datetime.utcnow())
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return result.rowcount
+
+    async def get_unread_count(
+        self,
+        tenant_id: int,
+        user_id: int,
+    ) -> int:
+        """Get count of unread notifications for a user.
+        
+        Args:
+            tenant_id: Tenant ID
+            user_id: User ID
+            
+        Returns:
+            Number of unread notifications
+        """
+        from sqlalchemy import func
+        
+        stmt = (
+            select(func.count())
+            .select_from(Notification)
+            .where(
+                Notification.tenant_id == tenant_id,
+                Notification.user_id == user_id,
+                Notification.is_read == False,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0

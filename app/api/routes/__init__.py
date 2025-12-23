@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_sms, admin_voice, auth, calls, chat, contacts, conversations, leads, profile, prompts, prompt_interview, sms_webhooks, tenant_setup, tenants, users, tenant_sms, voice_webhooks
+from app.api.routes import admin, admin_sms, admin_voice, auth, calls, chat, contacts, conversations, leads, profile, prompts, prompt_interview, sms_webhooks, tenant_setup, tenants, users, tenant_sms, tenant_voice, voice_webhooks
 
 api_router = APIRouter()
 
@@ -26,6 +26,9 @@ api_router.include_router(admin_voice.router, prefix="/admin/voice", tags=["admi
 
 # Tenant SMS settings (no Twilio creds exposed)
 api_router.include_router(tenant_sms.router, prefix="/sms", tags=["sms"])
+
+# Tenant Voice settings (no Twilio creds exposed)
+api_router.include_router(tenant_voice.router, prefix="/voice", tags=["voice"])
 
 # Leads, Contacts, and Calls
 api_router.include_router(leads.router, prefix="/leads", tags=["leads"])

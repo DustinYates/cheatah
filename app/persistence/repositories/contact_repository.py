@@ -81,6 +81,9 @@ class ContactRepository(BaseRepository[Contact]):
     ) -> Contact | None:
         """Get contact by email or phone.
         
+        Returns the first matching contact if multiple exist (duplicates
+        should be merged using the merge feature).
+        
         Args:
             tenant_id: Tenant ID
             email: Optional email to search
@@ -98,11 +101,16 @@ class ContactRepository(BaseRepository[Contact]):
         if phone:
             conditions.append(Contact.phone == phone)
         
-        stmt = select(Contact).where(
-            Contact.tenant_id == tenant_id,
-            Contact.deleted_at.is_(None),
-            Contact.merged_into_contact_id.is_(None),
-            or_(*conditions)
+        stmt = (
+            select(Contact)
+            .where(
+                Contact.tenant_id == tenant_id,
+                Contact.deleted_at.is_(None),
+                Contact.merged_into_contact_id.is_(None),
+                or_(*conditions)
+            )
+            .order_by(Contact.created_at)
+            .limit(1)
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -185,7 +193,12 @@ class ContactRepository(BaseRepository[Contact]):
         contact.merged_by = user_id
         
         await self.session.commit()
-        await self.session.refresh(contact)
+        # Don't refresh if session is closed or object is detached
+        try:
+            await self.session.refresh(contact)
+        except Exception:
+            # If refresh fails, re-fetch the contact
+            contact = await self.get_by_id_any_status(tenant_id, contact_id)
         return contact
 
     async def get_merged_contacts(

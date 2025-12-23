@@ -324,9 +324,9 @@ class ApiClient {
 
   // Contact merge methods
   async getMergePreview(contactIds) {
-    return this.request('/contacts/merge/preview', {
+    return this.request('/contacts/merge-preview', {
       method: 'POST',
-      body: JSON.stringify({ contact_ids: contactIds }),
+      body: JSON.stringify(contactIds),
     });
   }
 

@@ -104,8 +104,13 @@ class ContactAliasRepository(BaseRepository[ContactAlias]):
         
         await self.session.commit()
         
+        # Refresh aliases if possible, but don't fail if session is in bad state
         for alias in created:
-            await self.session.refresh(alias)
+            try:
+                await self.session.refresh(alias)
+            except Exception:
+                # If refresh fails, continue - aliases are already committed
+                pass
         
         return created
 

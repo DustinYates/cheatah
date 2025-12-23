@@ -47,7 +47,12 @@ class ContactMergeLogRepository(BaseRepository[ContactMergeLog]):
         )
         self.session.add(merge_log)
         await self.session.commit()
-        await self.session.refresh(merge_log)
+        # Don't refresh if session is closed or object is detached
+        try:
+            await self.session.refresh(merge_log)
+        except Exception:
+            # If refresh fails, that's okay - the log is already committed
+            pass
         return merge_log
 
     async def get_merge_history_for_contact(

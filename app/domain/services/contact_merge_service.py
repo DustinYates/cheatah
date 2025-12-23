@@ -138,19 +138,28 @@ class ContactMergeService:
         
         # Resolve field conflicts and update primary contact
         update_data = {}
-        for field, resolution in field_resolutions.items():
-            if resolution == "primary":
-                continue  # Keep primary's value
-            elif isinstance(resolution, int):
-                # Use value from specified contact
-                source_contact = next((c for c in contacts if c.id == resolution), None)
-                if source_contact:
-                    update_data[field] = getattr(source_contact, field)
+        # Handle case where field_resolutions might be None or empty
+        if field_resolutions:
+            for field, resolution in field_resolutions.items():
+                if resolution == "primary":
+                    continue  # Keep primary's value
+                elif isinstance(resolution, int):
+                    # Use value from specified contact
+                    source_contact = next((c for c in contacts if c.id == resolution), None)
+                    if source_contact:
+                        value = getattr(source_contact, field)
+                        if value:  # Only update if value exists
+                            update_data[field] = value
         
         # Update primary contact with resolved values
         if update_data:
             for key, value in update_data.items():
                 setattr(primary, key, value)
+            await self.session.commit()
+            # Re-fetch primary contact after commit to ensure it's still in session
+            primary = await self.contact_repo.get_by_id_any_status(tenant_id, primary_contact_id)
+            if not primary:
+                raise ValueError(f"Primary contact {primary_contact_id} not found after update")
         
         # Create aliases from all contacts' values
         aliases_to_create = []
@@ -173,18 +182,35 @@ class ContactMergeService:
             
             # Create aliases for all values
             for contact_id, value in all_values.items():
+                # Skip if value is None or empty string
+                if not value:
+                    continue
                 is_primary_alias = (value == primary_value)
                 aliases_to_create.append({
                     'contact_id': primary_contact_id,
                     'alias_type': alias_type,
-                    'value': value,
+                    'value': str(value).strip(),  # Ensure it's a string and trimmed
                     'is_primary': is_primary_alias,
                     'source_contact_id': contact_id if contact_id != primary_contact_id else None
                 })
         
-        # Create aliases
+        # Create aliases (skip if empty to avoid unnecessary database calls)
         if aliases_to_create:
-            await self.alias_repo.create_aliases_bulk(aliases_to_create)
+            try:
+                # Filter out any aliases that might already exist
+                existing_aliases = await self.alias_repo.get_aliases_for_contact(primary_contact_id)
+                existing_values = {(a.alias_type, a.value) for a in existing_aliases}
+                aliases_to_create_filtered = [
+                    a for a in aliases_to_create
+                    if (a['alias_type'], a['value']) not in existing_values
+                ]
+                
+                if aliases_to_create_filtered:
+                    await self.alias_repo.create_aliases_bulk(aliases_to_create_filtered)
+            except Exception as e:
+                # Log but continue - alias creation failure shouldn't block merge
+                import sys
+                print(f"Warning: Failed to create some aliases: {e}", file=sys.stderr)
         
         # Update related entities to point to primary contact
         for secondary in secondaries:
@@ -215,9 +241,10 @@ class ContactMergeService:
                 tenant_id, secondary.id, primary_contact_id, user_id
             )
         
-        # Commit all changes
-        await self.session.commit()
-        await self.session.refresh(primary)
+        # Re-fetch the primary contact to ensure we have the latest data
+        primary = await self.contact_repo.get_by_id_any_status(tenant_id, primary_contact_id)
+        if not primary:
+            raise ValueError(f"Primary contact {primary_contact_id} not found after merge")
         
         return primary
 

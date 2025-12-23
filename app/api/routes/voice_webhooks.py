@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.business_hours_service import is_within_business_hours
+from app.infrastructure.redis import redis_client
 from app.persistence.database import get_db
 from app.persistence.models.call import Call
 from app.persistence.models.conversation import Conversation, Message
@@ -20,6 +21,9 @@ from app.persistence.repositories.call_repository import CallRepository
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# Idempotency TTL for webhook deduplication (5 minutes)
+WEBHOOK_IDEMPOTENCY_TTL = 300
 
 router = APIRouter()
 
@@ -59,6 +63,38 @@ async def inbound_call_webhook(
         TwiML XML response
     """
     try:
+        # Check for duplicate webhook (idempotency)
+        idempotency_key = f"voice:inbound:{CallSid}"
+        await redis_client.connect()
+        
+        if await redis_client.exists(idempotency_key):
+            logger.info(f"Duplicate inbound call webhook for CallSid: {CallSid}, returning cached response")
+            # Check if call already exists and return appropriate TwiML
+            existing_call = await _get_call_by_sid(CallSid, db)
+            if existing_call:
+                # Return a gather TwiML to continue the conversation
+                stmt = select(Conversation).where(Conversation.external_id == CallSid)
+                result = await db.execute(stmt)
+                conversation = result.scalar_one_or_none()
+                if conversation:
+                    twiml = _generate_gather_twiml(
+                        CallSid,
+                        existing_call.tenant_id,
+                        conversation.id,
+                        0,
+                        "I'm here to help. What can I do for you?",
+                    )
+                    return Response(content=twiml, media_type="application/xml")
+            
+            # Fallback - just acknowledge
+            return Response(
+                content='<?xml version="1.0" encoding="UTF-8"?><Response><Say>Thank you for calling. How can I help you?</Say></Response>',
+                media_type="application/xml",
+            )
+        
+        # Mark this webhook as processed
+        await redis_client.set(idempotency_key, "processing", ttl=WEBHOOK_IDEMPOTENCY_TTL)
+        
         # Lookup tenant from phone number
         tenant_id = await _get_tenant_from_voice_number(To, AccountSid, db)
         
@@ -81,38 +117,65 @@ async def inbound_call_webhook(
                 business_hours_enabled=sms_config.business_hours_enabled,
             )
         
-        # Create call record
+        # Create call record (check if already exists for idempotency)
         call_repo = CallRepository(db)
-        call = await call_repo.create(
-            tenant_id,
-            call_sid=CallSid,
-            from_number=From,
-            to_number=To,
-            status=CallStatus,
-            direction="inbound",
-            started_at=datetime.utcnow(),
-        )
-        logger.info(f"Created call record: call_sid={CallSid}, tenant_id={tenant_id}, status={CallStatus}")
+        existing_call = await call_repo.get_by_call_sid(CallSid)
         
-        # Create a voice conversation for this call
-        conversation = Conversation(
-            tenant_id=tenant_id,
-            channel="voice",
-            external_id=CallSid,  # Use call SID as external ID
-            phone_number=From,
-        )
-        db.add(conversation)
-        await db.commit()
-        await db.refresh(conversation)
-        logger.info(f"Created voice conversation: id={conversation.id}, call_sid={CallSid}")
+        if existing_call:
+            # Call already exists - this is a duplicate webhook
+            logger.info(f"Call record already exists for CallSid: {CallSid}, using existing")
+            call = existing_call
+        else:
+            call = await call_repo.create(
+                tenant_id,
+                call_sid=CallSid,
+                from_number=From,
+                to_number=To,
+                status=CallStatus,
+                direction="inbound",
+                started_at=datetime.utcnow(),
+            )
+            logger.info(f"Created call record: call_sid={CallSid}, tenant_id={tenant_id}, status={CallStatus}")
+        
+        # Create or get voice conversation for this call
+        stmt = select(Conversation).where(Conversation.external_id == CallSid)
+        result = await db.execute(stmt)
+        conversation = result.scalar_one_or_none()
+        
+        if not conversation:
+            conversation = Conversation(
+                tenant_id=tenant_id,
+                channel="voice",
+                external_id=CallSid,  # Use call SID as external ID
+                phone_number=From,
+            )
+            db.add(conversation)
+            await db.commit()
+            await db.refresh(conversation)
+            logger.info(f"Created voice conversation: id={conversation.id}, call_sid={CallSid}")
+        else:
+            logger.info(f"Using existing voice conversation: id={conversation.id}, call_sid={CallSid}")
+        
+        # Get tenant-specific greeting and disclosure
+        from app.domain.services.voice_config_service import VoiceConfigService
+        voice_config_service = VoiceConfigService(db)
+        greeting_config = await voice_config_service.get_greeting_and_disclosure(tenant_id)
         
         # Generate TwiML based on business hours
         if is_open:
-            # Start AI conversation
-            twiml = _generate_greeting_twiml(CallSid, tenant_id, conversation.id)
+            # Start AI conversation with tenant-specific greeting
+            twiml = _generate_greeting_twiml(
+                CallSid,
+                tenant_id,
+                conversation.id,
+                greeting=greeting_config.get("greeting"),
+                disclosure=greeting_config.get("disclosure"),
+            )
         else:
-            # After hours - voicemail
-            twiml = _generate_voicemail_twiml()
+            # After hours - voicemail with tenant-specific message
+            twiml = _generate_voicemail_twiml(
+                message=greeting_config.get("after_hours_message")
+            )
         
         return Response(
             content=twiml,
@@ -241,9 +304,10 @@ async def gather_webhook(
                 media_type="application/xml",
             )
         
-        # Process with AI (will be implemented in voice_service)
-        # For now, use a placeholder that will be replaced when voice_service is ready
+        # Process with AI
         from app.domain.services.voice_service import VoiceService
+        from app.domain.services.handoff_service import HandoffService, CallContext
+        from app.infrastructure.notifications import NotificationService
         
         voice_service = VoiceService(db)
         voice_result = await voice_service.process_voice_turn(
@@ -254,6 +318,48 @@ async def gather_webhook(
         )
         
         ai_response = voice_result.response_text
+        
+        # Check for handoff/escalation
+        if parsed_tenant_id and voice_result.requires_escalation:
+            handoff_service = HandoffService(db)
+            
+            # Build call context for handoff decision
+            confidence_float = float(Confidence) if Confidence else None
+            call_context = CallContext(
+                call_sid=CallSid,
+                tenant_id=parsed_tenant_id,
+                conversation_id=parsed_conversation_id,
+                current_turn=current_turn,
+                transcribed_text=SpeechResult,
+                intent=voice_result.intent,
+                confidence=confidence_float,
+            )
+            
+            # Evaluate if we should handoff
+            handoff_decision = await handoff_service.evaluate_handoff(call_context)
+            
+            if handoff_decision.should_handoff:
+                # Execute handoff and return appropriate TwiML
+                twiml = await handoff_service.execute_handoff(
+                    call_sid=CallSid,
+                    decision=handoff_decision,
+                    tenant_id=parsed_tenant_id,
+                )
+                
+                # Send handoff notification
+                notification_service = NotificationService(db)
+                call = await _get_call_by_sid(CallSid, db)
+                if call:
+                    await notification_service.notify_handoff(
+                        tenant_id=parsed_tenant_id,
+                        call_id=call.id,
+                        reason=handoff_decision.reason or "escalation_requested",
+                        caller_phone=call.from_number,
+                        handoff_mode=handoff_decision.handoff_mode or "take_message",
+                        transfer_number=handoff_decision.transfer_number,
+                    )
+                
+                return Response(content=twiml, media_type="application/xml")
         
         # Store assistant message
         if parsed_conversation_id:
@@ -443,18 +549,44 @@ async def _get_sms_config_for_tenant(
     return result.scalar_one_or_none()
 
 
+async def _get_call_by_sid(
+    call_sid: str,
+    db: AsyncSession,
+) -> Call | None:
+    """Get call by Twilio call SID.
+    
+    Args:
+        call_sid: Twilio call SID
+        db: Database session
+        
+    Returns:
+        Call or None if not found
+    """
+    stmt = select(Call).where(Call.call_sid == call_sid)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 def _get_webhook_base_url() -> str:
     """Get the base URL for webhooks."""
     return settings.twilio_webhook_url_base or "https://example.com"
 
 
-def _generate_greeting_twiml(call_sid: str, tenant_id: int, conversation_id: int) -> str:
+def _generate_greeting_twiml(
+    call_sid: str,
+    tenant_id: int,
+    conversation_id: int,
+    greeting: str | None = None,
+    disclosure: str | None = None,
+) -> str:
     """Generate TwiML for greeting and first gather.
     
     Args:
         call_sid: Twilio call SID
         tenant_id: Tenant ID
         conversation_id: Conversation ID
+        greeting: Custom greeting text
+        disclosure: Recording disclosure text
         
     Returns:
         TwiML XML string with greeting and gather
@@ -468,9 +600,30 @@ def _generate_greeting_twiml(call_sid: str, tenant_id: int, conversation_id: int
     # Escape & to &amp; for valid XML
     action_url = f"{base_url}/api/v1/voice/gather?{params}".replace("&", "&amp;")
     
+    # Use default greeting if not provided
+    greeting_text = greeting or (
+        "Hello! Thank you for calling. I'm an AI assistant and I'm here to help you. "
+        "How can I assist you today?"
+    )
+    
+    # Add disclosure if provided
+    full_greeting = greeting_text
+    if disclosure:
+        full_greeting = f"{disclosure} {greeting_text}"
+    
+    # Escape XML special characters
+    escaped_greeting = (
+        full_greeting
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+    
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Hello! Thank you for calling. I'm an AI assistant and I'm here to help you. How can I assist you today?</Say>
+    <Say>{escaped_greeting}</Say>
     <Gather input="speech" action="{action_url}" method="POST" speechTimeout="3" language="en-US">
         <Say></Say>
     </Gather>
@@ -554,15 +707,33 @@ def _generate_goodbye_twiml(message: str) -> str:
 </Response>'''
 
 
-def _generate_voicemail_twiml() -> str:
+def _generate_voicemail_twiml(message: str | None = None) -> str:
     """Generate TwiML for closed business hours (voicemail).
+    
+    Args:
+        message: Custom voicemail message (optional)
     
     Returns:
         TwiML XML string with voicemail prompt
     """
-    return '''<?xml version="1.0" encoding="UTF-8"?>
+    voicemail_message = message or (
+        "Thank you for calling. We're currently outside our business hours. "
+        "Please leave a message after the tone, and we'll get back to you as soon as possible."
+    )
+    
+    # Escape XML special characters
+    escaped_message = (
+        voicemail_message
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+    
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Thank you for calling. We're currently outside our business hours. Please leave a message after the tone, and we'll get back to you as soon as possible.</Say>
+    <Say>{escaped_message}</Say>
     <Record maxLength="300" finishOnKey="#"/>
     <Say>Thank you for your message. We'll contact you soon. Goodbye.</Say>
     <Hangup/>

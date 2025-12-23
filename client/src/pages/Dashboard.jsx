@@ -156,6 +156,15 @@ export default function Dashboard() {
                               {actionLoading === lead.id ? '...' : '? Unknown'}
                             </button>
                           </>
+                        ) : lead.status === 'verified' ? (
+                          <button
+                            className="btn-action btn-verify"
+                            onClick={() => handleVerify(lead.id)}
+                            disabled={actionLoading === lead.id}
+                            title="Re-sync to create contact"
+                          >
+                            {actionLoading === lead.id ? '...' : '⟳ Sync'}
+                          </button>
                         ) : (
                           <span className="action-done">—</span>
                         )}

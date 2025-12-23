@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -10,6 +11,7 @@ import './Contacts.css';
 
 export default function Contacts() {
   const { user, selectedTenantId } = useAuth();
+  const location = useLocation();
   const [search, setSearch] = useState('');
   const [selectedContact, setSelectedContact] = useState(null);
   const [editingContact, setEditingContact] = useState(null);
@@ -21,7 +23,13 @@ export default function Contacts() {
   const fetchContacts = useCallback(async () => {
     try {
       const data = await api.getContacts();
-      return Array.isArray(data) ? data : data.contacts || [];
+      if (Array.isArray(data)) {
+        return data;
+      }
+      if (data?.items) {
+        return data.items;
+      }
+      return data.contacts || [];
     } catch (err) {
       if (err.message?.includes('Not Found') || err.message?.includes('not found')) {
         return [];
@@ -30,7 +38,17 @@ export default function Contacts() {
     }
   }, []);
 
-  const { data: contacts, loading, error, refetch } = useFetchData(fetchContacts, { defaultValue: [] });
+  const { data: contacts, loading, error, refetch } = useFetchData(fetchContacts, { defaultValue: [], deps: [selectedTenantId] });
+
+  // Refetch contacts when navigating to this page (e.g., after verifying a lead)
+  // Use location.key which changes on each navigation, not pathname
+  useEffect(() => {
+    // Only refetch if we have a tenant context (to avoid 403 errors)
+    if (selectedTenantId || (user && !user.is_global_admin)) {
+      refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]); // Only trigger on actual navigation, not on refetch changes
 
   const needsTenant = user?.is_global_admin && !selectedTenantId;
 

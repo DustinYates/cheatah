@@ -13,6 +13,8 @@ from sqlalchemy.orm import joinedload
 from app.domain.services.conversation_service import ConversationService
 from app.domain.services.lead_service import LeadService
 from app.domain.services.prompt_service import PromptService
+from app.domain.services.voice_config_service import VoiceConfigService
+from app.infrastructure.notifications import NotificationService
 from app.llm.orchestrator import LLMOrchestrator
 from app.persistence.models.call import Call
 from app.persistence.models.call_summary import CallSummary
@@ -89,6 +91,8 @@ class VoiceService:
         self.conversation_service = ConversationService(session)
         self.lead_service = LeadService(session)
         self.prompt_service = PromptService(session)
+        self.voice_config_service = VoiceConfigService(session)
+        self.notification_service = NotificationService(session)
         self.llm_orchestrator = LLMOrchestrator()
         self.call_repo = CallRepository(session)
         self.call_summary_repo = CallSummaryRepository(session)
@@ -409,11 +413,12 @@ class VoiceService:
                 extracted_data=extracted_data,
             )
             
-            # Determine outcome
+            # Determine outcome (pass call to check handoff status)
             outcome = await self._determine_outcome(
                 messages=messages,
                 intent=primary_intent,
                 extracted_data=extracted_data,
+                call=call,
             )
             
             # Create or update lead/contact
@@ -436,11 +441,71 @@ class VoiceService:
             )
             
             logger.info(f"Created call summary: call_id={call_id}, intent={primary_intent}, outcome={outcome}")
+            
+            # Send notifications based on tenant preferences
+            await self._send_call_notifications(
+                tenant_id=call.tenant_id,
+                call=call,
+                summary_text=summary_text,
+                intent=primary_intent,
+                outcome=outcome,
+            )
+            
             return summary
             
         except Exception as e:
             logger.error(f"Failed to generate call summary: {e}", exc_info=True)
             return None
+    
+    async def _send_call_notifications(
+        self,
+        tenant_id: int,
+        call: Call,
+        summary_text: str,
+        intent: str,
+        outcome: str,
+    ) -> None:
+        """Send notifications for a completed call.
+        
+        Args:
+            tenant_id: Tenant ID
+            call: Call record
+            summary_text: Generated summary text
+            intent: Detected intent
+            outcome: Call outcome
+        """
+        try:
+            # Get notification config from voice settings
+            notification_config = await self.voice_config_service.get_notification_config(tenant_id)
+            methods = notification_config.get("methods", ["email", "in_app"])
+            
+            # Send call summary notification
+            await self.notification_service.notify_call_summary(
+                tenant_id=tenant_id,
+                call_id=call.id,
+                summary_text=summary_text,
+                intent=intent,
+                outcome=outcome,
+                caller_phone=call.from_number,
+                recording_url=call.recording_url,
+                methods=methods,
+            )
+            
+            # If call was a voicemail, send additional voicemail notification
+            if outcome == CallOutcome.VOICEMAIL and call.recording_url:
+                await self.notification_service.notify_voicemail(
+                    tenant_id=tenant_id,
+                    call_id=call.id,
+                    caller_phone=call.from_number,
+                    recording_url=call.recording_url,
+                    methods=methods,
+                )
+            
+            logger.info(f"Sent notifications for call {call.id}")
+            
+        except Exception as e:
+            # Don't fail the summary generation if notifications fail
+            logger.error(f"Failed to send call notifications: {e}", exc_info=True)
 
     async def _get_call_with_conversation(self, call_id: int) -> Call | None:
         """Get call by ID.
@@ -589,6 +654,7 @@ Write a professional summary (2-3 sentences):"""
         messages: list[Message],
         intent: str,
         extracted_data: ExtractedCallData,
+        call: Call | None = None,
     ) -> str:
         """Determine the outcome of the call.
         
@@ -596,10 +662,15 @@ Write a professional summary (2-3 sentences):"""
             messages: Conversation messages
             intent: Detected intent
             extracted_data: Extracted data
+            call: Call record (optional, for checking handoff status)
             
         Returns:
             Outcome category
         """
+        # Check if handoff was attempted (transferred)
+        if call and call.handoff_attempted:
+            return CallOutcome.TRANSFERRED
+        
         if intent == VoiceIntent.BOOKING_REQUEST:
             return CallOutcome.BOOKING_REQUESTED
         

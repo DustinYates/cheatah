@@ -8,15 +8,18 @@ from app.persistence.models.contact_merge_log import ContactMergeLog
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.escalation import Escalation
 from app.persistence.models.lead import Lead
+from app.persistence.models.notification import Notification, NotificationPriority, NotificationType
 from app.persistence.models.prompt import PromptBundle, PromptSection
 from app.persistence.models.sms_opt_in import SmsOptIn
-from app.persistence.models.tenant import Tenant, User
+from app.persistence.models.tenant import Tenant, TenantBusinessProfile, User
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
+from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 
 __all__ = [
     "Call",
     "CallSummary",
     "Tenant",
+    "TenantBusinessProfile",
     "User",
     "Conversation",
     "Message",
@@ -27,7 +30,11 @@ __all__ = [
     "PromptBundle",
     "PromptSection",
     "TenantSmsConfig",
+    "TenantVoiceConfig",
     "SmsOptIn",
     "Escalation",
+    "Notification",
+    "NotificationType",
+    "NotificationPriority",
 ]
 

@@ -24,7 +24,9 @@ export default function EmailSettings() {
     response_signature: '',
     max_thread_depth: 10,
     escalation_rules: null,
+    lead_capture_subject_prefixes: [],
   });
+  const [newPrefix, setNewPrefix] = useState('');
 
   const fetchSettings = useCallback(() => api.getEmailSettings(), []);
   const { data: settings, loading, error, refetch } = useFetchData(fetchSettings);
@@ -56,6 +58,7 @@ export default function EmailSettings() {
         response_signature: settings.response_signature || '',
         max_thread_depth: settings.max_thread_depth || 10,
         escalation_rules: settings.escalation_rules,
+        lead_capture_subject_prefixes: settings.lead_capture_subject_prefixes || [],
       });
     }
   }, [settings]);
@@ -66,6 +69,31 @@ export default function EmailSettings() {
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }));
+  };
+
+  const handleAddPrefix = () => {
+    const trimmed = newPrefix.trim();
+    if (trimmed && !formData.lead_capture_subject_prefixes.includes(trimmed)) {
+      setFormData(prev => ({
+        ...prev,
+        lead_capture_subject_prefixes: [...prev.lead_capture_subject_prefixes, trimmed],
+      }));
+      setNewPrefix('');
+    }
+  };
+
+  const handleRemovePrefix = (prefixToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      lead_capture_subject_prefixes: prev.lead_capture_subject_prefixes.filter(p => p !== prefixToRemove),
+    }));
+  };
+
+  const handlePrefixKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddPrefix();
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -292,6 +320,58 @@ export default function EmailSettings() {
                 rows={4}
               />
               <small>Signature to append to all AI-generated responses</small>
+            </div>
+          </section>
+
+          <section className="settings-section">
+            <h2>Lead Capture</h2>
+            <p className="section-description">
+              Configure which email subjects should create leads. Only emails with subjects that start with one of these prefixes will create leads.
+            </p>
+
+            <div className="form-group">
+              <label>Subject Prefixes for Lead Capture</label>
+              <div className="prefix-list">
+                {formData.lead_capture_subject_prefixes.length === 0 ? (
+                  <div className="prefix-empty">No prefixes configured. No leads will be created from emails.</div>
+                ) : (
+                  formData.lead_capture_subject_prefixes.map((prefix, index) => (
+                    <div key={index} className="prefix-item">
+                      <span className="prefix-text">{prefix}</span>
+                      <button
+                        type="button"
+                        className="prefix-remove"
+                        onClick={() => handleRemovePrefix(prefix)}
+                        title="Remove prefix"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="prefix-add-row">
+                <input
+                  type="text"
+                  value={newPrefix}
+                  onChange={(e) => setNewPrefix(e.target.value)}
+                  onKeyDown={handlePrefixKeyDown}
+                  placeholder="Enter a subject prefix..."
+                  className="prefix-input"
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleAddPrefix}
+                  disabled={!newPrefix.trim()}
+                >
+                  Add Prefix
+                </button>
+              </div>
+              <small>
+                Emails with subjects starting with these prefixes (case-insensitive) will create leads. 
+                Examples: "Email Capture from Booking Page", "Get In Touch Form Submission"
+              </small>
             </div>
           </section>
 

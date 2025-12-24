@@ -59,6 +59,14 @@ class TenantEmailConfig(Base):
         "auto_escalate_no_response": {"enabled": False, "hours": 4},
     })
     
+    # Lead capture settings (JSON)
+    # List of email subject prefixes that should trigger lead creation
+    # If null/empty, uses default prefixes. If explicitly [], no leads are created.
+    lead_capture_subject_prefixes = Column(JSON, nullable=True, default=lambda: [
+        "Email Capture from Booking Page",
+        "Get In Touch Form Submission",
+    ])
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -117,4 +125,10 @@ DEFAULT_EMAIL_ESCALATION_RULES = {
 
 # Default notification methods
 DEFAULT_EMAIL_NOTIFICATION_METHODS = ["in_app"]
+
+# Default lead capture subject prefixes
+DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES = [
+    "Email Capture from Booking Page",
+    "Get In Touch Form Submission",
+]
 

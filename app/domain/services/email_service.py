@@ -190,7 +190,13 @@ class EmailService:
         lead_id = None
         extracted_info = self._extract_contact_info(from_email, sender_name, body)
         
-        if extracted_info and not email_conversation.lead_id:
+        # Check if this email's subject matches lead capture prefixes
+        should_capture_lead = self._should_capture_lead_from_subject(
+            subject=subject,
+            email_config=email_config,
+        )
+        
+        if extracted_info and not email_conversation.lead_id and should_capture_lead:
             # Try to capture lead
             lead = await self.lead_service.capture_lead(
                 tenant_id=tenant_id,
@@ -208,6 +214,8 @@ class EmailService:
                     gmail_thread_id=thread_id,
                     lead_id=lead.id,
                 )
+        elif not should_capture_lead:
+            logger.info(f"Skipping lead capture for email with subject '{subject}' - does not match configured prefixes")
         
         # Compose prompt with email-specific context
         additional_context = self._build_email_context(
@@ -474,6 +482,43 @@ class EmailService:
             )
         
         return None
+
+    def _should_capture_lead_from_subject(
+        self,
+        subject: str,
+        email_config: TenantEmailConfig,
+    ) -> bool:
+        """Check if email subject matches configured lead capture prefixes.
+        
+        Args:
+            subject: Email subject line
+            email_config: Tenant email configuration
+            
+        Returns:
+            True if lead should be captured, False otherwise
+        """
+        from app.persistence.models.tenant_email_config import DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
+        
+        # Get configured prefixes, fall back to defaults if not set
+        prefixes = email_config.lead_capture_subject_prefixes
+        if prefixes is None:
+            prefixes = DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
+        
+        # If explicitly set to empty list, don't capture any leads
+        if prefixes is not None and len(prefixes) == 0:
+            return False
+        
+        # If no prefixes configured at all (shouldn't happen with defaults), capture all
+        if not prefixes:
+            return True
+        
+        # Check if subject starts with any configured prefix (case-insensitive)
+        subject_lower = (subject or "").lower().strip()
+        for prefix in prefixes:
+            if subject_lower.startswith(prefix.lower()):
+                return True
+        
+        return False
 
     def _extract_contact_info(
         self,

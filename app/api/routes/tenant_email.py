@@ -39,6 +39,7 @@ class EmailSettingsResponse(BaseModel):
     max_thread_depth: int
     escalation_rules: dict | None
     watch_active: bool  # Whether Gmail watch is active
+    lead_capture_subject_prefixes: list[str] | None  # Email subject prefixes that trigger lead creation
 
 
 class UpdateEmailSettingsRequest(BaseModel):
@@ -50,6 +51,7 @@ class UpdateEmailSettingsRequest(BaseModel):
     response_signature: str | None = None
     max_thread_depth: int = 10
     escalation_rules: dict | None = None
+    lead_capture_subject_prefixes: list[str] | None = None  # Email subject prefixes that trigger lead creation
 
 
 class OAuthStartResponse(BaseModel):
@@ -88,6 +90,8 @@ async def get_email_settings(
     config_repo = TenantEmailConfigRepository(db)
     config = await config_repo.get_by_tenant_id(tenant_id)
     
+    from app.persistence.models.tenant_email_config import DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
+    
     if not config:
         # Return defaults if no config exists
         return EmailSettingsResponse(
@@ -101,13 +105,19 @@ async def get_email_settings(
             max_thread_depth=10,
             escalation_rules=None,
             watch_active=False,
+            lead_capture_subject_prefixes=DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES,
         )
     
-    # Check if watch is active
-    from datetime import datetime, timezone
+    # Check if watch is active (use utcnow() for naive datetime comparison)
+    from datetime import datetime
     watch_active = False
     if config.watch_expiration:
-        watch_active = config.watch_expiration > datetime.now(timezone.utc)
+        watch_active = config.watch_expiration > datetime.utcnow()
+    
+    # Get lead capture prefixes, fall back to defaults
+    prefixes = config.lead_capture_subject_prefixes
+    if prefixes is None:
+        prefixes = DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
     
     return EmailSettingsResponse(
         is_enabled=config.is_enabled,
@@ -120,6 +130,7 @@ async def get_email_settings(
         max_thread_depth=config.max_thread_depth or 10,
         escalation_rules=config.escalation_rules,
         watch_active=watch_active,
+        lead_capture_subject_prefixes=prefixes,
     )
 
 
@@ -140,6 +151,8 @@ async def update_email_settings(
     config_repo = TenantEmailConfigRepository(db)
     config = await config_repo.get_by_tenant_id(tenant_id)
     
+    from app.persistence.models.tenant_email_config import DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
+    
     if not config:
         # Create new config
         config = await config_repo.create_or_update(
@@ -151,6 +164,7 @@ async def update_email_settings(
             response_signature=settings_data.response_signature,
             max_thread_depth=settings_data.max_thread_depth,
             escalation_rules=settings_data.escalation_rules,
+            lead_capture_subject_prefixes=settings_data.lead_capture_subject_prefixes,
         )
     else:
         # Update existing - only allow enabling if Gmail is connected
@@ -169,12 +183,18 @@ async def update_email_settings(
             response_signature=settings_data.response_signature,
             max_thread_depth=settings_data.max_thread_depth,
             escalation_rules=settings_data.escalation_rules,
+            lead_capture_subject_prefixes=settings_data.lead_capture_subject_prefixes,
         )
     
-    from datetime import datetime, timezone
+    from datetime import datetime
     watch_active = False
     if config.watch_expiration:
-        watch_active = config.watch_expiration > datetime.now(timezone.utc)
+        watch_active = config.watch_expiration > datetime.utcnow()
+    
+    # Get lead capture prefixes, fall back to defaults
+    prefixes = config.lead_capture_subject_prefixes
+    if prefixes is None:
+        prefixes = DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
     
     return EmailSettingsResponse(
         is_enabled=config.is_enabled,
@@ -187,6 +207,7 @@ async def update_email_settings(
         max_thread_depth=config.max_thread_depth or 10,
         escalation_rules=config.escalation_rules,
         watch_active=watch_active,
+        lead_capture_subject_prefixes=prefixes,
     )
 
 
@@ -249,8 +270,9 @@ async def start_oauth_flow(
 
 @router.get("/oauth/callback")
 async def oauth_callback(
-    code: Annotated[str, Query()],
-    state: Annotated[str, Query()],
+    code: Annotated[str | None, Query()] = None,
+    state: Annotated[str | None, Query()] = None,
+    error: Annotated[str | None, Query()] = None,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> RedirectResponse:
     """Handle Gmail OAuth callback.
@@ -258,16 +280,28 @@ async def oauth_callback(
     This endpoint is called by Google after user consent.
     It exchanges the code for tokens and stores them.
     """
+    base_url = settings.frontend_url or "https://chattercheatah-frontend-900139201687.us-central1.run.app"
+    
+    # Handle OAuth error from Google
+    if error:
+        logger.error(f"OAuth error from Google: {error}")
+        frontend_url = f"{base_url}/email?error=oauth_error&message={error}"
+        return RedirectResponse(url=frontend_url, status_code=302)
+    
+    # Check for missing required parameters
+    if not code or not state:
+        logger.error(f"OAuth callback missing required parameters: code={code is not None}, state={state is not None}")
+        frontend_url = f"{base_url}/email?error=missing_parameters&message=OAuth callback missing code or state. Please check redirect URI configuration in Google Cloud Console."
+        return RedirectResponse(url=frontend_url, status_code=302)
+    
     # Parse tenant_id from state
     try:
         parts = state.split(":", 1)
         tenant_id = int(parts[0])
     except (ValueError, IndexError):
         logger.error(f"Invalid OAuth state: {state}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OAuth state",
-        )
+        frontend_url = f"{base_url}/email?error=invalid_state&message=Invalid OAuth state parameter"
+        return RedirectResponse(url=frontend_url, status_code=302)
     
     redirect_uri = settings.gmail_oauth_redirect_uri
     if not redirect_uri:

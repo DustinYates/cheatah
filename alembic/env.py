@@ -47,7 +47,18 @@ else:
 sync_url = sync_url.replace("%", "%%")
 
 # #region agent log
-_debug_log("alembic/env.py:25", "Alembic setting database URL", {"sync_url_prefix": sync_url[:50] + "..." if len(sync_url) > 50 else sync_url})
+# Never log secrets/credentials; redact any userinfo/password from URLs.
+try:
+    from urllib.parse import urlsplit
+
+    _u = urlsplit(sync_url.replace("%%", "%"))
+    _host = _u.hostname or ""
+    _port = f":{_u.port}" if _u.port else ""
+    _db = (_u.path or "")[:64]
+    _safe_url = f"{_u.scheme}://{_host}{_port}{_db}"
+except Exception:
+    _safe_url = "<redacted>"
+_debug_log("alembic/env.py:25", "Alembic setting database URL", {"sync_url_redacted": _safe_url})
 # #endregion
 
 config.set_main_option("sqlalchemy.url", sync_url)

@@ -18,6 +18,26 @@ from app.settings import settings
 logger = logging.getLogger(__name__)
 
 
+def _to_naive_utc(dt: datetime | None) -> datetime | None:
+    """Convert a datetime to naive UTC.
+    
+    Google's OAuth library returns timezone-aware datetimes, but our database
+    columns are timezone-naive. This helper ensures consistency.
+    
+    Args:
+        dt: A datetime that may be timezone-aware or naive
+        
+    Returns:
+        A timezone-naive datetime in UTC, or None if input is None
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        # Convert to UTC and remove timezone info
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 class GmailClientError(Exception):
     """Base exception for Gmail client errors."""
     pass
@@ -148,7 +168,7 @@ class GmailClient:
             return {
                 "access_token": credentials.token,
                 "refresh_token": credentials.refresh_token,
-                "token_expires_at": credentials.expiry,
+                "token_expires_at": _to_naive_utc(credentials.expiry),
                 "email": email,
             }
 
@@ -186,7 +206,7 @@ class GmailClient:
                 if self._credentials.expired and self._credentials.refresh_token:
                     self._credentials.refresh(Request())
                     self.access_token = self._credentials.token
-                    self.token_expires_at = self._credentials.expiry
+                    self.token_expires_at = _to_naive_utc(self._credentials.expiry)
                 else:
                     raise GmailAuthError("Credentials expired and cannot be refreshed")
 
@@ -216,7 +236,7 @@ class GmailClient:
         credentials = self._get_credentials()
         return {
             "access_token": credentials.token,
-            "token_expires_at": credentials.expiry,
+            "token_expires_at": _to_naive_utc(credentials.expiry),
         }
 
     def watch_mailbox(self, topic_name: str, label_ids: list[str] | None = None) -> dict[str, Any]:
@@ -240,16 +260,43 @@ class GmailClient:
             }
             response = service.users().watch(userId="me", body=request_body).execute()
             
+            # Convert expiration (ms since epoch) to naive UTC datetime
+            # Database columns are timezone-naive, so we return naive UTC
+            expiration_ms = int(response.get("expiration", 0))
+            expiration_dt = datetime.utcfromtimestamp(expiration_ms / 1000)
+            
             return {
                 "history_id": response.get("historyId"),
-                "expiration": datetime.fromtimestamp(
-                    int(response.get("expiration", 0)) / 1000,
-                    tz=timezone.utc,
-                ),
+                "expiration": expiration_dt,
             }
         except HttpError as e:
             logger.error(f"Gmail watch setup failed: {e}")
-            raise GmailAPIError(f"Failed to setup watch: {str(e)}") from e
+            
+            # Provide actionable error messages for common issues
+            error_str = str(e)
+            if e.resp.status == 403:
+                if "User not authorized to perform this action" in error_str:
+                    # This is a PubSub permissions issue
+                    raise GmailAPIError(
+                        f"Failed to setup watch: {error_str}. "
+                        "The Gmail API service account (gmail-api-push@system.gserviceaccount.com) "
+                        "needs the 'Pub/Sub Publisher' role on the topic. "
+                        "Run: gcloud pubsub topics add-iam-policy-binding <topic-name> "
+                        "--member='serviceAccount:gmail-api-push@system.gserviceaccount.com' "
+                        "--role='roles/pubsub.publisher' --project=<project-id>"
+                    ) from e
+                else:
+                    raise GmailAPIError(
+                        f"Failed to setup watch (403 Forbidden): {error_str}. "
+                        "Check that the Gmail API is enabled and OAuth scopes are correct."
+                    ) from e
+            elif e.resp.status == 404:
+                raise GmailAPIError(
+                    f"Failed to setup watch (404 Not Found): {error_str}. "
+                    f"Verify the Pub/Sub topic exists: {topic_name}"
+                ) from e
+            else:
+                raise GmailAPIError(f"Failed to setup watch: {error_str}") from e
 
     def stop_watch(self) -> bool:
         """Stop Gmail push notifications.

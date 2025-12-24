@@ -44,12 +44,26 @@ Inbound Email → Gmail → Pub/Sub Push → Webhook → Cloud Tasks → Email W
 3. Name it: `gmail-push-notifications`
 4. Click **Create**
 
-### 4. Grant Gmail API Permission to Pub/Sub
+### 4. Grant Gmail API Permission to Pub/Sub (CRITICAL)
+
+**This step is required for Gmail watch to work.** Without it, you'll get a 403 Forbidden error when setting up push notifications.
+
+**Option A: Via gcloud CLI (Recommended)**
+
+```bash
+gcloud pubsub topics add-iam-policy-binding gmail-push-notifications \
+  --member="serviceAccount:gmail-api-push@system.gserviceaccount.com" \
+  --role="roles/pubsub.publisher" \
+  --project=chatbots-466618
+```
+
+**Option B: Via Google Cloud Console**
 
 1. Go to **IAM & Admin** → **IAM**
-2. Click **Add**
-3. Add member: `gmail-api-push@system.gserviceaccount.com`
+2. Click **Grant Access**
+3. Add principal: `gmail-api-push@system.gserviceaccount.com`
 4. Assign role: **Pub/Sub Publisher**
+5. Click **Save**
 
 ### 5. Create Pub/Sub Subscription
 
@@ -174,12 +188,43 @@ curl -X POST http://localhost:8000/api/v1/email/pubsub/test \
 - **redirect_uri_mismatch**: Check that the redirect URI exactly matches the one in Google Cloud Console
 - **access_denied**: User denied permissions or Gmail API not enabled
 
+### Gmail Watch 403 Forbidden Error
+
+**Error message:**
+```
+Failed to setup watch: <HttpError 403 ... "Error sending test message to Cloud PubSub ... 
+User not authorized to perform this action."
+```
+
+**Cause:** The Gmail API service account doesn't have permission to publish to the Pub/Sub topic.
+
+**Solution:**
+```bash
+gcloud pubsub topics add-iam-policy-binding gmail-push-notifications \
+  --member="serviceAccount:gmail-api-push@system.gserviceaccount.com" \
+  --role="roles/pubsub.publisher" \
+  --project=chatbots-466618
+```
+
+### Gmail Watch 404 Not Found Error
+
+**Cause:** The Pub/Sub topic doesn't exist.
+
+**Solution:**
+```bash
+gcloud pubsub topics create gmail-push-notifications \
+  --project=chatbots-466618
+```
+
+Then grant permissions as described above.
+
 ### Push Notifications Not Working
 
-1. Verify Pub/Sub topic exists
-2. Check that `gmail-api-push@system.gserviceaccount.com` has Publisher role
+1. Verify Pub/Sub topic exists: `gcloud pubsub topics describe gmail-push-notifications --project=chatbots-466618`
+2. Check that `gmail-api-push@system.gserviceaccount.com` has Publisher role on the topic
 3. Verify subscription endpoint is accessible
 4. Check webhook logs for errors
+5. Click "Refresh Watch" in Email Settings to re-establish the watch
 
 ### Token Refresh Failures
 

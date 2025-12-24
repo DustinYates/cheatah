@@ -139,6 +139,40 @@ gcloud run services update chattercheatah \
 - Add test users in the OAuth consent screen if in testing mode
 - Ensure required scopes are added to the consent screen
 
+### Gmail Watch 403 Forbidden Error
+
+**Error message:**
+```
+Failed to setup watch: <HttpError 403 when requesting https://gmail.googleapis.com/gmail/v1/users/me/watch?alt=json
+returned "Error sending test message to Cloud PubSub ... User not authorized to perform this action."
+```
+
+**Cause:** The Gmail API service account (`gmail-api-push@system.gserviceaccount.com`) doesn't have permission to publish to the Pub/Sub topic. When Gmail sets up a watch, it sends a test message to verify the connection.
+
+**Solution:** Grant the Gmail API service account the Pub/Sub Publisher role:
+
+```bash
+gcloud pubsub topics add-iam-policy-binding gmail-push-notifications \
+  --member="serviceAccount:gmail-api-push@system.gserviceaccount.com" \
+  --role="roles/pubsub.publisher" \
+  --project=chatbots-466618
+```
+
+After granting permissions, click "Refresh Watch" in Email Settings.
+
+### Gmail Watch 404 Not Found Error
+
+**Cause:** The Pub/Sub topic doesn't exist.
+
+**Solution:** Create the topic:
+
+```bash
+gcloud pubsub topics create gmail-push-notifications \
+  --project=chatbots-466618
+```
+
+Then grant permissions as described above.
+
 ## Next Steps
 
 After setup is complete:

@@ -10,6 +10,26 @@ from app.persistence.models.tenant_email_config import EmailConversation, Tenant
 from app.persistence.repositories.base import BaseRepository
 
 
+def _to_naive_utc(dt: datetime | None) -> datetime | None:
+    """Convert a datetime to naive UTC for database storage.
+    
+    asyncpg requires consistent datetime types - either all naive or all aware.
+    Our database columns are timezone-naive, so we strip timezone info.
+    
+    Args:
+        dt: A datetime that may be timezone-aware or naive
+        
+    Returns:
+        A timezone-naive datetime, or None if input is None
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        # Remove timezone info (assumes input is already in UTC)
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 class TenantEmailConfigRepository(BaseRepository[TenantEmailConfig]):
     """Repository for TenantEmailConfig entities."""
 
@@ -63,14 +83,23 @@ class TenantEmailConfigRepository(BaseRepository[TenantEmailConfig]):
             # Update existing config
             for key, value in kwargs.items():
                 if hasattr(existing, key):
+                    # Convert datetime values to naive UTC for database compatibility
+                    if isinstance(value, datetime):
+                        value = _to_naive_utc(value)
                     setattr(existing, key, value)
             existing.updated_at = datetime.utcnow()
             await self.session.commit()
             await self.session.refresh(existing)
             return existing
         else:
-            # Create new config
-            config = TenantEmailConfig(tenant_id=tenant_id, **kwargs)
+            # Create new config - convert datetime values to naive UTC
+            sanitized_kwargs = {}
+            for key, value in kwargs.items():
+                if isinstance(value, datetime):
+                    sanitized_kwargs[key] = _to_naive_utc(value)
+                else:
+                    sanitized_kwargs[key] = value
+            config = TenantEmailConfig(tenant_id=tenant_id, **sanitized_kwargs)
             self.session.add(config)
             await self.session.commit()
             await self.session.refresh(config)
@@ -96,7 +125,7 @@ class TenantEmailConfigRepository(BaseRepository[TenantEmailConfig]):
         """
         update_data: dict[str, Any] = {
             "gmail_access_token": access_token,
-            "gmail_token_expires_at": token_expires_at,
+            "gmail_token_expires_at": _to_naive_utc(token_expires_at),
             "updated_at": datetime.utcnow(),
         }
         if refresh_token:

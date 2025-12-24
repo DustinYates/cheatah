@@ -13,6 +13,7 @@ import UnknownLeadDetail from './pages/UnknownLeadDetail';
 import Onboarding from './pages/Onboarding';
 import Settings from './pages/Settings';
 import SmsSettings from './pages/SmsSettings';
+import EmailSettings from './pages/EmailSettings';
 import ManageTenants from './pages/ManageTenants';
 import PromptWizard from './pages/PromptWizard';
 import './App.css';
@@ -45,7 +46,9 @@ function App() {
             <Route path="unknown" element={<UnknownLeads />} />
             <Route path="unknown/:id" element={<UnknownLeadDetail />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="settings/email" element={<EmailSettings />} />
             <Route path="sms" element={<SmsSettings />} />
+            <Route path="email" element={<EmailSettings />} />
             <Route path="admin/tenants" element={<ManageTenants />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

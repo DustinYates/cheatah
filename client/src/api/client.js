@@ -452,6 +452,68 @@ class ApiClient {
     const query = new URLSearchParams(params).toString();
     return this.request(`/calls/by-phone/${encodeURIComponent(phoneNumber)}${query ? `?${query}` : ''}`);
   }
+
+  // Email settings methods
+  async getEmailSettings() {
+    return this.request('/email/settings');
+  }
+
+  async updateEmailSettings(data) {
+    return this.request('/email/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async startEmailOAuth() {
+    return this.request('/email/oauth/start', {
+      method: 'POST',
+    });
+  }
+
+  async disconnectEmail() {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    
+    const selectedTenant = this.getSelectedTenant();
+    const userInfo = this.getUserInfo();
+    if (userInfo?.is_global_admin && selectedTenant) {
+      headers['X-Tenant-Id'] = selectedTenant.toString();
+    }
+
+    const response = await fetch(`${API_BASE}/email/disconnect`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Disconnect failed' }));
+      throw new Error(error.detail || 'Disconnect failed');
+    }
+
+    return response.json();
+  }
+
+  async refreshEmailWatch() {
+    return this.request('/email/refresh-watch', {
+      method: 'POST',
+    });
+  }
+
+  async getEmailConversations(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/email/conversations${query ? `?${query}` : ''}`);
+  }
+
+  async getEmailConversationsForContact(contactId, params = {}) {
+    const query = new URLSearchParams({ ...params, contact_id: contactId }).toString();
+    return this.request(`/email/conversations${query ? `?${query}` : ''}`);
+  }
 }
 
 export const api = new ApiClient();

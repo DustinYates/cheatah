@@ -41,6 +41,10 @@ dependencies = [
     "pytz>=2023.3", # For timezone handling in business hours
     "bcrypt>=5.0.0",
     "google-genai>=1.55.0",
+    # Gmail API (Email Responder)
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.1.0",
+    "google-auth-httplib2>=0.1.0",
 ]
 
 [project.optional-dependencies]

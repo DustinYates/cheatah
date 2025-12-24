@@ -705,3 +705,116 @@
 .btn-listen:hover {
   background: #22c55e;
 }
+
+/* Email Conversations Card */
+.emails-card {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.emails-card h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  color: #111827;
+}
+
+.emails-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.email-item {
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  transition: all 0.15s;
+}
+
+.email-item:hover {
+  border-color: #d1d5db;
+  background: #f3f4f6;
+}
+
+.email-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.email-subject {
+  font-weight: 500;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email-status {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.email-status.status-active {
+  background: rgba(74, 222, 128, 0.15);
+  color: #16a34a;
+}
+
+.email-status.status-escalated {
+  background: rgba(251, 191, 36, 0.15);
+  color: #d97706;
+}
+
+.email-status.status-resolved {
+  background: rgba(148, 163, 184, 0.15);
+  color: #64748b;
+}
+
+.email-status.status-spam {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}
+
+.email-item-body {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.email-from {
+  font-size: 13px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.email-count {
+  font-size: 12px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.email-item-footer {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.email-date {
+  font-size: 12px;
+}

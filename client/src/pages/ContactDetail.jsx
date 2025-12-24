@@ -39,6 +39,8 @@ export default function ContactDetail() {
   const [calls, setCalls] = useState([]);
   const [loadingCalls, setLoadingCalls] = useState(true);
   const [selectedCall, setSelectedCall] = useState(null);
+  const [emailConversations, setEmailConversations] = useState([]);
+  const [loadingEmails, setLoadingEmails] = useState(true);
 
   const fetchContact = useCallback(async () => {
     const data = await api.getContact(id, true);
@@ -62,6 +64,7 @@ export default function ContactDetail() {
       fetchAliases();
       fetchMergeHistory();
       fetchCalls();
+      fetchEmailConversations();
     }
   }, [id]);
 
@@ -74,6 +77,18 @@ export default function ContactDetail() {
       console.error('Failed to fetch calls:', err);
     } finally {
       setLoadingCalls(false);
+    }
+  };
+
+  const fetchEmailConversations = async () => {
+    setLoadingEmails(true);
+    try {
+      const data = await api.getEmailConversationsForContact(id);
+      setEmailConversations(data || []);
+    } catch (err) {
+      console.error('Failed to fetch email conversations:', err);
+    } finally {
+      setLoadingEmails(false);
     }
   };
 
@@ -394,6 +409,43 @@ export default function ContactDetail() {
             </div>
           </div>
         )}
+
+        {/* Email Conversations Card */}
+        <div className="emails-card">
+          <h3>✉️ Email Conversations</h3>
+          {loadingEmails ? (
+            <LoadingState message="Loading emails..." />
+          ) : emailConversations.length > 0 ? (
+            <div className="emails-list">
+              {emailConversations.map((email) => (
+                <div key={email.id} className="email-item">
+                  <div className="email-item-header">
+                    <span className="email-subject">{email.subject || '(No subject)'}</span>
+                    <span className={`email-status status-${email.status}`}>{email.status}</span>
+                  </div>
+                  <div className="email-item-body">
+                    <span className="email-from">{email.from_email}</span>
+                    <span className="email-count">{email.message_count} message{email.message_count !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="email-item-footer">
+                    <span className="email-date">
+                      {email.last_response_at 
+                        ? `Last response: ${new Date(email.last_response_at).toLocaleDateString()}`
+                        : `Created: ${new Date(email.created_at).toLocaleDateString()}`
+                      }
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState 
+              icon="✉️" 
+              title="No email conversations" 
+              description="No email threads found for this contact."
+            />
+          )}
+        </div>
 
         {/* Voice Calls Card */}
         <div className="calls-card">

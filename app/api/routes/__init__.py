@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_sms, admin_voice, auth, calls, chat, contacts, conversations, leads, profile, prompts, prompt_interview, sms_webhooks, tenant_setup, tenants, users, tenant_sms, tenant_voice, voice_webhooks
+from app.api.routes import admin, admin_sms, admin_voice, auth, calls, chat, contacts, conversations, email_webhooks, leads, profile, prompts, prompt_interview, sms_webhooks, tenant_email, tenant_setup, tenants, users, tenant_sms, tenant_voice, voice_webhooks
 
 api_router = APIRouter()
 
@@ -11,6 +11,7 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(sms_webhooks.router, prefix="/sms", tags=["sms-webhooks"])
 api_router.include_router(voice_webhooks.router, prefix="/voice", tags=["voice-webhooks"])
+api_router.include_router(email_webhooks.router, prefix="/email", tags=["email-webhooks"])
 
 # Protected routes (auth required)
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
@@ -29,6 +30,9 @@ api_router.include_router(tenant_sms.router, prefix="/sms", tags=["sms"])
 
 # Tenant Voice settings (no Twilio creds exposed)
 api_router.include_router(tenant_voice.router, prefix="/voice", tags=["voice"])
+
+# Tenant Email settings (Gmail OAuth)
+api_router.include_router(tenant_email.router, prefix="/email", tags=["email"])
 
 # Leads, Contacts, and Calls
 api_router.include_router(leads.router, prefix="/leads", tags=["leads"])

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.persistence.models.lead import Lead
     from app.persistence.models.notification import Notification
     from app.persistence.models.prompt import PromptBundle
+    from app.persistence.models.tenant_email_config import TenantEmailConfig
     from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 
 
@@ -60,6 +61,9 @@ class Tenant(Base):
     )
     notifications = relationship(
         "Notification", back_populates="tenant", cascade="all, delete-orphan"
+    )
+    email_config = relationship(
+        "TenantEmailConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

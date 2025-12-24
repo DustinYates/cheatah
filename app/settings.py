@@ -77,6 +77,14 @@ class Settings(BaseSettings):
     cloud_tasks_queue_name: str = "sms-processing"
     cloud_tasks_location: str = "us-central1"
     cloud_tasks_worker_url: str | None = None  # URL for worker endpoint
+    cloud_tasks_email_worker_url: str | None = None  # URL for email worker endpoint
+
+    # Gmail OAuth (for email responder)
+    gmail_client_id: str | None = None
+    gmail_client_secret: str | None = None
+    gmail_pubsub_topic: str | None = None  # e.g., projects/{project}/topics/{topic}
+    gmail_oauth_redirect_uri: str | None = None  # OAuth callback URL
+    frontend_url: str | None = None  # Frontend URL for OAuth redirects
 
     model_config = SettingsConfigDict(
         env_file=".env",

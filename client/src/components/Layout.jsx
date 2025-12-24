@@ -65,6 +65,9 @@ export default function Layout() {
             <NavLink to="/sms">SMS</NavLink>
           </li>
           <li>
+            <NavLink to="/email">Email</NavLink>
+          </li>
+          <li>
             <NavLink to="/settings">Settings</NavLink>
           </li>
           {user?.is_global_admin && !selectedTenantId && (

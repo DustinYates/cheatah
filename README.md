@@ -86,6 +86,10 @@ Set the following in `.env`:
 | `GEMINI_MODEL` | Gemini model | `gemini-3-flash-preview` |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | SMS credentials (optional) | `...` |
 | `CLOUD_TASKS_WORKER_URL` | Cloud Tasks worker endpoint (prod) | `https://.../workers/sms` |
+| `GMAIL_CLIENT_ID` | Gmail OAuth client ID | `...` |
+| `GMAIL_CLIENT_SECRET` | Gmail OAuth client secret | `...` |
+| `GMAIL_PUBSUB_TOPIC` | Gmail push notifications topic | `projects/.../topics/gmail-push` |
+| `CLOUD_TASKS_EMAIL_WORKER_URL` | Email worker endpoint (prod) | `https://.../workers/email` |
 
 The API will still start with Redis disabled or LLM keys missing; related features will be no-ops.
 
@@ -177,7 +181,32 @@ cd ~/Desktop/chattercheetah
 gcloud run deploy chattercheatah --source . --region us-central1 --project chatbots-466618
 ```
 
+## Communication Channels
+
+### Web Chat
+- Embedded chat widget for websites
+- Real-time AI-powered responses
+- Lead capture and conversation history
+
+### SMS
+- Twilio-based SMS handling
+- Compliance handling (STOP, HELP, etc.)
+- Business hours support
+
+### Voice
+- AI receptionist for inbound calls
+- Call recording and summarization
+- Handoff to human agents
+
+### Email (NEW)
+- Gmail-based email responder
+- OAuth 2.0 tenant authentication
+- Thread-aware AI responses
+- See `docs/EMAIL_RESPONDER_SETUP.md` for setup
+
 ## Additional Docs
 
 - `DEVELOPMENT.md` — sync workflow between local and GCP Vertex AI Workbench
 - `DEPLOYMENT.md` — Cloud Run deployment, secrets, and troubleshooting
+- `docs/EMAIL_RESPONDER_SETUP.md` — Gmail email responder configuration
+- `docs/VOICE_ASSISTANT_ROADMAP.md` — Voice assistant implementation plan

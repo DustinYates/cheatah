@@ -22,6 +22,8 @@ from app.persistence.models.conversation import Conversation, Message
 from app.persistence.repositories.call_repository import CallRepository
 from app.persistence.repositories.call_summary_repository import CallSummaryRepository
 from app.persistence.repositories.contact_repository import ContactRepository
+from app.persistence.repositories.business_profile_repository import BusinessProfileRepository
+from app.persistence.models.tenant_sms_config import TenantSmsConfig
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,19 @@ class VoiceService:
         r"medical advice|prescription|diagnos",
         r"guarantee|promise|definitely will|100%",
     ]
+    
+    # Hallucination detection patterns - likely invented content
+    # These patterns detect common hallucination signatures
+    HALLUCINATION_PATTERNS = [
+        # Invented URLs (generic patterns, not from FACTS)
+        r"(?:www\.|https?://)[a-z0-9.-]+\.[a-z]{2,}(?:/\S*)?",
+        # Invented email addresses
+        r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}",
+        # Invented phone numbers (10+ digits patterns)
+        r"\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}\b",
+        # Invented street addresses (number + street name pattern)
+        r"\b\d{1,5}\s+(?:[a-zA-Z]+\s+){1,3}(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|way|court|ct)\b",
+    ]
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize voice service."""
@@ -123,6 +138,85 @@ class VoiceService:
         self.call_repo = CallRepository(session)
         self.call_summary_repo = CallSummaryRepository(session)
         self.contact_repo = ContactRepository(session)
+        self.business_profile_repo = BusinessProfileRepository(session)
+
+    async def _get_tenant_facts(self, tenant_id: int) -> str:
+        """Fetch tenant business facts to ground LLM responses.
+        
+        Returns a structured FACTS block that the LLM should use as the source
+        of truth for business-specific information. This helps reduce hallucinations.
+        
+        Args:
+            tenant_id: Tenant ID
+            
+        Returns:
+            Formatted facts string for injection into LLM context
+        """
+        facts_parts = ["VERIFIED BUSINESS FACTS (use ONLY these for business-specific information):"]
+        
+        # Get business profile
+        business_profile = await self.business_profile_repo.get_by_tenant_id(tenant_id)
+        if business_profile:
+            if business_profile.business_name:
+                facts_parts.append(f"- Business Name: {business_profile.business_name}")
+            if business_profile.phone_number:
+                facts_parts.append(f"- Phone Number: {business_profile.phone_number}")
+            if business_profile.email:
+                facts_parts.append(f"- Email: {business_profile.email}")
+            if business_profile.website_url:
+                facts_parts.append(f"- Website: {business_profile.website_url}")
+        
+        # Get business hours from SMS config (reused for voice)
+        stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
+        result = await self.session.execute(stmt)
+        sms_config = result.scalar_one_or_none()
+        
+        if sms_config and sms_config.business_hours_enabled and sms_config.business_hours:
+            hours_str = self._format_business_hours(sms_config.business_hours)
+            if hours_str:
+                facts_parts.append(f"- Business Hours: {hours_str}")
+            if sms_config.timezone:
+                facts_parts.append(f"- Timezone: {sms_config.timezone}")
+        
+        # Get voice config info
+        voice_config = await self.voice_config_service.get_voice_config(tenant_id)
+        if voice_config:
+            if voice_config.handoff_mode == "live_transfer" and voice_config.live_transfer_number:
+                facts_parts.append(f"- Can transfer calls to: {voice_config.live_transfer_number}")
+            elif voice_config.handoff_mode == "take_message":
+                facts_parts.append("- Handoff mode: Take caller's message and contact info")
+        
+        # If no facts available, return a minimal block
+        if len(facts_parts) == 1:
+            facts_parts.append("- (No specific business facts configured)")
+        
+        return "\n".join(facts_parts)
+    
+    def _format_business_hours(self, hours: dict) -> str:
+        """Format business hours dict into readable string.
+        
+        Args:
+            hours: Business hours dict like {"monday": {"start": "09:00", "end": "17:00"}}
+            
+        Returns:
+            Human-readable business hours string
+        """
+        if not hours:
+            return ""
+        
+        day_order = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        formatted_days = []
+        
+        for day in day_order:
+            if day in hours and hours[day]:
+                day_hours = hours[day]
+                if isinstance(day_hours, dict) and "start" in day_hours and "end" in day_hours:
+                    formatted_days.append(f"{day.capitalize()}: {day_hours['start']}-{day_hours['end']}")
+        
+        if not formatted_days:
+            return ""
+        
+        return ", ".join(formatted_days)
 
     async def process_voice_turn(
         self,
@@ -262,8 +356,9 @@ class VoiceService:
             # Get conversation history
             messages = await self._get_conversation_messages(conversation_id)
             
-            # Detect intent from current message
-            intent = await self._detect_intent(transcribed_text)
+            # TTFA optimization: Use fast pattern-only intent detection (no LLM call)
+            # This avoids blocking on an extra LLM round-trip before streaming starts
+            intent = self._detect_intent_fast(transcribed_text)
             
             # Check for escalation triggers
             if self._should_escalate(transcribed_text, intent):
@@ -288,12 +383,16 @@ class VoiceService:
                 )
                 return
             
-            # Build conversation context
+            # Fetch tenant facts for grounding (reduces hallucinations)
+            tenant_facts = await self._get_tenant_facts(tenant_id)
+            
+            # Build conversation context with grounding facts
             conversation_context = self._build_voice_context(
                 system_prompt=system_prompt,
                 messages=messages,
                 current_message=transcribed_text,
                 intent=intent,
+                tenant_facts=tenant_facts,
             )
             
             # Stream response and chunk into speakable segments
@@ -308,7 +407,7 @@ class VoiceService:
             
             async for token in self.llm_orchestrator.generate_stream(
                 conversation_context,
-                context={"temperature": 0.7, "max_tokens": 350},
+                context={"temperature": 0.3, "max_tokens": 350},  # Lower temp reduces hallucinations
             ):
                 buffer += token
                 
@@ -396,11 +495,76 @@ class VoiceService:
                 is_final_chunk=True,
             )
 
+    def _detect_intent_fast(self, text: str) -> str:
+        """Detect intent from transcribed text using PATTERN-ONLY detection.
+        
+        This is the TTFA-optimized version that never calls the LLM.
+        For streaming responses, we use this to avoid blocking on intent detection.
+        Intent is still useful for context but not worth an extra LLM round-trip.
+        
+        Args:
+            text: Transcribed speech
+            
+        Returns:
+            Intent category string (never blocks on LLM)
+        """
+        lower_text = text.lower()
+        
+        # Pattern-based intent detection
+        pattern_scores = {
+            VoiceIntent.PRICING_INFO: 0,
+            VoiceIntent.HOURS_LOCATION: 0,
+            VoiceIntent.BOOKING_REQUEST: 0,
+            VoiceIntent.SUPPORT_REQUEST: 0,
+            VoiceIntent.WRONG_NUMBER: 0,
+        }
+        
+        # Score each intent based on keyword matches
+        pricing_words = ["price", "cost", "how much", "rate", "fee", "pricing", "charge", "pay", "expensive", "afford"]
+        hours_words = ["hours", "open", "close", "location", "address", "where", "directions", "time", "when"]
+        booking_words = ["book", "schedule", "appointment", "reserve", "sign up", "register", "enroll", "start", "begin", "join"]
+        support_words = ["help", "problem", "issue", "not working", "broken", "complaint", "fix", "wrong", "error", "trouble"]
+        wrong_number_words = ["wrong number", "wrong person", "who is this", "who are you", "didn't call"]
+        
+        for word in pricing_words:
+            if word in lower_text:
+                pattern_scores[VoiceIntent.PRICING_INFO] += 1
+                
+        for word in hours_words:
+            if word in lower_text:
+                pattern_scores[VoiceIntent.HOURS_LOCATION] += 1
+                
+        for word in booking_words:
+            if word in lower_text:
+                pattern_scores[VoiceIntent.BOOKING_REQUEST] += 1
+                
+        for word in support_words:
+            if word in lower_text:
+                pattern_scores[VoiceIntent.SUPPORT_REQUEST] += 1
+                
+        for phrase in wrong_number_words:
+            if phrase in lower_text:
+                pattern_scores[VoiceIntent.WRONG_NUMBER] += 2  # Higher weight for wrong number
+        
+        # Find highest scoring intent
+        max_score = max(pattern_scores.values())
+        
+        # If we have any match (score >= 1), use the top intent
+        if max_score >= 1:
+            for intent, score in pattern_scores.items():
+                if score == max_score:
+                    return intent
+        
+        # No pattern matches - return general inquiry (no LLM fallback for TTFA)
+        return VoiceIntent.GENERAL_INQUIRY
+
     async def _detect_intent(self, text: str) -> str:
         """Detect intent from transcribed text.
         
         Uses pattern-based detection for clear cases, with LLM fallback
         for ambiguous messages to improve accuracy.
+        
+        NOTE: For TTFA-critical streaming paths, use _detect_intent_fast() instead.
         
         Args:
             text: Transcribed speech
@@ -567,12 +731,16 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
         if not system_prompt:
             return "Thank you for calling. How may I help you today?"
         
-        # Build conversation context
+        # Fetch tenant facts for grounding (reduces hallucinations)
+        tenant_facts = await self._get_tenant_facts(tenant_id)
+        
+        # Build conversation context with grounding facts
         conversation_context = self._build_voice_context(
             system_prompt=system_prompt,
             messages=messages,
             current_message=current_message,
             intent=intent,
+            tenant_facts=tenant_facts,
         )
         
         # Generate response
@@ -580,7 +748,7 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
             llm_start = time.time()
             response = await self.llm_orchestrator.generate(
                 conversation_context,
-                context={"temperature": 0.7, "max_tokens": 350},  # Natural, complete responses
+                context={"temperature": 0.3, "max_tokens": 350},  # Lower temp reduces hallucinations
             )
             llm_latency = (time.time() - llm_start) * 1000
             logger.info(f"Voice LLM latency: {llm_latency:.1f}ms")
@@ -604,6 +772,7 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
         messages: list[Message],
         current_message: str,
         intent: str,
+        tenant_facts: str | None = None,
     ) -> str:
         """Build context for voice LLM generation.
         
@@ -612,6 +781,7 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
             messages: Previous messages
             current_message: Current transcribed speech
             intent: Detected intent
+            tenant_facts: Optional structured facts block to ground responses
             
         Returns:
             Full prompt for LLM
@@ -630,11 +800,18 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
         
         prompt_parts = [
             system_prompt,
+        ]
+        
+        # Inject tenant facts to ground responses and reduce hallucinations
+        if tenant_facts:
+            prompt_parts.append(f"\n\n{tenant_facts}")
+        
+        prompt_parts.extend([
             f"\n\nDetected Intent: {intent}",
             "\n\nConversation:",
             "\n".join(history),
             f"\n\n{response_instruction}",
-        ]
+        ])
         
         return "\n".join(prompt_parts)
 
@@ -678,11 +855,19 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
 - Provide complete, helpful information in 2-4 sentences
 - Ask a natural follow-up question only if it genuinely helps the conversation"""
 
-    def _apply_response_guardrails(self, response: str) -> str:
+    def _apply_response_guardrails(self, response: str, known_facts: str | None = None) -> str:
         """Apply guardrails to voice response.
+        
+        Includes:
+        - Markdown removal
+        - Blocked content check
+        - Hallucination detection (invented URLs, emails, phones, addresses)
+        - Length truncation
+        - Speech post-processing
         
         Args:
             response: Raw LLM response
+            known_facts: Optional string of known facts to validate against
             
         Returns:
             Sanitized response
@@ -698,6 +883,13 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
             if re.search(pattern, lower_response):
                 logger.warning(f"Blocked content detected in response: {pattern}")
                 return "I'd be happy to help with that. Could you tell me a bit more about what you're looking for?"
+        
+        # Hallucination detection: check for invented contact info
+        # If the response contains patterns that look like contact info,
+        # verify they appear in the known facts (if provided)
+        if self._detect_potential_hallucination(response, known_facts):
+            logger.warning(f"Potential hallucination detected in response - returning safe fallback")
+            return "I don't have those specific details right now, but I'd be happy to take your information and have someone get back to you with that answer."
         
         # Truncate if too long
         if len(response) > self.MAX_RESPONSE_CHARS:
@@ -717,6 +909,64 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
         response = self._post_process_for_speech(response)
         
         return response
+
+    def _detect_potential_hallucination(self, response: str, known_facts: str | None = None) -> bool:
+        """Detect if response contains potentially hallucinated contact information.
+        
+        Checks for URLs, email addresses, phone numbers, and street addresses
+        that appear in the response but not in the known facts.
+        
+        Args:
+            response: LLM response to check
+            known_facts: Known facts string to validate against (optional)
+            
+        Returns:
+            True if potential hallucination detected
+        """
+        lower_response = response.lower()
+        lower_facts = known_facts.lower() if known_facts else ""
+        
+        for pattern in self.HALLUCINATION_PATTERNS:
+            matches = re.findall(pattern, lower_response, re.IGNORECASE)
+            for match in matches:
+                match_lower = match.lower() if isinstance(match, str) else str(match).lower()
+                
+                # Skip if this match appears in the known facts
+                if match_lower in lower_facts:
+                    continue
+                
+                # Skip common false positives
+                if self._is_benign_match(match_lower):
+                    continue
+                
+                # Found a potential hallucination
+                logger.warning(f"Potential hallucination detected: '{match}' not in known facts")
+                return True
+        
+        return False
+    
+    def _is_benign_match(self, match: str) -> bool:
+        """Check if a pattern match is likely a benign false positive.
+        
+        Args:
+            match: The matched string
+            
+        Returns:
+            True if this is likely not a hallucination
+        """
+        # Common benign patterns that aren't hallucinations
+        benign_patterns = [
+            # Generic time references that look like phone patterns
+            "9 to 5", "9 am to 5 pm", "9am to 5pm",
+            # Common phrases
+            "one two three", "1 2 3",
+        ]
+        
+        for benign in benign_patterns:
+            if benign in match:
+                return True
+        
+        return False
 
     def _post_process_for_speech(self, text: str) -> str:
         """Transform formal text into natural conversational speech.

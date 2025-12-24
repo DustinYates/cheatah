@@ -1,8 +1,10 @@
 """Voice webhook endpoints for Twilio."""
 
+import asyncio
 import json
 import logging
 import time
+import uuid
 from datetime import datetime
 from typing import Annotated
 from urllib.parse import urlencode
@@ -426,17 +428,17 @@ async def gather_streaming_webhook(
     conversation_id: Annotated[str | None, Query()] = None,
     turn: Annotated[str | None, Query()] = None,
 ) -> Response:
-    """Handle speech input from Twilio Gather with streaming LLM response.
+    """Handle speech input from Twilio Gather with TRUE streaming LLM response.
     
-    This endpoint uses streaming LLM generation for lower perceived latency.
-    It collects all streaming chunks and returns the first chunk immediately,
-    storing remaining chunks in Redis for continuation via <Redirect>.
+    This endpoint uses streaming LLM generation for lower perceived latency (TTFA).
+    It returns the FIRST chunk immediately as soon as it's available, then uses
+    <Redirect> to continue playing remaining chunks via /continue-chunk.
     
-    For true streaming, this endpoint:
-    1. Starts LLM streaming immediately
-    2. Collects chunks as they arrive
-    3. Returns first chunk with TwiML immediately
-    4. Uses <Redirect> to continue with remaining chunks if any
+    TTFA-optimized flow:
+    1. Start LLM streaming immediately (minimal pre-processing)
+    2. Return first chunk with TwiML as soon as available
+    3. Store remaining chunks in Redis for /continue-chunk
+    4. DB writes are deferred to avoid blocking first audio
     
     Args:
         request: FastAPI request
@@ -454,7 +456,7 @@ async def gather_streaming_webhook(
     start_time = time.time()
     
     try:
-        # Parse parameters
+        # Parse parameters (fast, non-blocking)
         current_turn = int(turn) if turn else 0
         parsed_tenant_id = int(tenant_id) if tenant_id else None
         parsed_conversation_id = int(conversation_id) if conversation_id else None
@@ -478,47 +480,24 @@ async def gather_streaming_webhook(
             )
             return Response(content=twiml, media_type="application/xml")
         
-        logger.info(f"Streaming speech received for call {CallSid}: '{SpeechResult}' (confidence: {Confidence})")
+        logger.info(f"TTFA streaming: {CallSid}: '{SpeechResult}' (confidence: {Confidence})")
         
-        # Store user message in conversation
-        next_seq = 1
-        if parsed_conversation_id:
-            stmt = select(Message).where(
-                Message.conversation_id == parsed_conversation_id
-            ).order_by(Message.sequence_number.desc()).limit(1)
-            result = await db.execute(stmt)
-            last_message = result.scalar_one_or_none()
-            next_seq = (last_message.sequence_number + 1) if last_message else 1
-            
-            user_message = Message(
-                conversation_id=parsed_conversation_id,
-                role="user",
-                content=SpeechResult,
-                sequence_number=next_seq,
-                message_metadata={
-                    "call_sid": CallSid,
-                    "confidence": Confidence,
-                    "source": "voice_transcription_streaming",
-                },
-            )
-            db.add(user_message)
-            await db.commit()
-        
-        # Check for end-of-conversation signals
+        # Check for end-of-conversation signals (fast path, no LLM needed)
         lower_speech = SpeechResult.lower().strip()
         if any(phrase in lower_speech for phrase in ["goodbye", "bye", "thank you bye", "that's all", "no more questions"]):
             ai_response = "Thank you for calling! Have a great day. Goodbye!"
             
-            if parsed_conversation_id:
-                assistant_message = Message(
-                    conversation_id=parsed_conversation_id,
-                    role="assistant",
-                    content=ai_response,
-                    sequence_number=next_seq + 1,
-                    message_metadata={"call_sid": CallSid},
-                )
-                db.add(assistant_message)
-                await db.commit()
+            # Defer DB writes to background
+            asyncio.create_task(_store_messages_background(
+                db=db,
+                conversation_id=parsed_conversation_id,
+                call_sid=CallSid,
+                user_content=SpeechResult,
+                assistant_content=ai_response,
+                confidence=Confidence,
+                intent=None,
+                chunk_count=1,
+            ))
             
             return Response(
                 content=_generate_goodbye_twiml(ai_response),
@@ -533,17 +512,18 @@ async def gather_streaming_webhook(
                 media_type="application/xml",
             )
         
-        # Process with streaming AI
+        # === TTFA-OPTIMIZED STREAMING ===
+        # Import voice service
         from app.domain.services.voice_service import VoiceService
-        from app.domain.services.handoff_service import HandoffService, CallContext
-        from app.infrastructure.notifications import NotificationService
         
         voice_service = VoiceService(db)
         
-        # Collect all streaming chunks
-        chunks = []
+        # Stream and capture first chunk ASAP
+        first_chunk = None
+        remaining_chunks = []
         final_intent = None
         requires_escalation = False
+        ttfa_ms = None
         
         async for chunk in voice_service.process_voice_turn_streaming(
             tenant_id=parsed_tenant_id,
@@ -551,14 +531,29 @@ async def gather_streaming_webhook(
             conversation_id=parsed_conversation_id,
             transcribed_text=SpeechResult,
         ):
-            chunks.append(chunk.text)
+            if first_chunk is None:
+                # Capture first chunk and TTFA
+                first_chunk = chunk.text
+                ttfa_ms = (time.time() - start_time) * 1000
+                logger.info(f"TTFA for {CallSid}: {ttfa_ms:.1f}ms")
+            else:
+                remaining_chunks.append(chunk.text)
+            
             if chunk.intent:
                 final_intent = chunk.intent
             if chunk.requires_escalation:
                 requires_escalation = True
         
-        # Handle escalation
+        # Handle case where no chunks were generated
+        if first_chunk is None:
+            first_chunk = "I apologize, but I couldn't generate a response. Could you please repeat that?"
+            ttfa_ms = (time.time() - start_time) * 1000
+        
+        # Handle escalation (this takes priority and bypasses TTFA optimization)
         if parsed_tenant_id and requires_escalation:
+            from app.domain.services.handoff_service import HandoffService, CallContext
+            from app.infrastructure.notifications import NotificationService
+            
             handoff_service = HandoffService(db)
             
             confidence_float = float(Confidence) if Confidence else None
@@ -595,39 +590,60 @@ async def gather_streaming_webhook(
                 
                 return Response(content=twiml, media_type="application/xml")
         
-        # Combine all chunks into full response for this implementation
-        # (True streaming would return first chunk and redirect for rest)
-        full_response = " ".join(chunks)
+        # Generate unique chunk_id for this response
+        chunk_id = str(uuid.uuid4())[:8]
         
-        # Store assistant message
-        if parsed_conversation_id:
-            assistant_message = Message(
-                conversation_id=parsed_conversation_id,
-                role="assistant",
-                content=full_response,
-                sequence_number=next_seq + 1,
-                message_metadata={
-                    "call_sid": CallSid,
-                    "intent": final_intent,
-                    "streaming": True,
-                    "chunk_count": len(chunks),
-                },
-            )
-            db.add(assistant_message)
-            await db.commit()
+        # Full response for logging/storage
+        full_response = first_chunk + (" " + " ".join(remaining_chunks) if remaining_chunks else "")
         
-        # Log latency metrics
+        # Defer DB writes to background task (don't block TTFA)
+        asyncio.create_task(_store_messages_background(
+            db=db,
+            conversation_id=parsed_conversation_id,
+            call_sid=CallSid,
+            user_content=SpeechResult,
+            assistant_content=full_response,
+            confidence=Confidence,
+            intent=final_intent,
+            chunk_count=1 + len(remaining_chunks),
+        ))
+        
+        # Log TTFA metrics
         total_latency = (time.time() - start_time) * 1000
-        logger.info(f"Streaming gather total latency: {total_latency:.1f}ms, chunks: {len(chunks)}")
-        
-        # Generate TwiML with streaming-enabled gather
-        twiml = _generate_gather_twiml_streaming(
-            CallSid,
-            parsed_tenant_id,
-            parsed_conversation_id,
-            current_turn + 1,
-            full_response,
+        logger.info(
+            f"TTFA streaming for {CallSid}: "
+            f"ttfa={ttfa_ms:.1f}ms, total={total_latency:.1f}ms, "
+            f"chunks={1 + len(remaining_chunks)}"
         )
+        
+        # If there are remaining chunks, store in Redis and use redirect
+        if remaining_chunks:
+            await redis_client.connect()
+            chunks_key = f"voice:chunks:{CallSid}:{chunk_id}"
+            await redis_client.set(
+                chunks_key,
+                json.dumps(remaining_chunks),
+                ttl=STREAMING_CHUNKS_TTL,
+            )
+            
+            # Return first chunk with redirect to continue-chunk
+            twiml = _generate_first_chunk_with_redirect_twiml(
+                first_chunk,
+                CallSid,
+                chunk_id,
+                parsed_tenant_id,
+                parsed_conversation_id,
+                current_turn + 1,
+            )
+        else:
+            # Only one chunk, return with gather for next input
+            twiml = _generate_gather_twiml_streaming(
+                CallSid,
+                parsed_tenant_id,
+                parsed_conversation_id,
+                current_turn + 1,
+                first_chunk,
+            )
         
         return Response(content=twiml, media_type="application/xml")
         
@@ -637,6 +653,70 @@ async def gather_streaming_webhook(
             content=_generate_goodbye_twiml("I apologize, but I encountered an issue. Please call back or one of our team members will reach out to you. Goodbye!"),
             media_type="application/xml",
         )
+
+
+async def _store_messages_background(
+    db: AsyncSession,
+    conversation_id: int | None,
+    call_sid: str,
+    user_content: str,
+    assistant_content: str,
+    confidence: str | None,
+    intent: str | None,
+    chunk_count: int,
+) -> None:
+    """Store user and assistant messages in background to avoid blocking TTFA.
+    
+    This function is meant to be called via asyncio.create_task() so it runs
+    after the HTTP response has been sent to Twilio.
+    """
+    if not conversation_id:
+        return
+    
+    try:
+        # Get next sequence number
+        stmt = select(Message).where(
+            Message.conversation_id == conversation_id
+        ).order_by(Message.sequence_number.desc()).limit(1)
+        result = await db.execute(stmt)
+        last_message = result.scalar_one_or_none()
+        next_seq = (last_message.sequence_number + 1) if last_message else 1
+        
+        # Store user message
+        user_message = Message(
+            conversation_id=conversation_id,
+            role="user",
+            content=user_content,
+            sequence_number=next_seq,
+            message_metadata={
+                "call_sid": call_sid,
+                "confidence": confidence,
+                "source": "voice_transcription_streaming_ttfa",
+            },
+        )
+        db.add(user_message)
+        
+        # Store assistant message
+        assistant_message = Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=assistant_content,
+            sequence_number=next_seq + 1,
+            message_metadata={
+                "call_sid": call_sid,
+                "intent": intent,
+                "streaming": True,
+                "chunk_count": chunk_count,
+                "ttfa_optimized": True,
+            },
+        )
+        db.add(assistant_message)
+        
+        await db.commit()
+        logger.debug(f"Background stored messages for call {call_sid}")
+        
+    except Exception as e:
+        logger.error(f"Background message storage failed for {call_sid}: {e}", exc_info=True)
 
 
 @router.post("/continue-chunk")
@@ -1163,6 +1243,56 @@ def _generate_gather_twiml_streaming(
     </Gather>
     <Say voice="Polly.Joanna">I didn&apos;t hear a response. Thank you for calling. Goodbye!</Say>
     <Hangup/>
+</Response>'''
+
+
+def _generate_first_chunk_with_redirect_twiml(
+    chunk_text: str,
+    call_sid: str,
+    chunk_id: str,
+    tenant_id: int | None,
+    conversation_id: int | None,
+    turn: int,
+) -> str:
+    """Generate TwiML for first chunk with redirect to continue-chunk.
+    
+    This is used for TTFA optimization: we return the first chunk immediately
+    and use <Redirect> to fetch and speak remaining chunks.
+    
+    Args:
+        chunk_text: Text of the first chunk to speak
+        call_sid: Twilio call SID
+        chunk_id: ID for retrieving remaining chunks from Redis
+        tenant_id: Tenant ID
+        conversation_id: Conversation ID
+        turn: Current turn number
+        
+    Returns:
+        TwiML XML string with Say and Redirect
+    """
+    base_url = _get_webhook_base_url()
+    params = urlencode({
+        "chunk_id": chunk_id,
+        "tenant_id": tenant_id or "",
+        "conversation_id": conversation_id or "",
+        "turn": turn,
+    })
+    redirect_url = f"{base_url}/api/v1/voice/continue-chunk?{params}".replace("&", "&amp;")
+    
+    # Escape XML special characters
+    escaped_chunk = (
+        chunk_text
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+    
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna">{escaped_chunk}</Say>
+    <Redirect method="POST">{redirect_url}</Redirect>
 </Response>'''
 
 

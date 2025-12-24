@@ -64,6 +64,8 @@ async def gmail_pubsub_webhook(
         Simple acknowledgment response
     """
     try:
+        print(f"[EMAIL_WEBHOOK] Received pubsub push request", flush=True)
+        
         # Verify Pub/Sub authorization token (optional)
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
@@ -80,7 +82,9 @@ async def gmail_pubsub_webhook(
             notification = GmailPushNotification.from_pubsub_message(
                 push_request.message.data
             )
+            print(f"[EMAIL_WEBHOOK] Parsed notification: email={notification.email_address}, history_id={notification.history_id}", flush=True)
         except ValueError as e:
+            print(f"[EMAIL_WEBHOOK] Failed to parse notification: {e}", flush=True)
             logger.error(f"Failed to parse Gmail notification: {e}")
             # Return 200 to prevent Pub/Sub retries for malformed messages
             return {"status": "ignored", "reason": "invalid_format"}
@@ -92,6 +96,7 @@ async def gmail_pubsub_webhook(
         
         # Queue for async processing via Cloud Tasks
         if settings.cloud_tasks_email_worker_url:
+            print(f"[EMAIL_WEBHOOK] Using Cloud Tasks worker: {settings.cloud_tasks_email_worker_url}", flush=True)
             cloud_tasks = CloudTasksClient()
             await cloud_tasks.create_task_async(
                 payload={
@@ -103,12 +108,15 @@ async def gmail_pubsub_webhook(
             logger.info(f"Email notification queued for {notification.email_address}")
         else:
             # Fallback: process synchronously (not recommended for production)
+            print(f"[EMAIL_WEBHOOK] Processing synchronously (no Cloud Tasks URL configured)", flush=True)
             logger.warning("Cloud Tasks email worker URL not configured, processing synchronously")
             email_service = EmailService(db)
-            await email_service.process_gmail_notification(
+            results = await email_service.process_gmail_notification(
                 email_address=notification.email_address,
                 history_id=notification.history_id,
             )
+            print(f"[EMAIL_WEBHOOK] Processed {len(results)} messages", flush=True)
+            logger.info(f"Email processed synchronously: {len(results)} messages")
         
         return {"status": "ok"}
         
@@ -186,4 +194,3 @@ async def email_webhook_health() -> dict[str, str]:
         Health status
     """
     return {"status": "healthy", "service": "email-webhooks"}
-

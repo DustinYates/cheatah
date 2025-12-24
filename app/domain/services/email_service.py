@@ -196,6 +196,8 @@ class EmailService:
             email_config=email_config,
         )
         
+        logger.info(f"Lead capture check: subject='{subject}', should_capture={should_capture_lead}, has_extracted_info={extracted_info is not None}, has_existing_lead={email_conversation.lead_id is not None}")
+        
         if extracted_info and not email_conversation.lead_id and should_capture_lead:
             # Try to capture lead
             lead = await self.lead_service.capture_lead(
@@ -208,6 +210,7 @@ class EmailService:
             if lead:
                 lead_captured = True
                 lead_id = lead.id
+                logger.info(f"Lead captured: lead_id={lead.id}, email={extracted_info.get('email')}, name={extracted_info.get('name')}")
                 # Link to email conversation
                 await self.email_conv_repo.link_to_contact(
                     tenant_id=tenant_id,
@@ -294,13 +297,20 @@ class EmailService:
         Returns:
             List of EmailResult for each processed message
         """
+        print(f"[EMAIL_SERVICE] process_gmail_notification: email={email_address}, history_id={history_id}", flush=True)
+        logger.info(f"Processing Gmail notification: email={email_address}, history_id={history_id}")
+        
         # Get email config by Gmail address
         email_config = await self.email_config_repo.get_by_email(email_address)
         if not email_config:
+            print(f"[EMAIL_SERVICE] No email config found for {email_address}", flush=True)
             logger.warning(f"No email config found for {email_address}")
             return []
         
+        print(f"[EMAIL_SERVICE] Found config for tenant_id={email_config.tenant_id}, enabled={email_config.is_enabled}", flush=True)
+        
         if not email_config.is_enabled:
+            print(f"[EMAIL_SERVICE] Email processing disabled for {email_address}", flush=True)
             logger.info(f"Email processing disabled for {email_address}")
             return []
         
@@ -339,7 +349,11 @@ class EmailService:
             
             # Process new messages
             results = []
-            for msg_info in history.get("messages", []):
+            history_messages = history.get("messages", [])
+            print(f"[EMAIL_SERVICE] Gmail history retrieved: {len(history_messages)} messages", flush=True)
+            logger.info(f"Gmail history retrieved: {len(history_messages)} messages")
+            
+            for msg_info in history_messages:
                 message_id = msg_info.get("id")
                 if not message_id:
                     continue
@@ -350,6 +364,9 @@ class EmailService:
                 # Skip messages sent by us
                 if self._is_outgoing_message(message, email_address):
                     continue
+                
+                print(f"[EMAIL_SERVICE] Processing inbound email: subject='{message.get('subject', '')}', from='{message.get('from', '')}'", flush=True)
+                logger.info(f"Processing inbound email: subject='{message.get('subject', '')}', from='{message.get('from', '')}'")
                 
                 # Process the inbound email
                 result = await self.process_inbound_email(
@@ -370,6 +387,7 @@ class EmailService:
             return results
             
         except GmailAPIError as e:
+            print(f"[EMAIL_SERVICE] GmailAPIError: {e}", flush=True)
             logger.error(f"Failed to process Gmail notification: {e}")
             return []
 
@@ -501,8 +519,11 @@ class EmailService:
         
         # Get configured prefixes, fall back to defaults if not set
         prefixes = email_config.lead_capture_subject_prefixes
+        logger.debug(f"Lead capture prefixes from config: {prefixes}")
+        
         if prefixes is None:
             prefixes = DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
+            logger.debug(f"Using default prefixes: {prefixes}")
         
         # If explicitly set to empty list, don't capture any leads
         if prefixes is not None and len(prefixes) == 0:
@@ -515,9 +536,13 @@ class EmailService:
         # Check if subject starts with any configured prefix (case-insensitive)
         subject_lower = (subject or "").lower().strip()
         for prefix in prefixes:
-            if subject_lower.startswith(prefix.lower()):
+            # Strip whitespace from prefix to handle any trailing spaces in database
+            prefix_lower = (prefix or "").lower().strip()
+            if subject_lower.startswith(prefix_lower):
+                logger.debug(f"Subject '{subject}' matches prefix '{prefix}'")
                 return True
         
+        logger.debug(f"Subject '{subject}' does not match any prefixes: {prefixes}")
         return False
 
     def _extract_contact_info(
@@ -702,4 +727,3 @@ class EmailService:
             return True
         except Exception:
             return True
-

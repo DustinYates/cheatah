@@ -270,10 +270,10 @@ async def start_oauth_flow(
 
 @router.get("/oauth/callback")
 async def oauth_callback(
+    db: Annotated[AsyncSession, Depends(get_db)],
     code: Annotated[str | None, Query()] = None,
     state: Annotated[str | None, Query()] = None,
     error: Annotated[str | None, Query()] = None,
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> RedirectResponse:
     """Handle Gmail OAuth callback.
     

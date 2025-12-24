@@ -251,4 +251,3 @@ async def refresh_gmail_watch(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Watch refresh failed: {str(e)}",
         )
-

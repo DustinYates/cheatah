@@ -396,31 +396,121 @@ class GmailClient:
             logger.error(f"Gmail get message failed: {e}")
             raise GmailAPIError(f"Failed to get message: {str(e)}") from e
 
-    def _extract_body(self, payload: dict) -> str:
+    def _extract_body(self, payload: dict, depth: int = 0) -> str:
         """Extract plain text body from message payload.
+        
+        Prefers text/plain but will extract from text/html if plain text is not available.
         
         Args:
             payload: Message payload from Gmail API
+            depth: Recursion depth for debugging
             
         Returns:
             Plain text body content
         """
-        body = ""
+        plain_body = ""
+        html_body = ""
+        
+        mime_type = payload.get("mimeType", "")
         
         if "body" in payload and payload["body"].get("data"):
-            body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8")
-        elif "parts" in payload:
-            for part in payload["parts"]:
-                if part.get("mimeType") == "text/plain":
-                    if part.get("body", {}).get("data"):
-                        body = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
-                        break
-                elif part.get("mimeType", "").startswith("multipart/"):
-                    body = self._extract_body(part)
-                    if body:
-                        break
+            decoded = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8")
+            if mime_type == "text/plain":
+                plain_body = decoded
+            elif mime_type == "text/html":
+                html_body = decoded
+            else:
+                # If no mime type specified, assume it's usable
+                plain_body = decoded
         
-        return body
+        if "parts" in payload:
+            for i, part in enumerate(payload["parts"]):
+                part_mime = part.get("mimeType", "")
+                if part_mime == "text/plain":
+                    if part.get("body", {}).get("data"):
+                        plain_body = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+                elif part_mime == "text/html":
+                    if part.get("body", {}).get("data"):
+                        html_body = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+                elif part_mime.startswith("multipart/"):
+                    nested_body = self._extract_body(part, depth + 1)
+                    if nested_body:
+                        if not plain_body:  # Don't overwrite existing plain body
+                            plain_body = nested_body
+        
+        # Prefer plain text, but use HTML if plain text is not available
+        # Check if plain_body has actual content (not just whitespace)
+        plain_body_stripped = plain_body.strip() if plain_body else ""
+        html_body_stripped = html_body.strip() if html_body else ""
+        
+        if plain_body_stripped:
+            return plain_body
+        elif html_body_stripped:
+            # Convert HTML to plain text for parsing
+            converted = self._html_to_text(html_body)
+            return converted
+        
+        return ""
+    
+    def _html_to_text(self, html: str) -> str:
+        """Convert HTML content to plain text, preserving structure for form parsing.
+        
+        Args:
+            html: HTML content
+            
+        Returns:
+            Plain text with structure preserved
+        """
+        import re
+        
+        # Replace common block elements with newlines to preserve structure
+        # This helps maintain label/value pairs from tables
+        text = html
+        
+        # Replace <br>, <br/>, <br /> with newlines
+        text = re.sub(r'<br\s*/?\s*>', '\n', text, flags=re.IGNORECASE)
+        
+        # Replace closing block tags with newlines
+        block_tags = ['p', 'div', 'tr', 'td', 'th', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+        for tag in block_tags:
+            text = re.sub(rf'</{tag}\s*>', '\n', text, flags=re.IGNORECASE)
+        
+        # For table cells, also add newline before opening to separate label rows
+        text = re.sub(r'<t[dh][^>]*>', '\n', text, flags=re.IGNORECASE)
+        
+        # Remove all remaining HTML tags
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # Decode common HTML entities
+        html_entities = {
+            '&nbsp;': ' ',
+            '&amp;': '&',
+            '&lt;': '<',
+            '&gt;': '>',
+            '&quot;': '"',
+            '&#39;': "'",
+            '&apos;': "'",
+            '&ndash;': '-',
+            '&mdash;': '-',
+            '&#x27;': "'",
+            '&#x2F;': '/',
+            '&hellip;': '...',
+            '&copy;': '(c)',
+            '&reg;': '(R)',
+            '&trade;': '(TM)',
+        }
+        for entity, char in html_entities.items():
+            text = text.replace(entity, char)
+        
+        # Also handle numeric entities
+        text = re.sub(r'&#(\d+);', lambda m: chr(int(m.group(1))), text)
+        text = re.sub(r'&#x([0-9a-fA-F]+);', lambda m: chr(int(m.group(1), 16)), text)
+        
+        # Normalize whitespace: collapse multiple spaces but preserve newlines
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r'\n\s*\n', '\n\n', text)
+        
+        return text.strip()
 
     def get_thread(self, thread_id: str, format: str = "full") -> dict[str, Any]:
         """Get an email thread with all messages.

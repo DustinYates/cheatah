@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.chat_service import ChatService
 from app.domain.services.conversation_service import ConversationService
+from app.domain.services.email_body_parser import EmailBodyParser
 from app.domain.services.escalation_service import EscalationService
 from app.domain.services.intent_detector import IntentDetector
 from app.domain.services.lead_service import LeadService
@@ -58,6 +59,7 @@ class EmailService:
         self.tenant_repo = TenantRepository(session)
         self.email_config_repo = TenantEmailConfigRepository(session)
         self.email_conv_repo = EmailConversationRepository(session)
+        self.body_parser = EmailBodyParser()
 
     async def process_inbound_email(
         self,
@@ -196,29 +198,52 @@ class EmailService:
             email_config=email_config,
         )
         
+        print(f"[LEAD_CAPTURE] subject='{subject}', should_capture={should_capture_lead}, has_extracted_info={extracted_info is not None}, existing_lead_id={email_conversation.lead_id}", flush=True)
+        print(f"[LEAD_CAPTURE] extracted_info={extracted_info}", flush=True)
         logger.info(f"Lead capture check: subject='{subject}', should_capture={should_capture_lead}, has_extracted_info={extracted_info is not None}, has_existing_lead={email_conversation.lead_id is not None}")
         
         if extracted_info and not email_conversation.lead_id and should_capture_lead:
+            print(f"[LEAD_CAPTURE] All conditions met, attempting to create lead", flush=True)
+            # Build metadata for lead (include additional fields and parsing metadata)
+            metadata = {}
+            if extracted_info.get("additional_fields"):
+                metadata.update(extracted_info["additional_fields"])
+            if extracted_info.get("metadata"):
+                metadata["parsing_metadata"] = extracted_info["metadata"]
+            
             # Try to capture lead
-            lead = await self.lead_service.capture_lead(
-                tenant_id=tenant_id,
-                conversation_id=conversation.id,
-                email=extracted_info.get("email"),
-                phone=extracted_info.get("phone"),
-                name=extracted_info.get("name"),
-            )
-            if lead:
-                lead_captured = True
-                lead_id = lead.id
-                logger.info(f"Lead captured: lead_id={lead.id}, email={extracted_info.get('email')}, name={extracted_info.get('name')}")
-                # Link to email conversation
-                await self.email_conv_repo.link_to_contact(
+            try:
+                lead = await self.lead_service.capture_lead(
                     tenant_id=tenant_id,
-                    gmail_thread_id=thread_id,
-                    lead_id=lead.id,
+                    conversation_id=conversation.id,
+                    email=extracted_info.get("email"),
+                    phone=extracted_info.get("phone"),
+                    name=extracted_info.get("name"),
+                    metadata=metadata if metadata else None,
                 )
+                if lead:
+                    lead_captured = True
+                    lead_id = lead.id
+                    print(f"[LEAD_CAPTURE] SUCCESS: lead_id={lead.id}, email={extracted_info.get('email')}, name={extracted_info.get('name')}", flush=True)
+                    logger.info(f"Lead captured: lead_id={lead.id}, email={extracted_info.get('email')}, name={extracted_info.get('name')}")
+                    # Link to email conversation
+                    await self.email_conv_repo.link_to_contact(
+                        tenant_id=tenant_id,
+                        gmail_thread_id=thread_id,
+                        lead_id=lead.id,
+                    )
+                else:
+                    print(f"[LEAD_CAPTURE] FAILED: lead_service.capture_lead returned None", flush=True)
+            except Exception as e:
+                print(f"[LEAD_CAPTURE] ERROR: {type(e).__name__}: {e}", flush=True)
+                logger.error(f"Error capturing lead: {e}", exc_info=True)
         elif not should_capture_lead:
+            print(f"[LEAD_CAPTURE] SKIP: subject '{subject}' does not match prefixes", flush=True)
             logger.info(f"Skipping lead capture for email with subject '{subject}' - does not match configured prefixes")
+        elif not extracted_info:
+            print(f"[LEAD_CAPTURE] SKIP: no extracted_info", flush=True)
+        elif email_conversation.lead_id:
+            print(f"[LEAD_CAPTURE] SKIP: lead already exists (id={email_conversation.lead_id})", flush=True)
         
         # Compose prompt with email-specific context
         additional_context = self._build_email_context(
@@ -519,29 +544,36 @@ class EmailService:
         
         # Get configured prefixes, fall back to defaults if not set
         prefixes = email_config.lead_capture_subject_prefixes
+        print(f"[LEAD_CAPTURE] Prefixes from config: {prefixes}", flush=True)
         logger.debug(f"Lead capture prefixes from config: {prefixes}")
         
         if prefixes is None:
             prefixes = DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
+            print(f"[LEAD_CAPTURE] Using default prefixes: {prefixes}", flush=True)
             logger.debug(f"Using default prefixes: {prefixes}")
         
         # If explicitly set to empty list, don't capture any leads
         if prefixes is not None and len(prefixes) == 0:
+            print(f"[LEAD_CAPTURE] Empty prefix list - skipping capture", flush=True)
             return False
         
         # If no prefixes configured at all (shouldn't happen with defaults), capture all
         if not prefixes:
+            print(f"[LEAD_CAPTURE] No prefixes - capturing all", flush=True)
             return True
         
         # Check if subject starts with any configured prefix (case-insensitive)
         subject_lower = (subject or "").lower().strip()
+        print(f"[LEAD_CAPTURE] Checking subject '{subject_lower}' against prefixes", flush=True)
         for prefix in prefixes:
             # Strip whitespace from prefix to handle any trailing spaces in database
             prefix_lower = (prefix or "").lower().strip()
             if subject_lower.startswith(prefix_lower):
+                print(f"[LEAD_CAPTURE] MATCH: Subject '{subject}' matches prefix '{prefix}'", flush=True)
                 logger.debug(f"Subject '{subject}' matches prefix '{prefix}'")
                 return True
         
+        print(f"[LEAD_CAPTURE] NO MATCH: Subject '{subject}' does not match any prefixes: {prefixes}", flush=True)
         logger.debug(f"Subject '{subject}' does not match any prefixes: {prefixes}")
         return False
 
@@ -550,23 +582,132 @@ class EmailService:
         from_email: str,
         sender_name: str,
         body: str,
-    ) -> dict[str, str] | None:
-        """Extract contact info from email content."""
-        info: dict[str, str] = {}
+    ) -> dict[str, Any] | None:
+        """Extract contact info from email content using structured parser.
         
-        # Use email and name from sender
-        if from_email:
-            info["email"] = from_email
-        if sender_name:
-            info["name"] = sender_name
+        Args:
+            from_email: Sender email address
+            sender_name: Sender name
+            body: Email body text
+            
+        Returns:
+            Dictionary with name, email, phone, and metadata, or None if no info found
+        """
+        # Parse structured data from email body
+        parsed = self.body_parser.parse(body)
         
-        # Try to extract phone from signature
-        phone_pattern = r'\b(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}\b'
-        phones = re.findall(phone_pattern, body)
-        if phones:
-            info["phone"] = phones[0]
+        # Check if we found structured form data
+        # Look for form-specific fields that indicate this is a form submission
+        parsed_fields = parsed.get("metadata", {}).get("parsed_fields", [])
+        additional_fields = parsed.get("additional_fields", {})
         
-        return info if info else None
+        # Form submission indicators (fields that only appear in form submissions, not regular emails)
+        form_indicators = [
+            'location email', 'franchise code', 'location code', 'class code',
+            'class id', 'utm source', 'utm medium', 'utm campaign',
+            'hubspot cookie', 'how did you hear about us', 'type of lessons',
+            'marketing opt-in', 'address'
+        ]
+        
+        # Check if any form indicator fields are present
+        has_form_indicators = any(
+            indicator in parsed_fields or indicator in additional_fields
+            for indicator in form_indicators
+        )
+        
+        # Also check if we have additional fields or multiple parsed fields (suggests structured data)
+        has_structured_data = bool(
+            has_form_indicators or
+            (additional_fields and len(additional_fields) > 0) or
+            (parsed_fields and len(parsed_fields) > 3)  # More than just name/email/phone
+        )
+        
+        print(f"[EMAIL_EXTRACT] has_form_indicators={has_form_indicators}, has_structured_data={has_structured_data}", flush=True)
+        print(f"[EMAIL_EXTRACT] sender_name={sender_name}, from_email={from_email}", flush=True)
+        
+        # Log for debugging
+        logger.debug(
+            f"Email parsing: has_structured_data={has_structured_data}, "
+            f"has_form_indicators={has_form_indicators}, "
+            f"parsed_name={parsed.get('name')}, parsed_email={parsed.get('email')}, "
+            f"sender_name={sender_name}, sender_email={from_email}, "
+            f"parsed_fields={parsed_fields}, additional_fields_keys={list(additional_fields.keys())}"
+        )
+        
+        # Build result dictionary
+        info: dict[str, Any] = {}
+        
+        # For name: Only use structured form data if found, otherwise fall back to sender name
+        # This ensures form submissions use the form's name field, not the email sender's name
+        if has_structured_data or has_form_indicators:
+            # If we have structured form data or form indicators, only use the parsed name (don't fall back to sender)
+            # This is critical: form submissions should NEVER use sender name, even if the name field wasn't found
+            info["name"] = parsed.get("name")
+            
+            # Check if "student name" might be in additional_fields (shouldn't happen, but check just in case)
+            if not info["name"] and has_form_indicators and "student name" in additional_fields:
+                from app.domain.services.email_body_parser import EmailBodyParser
+                temp_parser = EmailBodyParser()
+                cleaned_name = temp_parser._clean_name(additional_fields["student name"])
+                if cleaned_name:
+                    info["name"] = cleaned_name
+                    logger.info(f"Found name in additional_fields['student name']: {cleaned_name}")
+            
+            if not info["name"] and has_form_indicators:
+                logger.warning(
+                    f"Form submission detected but name field not found. "
+                    f"Parsed name={parsed.get('name')}, Parsed fields: {parsed_fields}, "
+                    f"Additional fields: {list(additional_fields.keys())}"
+                )
+        else:
+            # If no structured data, use parsed name or sender name as fallback
+            info["name"] = parsed.get("name") or sender_name or None
+        
+        # For email: Only use structured form data if found, otherwise fall back to sender email
+        # This ensures form submissions use the form's email field, not the email sender's address
+        if has_structured_data or has_form_indicators:
+            # If we have structured form data or form indicators, only use the parsed email (don't fall back to sender)
+            # This is critical: form submissions should NEVER use sender email, even if the email field wasn't found
+            info["email"] = parsed.get("email")
+            
+            # Make absolutely sure we're not accidentally using "Location Email" - that's a different field
+            # Check if "email" (without "location") is in additional_fields (shouldn't happen, but check)
+            if not info["email"] and has_form_indicators:
+                # Look for "email" key (not "location email")
+                for key in additional_fields:
+                    if key.lower() == "email" and "location" not in key.lower():
+                        from app.domain.services.email_body_parser import EmailBodyParser
+                        temp_parser = EmailBodyParser()
+                        cleaned_email = temp_parser._clean_email(additional_fields[key])
+                        if cleaned_email:
+                            info["email"] = cleaned_email
+                            logger.info(f"Found email in additional_fields['{key}']: {cleaned_email}")
+                        break
+            
+            if not info["email"] and has_form_indicators:
+                logger.warning(
+                    f"Form submission detected but email field not found. "
+                    f"Parsed email={parsed.get('email')}, Parsed fields: {parsed_fields}, "
+                    f"Additional fields: {list(additional_fields.keys())}"
+                )
+        else:
+            # If no structured data, use parsed email or sender email as fallback
+            info["email"] = parsed.get("email") or from_email or None
+        
+        # Phone is always from parsed data (already formatted to E.164)
+        info["phone"] = parsed.get("phone")
+        
+        # Store additional fields and metadata
+        if parsed.get("additional_fields"):
+            info["additional_fields"] = parsed["additional_fields"]
+        if parsed.get("metadata"):
+            info["metadata"] = parsed["metadata"]
+        
+        # Only return if we have at least one piece of contact info
+        if info.get("name") or info.get("email") or info.get("phone"):
+            return info
+        
+        return None
 
     def _build_email_context(
         self,

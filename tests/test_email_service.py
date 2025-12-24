@@ -107,6 +107,94 @@ async def test_email_service_extract_contact_info():
 
 
 @pytest.mark.asyncio
+async def test_email_service_extract_contact_info_form_submission():
+    """Test that form submission emails use form data, not sender headers.
+    
+    When a form submission email arrives (e.g., from a registration form),
+    the contact info should come from the form fields in the body, not from
+    the email sender headers. This is critical because form submissions often
+    come from automated systems with different sender info than the actual
+    form submitter.
+    """
+    email_service = EmailService(None)
+    
+    # Simulate a form submission email where:
+    # - Sender is the location/system email: "goswimcypressspring@britishswimschool.com"
+    # - Sender name is the location contact: "Dustin Yates"
+    # - But the actual form data has different info:
+    #   - Student Name: "Olawunmi Ayodele"
+    #   - Email: "wunta23@yahoo.com"
+    #   - Phone: "(972) 464-6277"
+    form_submission_body = """
+    Location Email: goswimcypressspring@britishswimschool.com
+    HubSpot Cookie: 51576c37b8f4ee3899fcbf08c807ef5f
+    UTM Source: google
+    UTM Medium: performancemax
+    UTM Campaign: campaignname
+    Class ID: 20845810
+    Student Name: Olawunmi Ayodele
+    Email: wunta23@yahoo.com
+    Phone: (972) 464-6277
+    How did you hear about us?: Rackcard / Flyer
+    """
+    
+    result = email_service._extract_contact_info(
+        from_email="goswimcypressspring@britishswimschool.com",
+        sender_name="Dustin Yates",
+        body=form_submission_body,
+    )
+    
+    assert result is not None
+    # Should use form data, NOT sender info
+    assert result["name"] == "Olawunmi Ayodele"  # From form, not "Dustin Yates"
+    assert result["email"] == "wunta23@yahoo.com"  # From form, not location email
+    assert result["phone"] == "+19724646277"  # From form
+    # Should have additional fields from the form
+    assert "additional_fields" in result
+    assert result["additional_fields"]["location email"] == "goswimcypressspring@britishswimschool.com"
+    assert result["additional_fields"]["class id"] == "20845810"
+
+
+@pytest.mark.asyncio
+async def test_email_service_extract_contact_info_table_format():
+    """Test extraction from table format (HTML table converted to plain text).
+    
+    Some form submissions arrive as HTML tables that get converted to plain text
+    where labels and values are on separate lines.
+    """
+    email_service = EmailService(None)
+    
+    # Table format where labels and values are on separate lines
+    table_format_body = """
+Student Name
+Olawunmi Ayodele
+Email
+wunta23@yahoo.com
+Phone
+(972) 464-6277
+Location Email
+goswimcypressspring@britishswimschool.com
+Franchise Code
+545911
+    """
+    
+    result = email_service._extract_contact_info(
+        from_email="goswimcypressspring@britishswimschool.com",
+        sender_name="Dustin Yates",
+        body=table_format_body,
+    )
+    
+    assert result is not None
+    # Should use form data from table format, NOT sender info
+    assert result["name"] == "Olawunmi Ayodele"  # From form
+    assert result["email"] == "wunta23@yahoo.com"  # From form
+    assert result["phone"] == "+19724646277"  # From form
+    # Should have additional fields
+    assert "additional_fields" in result
+    assert result["additional_fields"]["franchise code"] == "545911"
+
+
+@pytest.mark.asyncio
 async def test_email_service_preprocess_body():
     """Test email body preprocessing."""
     email_service = EmailService(None)

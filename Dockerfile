@@ -1,5 +1,15 @@
 # syntax=docker/dockerfile:1
-FROM python:3.11-slim AS builder
+
+# Build frontend
+FROM node:20-slim AS frontend-builder
+WORKDIR /app/client
+COPY client/package*.json ./
+RUN npm ci
+COPY client/ ./
+RUN npm run build
+
+# Build backend
+FROM python:3.11-slim AS backend-builder
 
 # Install uv package manager
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -32,11 +42,14 @@ RUN useradd --create-home --shell /bin/bash appuser
 
 WORKDIR /app
 
-# Copy virtual environment from builder
-COPY --from=builder /app/.venv /app/.venv
+# Copy virtual environment from backend builder
+COPY --from=backend-builder /app/.venv /app/.venv
 
 # Copy application code
 COPY --chown=appuser:appuser . .
+
+# Copy frontend build from frontend builder
+COPY --from=frontend-builder --chown=appuser:appuser /app/client/dist /app/static/client
 
 # Set environment variables
 ENV PATH="/app/.venv/bin:$PATH"

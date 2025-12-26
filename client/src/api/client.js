@@ -414,6 +414,10 @@ class ApiClient {
     });
   }
 
+  async getEmbedCode() {
+    return this.request('/tenants/me/embed-code');
+  }
+
   // Prompt Interview / Wizard methods
   async startPromptInterview() {
     return this.request('/prompts/interview/start');

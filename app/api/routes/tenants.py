@@ -6,12 +6,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_tenant, get_current_user
-from app.api.schemas.tenant import TenantResponse, TenantUpdate
+from app.api.schemas.tenant import EmbedCodeResponse, TenantResponse, TenantUpdate
 from app.persistence.database import get_db
 from app.persistence.models.tenant import Tenant, User
+from app.persistence.repositories.prompt_repository import PromptRepository
 from app.persistence.repositories.tenant_repository import TenantRepository
+from app.settings import settings
 
 router = APIRouter()
+
+# Default API base URL for embed code if not configured
+DEFAULT_API_BASE_URL = "https://chattercheatah-iyv6z6wp7a-uc.a.run.app"
 
 
 @router.get("/me", response_model=TenantResponse)
@@ -78,5 +83,103 @@ async def update_current_tenant(
         subdomain=tenant.subdomain,
         is_active=tenant.is_active,
         created_at=tenant.created_at.isoformat(),
+    )
+
+
+def _generate_embed_code(api_base_url: str, tenant_id: int) -> str:
+    """Generate WordPress embed code HTML for a tenant."""
+    return f"""<!-- 
+Chatter Cheetah Chat Widget - WordPress Embed Code
+Add this to your WordPress footer or use a plugin like "Insert Headers and Footers"
+-->
+
+<!-- Load the chat widget script -->
+<script src="{api_base_url}/static/chat-widget.js"></script>
+
+<!-- Initialize the widget after page loads -->
+<script>
+(function() {{
+  // Wait for both the page and the widget script to load
+  function initChatWidget() {{
+    if (typeof ChatterCheetah !== 'undefined') {{
+      try {{
+        ChatterCheetah.init({{
+          apiUrl: '{api_base_url}/api/v1',
+          tenantId: {tenant_id}
+        }});
+        console.log('Chatter Cheetah widget initialized successfully');
+      }} catch (error) {{
+        console.error('Error initializing chat widget:', error);
+      }}
+    }} else {{
+      // Retry if script hasn't loaded yet
+      setTimeout(initChatWidget, 100);
+    }}
+  }}
+  
+  // Initialize when DOM is ready
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', initChatWidget);
+  }} else {{
+    // DOM already loaded
+    initChatWidget();
+  }}
+}})();
+</script>"""
+
+
+@router.get("/me/embed-code", response_model=EmbedCodeResponse)
+async def get_tenant_embed_code(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> EmbedCodeResponse:
+    """Get tenant-specific WordPress embed code.
+    
+    Returns the HTML embed code that can be pasted into a WordPress site
+    to add the chat widget. Also indicates whether the tenant has a
+    published prompt bundle (required for the widget to work).
+    """
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No tenant associated with user",
+        )
+
+    # Verify tenant exists
+    tenant_repo = TenantRepository(db)
+    tenant = await tenant_repo.get_by_id(None, tenant_id)
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found",
+        )
+
+    # Check if tenant has a published prompt bundle
+    prompt_repo = PromptRepository(db)
+    production_bundle = await prompt_repo.get_production_bundle(tenant_id)
+    has_published_prompt = production_bundle is not None
+
+    # Get API base URL from settings or use default
+    api_base_url = settings.api_base_url or DEFAULT_API_BASE_URL
+
+    # Generate embed code
+    embed_code = _generate_embed_code(api_base_url, tenant_id)
+
+    # Prepare warning if no published prompt
+    warning = None
+    if not has_published_prompt:
+        warning = (
+            "Your chatbot is not live yet. Please publish a prompt in the Prompts page "
+            "before adding this code to your website. The widget will not respond to "
+            "visitors until a prompt is published."
+        )
+
+    return EmbedCodeResponse(
+        embed_code=embed_code,
+        tenant_id=tenant_id,
+        api_url=api_base_url,
+        has_published_prompt=has_published_prompt,
+        warning=warning,
     )
 

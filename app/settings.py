@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     api_v1_prefix: str = "/api/v1"
+    api_base_url: str = ""  # Base URL for embed code generation (e.g., https://chattercheatah-iyv6z6wp7a-uc.a.run.app)
 
     # Idempotency
     idempotency_ttl_seconds: int = 3600

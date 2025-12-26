@@ -29,3 +29,13 @@ class TenantResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class EmbedCodeResponse(BaseModel):
+    """Response containing tenant-specific embed code for WordPress integration."""
+
+    embed_code: str
+    tenant_id: int
+    api_url: str
+    has_published_prompt: bool
+    warning: str | None = None

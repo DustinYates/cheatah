@@ -94,6 +94,54 @@ class LeadService:
         """
         return await self.lead_repo.get_by_conversation(tenant_id, conversation_id)
 
+    async def update_lead_info(
+        self,
+        tenant_id: int,
+        lead_id: int,
+        email: str | None = None,
+        phone: str | None = None,
+        name: str | None = None,
+    ) -> Lead | None:
+        """Update lead information, only filling in missing fields.
+
+        Updates email, phone, and/or name only if the current value is None/empty.
+        Does not change lead status.
+
+        Args:
+            tenant_id: Tenant ID
+            lead_id: Lead ID to update
+            email: Email to set if currently missing
+            phone: Phone to set if currently missing
+            name: Name to set if currently missing
+
+        Returns:
+            Updated lead or None if not found
+        """
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            return None
+
+        updated = False
+        # Only update fields that are currently missing
+        if email and not lead.email:
+            lead.email = email
+            updated = True
+            logger.info(f"Updated lead {lead_id} with email: {email}")
+        if phone and not lead.phone:
+            lead.phone = phone
+            updated = True
+            logger.info(f"Updated lead {lead_id} with phone: {phone}")
+        if name and not lead.name:
+            lead.name = name
+            updated = True
+            logger.info(f"Updated lead {lead_id} with name: {name}")
+
+        if updated:
+            await self.session.commit()
+            await self.session.refresh(lead)
+
+        return lead
+
     async def update_lead_status(
         self, tenant_id: int, lead_id: int, status: str
     ) -> Lead | None:

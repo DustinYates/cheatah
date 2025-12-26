@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.conversation_service import ConversationService
 from app.domain.services.lead_service import LeadService
+from app.domain.services.contact_service import ContactService
 from app.domain.services.prompt_service import PromptService
 from app.llm.orchestrator import LLMOrchestrator
 from app.persistence.models.conversation import Conversation, Message
@@ -44,6 +45,7 @@ class ChatService:
         self.session = session
         self.conversation_service = ConversationService(session)
         self.lead_service = LeadService(session)
+        self.contact_service = ContactService(session)
         self.prompt_service = PromptService(session)
         self.llm_orchestrator = LLMOrchestrator()
         self.tenant_repo = TenantRepository(session)
@@ -195,68 +197,82 @@ class ChatService:
             tenant_id, conversation.id, "assistant", llm_response
         )
 
-        # Try to extract contact info from conversation if no lead captured yet
-        # Check again after assistant response was added
-        if not lead_captured:
-            logger.debug(
-                f"Checking for existing lead - tenant_id={tenant_id}, conversation_id={conversation.id}"
-            )
-            existing_lead = await self.lead_service.get_lead_by_conversation(
-                tenant_id, conversation.id
-            )
-            if not existing_lead:
-                logger.debug(
-                    f"No existing lead found, attempting extraction from conversation "
-                    f"(tenant_id={tenant_id}, conversation_id={conversation.id})"
-                )
-                # Extract contact info from conversation messages
-                extracted_info = await self._extract_contact_info_from_conversation(
-                    messages, user_message
-                )
-                
-                logger.debug(
-                    f"Extracted contact info: name={extracted_info.get('name')}, "
-                    f"email={extracted_info.get('email')}, phone={extracted_info.get('phone')}"
-                )
-                
-                # If any contact info was extracted, create a lead
-                extracted_name = extracted_info.get("name")
-                extracted_email = extracted_info.get("email")
-                extracted_phone = extracted_info.get("phone")
-                
-                if extracted_name or extracted_email or extracted_phone:
-                    try:
-                        lead = await self.lead_service.capture_lead(
-                            tenant_id=tenant_id,
-                            conversation_id=conversation.id,
-                            email=extracted_email,
-                            phone=extracted_phone,
-                            name=extracted_name,
-                        )
-                        lead_captured = True
+        # Always try to extract contact info from conversation
+        # This ensures we capture newly provided information even if a lead already exists
+        logger.debug(
+            f"Extracting contact info from conversation - tenant_id={tenant_id}, conversation_id={conversation.id}"
+        )
+        
+        # Get existing lead for this conversation
+        existing_lead = await self.lead_service.get_lead_by_conversation(
+            tenant_id, conversation.id
+        )
+        
+        # Extract contact info from conversation messages
+        extracted_info = await self._extract_contact_info_from_conversation(
+            messages, user_message
+        )
+        
+        logger.debug(
+            f"Extracted contact info: name={extracted_info.get('name')}, "
+            f"email={extracted_info.get('email')}, phone={extracted_info.get('phone')}"
+        )
+        
+        extracted_name = extracted_info.get("name")
+        extracted_email = extracted_info.get("email")
+        extracted_phone = extracted_info.get("phone")
+        
+        # If any contact info was extracted, create or update lead
+        if extracted_name or extracted_email or extracted_phone:
+            try:
+                if existing_lead:
+                    # Update existing lead with new information (only missing fields)
+                    updated_lead = await self.lead_service.update_lead_info(
+                        tenant_id=tenant_id,
+                        lead_id=existing_lead.id,
+                        email=extracted_email,
+                        phone=extracted_phone,
+                        name=extracted_name,
+                    )
+                    if updated_lead:
                         logger.info(
-                            f"Lead auto-captured from conversation - tenant_id={tenant_id}, "
-                            f"conversation_id={conversation.id}, lead_id={lead.id}, "
+                            f"Lead updated with extracted info - tenant_id={tenant_id}, "
+                            f"conversation_id={conversation.id}, lead_id={updated_lead.id}, "
                             f"name={extracted_name}, email={extracted_email}, phone={extracted_phone}"
                         )
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to capture lead after extraction - tenant_id={tenant_id}, "
-                            f"conversation_id={conversation.id}, error={e}",
-                            exc_info=True
+                        
+                        # Update contact if it exists and is linked to this lead
+                        await self._update_contact_from_lead(
+                            tenant_id, updated_lead, extracted_email, extracted_phone, extracted_name
                         )
                 else:
-                    logger.debug(
-                        f"No contact info extracted from conversation "
-                        f"(tenant_id={tenant_id}, conversation_id={conversation.id})"
+                    # Create new lead with extracted information
+                    lead = await self.lead_service.capture_lead(
+                        tenant_id=tenant_id,
+                        conversation_id=conversation.id,
+                        email=extracted_email,
+                        phone=extracted_phone,
+                        name=extracted_name,
                     )
-            else:
-                    logger.debug(
-                        f"Lead already exists for conversation - tenant_id={tenant_id}, "
-                        f"conversation_id={conversation.id}, lead_id={existing_lead.id}"
+                    lead_captured = True
+                    logger.info(
+                        f"Lead auto-captured from conversation - tenant_id={tenant_id}, "
+                        f"conversation_id={conversation.id}, lead_id={lead.id}, "
+                        f"name={extracted_name}, email={extracted_email}, phone={extracted_phone}"
                     )
+            except Exception as e:
+                logger.error(
+                    f"Failed to capture/update lead after extraction - tenant_id={tenant_id}, "
+                    f"conversation_id={conversation.id}, error={e}",
+                    exc_info=True
+                )
+        else:
+            logger.debug(
+                f"No contact info extracted from conversation "
+                f"(tenant_id={tenant_id}, conversation_id={conversation.id})"
+            )
         
-        # Check if we captured a lead after extraction
+        # Check if we have a lead (either existing or newly created)
         if not lead_captured:
             existing_lead_after = await self.lead_service.get_lead_by_conversation(
                 tenant_id, conversation.id
@@ -276,6 +292,65 @@ class ChatService:
             turn_count=turn_count + 1,
             llm_latency_ms=llm_latency_ms,
         )
+
+    async def _update_contact_from_lead(
+        self,
+        tenant_id: int,
+        lead,
+        extracted_email: str | None,
+        extracted_phone: str | None,
+        extracted_name: str | None,
+    ) -> None:
+        """Update contact linked to a lead with newly extracted information.
+
+        Args:
+            tenant_id: Tenant ID
+            lead: Lead object that was updated
+            extracted_email: Email that was extracted (only update if contact email is missing)
+            extracted_phone: Phone that was extracted (only update if contact phone is missing)
+            extracted_name: Name that was extracted (only update if contact name is missing)
+        """
+        if not lead or not lead.id:
+            return
+
+        try:
+            # Find contact linked to this lead by lead_id
+            from sqlalchemy import select
+            from app.persistence.models.contact import Contact
+            
+            stmt = select(Contact).where(
+                Contact.tenant_id == tenant_id,
+                Contact.lead_id == lead.id,
+                Contact.deleted_at.is_(None),
+                Contact.merged_into_contact_id.is_(None)
+            )
+            result = await self.session.execute(stmt)
+            contact = result.scalar_one_or_none()
+            
+            if contact:
+                # Update contact with missing fields only
+                update_data = {}
+                if extracted_email and not contact.email:
+                    update_data['email'] = extracted_email
+                if extracted_phone and not contact.phone:
+                    update_data['phone'] = extracted_phone
+                if extracted_name and not contact.name:
+                    update_data['name'] = extracted_name
+                
+                if update_data:
+                    await self.contact_service.update_contact(
+                        tenant_id=tenant_id,
+                        contact_id=contact.id,
+                        **update_data
+                    )
+                    logger.info(
+                        f"Updated contact {contact.id} from lead {lead.id} with new info: {update_data}"
+                    )
+        except Exception as e:
+            logger.error(
+                f"Failed to update contact from lead {lead.id}: {e}",
+                exc_info=True
+            )
 
     async def _get_or_create_conversation(
         self, tenant_id: int, session_id: str | None

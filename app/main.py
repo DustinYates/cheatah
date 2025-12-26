@@ -67,34 +67,30 @@ from app.workers import sms_worker, email_worker
 app.include_router(sms_worker.router, prefix="/workers", tags=["workers"])
 app.include_router(email_worker.router, prefix="/workers/email", tags=["email-workers"])
 
-# Serve static files (chat widget and client app)
-static_dir = Path(__file__).parent.parent / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-# Serve React client app
-client_dir = static_dir / "client"
-if client_dir.exists():
-    app.mount("/assets", StaticFiles(directory=str(client_dir / "assets")), name="assets")
-
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Cloud Run."""
     return {"status": "healthy"}
 
 
-# Serve React app for all non-API routes
+# Serve static files (chat widget and client app)
+static_dir = Path(__file__).parent.parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Serve React client app assets
+client_dir = static_dir / "client"
+if client_dir.exists():
+    app.mount("/assets", StaticFiles(directory=str(client_dir / "assets")), name="assets")
+
+
+# Serve React app for all non-API routes (must be last)
 from fastapi.responses import FileResponse
 
 @app.get("/{full_path:path}")
 async def serve_react_app(full_path: str):
-    """Serve React app for all routes except API and static."""
-    # Don't serve React app for API routes
-    if full_path.startswith(("api/", "workers/", "health", "docs", "openapi.json", "static/", "assets/")):
-        return {"detail": "Not Found"}
-
-    # Serve index.html for all other routes (React Router will handle)
+    """Serve React app for client-side routing."""
+    # Serve index.html for all routes (React Router will handle)
     client_dir = Path(__file__).parent.parent / "static" / "client"
     index_file = client_dir / "index.html"
 
@@ -105,6 +101,5 @@ async def serve_react_app(full_path: str):
         "message": "Chatter Cheetah API",
         "version": "0.1.0",
         "docs": "/docs",
-        "admin_dashboard": "/static/admin-dashboard.html",
     }
 

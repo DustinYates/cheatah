@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
+import { formatSmartDateTime } from '../utils/dateFormat';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -118,33 +119,34 @@ export default function Dashboard() {
               <table className="leads-table">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Phone</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th className="col-name">Name</th>
+                    <th className="col-email">Email</th>
+                    <th className="col-phone">Phone</th>
+                    <th className="col-date">Date</th>
+                    <th className="col-status">Status</th>
+                    <th className="col-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {leads.map((lead) => (
                     <tr key={lead.id} className={getRowClassName(lead)}>
-                      <td>{lead.name || 'Unknown'}</td>
-                      <td>{lead.email || '-'}</td>
-                      <td>{lead.phone || '-'}</td>
-                      <td>{new Date(lead.created_at).toLocaleDateString()}</td>
-                      <td>
+                      <td className="col-name">{lead.name || 'Unknown'}</td>
+                      <td className="col-email">{lead.email || '-'}</td>
+                      <td className="col-phone">{lead.phone || '-'}</td>
+                      <td className="col-date">{formatSmartDateTime(lead.created_at)}</td>
+                      <td className="col-status">
                         <span className={`status-badge ${lead.status || 'new'}`}>
                           {lead.status || 'New'}
                         </span>
                       </td>
-                      <td className="actions-cell">
+                      <td className="actions-cell col-actions">
                         {(!lead.status || lead.status === 'new') ? (
                           <>
                             <button
                               className="btn-action btn-verify"
                               onClick={() => handleVerify(lead.id)}
                               disabled={actionLoading === lead.id}
+                              title="Mark as verified lead"
                             >
                               {actionLoading === lead.id ? '...' : '✓ Verify'}
                             </button>
@@ -152,6 +154,7 @@ export default function Dashboard() {
                               className="btn-action btn-unknown"
                               onClick={() => handleMarkUnknown(lead.id)}
                               disabled={actionLoading === lead.id}
+                              title="Mark as unknown/spam"
                             >
                               {actionLoading === lead.id ? '...' : '? Unknown'}
                             </button>
@@ -172,8 +175,9 @@ export default function Dashboard() {
                           className="btn-action btn-delete"
                           onClick={() => handleDelete(lead.id, lead.name)}
                           disabled={actionLoading === lead.id}
+                          title="Permanently delete this lead"
                         >
-                          {actionLoading === lead.id ? '...' : '✕ Delete'}
+                          {actionLoading === lead.id ? '...' : '✕'}
                         </button>
                       </td>
                     </tr>

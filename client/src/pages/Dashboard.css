@@ -45,7 +45,7 @@
 
 .leads-table th,
 .leads-table td {
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: 14px 16px;
   text-align: left;
   border-bottom: 1px solid var(--color-border);
 }
@@ -82,6 +82,45 @@
   opacity: 0.7;
 }
 
+/* Column-specific sizing */
+.leads-table th.col-name,
+.leads-table td.col-name {
+  width: 18%;
+  min-width: 120px;
+}
+
+.leads-table th.col-email,
+.leads-table td.col-email {
+  width: 22%;
+  min-width: 160px;
+}
+
+.leads-table th.col-phone,
+.leads-table td.col-phone {
+  width: 15%;
+  min-width: 120px;
+}
+
+.leads-table th.col-date,
+.leads-table td.col-date {
+  width: 20%;
+  min-width: 180px;
+  white-space: nowrap;
+}
+
+.leads-table th.col-status,
+.leads-table td.col-status {
+  width: 10%;
+  min-width: 90px;
+}
+
+.leads-table th.col-actions,
+.leads-table td.col-actions {
+  width: 15%;
+  min-width: 180px;
+  text-align: right;
+}
+
 /* Status Badges */
 .status-badge {
   display: inline-block;
@@ -107,24 +146,29 @@
   color: #f57c00;
 }
 
-/* Action Buttons */
+/* Action Buttons - Enhanced */
 .actions-cell {
   white-space: nowrap;
+  text-align: right;
 }
 
 .btn-action {
-  padding: 6px 12px;
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   font-size: var(--font-size-xs);
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
-  margin-right: 8px;
+  margin-left: 6px;
+  line-height: 1.2;
 }
 
-.btn-action:last-child {
-  margin-right: 0;
+.btn-action:first-child {
+  margin-left: 0;
 }
 
 .btn-action:disabled {
@@ -132,35 +176,49 @@
   cursor: not-allowed;
 }
 
+/* Verify/Sync button - Green theme */
 .btn-verify {
   background: #e8f5e9;
-  color: #388e3c;
+  color: #2e7d32;
+  border-color: #c8e6c9;
 }
 
 .btn-verify:hover:not(:disabled) {
   background: #c8e6c9;
+  border-color: #a5d6a7;
+  transform: translateY(-1px);
 }
 
+/* Unknown button - Orange theme */
 .btn-unknown {
   background: #fff3e0;
-  color: #f57c00;
+  color: #e65100;
+  border-color: #ffe0b2;
 }
 
 .btn-unknown:hover:not(:disabled) {
   background: #ffe0b2;
+  border-color: #ffcc80;
+  transform: translateY(-1px);
 }
 
+/* Delete button - Red theme */
 .btn-delete {
   background: #ffebee;
   color: #c62828;
+  border-color: #ffcdd2;
 }
 
 .btn-delete:hover:not(:disabled) {
   background: #ffcdd2;
+  border-color: #ef9a9a;
+  transform: translateY(-1px);
 }
 
 .action-done {
-  color: var(--color-text-muted);
+  color: var(--color-text-light);
+  font-size: var(--font-size-xs);
+  padding: 6px 10px;
 }
 
 /* Empty State */
@@ -190,6 +248,23 @@
 }
 
 /* Responsive */
+@media (max-width: 768px) {
+  .leads-table {
+    min-width: 700px;
+  }
+
+  .leads-table th,
+  .leads-table td {
+    padding: 10px 12px;
+    font-size: var(--font-size-xs);
+  }
+
+  .btn-action {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+  }
+}
+
 @media (min-width: 1024px) {
   .dashboard-grid {
     grid-template-columns: 1fr;

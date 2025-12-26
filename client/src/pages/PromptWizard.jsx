@@ -60,7 +60,21 @@ export default function PromptWizard() {
   };
 
   // Define optional steps that allow empty answers
-  const optionalSteps = ['anything_else', 'faq', 'policies', 'requirements'];
+  const optionalSteps = [
+    'anything_else', 
+    // Class URL can be empty
+    'class_url',
+    // Individual policy questions (all optional)
+    'cancellation_policy',
+    'refund_policy', 
+    'booking_requirements',
+    'other_policies',
+    // Individual requirement questions (all optional)
+    'age_requirements',
+    'equipment_needed',
+    'prerequisites',
+    'other_requirements',
+  ];
   
   const submitAnswer = async (answer) => {
     // Block empty answers for required text questions only
@@ -348,16 +362,22 @@ export default function PromptWizard() {
       </div>
 
       {/* Preview Panel (shows collected data) */}
-      {Object.keys(collectedData).length > 0 && (
+      {Object.keys(collectedData).filter(k => !k.startsWith('_') && !k.startsWith('has_')).length > 0 && (
         <div className="preview-panel">
           <h3>📋 Collected Information</h3>
           <div className="collected-data">
-            {Object.entries(collectedData).map(([key, value]) => (
-              <div key={key} className="data-item">
-                <span className="data-label">{formatLabel(key)}:</span>
-                <span className="data-value">{formatValue(key, value)}</span>
-              </div>
-            ))}
+            {Object.entries(collectedData)
+              .filter(([key]) => !key.startsWith('_') && !key.startsWith('has_'))
+              .map(([key, value]) => {
+                const formattedValue = formatValue(key, value);
+                if (formattedValue === null) return null;
+                return (
+                  <div key={key} className="data-item">
+                    <span className="data-label">{formatLabel(key)}:</span>
+                    <span className="data-value">{formattedValue}</span>
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}
@@ -371,17 +391,30 @@ function formatLabel(key) {
     business_name: 'Business Name',
     industry: 'Industry',
     location: 'Location',
+    locations: 'Locations',
     phone_number: 'Phone',
     website_url: 'Website',
     business_hours: 'Hours',
+    pool_hours: 'Pool Hours',
+    classes: 'Classes',
+    services_list: 'Services',
     services: 'Services',
     pricing: 'Pricing',
+    faqs: 'FAQs',
     faq: 'FAQ',
     policies: 'Policies',
     requirements: 'Requirements',
     tone: 'Tone',
     lead_timing: 'Lead Capture',
     anything_else: 'Additional',
+    cancellation_policy: 'Cancellation',
+    refund_policy: 'Refund',
+    booking_requirements: 'Booking Req.',
+    other_policies: 'Other Policies',
+    age_requirements: 'Age Req.',
+    equipment_needed: 'Equipment',
+    prerequisites: 'Prerequisites',
+    other_requirements: 'Other Req.',
   };
   return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -397,9 +430,47 @@ function formatValue(key, value) {
     };
     return tones[value] || value;
   }
-  // Truncate long values
-  if (value && value.length > 100) {
+  
+  // Handle arrays (locations, classes, services_list, faqs, pool_hours)
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '-';
+    
+    // For locations array (simple strings)
+    if (key === 'locations') {
+      return value.filter(v => v).map((loc, i) => `${i + 1}) ${loc}`).join('; ');
+    }
+    
+    // For classes array [{name, url}]
+    if (key === 'classes') {
+      return value.map(c => c.url ? `${c.name} (${c.url})` : c.name).join('; ');
+    }
+    
+    // For services_list array [{name, pitch}]
+    if (key === 'services_list') {
+      return value.map(s => s.name).join(', ');
+    }
+    
+    // For faqs array [{question, answer}]
+    if (key === 'faqs') {
+      return `${value.length} FAQ${value.length !== 1 ? 's' : ''}`;
+    }
+    
+    // For pool_hours array [{name, hours}]
+    if (key === 'pool_hours') {
+      return value.map(p => `${p.name}: ${p.hours}`).join('; ');
+    }
+    
+    // Generic array handling
+    return value.length + ' items';
+  }
+  
+  // Skip internal/temporary fields
+  if (key.startsWith('_')) return null;
+  
+  // Truncate long string values
+  if (typeof value === 'string' && value.length > 100) {
     return value.substring(0, 100) + '...';
   }
+  
   return value || '-';
 }

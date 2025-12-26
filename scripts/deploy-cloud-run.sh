@@ -66,7 +66,10 @@ DEPLOY_CMD="gcloud run deploy ${SERVICE_NAME} \
   --set-env-vars=REDIS_ENABLED=false \
   --set-env-vars=TWILIO_WEBHOOK_URL_BASE=https://${SERVICE_NAME}-900139201687.${REGION}.run.app \
   --set-secrets=JWT_SECRET_KEY=jwt-secret:latest \
-  --set-secrets=GEMINI_API_KEY=gemini-api-key:latest"
+  --set-secrets=GEMINI_API_KEY=gemini-api-key:latest \
+  --set-secrets=GMAIL_CLIENT_ID=gmail-client-id:latest \
+  --set-secrets=GMAIL_CLIENT_SECRET=gmail-client-secret:latest \
+  --set-env-vars=GMAIL_PUBSUB_TOPIC=projects/${GCP_PROJECT}/topics/gmail-push-notifications"
 
 # Add Cloud SQL connection if specified
 if [ -n "${CLOUD_SQL_INSTANCE}" ]; then

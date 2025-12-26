@@ -191,8 +191,8 @@ class LeadService:
     async def delete_lead(self, tenant_id: int, lead_id: int) -> bool:
         """Delete a lead by ID.
         
-        Before deleting, nullifies any contact's lead_id that references this lead
-        to prevent foreign key constraint violations.
+        Before deleting, nullifies any contact's lead_id and email_conversations.lead_id
+        that references this lead to prevent foreign key constraint violations.
         
         Uses raw SQL to avoid ORM relationship loading which would query
         non-existent columns in the Contact model.
@@ -215,6 +215,13 @@ class LeadService:
         # Nullify any contact's lead_id that references this lead using raw SQL
         await self.session.execute(
             text("UPDATE contacts SET lead_id = NULL WHERE tenant_id = :tenant_id AND lead_id = :lead_id"),
+            {"tenant_id": tenant_id, "lead_id": lead_id}
+        )
+        
+        # Nullify any email_conversation's lead_id that references this lead using raw SQL
+        # This prevents the foreign key constraint violation on email_conversations_lead_id_fkey
+        await self.session.execute(
+            text("UPDATE email_conversations SET lead_id = NULL WHERE tenant_id = :tenant_id AND lead_id = :lead_id"),
             {"tenant_id": tenant_id, "lead_id": lead_id}
         )
         

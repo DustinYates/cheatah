@@ -41,6 +41,7 @@ dependencies = [
     "pytz>=2023.3", # For timezone handling in business hours
     "bcrypt>=5.0.0",
     "google-genai>=1.55.0",
+    "phonenumbers>=8.13.0", # For phone number parsing and E.164 formatting
     # Gmail API (Email Responder)
     "google-api-python-client>=2.100.0",
     "google-auth-oauthlib>=1.1.0",

@@ -261,3 +261,86 @@ Call Ending:
         
         return composed_prompt
 
+    async def compose_prompt_chat(
+        self, tenant_id: int | None, context: dict | None = None
+    ) -> str | None:
+        """Compose chat-specific prompt with contact collection context.
+        
+        Chat prompts are optimized for:
+        - Natural, conversational web chat interactions
+        - Context-aware contact information collection
+        - Progressive, non-pushy lead capture
+        - One-question-at-a-time approach
+        
+        Args:
+            tenant_id: Tenant ID (None for global)
+            context: Optional context dict that may include:
+                - collected_name: bool - Whether user's name has been collected
+                - collected_email: bool - Whether user's email has been collected
+                - collected_phone: bool - Whether user's phone has been collected
+                - turn_count: int - Number of turns in conversation
+                
+        Returns:
+            Composed prompt string with chat-specific instructions, or None if no prompt is configured
+        """
+        base_prompt = await self.compose_prompt(tenant_id, context)
+        
+        if base_prompt is None:
+            return None
+        
+        # Build contact collection context based on what's been collected
+        contact_context = ""
+        if context:
+            collected_name = context.get("collected_name", False)
+            collected_email = context.get("collected_email", False)
+            collected_phone = context.get("collected_phone", False)
+            turn_count = context.get("turn_count", 0)
+            
+            contact_status = []
+            if collected_name:
+                contact_status.append("name")
+            if collected_email:
+                contact_status.append("email")
+            if collected_phone:
+                contact_status.append("phone")
+            
+            if contact_status:
+                contact_context = f"\n\nCURRENT CONVERSATION STATUS:\n"
+                contact_context += f"- Contact information collected: {', '.join(contact_status)}\n"
+                contact_context += f"- Do not ask for information you already have\n"
+                
+                # Guide on what to ask for next
+                if not collected_email and not collected_phone:
+                    contact_context += f"- Consider naturally asking for email OR phone when contextually appropriate\n"
+                elif collected_email and not collected_phone:
+                    contact_context += f"- If helpful, you can ask if they'd like to share phone number as well\n"
+                elif collected_phone and not collected_email:
+                    contact_context += f"- If helpful, you can ask if they'd like to share email as well\n"
+                
+                if (collected_email or collected_phone) and not collected_name:
+                    contact_context += f"- You can politely ask for their name once if it would be helpful\n"
+            else:
+                # No contact info collected yet
+                if turn_count >= 2:  # After a few exchanges
+                    contact_context = f"\n\nCURRENT CONVERSATION STATUS:\n"
+                    contact_context += f"- No contact information collected yet\n"
+                    contact_context += f"- Consider naturally asking for email OR phone when contextually appropriate (after answering questions, when discussing services, etc.)\n"
+        
+        chat_instructions = """
+        
+WEB CHAT COMMUNICATION STYLE:
+
+Your Approach:
+- Use natural, conversational language appropriate for web chat
+- Balance being helpful with being concise - provide enough detail to be useful
+- Ask ONE question at a time to avoid overwhelming the customer
+- Follow up questions should feel natural and conversational
+
+Contact Information Collection:
+- Remember to collect contact information naturally during the conversation
+- Only ask when it makes sense contextually (after answering questions, discussing services, etc.)
+- Follow the progressive collection pattern described in your base instructions
+- Be helpful and friendly, never pushy or salesy"""
+        
+        return base_prompt + contact_context + chat_instructions
+

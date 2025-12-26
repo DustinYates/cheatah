@@ -210,3 +210,5 @@ gcloud run deploy chattercheatah --source . --region us-central1 --project chatb
 - `DEPLOYMENT.md` — Cloud Run deployment, secrets, and troubleshooting
 - `docs/EMAIL_RESPONDER_SETUP.md` — Gmail email responder configuration
 - `docs/VOICE_ASSISTANT_ROADMAP.md` — Voice assistant implementation plan
+- `docs/tenant_onboarding.md` — tenant onboarding runbook (repeatable process + examples)
+- `docs/config_matrix.md` — configuration/secrets matrix (global vs per-tenant)

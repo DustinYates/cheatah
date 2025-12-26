@@ -60,16 +60,39 @@ class InterviewStep(str, Enum):
     BUSINESS_NAME = "business_name"
     INDUSTRY = "industry"
     LOCATION = "location"
+    LOCATION_ADDITIONAL = "location_additional"  # "Do you have more locations?"
+    LOCATION_NEXT = "location_next"  # For collecting additional locations
     PHONE = "phone"
     WEBSITE = "website"
+    # Class/program collection
+    CLASSES_LIST = "classes_list"  # "What classes do you offer?"
+    CLASS_URL = "class_url"  # "What's the URL for [class]?"
+    CLASSES_MORE = "classes_more"  # "Any more classes?"
     HOURS = "hours"
+    # Pool-specific hours
+    POOL_HOURS_CHECK = "pool_hours_check"  # "Do you have pool-specific hours?"
+    POOL_NAME = "pool_name"  # "What's the name of this pool?"
+    POOL_HOURS = "pool_hours"  # "What are the hours for [pool]?"
+    POOL_MORE = "pool_more"  # "Any more pools?"
     SERVICES = "services"
+    SERVICE_PITCH = "service_pitch"  # "What's the sales pitch for [service]?"
+    SERVICES_MORE = "services_more"  # "Any more services to describe?"
     PRICING = "pricing"
-    FAQ = "faq"
-    POLICIES = "policies"
-    REQUIREMENTS = "requirements"
+    # Interactive FAQ collection
+    FAQ_QUESTION = "faq_question"  # "What's a common question customers ask?"
+    FAQ_ANSWER = "faq_answer"  # "What's your answer to that?"
+    FAQ_MORE = "faq_more"  # "Any more FAQs?"
+    # Individual policy questions
+    CANCELLATION_POLICY = "cancellation_policy"
+    REFUND_POLICY = "refund_policy"
+    BOOKING_REQUIREMENTS = "booking_requirements"
+    OTHER_POLICIES = "other_policies"
+    # Individual requirement questions
+    AGE_REQUIREMENTS = "age_requirements"
+    EQUIPMENT_NEEDED = "equipment_needed"
+    PREREQUISITES = "prerequisites"
+    OTHER_REQUIREMENTS = "other_requirements"
     TONE = "tone"
-    LEAD_TIMING = "lead_timing"
     ANYTHING_ELSE = "anything_else"
     COMPLETE = "complete"
 
@@ -90,6 +113,20 @@ INTERVIEW_QUESTIONS = {
         "field": "location",
         "type": "text"
     },
+    InterviewStep.LOCATION_ADDITIONAL: {
+        "question": "Do you have additional locations?",
+        "field": "has_additional_locations",
+        "type": "choice",
+        "choices": [
+            {"value": "yes", "label": "Yes", "description": "I have more locations to add"},
+            {"value": "no", "label": "No", "description": "This is my only location"},
+        ]
+    },
+    InterviewStep.LOCATION_NEXT: {
+        "question": "What's the address of your next location?",
+        "field": "location_next",
+        "type": "text"
+    },
     InterviewStep.PHONE: {
         "question": "What's the best phone number for customers to reach you?",
         "field": "phone_number",
@@ -100,34 +137,171 @@ INTERVIEW_QUESTIONS = {
         "field": "website_url",
         "type": "text"
     },
+    # Class/program collection
+    InterviewStep.CLASSES_LIST: {
+        "question": """Which classes and programs do you offer? Please list all levels you currently run (one per line). If you're not sure, start with the age groups you serve.
+
+Examples by age group:
+• Infant (3 months–36 months)
+• Child (3 years–11 years)
+• Teen (12 years–17 years)
+• Adult (18+)
+
+Example class levels:
+• Tadpole, Swimboree, Seahorse, Starfish, Minnow
+• Turtle 1, Turtle 2, Shark 1, Shark 2
+• Young Adult Level 1/2/3, Adult Level 1/2/3
+
+Specialty programs:
+• Private Lessons
+• Adaptive Aquatics / Special Needs Lessons
+• Swim Team / Barracudas Program
+• Stroke Development
+• Water Safety / Survival Skills""",
+        "field": "class_name",
+        "type": "text"
+    },
+    InterviewStep.CLASS_URL: {
+        "question": "What's the registration or signup URL for this class? (Leave blank if none)",
+        "field": "class_url",
+        "type": "text"
+    },
+    InterviewStep.CLASSES_MORE: {
+        "question": "Do you have other classes or programs to add?",
+        "field": "has_more_classes",
+        "type": "choice",
+        "choices": [
+            {"value": "yes", "label": "Yes", "description": "I have more classes to add"},
+            {"value": "no", "label": "No", "description": "That's all my classes"},
+        ]
+    },
     InterviewStep.HOURS: {
-        "question": "What are your business hours? You can list them by day (e.g., Mon-Fri 9am-6pm, Sat 10am-4pm, Sun Closed)",
+        "question": "What are your general business hours? (e.g., Mon-Fri 9am-6pm, Sat 10am-4pm, Sun Closed)",
         "field": "business_hours",
         "type": "text"
     },
-    InterviewStep.SERVICES: {
-        "question": "What services or products do you offer? List your main offerings.",
-        "field": "services",
+    # Pool-specific hours
+    InterviewStep.POOL_HOURS_CHECK: {
+        "question": "Do you have specific pool hours that differ from your business hours?",
+        "field": "has_pool_hours",
+        "type": "choice",
+        "choices": [
+            {"value": "yes", "label": "Yes", "description": "Our pool hours are different from business hours"},
+            {"value": "no", "label": "No", "description": "Pool hours match our business hours"},
+            {"value": "skip", "label": "Not Applicable", "description": "We don't have pools"},
+        ]
+    },
+    InterviewStep.POOL_NAME: {
+        "question": "What's the pool name/identifier and the facility/location? (Example: 'LA Fitness Cypress – 12304 Barker Cypress Rd., Cypress, TX 77433' or 'LA Fitness Langham Creek off FM 529')",
+        "field": "pool_name",
         "type": "text"
     },
+    InterviewStep.POOL_HOURS: {
+        "question": "What are the hours for this pool?",
+        "field": "pool_hours_value",
+        "type": "text"
+    },
+    InterviewStep.POOL_MORE: {
+        "question": "Do you have another pool with different hours?",
+        "field": "has_more_pools",
+        "type": "choice",
+        "choices": [
+            {"value": "yes", "label": "Yes", "description": "I have more pools to add"},
+            {"value": "no", "label": "No", "description": "That's all my pools"},
+        ]
+    },
+    InterviewStep.SERVICES: {
+        "question": "What services or products do you offer? (List one main service, e.g., 'Private Swim Lessons')",
+        "field": "service_name",
+        "type": "text"
+    },
+    InterviewStep.SERVICE_PITCH: {
+        "question": "What's your sales pitch for this service? What makes it special or why should customers choose it?",
+        "field": "service_pitch_value",
+        "type": "text"
+    },
+    InterviewStep.SERVICES_MORE: {
+        "question": "Do you have other services to describe?",
+        "field": "has_more_services",
+        "type": "choice",
+        "choices": [
+            {"value": "yes", "label": "Yes", "description": "I have more services to add"},
+            {"value": "no", "label": "No", "description": "That's all my services"},
+        ]
+    },
     InterviewStep.PRICING: {
-        "question": "Can you share your pricing or price ranges? (e.g., 'Private lessons: $50/session, Group classes: $25/session')",
+        "question": "Can you share your pricing or price ranges? Please include monthly tuition examples (e.g., 1x/week ≈ $140/month; 2x/week ≈ $266/month; registration fee, sibling/multi-class discounts if applicable). Example formats: '1x/week: $35/lesson (~$140/month)' or 'Registration fee: $60 per swimmer / $90 family max'.",
         "field": "pricing",
         "type": "text"
     },
-    InterviewStep.FAQ: {
-        "question": "What questions do customers ask most frequently? List a few common ones and their answers.",
-        "field": "faq",
+    # Interactive FAQ collection
+    InterviewStep.FAQ_QUESTION: {
+        "question": "What's a common question that customers ask? (e.g., 'Do I need to bring my own goggles?')",
+        "field": "faq_question_value",
         "type": "text"
     },
-    InterviewStep.POLICIES: {
-        "question": "Do you have any important policies customers should know about? (cancellation policy, refund policy, booking requirements, etc.)",
-        "field": "policies",
+    InterviewStep.FAQ_ANSWER: {
+        "question": "What's your answer to that question?",
+        "field": "faq_answer_value",
         "type": "text"
     },
-    InterviewStep.REQUIREMENTS: {
-        "question": "Are there any requirements for your services? (age limits, equipment needed, prerequisites, etc.)",
-        "field": "requirements",
+    InterviewStep.FAQ_MORE: {
+        "question": "Any other FAQ you'd like included for families? Common FAQs include: makeup classes/reschedules, missed class policy, water temperature, what to bring, diaper policy, instructor qualifications, group size ratios, trial/observation policy, and private lesson availability.",
+        "field": "has_more_faqs",
+        "type": "choice",
+        "choices": [
+            {"value": "yes", "label": "Yes", "description": "I have more FAQs to add"},
+            {"value": "no", "label": "No", "description": "That's all my FAQs"},
+        ]
+    },
+    # Individual Policy Questions
+    InterviewStep.CANCELLATION_POLICY: {
+        "question": "What is your cancellation/withdrawal policy? Include required notice and how it relates to the billing cycle (example: '30-day notice required; submit before the 20th to avoid next month's billing' or 'cancel one month before the last billing cycle').",
+        "field": "cancellation_policy",
+        "type": "text"
+    },
+    InterviewStep.REFUND_POLICY: {
+        "question": "What is your refund policy? (e.g., 'Full refund within 7 days', 'No refunds, store credit only', etc.)",
+        "field": "refund_policy",
+        "type": "text"
+    },
+    InterviewStep.BOOKING_REQUIREMENTS: {
+        "question": "Are there any booking or scheduling requirements? (e.g., 'Must book 48 hours in advance', 'Deposit required', etc.)",
+        "field": "booking_requirements",
+        "type": "text"
+    },
+    InterviewStep.OTHER_POLICIES: {
+        "question": "Any other policies customers should know about? (late fees, dress code, etc.)",
+        "field": "other_policies",
+        "type": "text"
+    },
+    # Individual Requirement Questions
+    InterviewStep.AGE_REQUIREMENTS: {
+        "question": "Are there any age requirements for your services? (e.g., 'Must be 18+', 'Children under 12 require adult supervision', etc.)",
+        "field": "age_requirements",
+        "type": "text"
+    },
+    InterviewStep.EQUIPMENT_NEEDED: {
+        "question": """What equipment or items should swimmers bring?
+
+Common items for swim schools:
+• Swimsuit
+• Towel
+• Swim cap (provided at first lesson? required for class?)
+• Goggles (required for which levels? optional for lower levels?)
+• Swim diapers for non-potty-trained swimmers (disposable + reusable?)
+• Optional tighter-fitting cap for long/thick hair""",
+        "field": "equipment_needed",
+        "type": "text"
+    },
+    InterviewStep.PREREQUISITES: {
+        "question": "Are there any prerequisites or prior experience required—or is placement based on age and comfort level? (e.g., 'beginner-friendly; we place swimmers by age + water comfort + floating/submersion skills')",
+        "field": "prerequisites",
+        "type": "text"
+    },
+    InterviewStep.OTHER_REQUIREMENTS: {
+        "question": "Any other requirements or things customers should know before their visit?",
+        "field": "other_requirements",
         "type": "text"
     },
     InterviewStep.TONE: {
@@ -167,11 +341,6 @@ INTERVIEW_QUESTIONS = {
             }
         ]
     },
-    InterviewStep.LEAD_TIMING: {
-        "question": "When should the chatbot ask visitors for their contact information (name and email)? For example: 'After answering their first question' or 'When they ask about pricing' or 'Only if they want to schedule something'",
-        "field": "lead_timing",
-        "type": "text"
-    },
     InterviewStep.ANYTHING_ELSE: {
         "question": "Is there anything else you'd like your chatbot to know or do? Any special instructions, phrases to use, topics to avoid, or other details?",
         "field": "anything_else",
@@ -179,23 +348,52 @@ INTERVIEW_QUESTIONS = {
     },
 }
 
-# Define the order of steps
+# Define the base order of steps (dynamic steps handled in submit_answer)
 STEP_ORDER = [
     InterviewStep.BUSINESS_NAME,
     InterviewStep.INDUSTRY,
     InterviewStep.LOCATION,
+    InterviewStep.LOCATION_ADDITIONAL,
+    # LOCATION_NEXT is dynamic - loops back to LOCATION_ADDITIONAL
     InterviewStep.PHONE,
     InterviewStep.WEBSITE,
+    InterviewStep.CLASSES_LIST,
+    InterviewStep.CLASS_URL,
+    InterviewStep.CLASSES_MORE,
+    # CLASSES_LIST/CLASS_URL loop back to CLASSES_MORE
     InterviewStep.HOURS,
+    InterviewStep.POOL_HOURS_CHECK,
+    # POOL_NAME, POOL_HOURS, POOL_MORE are dynamic loops
     InterviewStep.SERVICES,
+    InterviewStep.SERVICE_PITCH,
+    InterviewStep.SERVICES_MORE,
+    # SERVICES/SERVICE_PITCH loop back to SERVICES_MORE
     InterviewStep.PRICING,
-    InterviewStep.FAQ,
-    InterviewStep.POLICIES,
-    InterviewStep.REQUIREMENTS,
+    InterviewStep.FAQ_QUESTION,
+    InterviewStep.FAQ_ANSWER,
+    InterviewStep.FAQ_MORE,
+    # FAQ_QUESTION/FAQ_ANSWER loop back to FAQ_MORE
+    # Individual policy questions
+    InterviewStep.CANCELLATION_POLICY,
+    InterviewStep.REFUND_POLICY,
+    InterviewStep.BOOKING_REQUIREMENTS,
+    InterviewStep.OTHER_POLICIES,
+    # Individual requirement questions
+    InterviewStep.AGE_REQUIREMENTS,
+    InterviewStep.EQUIPMENT_NEEDED,
+    InterviewStep.PREREQUISITES,
+    InterviewStep.OTHER_REQUIREMENTS,
     InterviewStep.TONE,
-    InterviewStep.LEAD_TIMING,
     InterviewStep.ANYTHING_ELSE,
 ]
+
+# Steps that are part of loops (not in main order for progress calculation)
+LOOP_STEPS = {
+    InterviewStep.LOCATION_NEXT,
+    InterviewStep.POOL_NAME,
+    InterviewStep.POOL_HOURS,
+    InterviewStep.POOL_MORE,
+}
 
 
 class InterviewState(BaseModel):
@@ -269,6 +467,126 @@ async def start_interview(
     )
 
 
+def get_next_step_and_question(
+    current_step: InterviewStep,
+    answer: str,
+    collected_data: dict,
+) -> tuple[InterviewStep, dict, str | None]:
+    """
+    Determine the next step based on current step and answer.
+    Returns (next_step, question_data, dynamic_question_override).
+    """
+    # Handle dynamic branching based on current step and answer
+    
+    # Location branching
+    if current_step == InterviewStep.LOCATION_ADDITIONAL:
+        if answer == "yes":
+            # Initialize locations list if needed
+            if "locations" not in collected_data:
+                collected_data["locations"] = [collected_data.get("location", "")]
+            return InterviewStep.LOCATION_NEXT, INTERVIEW_QUESTIONS[InterviewStep.LOCATION_NEXT], None
+        else:
+            return InterviewStep.PHONE, INTERVIEW_QUESTIONS[InterviewStep.PHONE], None
+    
+    if current_step == InterviewStep.LOCATION_NEXT:
+        # Store the additional location
+        if "locations" not in collected_data:
+            collected_data["locations"] = [collected_data.get("location", "")]
+        collected_data["locations"].append(answer)
+        # Ask if there are more locations
+        return InterviewStep.LOCATION_ADDITIONAL, INTERVIEW_QUESTIONS[InterviewStep.LOCATION_ADDITIONAL], None
+    
+    # Classes branching
+    if current_step == InterviewStep.CLASSES_LIST:
+        # Store the class name temporarily
+        collected_data["_current_class_name"] = answer
+        return InterviewStep.CLASS_URL, INTERVIEW_QUESTIONS[InterviewStep.CLASS_URL], f"What's the registration or signup URL for '{answer}'? (Leave blank if none)"
+    
+    if current_step == InterviewStep.CLASS_URL:
+        # Store the class with its URL
+        if "classes" not in collected_data:
+            collected_data["classes"] = []
+        class_name = collected_data.pop("_current_class_name", "Unknown Class")
+        collected_data["classes"].append({"name": class_name, "url": answer or ""})
+        return InterviewStep.CLASSES_MORE, INTERVIEW_QUESTIONS[InterviewStep.CLASSES_MORE], None
+    
+    if current_step == InterviewStep.CLASSES_MORE:
+        if answer == "yes":
+            return InterviewStep.CLASSES_LIST, INTERVIEW_QUESTIONS[InterviewStep.CLASSES_LIST], "What's the name of the next class or program?"
+        else:
+            return InterviewStep.HOURS, INTERVIEW_QUESTIONS[InterviewStep.HOURS], None
+    
+    # Pool hours branching
+    if current_step == InterviewStep.POOL_HOURS_CHECK:
+        if answer == "yes":
+            return InterviewStep.POOL_NAME, INTERVIEW_QUESTIONS[InterviewStep.POOL_NAME], None
+        else:
+            return InterviewStep.SERVICES, INTERVIEW_QUESTIONS[InterviewStep.SERVICES], None
+    
+    if current_step == InterviewStep.POOL_NAME:
+        collected_data["_current_pool_name"] = answer
+        return InterviewStep.POOL_HOURS, INTERVIEW_QUESTIONS[InterviewStep.POOL_HOURS], f"What are the hours for '{answer}'?"
+    
+    if current_step == InterviewStep.POOL_HOURS:
+        if "pool_hours" not in collected_data:
+            collected_data["pool_hours"] = []
+        pool_name = collected_data.pop("_current_pool_name", "Pool")
+        collected_data["pool_hours"].append({"name": pool_name, "hours": answer})
+        return InterviewStep.POOL_MORE, INTERVIEW_QUESTIONS[InterviewStep.POOL_MORE], None
+    
+    if current_step == InterviewStep.POOL_MORE:
+        if answer == "yes":
+            return InterviewStep.POOL_NAME, INTERVIEW_QUESTIONS[InterviewStep.POOL_NAME], "What's the pool name/identifier and the facility/location for the next pool?"
+        else:
+            return InterviewStep.SERVICES, INTERVIEW_QUESTIONS[InterviewStep.SERVICES], None
+    
+    # Services branching
+    if current_step == InterviewStep.SERVICES:
+        collected_data["_current_service_name"] = answer
+        return InterviewStep.SERVICE_PITCH, INTERVIEW_QUESTIONS[InterviewStep.SERVICE_PITCH], f"What's your sales pitch for '{answer}'? What makes it special or why should customers choose it?"
+    
+    if current_step == InterviewStep.SERVICE_PITCH:
+        if "services_list" not in collected_data:
+            collected_data["services_list"] = []
+        service_name = collected_data.pop("_current_service_name", "Service")
+        collected_data["services_list"].append({"name": service_name, "pitch": answer})
+        return InterviewStep.SERVICES_MORE, INTERVIEW_QUESTIONS[InterviewStep.SERVICES_MORE], None
+    
+    if current_step == InterviewStep.SERVICES_MORE:
+        if answer == "yes":
+            return InterviewStep.SERVICES, INTERVIEW_QUESTIONS[InterviewStep.SERVICES], "What's the name of your next service or product?"
+        else:
+            return InterviewStep.PRICING, INTERVIEW_QUESTIONS[InterviewStep.PRICING], None
+    
+    # FAQ branching
+    if current_step == InterviewStep.FAQ_QUESTION:
+        collected_data["_current_faq_question"] = answer
+        return InterviewStep.FAQ_ANSWER, INTERVIEW_QUESTIONS[InterviewStep.FAQ_ANSWER], None
+    
+    if current_step == InterviewStep.FAQ_ANSWER:
+        if "faqs" not in collected_data:
+            collected_data["faqs"] = []
+        faq_question = collected_data.pop("_current_faq_question", "Question")
+        collected_data["faqs"].append({"question": faq_question, "answer": answer})
+        return InterviewStep.FAQ_MORE, INTERVIEW_QUESTIONS[InterviewStep.FAQ_MORE], None
+    
+    if current_step == InterviewStep.FAQ_MORE:
+        if answer == "yes":
+            return InterviewStep.FAQ_QUESTION, INTERVIEW_QUESTIONS[InterviewStep.FAQ_QUESTION], "What's another common question customers ask?"
+        else:
+            return InterviewStep.CANCELLATION_POLICY, INTERVIEW_QUESTIONS[InterviewStep.CANCELLATION_POLICY], None
+    
+    # Default: move to next step in order
+    if current_step in STEP_ORDER:
+        current_index = STEP_ORDER.index(current_step)
+        if current_index < len(STEP_ORDER) - 1:
+            next_step = STEP_ORDER[current_index + 1]
+            return next_step, INTERVIEW_QUESTIONS[next_step], None
+    
+    # If we reach here, interview is complete
+    return InterviewStep.COMPLETE, {}, None
+
+
 @router.post("/interview/answer", response_model=InterviewResponse)
 async def submit_answer(
     request: InterviewAnswerRequest,
@@ -277,16 +595,24 @@ async def submit_answer(
     """Submit an answer and get the next question."""
     current_step = InterviewStep(request.current_step)
     
-    # Store the answer
+    # Store the answer (for non-dynamic fields)
     collected_data = request.collected_data.copy()
-    field_name = INTERVIEW_QUESTIONS[current_step]["field"]
-    collected_data[field_name] = request.answer
+    if current_step in INTERVIEW_QUESTIONS:
+        field_name = INTERVIEW_QUESTIONS[current_step]["field"]
+        # Don't overwrite structured data with temporary field values
+        if not field_name.startswith("_") and field_name not in ["class_name", "class_url", "service_name", "service_pitch_value", "faq_question_value", "faq_answer_value", "pool_name", "pool_hours_value", "location_next", "has_additional_locations", "has_more_classes", "has_pool_hours", "has_more_pools", "has_more_services", "has_more_faqs"]:
+            collected_data[field_name] = request.answer
     
-    # Find next step
-    current_index = STEP_ORDER.index(current_step)
+    # Get next step with dynamic branching
+    next_step, question_data, dynamic_question = get_next_step_and_question(
+        current_step, request.answer, collected_data
+    )
     
-    if current_index >= len(STEP_ORDER) - 1:
-        # Interview complete
+    # Check if interview is complete
+    if next_step == InterviewStep.COMPLETE or current_step == InterviewStep.ANYTHING_ELSE:
+        # Make sure to store the last answer
+        if current_step == InterviewStep.ANYTHING_ELSE:
+            collected_data["anything_else"] = request.answer
         return InterviewResponse(
             current_step=InterviewStep.COMPLETE.value,
             question="Great! I have all the information I need. Click 'Generate Prompt' to create your chatbot prompt.",
@@ -297,15 +623,25 @@ async def submit_answer(
             progress=100,
         )
     
-    # Move to next step
-    next_step = STEP_ORDER[current_index + 1]
-    question_data = INTERVIEW_QUESTIONS[next_step]
-    progress = int(((current_index + 1) / len(STEP_ORDER)) * 100)
+    # Calculate progress based on main steps only
+    main_step_count = len([s for s in STEP_ORDER if s not in LOOP_STEPS])
+    if next_step in STEP_ORDER:
+        # Count how many main steps we've completed
+        next_index = STEP_ORDER.index(next_step)
+        completed_main_steps = len([s for s in STEP_ORDER[:next_index] if s not in LOOP_STEPS])
+        progress = int((completed_main_steps / main_step_count) * 100)
+    else:
+        # Loop step - estimate progress
+        progress = int((len([k for k in collected_data.keys() if not k.startswith("_")]) / 20) * 100)
+        progress = min(progress, 95)
+    
+    # Use dynamic question if provided, otherwise use static question
+    question = dynamic_question or question_data.get("question", "")
     
     return InterviewResponse(
         current_step=next_step.value,
-        question=question_data["question"],
-        question_type=question_data["type"],
+        question=question,
+        question_type=question_data.get("type", "text"),
         choices=question_data.get("choices"),
         collected_data=collected_data,
         is_complete=False,
@@ -335,61 +671,149 @@ Your communication style is: {tone_info['label']} - {tone_info['description']}.
 Key behaviors:
 - Always be helpful and accurate with information about the business
 - If you don't know something, say so honestly and offer to help find the answer
-- Collect customer name and email when appropriate ({data.get('lead_timing', 'after answering their initial question')})
 - Never make up information about services, pricing, or policies
-- Keep responses concise but thorough"""
+- Keep responses concise but thorough
+- Ask ONE question at a time to keep the conversation natural"""
 
-    # Build business info section
+    # Build business info section with multiple locations support
     business_info_parts = []
     if data.get("business_name"):
         business_info_parts.append(f"Business Name: {data['business_name']}")
     if data.get("industry"):
         business_info_parts.append(f"Type of Business: {data['industry']}")
-    if data.get("location"):
+    
+    # Handle multiple locations
+    locations = data.get("locations", [])
+    if locations and len(locations) > 1:
+        business_info_parts.append("Locations:")
+        for i, loc in enumerate(locations, 1):
+            if loc:
+                business_info_parts.append(f"  {i}) {loc}")
+    elif data.get("location"):
         business_info_parts.append(f"Location: {data['location']}")
+    
     if data.get("phone_number"):
         business_info_parts.append(f"Phone: {data['phone_number']}")
     if data.get("website_url"):
         business_info_parts.append(f"Website: {data['website_url']}")
+    
+    # Handle business hours with pool-specific hours
     if data.get("business_hours"):
-        business_info_parts.append(f"Hours: {data['business_hours']}")
+        business_info_parts.append(f"Business Hours: {data['business_hours']}")
+    
+    pool_hours = data.get("pool_hours", [])
+    if pool_hours:
+        business_info_parts.append("\nPool Hours:")
+        for pool in pool_hours:
+            if pool.get("name") and pool.get("hours"):
+                business_info_parts.append(f"  - {pool['name']}: {pool['hours']}")
     
     business_info_content = "\n".join(business_info_parts)
 
-    # Build services section
+    # Build classes section with registration URLs
+    classes_content = ""
+    classes = data.get("classes", [])
+    if classes:
+        classes_parts = ["CLASSES & PROGRAMS:"]
+        for cls in classes:
+            if cls.get("name"):
+                if cls.get("url"):
+                    classes_parts.append(f"- {cls['name']}: Register at {cls['url']}")
+                else:
+                    classes_parts.append(f"- {cls['name']}")
+        classes_content = "\n".join(classes_parts)
+
+    # Build services section with sales pitches
     services_content = ""
-    if data.get("services"):
-        services_content += f"Services/Products Offered:\n{data['services']}"
+    services_list = data.get("services_list", [])
+    if services_list:
+        services_parts = ["SERVICES & PRODUCTS:"]
+        for svc in services_list:
+            if svc.get("name"):
+                services_parts.append(f"\n{svc['name']}:")
+                if svc.get("pitch"):
+                    services_parts.append(f"  {svc['pitch']}")
+        services_content = "\n".join(services_parts)
+    
     if data.get("pricing"):
-        services_content += f"\n\nPricing:\n{data['pricing']}"
+        if services_content:
+            services_content += f"\n\nPRICING:\n{data['pricing']}"
+        else:
+            services_content = f"PRICING:\n{data['pricing']}"
 
-    # Build FAQ section
+    # Build FAQ section from structured FAQs
     faq_content = ""
-    if data.get("faq"):
-        faq_content = f"Frequently Asked Questions:\n{data['faq']}"
+    faqs = data.get("faqs", [])
+    if faqs:
+        faq_parts = ["FREQUENTLY ASKED QUESTIONS:"]
+        for faq in faqs:
+            if faq.get("question") and faq.get("answer"):
+                faq_parts.append(f"\nQ: {faq['question']}")
+                faq_parts.append(f"A: {faq['answer']}")
+        faq_content = "\n".join(faq_parts)
 
-    # Build policies section
+    # Build policies section from individual policy fields
     policies_content = ""
     policies_parts = []
-    if data.get("policies"):
-        policies_parts.append(f"Policies:\n{data['policies']}")
-    if data.get("requirements"):
-        policies_parts.append(f"Requirements:\n{data['requirements']}")
+    if data.get("cancellation_policy"):
+        policies_parts.append(f"Cancellation Policy: {data['cancellation_policy']}")
+    if data.get("refund_policy"):
+        policies_parts.append(f"Refund Policy: {data['refund_policy']}")
+    if data.get("booking_requirements"):
+        policies_parts.append(f"Booking Requirements: {data['booking_requirements']}")
+    if data.get("other_policies"):
+        policies_parts.append(f"Other Policies: {data['other_policies']}")
     if policies_parts:
-        policies_content = "\n\n".join(policies_parts)
+        policies_content = "POLICIES:\n" + "\n".join(policies_parts)
+    
+    # Build requirements section from individual requirement fields
+    requirements_content = ""
+    requirements_parts = []
+    if data.get("age_requirements"):
+        requirements_parts.append(f"Age Requirements: {data['age_requirements']}")
+    if data.get("equipment_needed"):
+        requirements_parts.append(f"Equipment/Items to Bring: {data['equipment_needed']}")
+    if data.get("prerequisites"):
+        requirements_parts.append(f"Prerequisites: {data['prerequisites']}")
+    if data.get("other_requirements"):
+        requirements_parts.append(f"Other Requirements: {data['other_requirements']}")
+    if requirements_parts:
+        requirements_content = "REQUIREMENTS:\n" + "\n".join(requirements_parts)
 
     # Build additional instructions
     additional_content = ""
     if data.get("anything_else"):
         additional_content = f"Additional Instructions:\n{data['anything_else']}"
 
-    # Lead capture instructions
-    lead_capture_content = f"""Lead Capture Instructions:
-- Required information to collect: Customer Name and Email
-- When to ask: {data.get('lead_timing', 'After answering their initial question or when they express interest')}
-- Be natural when asking for information - don't make it feel like a form
-- Example: "I'd be happy to help you with that! Could I get your name and email so I can send you more details?"
-"""
+    # Lead capture instructions - non-pushy, natural approach
+    lead_capture_content = """CONTACT INFORMATION COLLECTION:
+
+Goal: Collect customer's name and email/phone naturally during conversation.
+
+Guidelines:
+- Be helpful FIRST, collect info SECOND - always answer their question before asking for contact info
+- Don't be pushy - if they don't want to share, that's okay
+- Ask for ONE piece of info at a time (don't ask for name, email, AND phone all at once)
+- Make it feel conversational, not like filling out a form
+
+Progressive Collection Pattern:
+1. First, try to get email OR phone (whichever feels more natural)
+   - "Would you like me to send you more details? I can email them to you."
+   - "I'd be happy to have someone follow up with you. What's the best way to reach you?"
+2. If they provide email, you can optionally ask for phone:
+   - "Thanks! In case we need to reach you quickly, would you like to share a phone number too?"
+3. After getting contact info, ask for their name once:
+   - "And may I ask who I'm speaking with today?"
+
+Examples of GOOD (natural) approaches:
+- "That's a great question! I can send you our full pricing breakdown - what email should I use?"
+- "I'd love to help you find the right option. To follow up with you, could I get your email?"
+
+Examples of BAD (pushy) approaches:
+- "Before I answer, I'll need your name, email, and phone number."
+- "Please provide your contact information to continue."
+
+Remember: One piece of contact info is acceptable. Name + (email or phone) is ideal. Never make them feel pressured."""
 
     # Create the prompt bundle
     prompt_repo = PromptRepository(db)
@@ -409,19 +833,33 @@ Key behaviors:
         {"section_key": "business_info", "scope": "business_info", "content": business_info_content, "order": 1},
     ]
     
+    order_idx = 2
+    
+    if classes_content:
+        sections_data.append({"section_key": "classes", "scope": "business_info", "content": classes_content, "order": order_idx})
+        order_idx += 1
+    
     if services_content:
-        sections_data.append({"section_key": "services", "scope": "business_info", "content": services_content, "order": 2})
+        sections_data.append({"section_key": "services", "scope": "business_info", "content": services_content, "order": order_idx})
+        order_idx += 1
     
     if faq_content:
-        sections_data.append({"section_key": "faq", "scope": "faq", "content": faq_content, "order": 3})
+        sections_data.append({"section_key": "faq", "scope": "faq", "content": faq_content, "order": order_idx})
+        order_idx += 1
     
     if policies_content:
-        sections_data.append({"section_key": "policies", "scope": "custom", "content": policies_content, "order": 4})
+        sections_data.append({"section_key": "policies", "scope": "custom", "content": policies_content, "order": order_idx})
+        order_idx += 1
     
-    sections_data.append({"section_key": "lead_capture", "scope": "custom", "content": lead_capture_content, "order": 5})
+    if requirements_content:
+        sections_data.append({"section_key": "requirements", "scope": "custom", "content": requirements_content, "order": order_idx})
+        order_idx += 1
+    
+    sections_data.append({"section_key": "lead_capture", "scope": "custom", "content": lead_capture_content, "order": order_idx})
+    order_idx += 1
     
     if additional_content:
-        sections_data.append({"section_key": "additional", "scope": "custom", "content": additional_content, "order": 6})
+        sections_data.append({"section_key": "additional", "scope": "custom", "content": additional_content, "order": order_idx})
     
     # Save sections to database
     for section_data in sections_data:

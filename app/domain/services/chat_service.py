@@ -143,24 +143,51 @@ class ChatService:
                 )
                 lead_captured = True
 
-        # Check if we need to ask for contact info
+        # Check existing lead to see what contact info we have
+        existing_lead = await self.lead_service.get_lead_by_conversation(
+            tenant_id, conversation.id
+        )
+        
+        # Build context about collected contact info for prompt
+        collected_name = False
+        collected_email = False
+        collected_phone = False
+        
+        if existing_lead:
+            collected_name = bool(existing_lead.name)
+            collected_email = bool(existing_lead.email)
+            collected_phone = bool(existing_lead.phone)
+        elif lead_captured:
+            # Just captured in this turn
+            if user_name:
+                collected_name = True
+            if user_email:
+                collected_email = True
+            if user_phone:
+                collected_phone = True
+        
+        # Determine if we should suggest collecting contact info
+        # (but let the prompt handle it naturally, not with hardcoded messages)
         requires_contact_info = False
-        if not lead_captured and turn_count >= self.FOLLOW_UP_NUDGE_TURN:
-            # Check if we already have a lead for this conversation
-            existing_lead = await self.lead_service.get_lead_by_conversation(
-                tenant_id, conversation.id
-            )
-            if not existing_lead:
-                requires_contact_info = True
-
-        # Use core chat processing logic
+        if not (collected_email or collected_phone) and turn_count >= self.FOLLOW_UP_NUDGE_TURN:
+            requires_contact_info = True
+        
+        # Build prompt context with contact info status
+        prompt_context = {
+            "collected_name": collected_name,
+            "collected_email": collected_email,
+            "collected_phone": collected_phone,
+            "turn_count": turn_count,
+        }
+        
+        # Use core chat processing logic with chat-specific prompt method
         llm_response, llm_latency_ms = await self._process_chat_core(
             tenant_id=tenant_id,
             conversation_id=conversation.id,
             user_message=user_message,
             messages=messages,
-            system_prompt_method=self.prompt_service.compose_prompt,
-            requires_contact_info=requires_contact_info,
+            system_prompt_method=self.prompt_service.compose_prompt_chat,
+            prompt_context=prompt_context,
         )
 
         # Add assistant response
@@ -169,6 +196,7 @@ class ChatService:
         )
 
         # Try to extract contact info from conversation if no lead captured yet
+        # Check again after assistant response was added
         if not lead_captured:
             logger.debug(
                 f"Checking for existing lead - tenant_id={tenant_id}, conversation_id={conversation.id}"
@@ -223,15 +251,21 @@ class ChatService:
                         f"(tenant_id={tenant_id}, conversation_id={conversation.id})"
                     )
             else:
-                logger.debug(
-                    f"Lead already exists for conversation - tenant_id={tenant_id}, "
-                    f"conversation_id={conversation.id}, lead_id={existing_lead.id}"
-                )
+                    logger.debug(
+                        f"Lead already exists for conversation - tenant_id={tenant_id}, "
+                        f"conversation_id={conversation.id}, lead_id={existing_lead.id}"
+                    )
+        
+        # Check if we captured a lead after extraction
+        if not lead_captured:
+            existing_lead_after = await self.lead_service.get_lead_by_conversation(
+                tenant_id, conversation.id
+            )
+            if existing_lead_after:
+                lead_captured = True
 
-        # If we need contact info, append a nudge
+        # No hardcoded contact info nudge - let the LLM handle it naturally through the prompt
         final_response = llm_response
-        if requires_contact_info and not lead_captured:
-            final_response += "\n\nTo help you better, could you please provide your name and email or phone number?"
 
         return ChatResult(
             session_id=session_id,
@@ -278,16 +312,15 @@ class ChatService:
         system_prompt: str,
         messages: list[Message],
         current_user_message: str,
-        requires_contact_info: bool,
         additional_context: str | None = None,
     ) -> str:
         """Build conversation context for LLM.
         
         Args:
-            system_prompt: System prompt from tenant settings
+            system_prompt: System prompt from tenant settings (already includes contact collection guidance)
             messages: Previous messages in conversation
             current_user_message: Current user message
-            requires_contact_info: Whether we need to ask for contact info
+            additional_context: Additional context to add to prompt
             
         Returns:
             Full prompt string for LLM
@@ -307,12 +340,6 @@ class ChatService:
         if conversation_history:
             prompt_parts.append("\n\nConversation History:")
             prompt_parts.append("\n".join(conversation_history))
-        
-        if requires_contact_info:
-            prompt_parts.append(
-                "\n\nNote: If the user seems interested or asks about services/products, "
-                "politely ask for their name and contact information (email or phone) to help them better."
-            )
         
         if additional_context:
             prompt_parts.append(f"\n\n{additional_context}")
@@ -491,7 +518,7 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
         user_message: str,
         messages: list[Message],
         system_prompt_method,
-        requires_contact_info: bool = False,
+        prompt_context: dict | None = None,
         additional_context: str | None = None,
     ) -> tuple[str, float]:
         """Core chat processing logic (reusable for web and SMS).
@@ -501,8 +528,8 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             conversation_id: Conversation ID
             user_message: User's message
             messages: Previous messages in conversation
-            system_prompt_method: Method to get system prompt (compose_prompt or compose_prompt_sms)
-            requires_contact_info: Whether to ask for contact info
+            system_prompt_method: Method to get system prompt (compose_prompt, compose_prompt_chat, or compose_prompt_sms)
+            prompt_context: Optional context dict to pass to prompt method (e.g., contact info status)
             additional_context: Additional context to add to prompt
             
         Returns:
@@ -512,7 +539,10 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             ValueError: If no prompt is configured for the tenant
         """
         # Assemble prompt with conversation history
-        system_prompt = await system_prompt_method(tenant_id)
+        if prompt_context:
+            system_prompt = await system_prompt_method(tenant_id, prompt_context)
+        else:
+            system_prompt = await system_prompt_method(tenant_id)
         
         # Check if prompt is configured
         if system_prompt is None:
@@ -523,7 +553,7 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
         
         # Build conversation context for LLM
         conversation_context = self._build_conversation_context(
-            system_prompt, messages, user_message, requires_contact_info, additional_context
+            system_prompt, messages, user_message, additional_context
         )
 
         # Call LLM

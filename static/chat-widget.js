@@ -125,6 +125,85 @@
           widget.classList.add('cc-no-focus-outline');
         }
       }
+
+      // Apply icon settings
+      if (settings.icon) {
+        this.applyIconSettings(settings.icon);
+      }
+    },
+
+    applyIconSettings: function(iconSettings) {
+      const toggle = document.getElementById('cc-toggle');
+      const iconWrapper = toggle ? toggle.querySelector('.cc-icon-wrapper') : null;
+      const iconLabel = toggle ? toggle.querySelector('.cc-icon-label') : null;
+
+      if (!toggle) return;
+
+      // Apply icon size
+      const sizeMap = {
+        'small': '50px',
+        'medium': '60px',
+        'large': '75px',
+        'extra-large': '90px',
+        'custom': iconSettings.customSize || '60px'
+      };
+      const size = sizeMap[iconSettings.size] || '60px';
+      toggle.style.width = size;
+      toggle.style.height = size;
+
+      // Apply icon shape
+      const shapeMap = {
+        'circle': '50%',
+        'rounded-square': '20%',
+        'pill': '50px',
+        'square': '0',
+        'custom': iconSettings.customBorderRadius || '50%'
+      };
+      toggle.style.borderRadius = shapeMap[iconSettings.shape] || '50%';
+
+      // Apply icon type (emoji or image)
+      if (iconSettings.type === 'image' && iconSettings.imageUrl) {
+        // Load custom image
+        const img = new Image();
+        img.onload = () => {
+          if (iconWrapper) {
+            iconWrapper.innerHTML = '';
+            img.classList.add('cc-icon-image');
+            iconWrapper.appendChild(img);
+          }
+        };
+        img.onerror = () => {
+          // Fallback to emoji if enabled
+          if (iconSettings.fallbackToEmoji && iconWrapper) {
+            iconWrapper.textContent = iconSettings.emoji || '💬';
+          }
+        };
+        img.src = iconSettings.imageUrl;
+        img.alt = 'Chat';
+      } else {
+        // Use emoji
+        if (iconWrapper) {
+          iconWrapper.textContent = iconSettings.emoji || '💬';
+        }
+      }
+
+      // Apply label settings
+      if (iconSettings.showLabel && iconSettings.labelText) {
+        if (iconLabel) {
+          iconLabel.textContent = iconSettings.labelText;
+          iconLabel.style.display = 'block';
+          iconLabel.style.backgroundColor = iconSettings.labelBackgroundColor;
+          iconLabel.style.color = iconSettings.labelTextColor;
+          iconLabel.style.fontSize = iconSettings.labelFontSize;
+
+          // Position label based on labelPosition
+          toggle.setAttribute('data-label-position', iconSettings.labelPosition);
+        }
+      } else {
+        if (iconLabel) {
+          iconLabel.style.display = 'none';
+        }
+      }
     },
 
     createWidget: function() {
@@ -160,7 +239,8 @@
           </div>
         </div>
         <button class="cc-widget-toggle" id="cc-toggle" aria-label="Open chat">
-          💬
+          <span class="cc-icon-wrapper">💬</span>
+          <span class="cc-icon-label" style="display: none;"></span>
         </button>
       `;
       document.body.appendChild(widget);
@@ -208,9 +288,65 @@
           cursor: pointer;
           box-shadow: 0 2px 10px rgba(0,0,0,0.2);
           transition: transform 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          overflow: visible;
         }
         .cc-widget-toggle:hover {
           transform: scale(1.1);
+        }
+        .cc-icon-wrapper {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100%;
+        }
+        .cc-icon-image {
+          max-width: 70%;
+          max-height: 70%;
+          object-fit: contain;
+        }
+        .cc-icon-label {
+          position: absolute;
+          white-space: nowrap;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: 500;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          pointer-events: none;
+        }
+        .cc-widget-toggle[data-label-position="inside"] .cc-icon-label {
+          position: static;
+          margin-top: 2px;
+          font-size: 10px;
+        }
+        .cc-widget-toggle[data-label-position="inside"] .cc-icon-wrapper {
+          flex-direction: column;
+          font-size: 20px;
+        }
+        .cc-widget-toggle[data-label-position="below"] .cc-icon-label {
+          bottom: -25px;
+          left: 50%;
+          transform: translateX(-50%);
+        }
+        .cc-widget-toggle[data-label-position="beside"] .cc-icon-label {
+          right: calc(100% + 10px);
+          top: 50%;
+          transform: translateY(-50%);
+        }
+        .cc-widget-toggle[data-label-position="hover"] .cc-icon-label {
+          right: calc(100% + 10px);
+          top: 50%;
+          transform: translateY(-50%);
+          opacity: 0;
+          transition: opacity 0.2s;
+        }
+        .cc-widget-toggle[data-label-position="hover"]:hover .cc-icon-label {
+          opacity: 1;
         }
         .cc-widget-container {
           width: var(--cc-max-width);

@@ -60,6 +60,22 @@ const defaultWidgetSettings = {
     darkMode: false,
     highContrast: false,
     focusOutline: true
+  },
+  icon: {
+    type: 'emoji',
+    emoji: '💬',
+    imageUrl: '',
+    shape: 'circle',
+    customBorderRadius: '50%',
+    size: 'medium',
+    customSize: '60px',
+    showLabel: false,
+    labelText: '',
+    labelPosition: 'inside',
+    labelBackgroundColor: '#ffffff',
+    labelTextColor: '#333333',
+    labelFontSize: '12px',
+    fallbackToEmoji: true
   }
 };
 
@@ -451,6 +467,225 @@ export default function Settings() {
                     onChange={(e) => handleWidgetChange('colors', 'borderColor', e.target.value)}
                   />
                 </div>
+              </div>
+            </details>
+
+            {/* Icon Customization */}
+            <details open>
+              <summary>Chat Icon</summary>
+              <div className="form-section">
+                {/* Icon Type */}
+                <div className="form-group">
+                  <label htmlFor="widget-icon-type">
+                    Icon Type <span className="info-icon" title="Choose how to display the chat icon">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-icon-type"
+                    value={widgetSettings.icon.type}
+                    onChange={(e) => handleWidgetChange('icon', 'type', e.target.value)}
+                  >
+                    <option value="emoji">Emoji</option>
+                    <option value="image">Custom Image</option>
+                  </select>
+                </div>
+
+                {/* Emoji Input */}
+                {widgetSettings.icon.type === 'emoji' && (
+                  <div className="form-group">
+                    <label htmlFor="widget-icon-emoji">
+                      Emoji Character <span className="info-icon" title="Enter emoji character (e.g., 💬, 🤖, 👋)">ℹ️</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="widget-icon-emoji"
+                      value={widgetSettings.icon.emoji}
+                      onChange={(e) => handleWidgetChange('icon', 'emoji', e.target.value)}
+                      placeholder="💬"
+                      maxLength={2}
+                    />
+                  </div>
+                )}
+
+                {/* Image URL Input */}
+                {widgetSettings.icon.type === 'image' && (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="widget-icon-image-url">
+                        Image URL <span className="info-icon" title="URL to your logo or custom image">ℹ️</span>
+                      </label>
+                      <input
+                        type="url"
+                        id="widget-icon-image-url"
+                        value={widgetSettings.icon.imageUrl}
+                        onChange={(e) => handleWidgetChange('icon', 'imageUrl', e.target.value)}
+                        placeholder="https://example.com/logo.png"
+                      />
+                      <small>Recommended: Square image, PNG or SVG format, transparent background</small>
+                    </div>
+
+                    <div className="form-group">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={widgetSettings.icon.fallbackToEmoji}
+                          onChange={(e) => handleWidgetChange('icon', 'fallbackToEmoji', e.target.checked)}
+                        />
+                        Fallback to emoji if image fails to load
+                      </label>
+                    </div>
+                  </>
+                )}
+
+                {/* Icon Shape */}
+                <div className="form-group">
+                  <label htmlFor="widget-icon-shape">
+                    Icon Shape <span className="info-icon" title="Shape of the chat icon button">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-icon-shape"
+                    value={widgetSettings.icon.shape}
+                    onChange={(e) => handleWidgetChange('icon', 'shape', e.target.value)}
+                  >
+                    <option value="circle">Circle</option>
+                    <option value="rounded-square">Rounded Square</option>
+                    <option value="pill">Pill/Capsule</option>
+                    <option value="square">Square</option>
+                    <option value="custom">Custom Border Radius</option>
+                  </select>
+                </div>
+
+                {/* Custom Border Radius */}
+                {widgetSettings.icon.shape === 'custom' && (
+                  <div className="form-group">
+                    <label htmlFor="widget-icon-border-radius">
+                      Custom Border Radius <span className="info-icon" title="CSS border-radius value (e.g., 15px, 25%)">ℹ️</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="widget-icon-border-radius"
+                      value={widgetSettings.icon.customBorderRadius}
+                      onChange={(e) => handleWidgetChange('icon', 'customBorderRadius', e.target.value)}
+                      placeholder="50%"
+                    />
+                  </div>
+                )}
+
+                {/* Icon Size */}
+                <div className="form-group">
+                  <label htmlFor="widget-icon-size">
+                    Icon Size <span className="info-icon" title="Size of the chat icon button">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-icon-size"
+                    value={widgetSettings.icon.size}
+                    onChange={(e) => handleWidgetChange('icon', 'size', e.target.value)}
+                  >
+                    <option value="small">Small (50px)</option>
+                    <option value="medium">Medium (60px)</option>
+                    <option value="large">Large (75px)</option>
+                    <option value="extra-large">Extra Large (90px)</option>
+                    <option value="custom">Custom Size</option>
+                  </select>
+                </div>
+
+                {/* Custom Size */}
+                {widgetSettings.icon.size === 'custom' && (
+                  <div className="form-group">
+                    <label htmlFor="widget-icon-custom-size">
+                      Custom Size <span className="info-icon" title="Size in pixels (e.g., 70px)">ℹ️</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="widget-icon-custom-size"
+                      value={widgetSettings.icon.customSize}
+                      onChange={(e) => handleWidgetChange('icon', 'customSize', e.target.value)}
+                      placeholder="60px"
+                    />
+                  </div>
+                )}
+
+                {/* Label Section */}
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.icon.showLabel}
+                      onChange={(e) => handleWidgetChange('icon', 'showLabel', e.target.checked)}
+                    />
+                    Show Label/Badge <span className="info-icon" title="Display text label with the icon">ℹ️</span>
+                  </label>
+                </div>
+
+                {widgetSettings.icon.showLabel && (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="widget-icon-label-text">
+                        Label Text <span className="info-icon" title="Text to display on/near the icon">ℹ️</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="widget-icon-label-text"
+                        value={widgetSettings.icon.labelText}
+                        onChange={(e) => handleWidgetChange('icon', 'labelText', e.target.value)}
+                        placeholder="Chat"
+                        maxLength={20}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="widget-icon-label-position">
+                        Label Position <span className="info-icon" title="Where to display the label">ℹ️</span>
+                      </label>
+                      <select
+                        id="widget-icon-label-position"
+                        value={widgetSettings.icon.labelPosition}
+                        onChange={(e) => handleWidgetChange('icon', 'labelPosition', e.target.value)}
+                      >
+                        <option value="inside">Inside Icon</option>
+                        <option value="below">Below Icon</option>
+                        <option value="beside">Beside Icon (Right)</option>
+                        <option value="hover">Show on Hover</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="widget-icon-label-bg-color">
+                        Label Background Color
+                      </label>
+                      <input
+                        type="color"
+                        id="widget-icon-label-bg-color"
+                        value={widgetSettings.icon.labelBackgroundColor}
+                        onChange={(e) => handleWidgetChange('icon', 'labelBackgroundColor', e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="widget-icon-label-text-color">
+                        Label Text Color
+                      </label>
+                      <input
+                        type="color"
+                        id="widget-icon-label-text-color"
+                        value={widgetSettings.icon.labelTextColor}
+                        onChange={(e) => handleWidgetChange('icon', 'labelTextColor', e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="widget-icon-label-font-size">
+                        Label Font Size <span className="info-icon" title="Font size for label text (e.g., 12px)">ℹ️</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="widget-icon-label-font-size"
+                        value={widgetSettings.icon.labelFontSize}
+                        onChange={(e) => handleWidgetChange('icon', 'labelFontSize', e.target.value)}
+                        placeholder="12px"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </details>
 

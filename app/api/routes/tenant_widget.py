@@ -63,6 +63,22 @@ DEFAULT_SETTINGS = {
         "darkMode": False,
         "highContrast": False,
         "focusOutline": True
+    },
+    "icon": {
+        "type": "emoji",
+        "emoji": "💬",
+        "imageUrl": "",
+        "shape": "circle",
+        "customBorderRadius": "50%",
+        "size": "medium",
+        "customSize": "60px",
+        "showLabel": False,
+        "labelText": "",
+        "labelPosition": "inside",
+        "labelBackgroundColor": "#ffffff",
+        "labelTextColor": "#333333",
+        "labelFontSize": "12px",
+        "fallbackToEmoji": True
     }
 }
 
@@ -78,6 +94,7 @@ class WidgetSettingsResponse(BaseModel):
     animations: dict
     messages: dict
     accessibility: dict
+    icon: dict
 
 
 class UpdateWidgetSettingsRequest(BaseModel):
@@ -89,6 +106,7 @@ class UpdateWidgetSettingsRequest(BaseModel):
     animations: dict | None = None
     messages: dict | None = None
     accessibility: dict | None = None
+    icon: dict | None = None
 
 
 # Endpoints

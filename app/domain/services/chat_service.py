@@ -450,20 +450,38 @@ class ChatService:
     def _extract_name_regex(self, text: str) -> str | None:
         """Extract name using regex patterns as fallback."""
         # Patterns like "I'm X", "my name is X", "I am X", "this is X", "im X"
+        # Use case-insensitive matching to catch lowercase names like "im janji"
         patterns = [
-            r"(?:I'?m|I am|my name is|this is|im|name's)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
-            r"([A-Z][a-z]+\s+[A-Z][a-z]+)",  # First Last format
+            r"(?:I'?m|I am|my name is|this is|im|name's)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)",
+            r"([A-Z][a-z]+\s+[A-Z][a-z]+)",  # First Last format (capitalized)
         ]
         
+        # Common stop words that indicate the name has ended
+        stop_words = {'and', 'is', 'my', 'the', 'a', 'an', 'with', 'or', 'to', 'for', 'in', 'on', 'at', 'from'}
+        
         for pattern in patterns:
-            matches = re.findall(pattern, text)
+            matches = re.findall(pattern, text, re.IGNORECASE)
             if matches:
                 name = matches[0].strip()
-                # Filter out common false positives (words that are too short or common)
-                if len(name.split()) >= 1 and len(name) > 2:
-                    # Skip if it looks like a sentence starter
-                    if name.lower() not in ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all']:
-                        return name
+                # Split into words and stop at first stop word
+                name_parts = []
+                for word in name.split():
+                    if word.lower() in stop_words:
+                        break
+                    name_parts.append(word)
+                    # Limit to 2 words (first name, last name)
+                    if len(name_parts) >= 2:
+                        break
+                
+                if name_parts:
+                    name = ' '.join(name_parts)
+                    # Capitalize first letter of each word for consistency
+                    name = ' '.join(word.capitalize() for word in name.split())
+                    # Filter out common false positives (words that are too short or common)
+                    if len(name.split()) >= 1 and len(name) > 2:
+                        # Skip if it looks like a sentence starter
+                        if name.lower() not in ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all']:
+                            return name
         return None
 
     async def _extract_contact_info_from_conversation(
@@ -562,7 +580,7 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             llm_phone = extracted.get("phone")
             
             result = {
-                "name": llm_name if llm_name and llm_name != "null" else None,
+                "name": llm_name if llm_name and llm_name != "null" else regex_name,
                 "email": llm_email if llm_email and llm_email != "null" else regex_email,
                 "phone": llm_phone if llm_phone and llm_phone != "null" else regex_phone,
             }

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_sms, admin_voice, auth, calls, chat, contacts, conversations, email_webhooks, leads, profile, prompts, prompt_interview, sms_webhooks, tenant_email, tenant_setup, tenants, users, tenant_sms, tenant_voice, voice_webhooks
+from app.api.routes import admin, admin_sms, admin_voice, auth, calls, chat, contacts, conversations, email_webhooks, leads, profile, prompts, prompt_interview, sms_webhooks, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, voice_webhooks
 
 api_router = APIRouter()
 
@@ -33,6 +33,9 @@ api_router.include_router(tenant_voice.router, prefix="/voice", tags=["voice"])
 
 # Tenant Email settings (Gmail OAuth)
 api_router.include_router(tenant_email.router, prefix="/email", tags=["email"])
+
+# Tenant Widget customization
+api_router.include_router(tenant_widget.router, prefix="/widget", tags=["widget"])
 
 # Leads, Contacts, and Calls
 api_router.include_router(leads.router, prefix="/leads", tags=["leads"])

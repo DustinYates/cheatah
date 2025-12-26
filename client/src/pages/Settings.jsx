@@ -13,18 +13,75 @@ const defaultFormData = {
   email: '',
 };
 
+const defaultWidgetSettings = {
+  colors: {
+    primary: '#007bff',
+    secondary: '#6c757d',
+    background: '#ffffff',
+    text: '#333333',
+    buttonText: '#ffffff',
+    linkColor: '#007bff',
+    borderColor: '#ddd'
+  },
+  typography: {
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif",
+    fontSize: '14px',
+    fontWeight: '400',
+    lineHeight: '1.5',
+    letterSpacing: 'normal'
+  },
+  layout: {
+    borderRadius: '10px',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+    shadowColor: 'rgba(0,0,0,0.15)',
+    opacity: '1',
+    position: 'bottom-right',
+    zIndex: '10000',
+    maxWidth: '350px',
+    maxHeight: '500px'
+  },
+  behavior: {
+    openBehavior: 'click',
+    autoOpenDelay: 0,
+    showOnPages: '*',
+    cooldownDays: 0
+  },
+  animations: {
+    type: 'none',
+    duration: '0.3s',
+    easing: 'ease-in-out'
+  },
+  messages: {
+    welcomeMessage: 'Chat with us',
+    placeholder: 'Type your message...',
+    sendButtonText: 'Send'
+  },
+  accessibility: {
+    darkMode: false,
+    highContrast: false,
+    focusOutline: true
+  }
+};
+
 export default function Settings() {
   const { user, selectedTenantId } = useAuth();
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
   const [formError, setFormError] = useState('');
   const [formData, setFormData] = useState(defaultFormData);
-  
+
   // Embed code state
   const [embedCode, setEmbedCode] = useState(null);
   const [embedLoading, setEmbedLoading] = useState(false);
   const [embedError, setEmbedError] = useState('');
   const [copied, setCopied] = useState(false);
+
+  // Widget settings state
+  const [widgetSettings, setWidgetSettings] = useState(defaultWidgetSettings);
+  const [widgetSaving, setWidgetSaving] = useState(false);
+  const [widgetSuccess, setWidgetSuccess] = useState('');
+  const [widgetError, setWidgetError] = useState('');
+  const [widgetLoading, setWidgetLoading] = useState(false);
 
   const fetchProfile = useCallback(() => api.getBusinessProfile(), []);
   const { data: profile, loading, error, refetch } = useFetchData(fetchProfile);
@@ -47,6 +104,25 @@ export default function Settings() {
   useEffect(() => {
     fetchEmbedCode();
   }, [fetchEmbedCode]);
+
+  // Fetch widget settings
+  const fetchWidgetSettings = useCallback(async () => {
+    if (user?.is_global_admin && !selectedTenantId) return;
+    setWidgetLoading(true);
+    setWidgetError('');
+    try {
+      const data = await api.getWidgetSettings();
+      setWidgetSettings(data);
+    } catch (err) {
+      setWidgetError(err.message || 'Failed to load widget settings');
+    } finally {
+      setWidgetLoading(false);
+    }
+  }, [user, selectedTenantId]);
+
+  useEffect(() => {
+    fetchWidgetSettings();
+  }, [fetchWidgetSettings]);
 
   // Check if global admin without tenant selected
   const needsTenant = user?.is_global_admin && !selectedTenantId;
@@ -80,6 +156,33 @@ export default function Settings() {
       setFormError(err.message || 'Failed to save profile');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleWidgetChange = (category, field, value) => {
+    setWidgetSettings(prev => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [field]: value
+      }
+    }));
+  };
+
+  const handleWidgetSubmit = async (e) => {
+    e.preventDefault();
+    setWidgetError('');
+    setWidgetSuccess('');
+    setWidgetSaving(true);
+
+    try {
+      await api.updateWidgetSettings(widgetSettings);
+      setWidgetSuccess('Widget settings updated successfully');
+      setTimeout(() => setWidgetSuccess(''), 3000);
+    } catch (err) {
+      setWidgetError(err.message || 'Failed to save widget settings');
+    } finally {
+      setWidgetSaving(false);
     }
   };
 
@@ -261,6 +364,343 @@ export default function Settings() {
               </ol>
             </div>
           </>
+        )}
+      </div>
+
+      {/* Widget Customization Section */}
+      <div className="widget-customization-section">
+        <h2>Widget Customization</h2>
+        <p className="description">
+          Customize the appearance and behavior of your chat widget.
+        </p>
+
+        {widgetLoading && (
+          <div className="widget-loading">Loading widget settings...</div>
+        )}
+
+        {widgetError && (
+          <div className="error-message">{widgetError}</div>
+        )}
+
+        {widgetSuccess && (
+          <div className="success-message">{widgetSuccess}</div>
+        )}
+
+        {!widgetLoading && (
+          <form onSubmit={handleWidgetSubmit} className="settings-form">
+            {/* Colors & Branding */}
+            <details open>
+              <summary>Colors & Branding</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label htmlFor="widget-primary-color">
+                    Primary Color <span className="info-icon" title="Main color used for buttons and headers">ℹ️</span>
+                  </label>
+                  <input
+                    type="color"
+                    id="widget-primary-color"
+                    value={widgetSettings.colors.primary}
+                    onChange={(e) => handleWidgetChange('colors', 'primary', e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-secondary-color">
+                    Secondary Color <span className="info-icon" title="Secondary accent color">ℹ️</span>
+                  </label>
+                  <input
+                    type="color"
+                    id="widget-secondary-color"
+                    value={widgetSettings.colors.secondary}
+                    onChange={(e) => handleWidgetChange('colors', 'secondary', e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-background-color">
+                    Background Color <span className="info-icon" title="Widget background color">ℹ️</span>
+                  </label>
+                  <input
+                    type="color"
+                    id="widget-background-color"
+                    value={widgetSettings.colors.background}
+                    onChange={(e) => handleWidgetChange('colors', 'background', e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-text-color">
+                    Text Color <span className="info-icon" title="Default text color">ℹ️</span>
+                  </label>
+                  <input
+                    type="color"
+                    id="widget-text-color"
+                    value={widgetSettings.colors.text}
+                    onChange={(e) => handleWidgetChange('colors', 'text', e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-border-color">
+                    Border Color <span className="info-icon" title="Border and divider color">ℹ️</span>
+                  </label>
+                  <input
+                    type="color"
+                    id="widget-border-color"
+                    value={widgetSettings.colors.borderColor}
+                    onChange={(e) => handleWidgetChange('colors', 'borderColor', e.target.value)}
+                  />
+                </div>
+              </div>
+            </details>
+
+            {/* Typography */}
+            <details>
+              <summary>Typography</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label htmlFor="widget-font-family">
+                    Font Family <span className="info-icon" title="Font family for widget text">ℹ️</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="widget-font-family"
+                    value={widgetSettings.typography.fontFamily}
+                    onChange={(e) => handleWidgetChange('typography', 'fontFamily', e.target.value)}
+                    placeholder="System font stack"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-font-size">
+                    Font Size <span className="info-icon" title="Base font size (e.g., 14px, 1rem)">ℹ️</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="widget-font-size"
+                    value={widgetSettings.typography.fontSize}
+                    onChange={(e) => handleWidgetChange('typography', 'fontSize', e.target.value)}
+                    placeholder="14px"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-font-weight">
+                    Font Weight <span className="info-icon" title="Font weight (100-900)">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-font-weight"
+                    value={widgetSettings.typography.fontWeight}
+                    onChange={(e) => handleWidgetChange('typography', 'fontWeight', e.target.value)}
+                  >
+                    <option value="300">Light (300)</option>
+                    <option value="400">Normal (400)</option>
+                    <option value="500">Medium (500)</option>
+                    <option value="600">Semi-Bold (600)</option>
+                    <option value="700">Bold (700)</option>
+                  </select>
+                </div>
+              </div>
+            </details>
+
+            {/* Layout & Appearance */}
+            <details>
+              <summary>Layout & Appearance</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label htmlFor="widget-position">
+                    Position <span className="info-icon" title="Widget position on the page">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-position"
+                    value={widgetSettings.layout.position}
+                    onChange={(e) => handleWidgetChange('layout', 'position', e.target.value)}
+                  >
+                    <option value="bottom-right">Bottom Right</option>
+                    <option value="bottom-left">Bottom Left</option>
+                    <option value="top-right">Top Right</option>
+                    <option value="top-left">Top Left</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-max-width">
+                    Max Width <span className="info-icon" title="Maximum widget width (e.g., 350px)">ℹ️</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="widget-max-width"
+                    value={widgetSettings.layout.maxWidth}
+                    onChange={(e) => handleWidgetChange('layout', 'maxWidth', e.target.value)}
+                    placeholder="350px"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-max-height">
+                    Max Height <span className="info-icon" title="Maximum widget height (e.g., 500px)">ℹ️</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="widget-max-height"
+                    value={widgetSettings.layout.maxHeight}
+                    onChange={(e) => handleWidgetChange('layout', 'maxHeight', e.target.value)}
+                    placeholder="500px"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-border-radius">
+                    Border Radius <span className="info-icon" title="Corner roundness (e.g., 10px)">ℹ️</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="widget-border-radius"
+                    value={widgetSettings.layout.borderRadius}
+                    onChange={(e) => handleWidgetChange('layout', 'borderRadius', e.target.value)}
+                    placeholder="10px"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-z-index">
+                    Z-Index <span className="info-icon" title="Layering priority (higher = on top)">ℹ️</span>
+                  </label>
+                  <input
+                    type="number"
+                    id="widget-z-index"
+                    value={widgetSettings.layout.zIndex}
+                    onChange={(e) => handleWidgetChange('layout', 'zIndex', e.target.value)}
+                    placeholder="10000"
+                  />
+                </div>
+              </div>
+            </details>
+
+            {/* Behavior */}
+            <details>
+              <summary>Behavior</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label htmlFor="widget-open-behavior">
+                    Open Behavior <span className="info-icon" title="How the widget opens">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-open-behavior"
+                    value={widgetSettings.behavior.openBehavior}
+                    onChange={(e) => handleWidgetChange('behavior', 'openBehavior', e.target.value)}
+                  >
+                    <option value="click">Click to Open</option>
+                    <option value="auto">Auto-Open</option>
+                  </select>
+                </div>
+
+                {widgetSettings.behavior.openBehavior === 'auto' && (
+                  <div className="form-group">
+                    <label htmlFor="widget-auto-open-delay">
+                      Auto-Open Delay (seconds) <span className="info-icon" title="Delay before auto-opening">ℹ️</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="widget-auto-open-delay"
+                      value={widgetSettings.behavior.autoOpenDelay}
+                      onChange={(e) => handleWidgetChange('behavior', 'autoOpenDelay', parseInt(e.target.value) || 0)}
+                      min="0"
+                      placeholder="0"
+                    />
+                  </div>
+                )}
+              </div>
+            </details>
+
+            {/* Messages */}
+            <details>
+              <summary>Messages</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label htmlFor="widget-welcome-message">
+                    Welcome Message <span className="info-icon" title="Header text shown in widget">ℹ️</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="widget-welcome-message"
+                    value={widgetSettings.messages.welcomeMessage}
+                    onChange={(e) => handleWidgetChange('messages', 'welcomeMessage', e.target.value)}
+                    placeholder="Chat with us"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-placeholder">
+                    Input Placeholder <span className="info-icon" title="Placeholder text in message input">ℹ️</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="widget-placeholder"
+                    value={widgetSettings.messages.placeholder}
+                    onChange={(e) => handleWidgetChange('messages', 'placeholder', e.target.value)}
+                    placeholder="Type your message..."
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-send-button-text">
+                    Send Button Text <span className="info-icon" title="Text on the send button">ℹ️</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="widget-send-button-text"
+                    value={widgetSettings.messages.sendButtonText}
+                    onChange={(e) => handleWidgetChange('messages', 'sendButtonText', e.target.value)}
+                    placeholder="Send"
+                  />
+                </div>
+              </div>
+            </details>
+
+            {/* Accessibility */}
+            <details>
+              <summary>Accessibility</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.accessibility.darkMode}
+                      onChange={(e) => handleWidgetChange('accessibility', 'darkMode', e.target.checked)}
+                    />
+                    Dark Mode <span className="info-icon" title="Enable dark mode theme">ℹ️</span>
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.accessibility.highContrast}
+                      onChange={(e) => handleWidgetChange('accessibility', 'highContrast', e.target.checked)}
+                    />
+                    High Contrast <span className="info-icon" title="Increase contrast for better visibility">ℹ️</span>
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.accessibility.focusOutline}
+                      onChange={(e) => handleWidgetChange('accessibility', 'focusOutline', e.target.checked)}
+                    />
+                    Focus Outline <span className="info-icon" title="Show focus outline for keyboard navigation">ℹ️</span>
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <button type="submit" className="save-btn" disabled={widgetSaving}>
+              {widgetSaving ? 'Saving...' : 'Save Widget Settings'}
+            </button>
+          </form>
         )}
       </div>
     </div>

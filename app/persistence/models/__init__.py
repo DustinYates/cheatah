@@ -15,6 +15,7 @@ from app.persistence.models.tenant import Tenant, TenantBusinessProfile, User
 from app.persistence.models.tenant_email_config import EmailConversation, TenantEmailConfig
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_voice_config import TenantVoiceConfig
+from app.persistence.models.tenant_widget_config import TenantWidgetConfig
 
 __all__ = [
     "Call",
@@ -34,6 +35,7 @@ __all__ = [
     "TenantEmailConfig",
     "TenantSmsConfig",
     "TenantVoiceConfig",
+    "TenantWidgetConfig",
     "SmsOptIn",
     "Escalation",
     "Notification",

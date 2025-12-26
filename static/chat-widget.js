@@ -20,11 +20,111 @@
     sessionId: null,
     isOpen: false,
     isMinimized: false,
+    settings: null,
 
     init: function(config) {
       this.config = config;
       this.createWidget();
       this.attachEventListeners();
+      this.fetchSettings();
+    },
+
+    fetchSettings: async function() {
+      try {
+        const response = await fetch(`${this.config.apiUrl}/widget/settings/public?tenant_id=${this.config.tenantId}`);
+        if (response.ok) {
+          const settings = await response.json();
+          this.settings = settings;
+          this.applySettings(settings);
+        }
+      } catch (err) {
+        console.error('Failed to load widget settings:', err);
+        // Widget will use default CSS values
+      }
+    },
+
+    applySettings: function(settings) {
+      const root = document.documentElement;
+      const widget = document.getElementById('chatter-cheetah-widget');
+
+      if (!widget || !settings) return;
+
+      // Apply colors
+      if (settings.colors) {
+        root.style.setProperty('--cc-primary', settings.colors.primary);
+        root.style.setProperty('--cc-secondary', settings.colors.secondary);
+        root.style.setProperty('--cc-background', settings.colors.background);
+        root.style.setProperty('--cc-text', settings.colors.text);
+        root.style.setProperty('--cc-button-text', settings.colors.buttonText);
+        root.style.setProperty('--cc-link-color', settings.colors.linkColor);
+        root.style.setProperty('--cc-border-color', settings.colors.borderColor);
+      }
+
+      // Apply typography
+      if (settings.typography) {
+        root.style.setProperty('--cc-font-family', settings.typography.fontFamily);
+        root.style.setProperty('--cc-font-size', settings.typography.fontSize);
+        root.style.setProperty('--cc-font-weight', settings.typography.fontWeight);
+        root.style.setProperty('--cc-line-height', settings.typography.lineHeight);
+      }
+
+      // Apply layout
+      if (settings.layout) {
+        root.style.setProperty('--cc-border-radius', settings.layout.borderRadius);
+        root.style.setProperty('--cc-box-shadow', settings.layout.boxShadow);
+        root.style.setProperty('--cc-z-index', settings.layout.zIndex);
+        root.style.setProperty('--cc-max-width', settings.layout.maxWidth);
+        root.style.setProperty('--cc-max-height', settings.layout.maxHeight);
+        root.style.setProperty('--cc-opacity', settings.layout.opacity);
+
+        // Apply position
+        const positions = {
+          'bottom-right': { bottom: '20px', right: '20px', top: 'auto', left: 'auto' },
+          'bottom-left': { bottom: '20px', left: '20px', top: 'auto', right: 'auto' },
+          'top-right': { top: '20px', right: '20px', bottom: 'auto', left: 'auto' },
+          'top-left': { top: '20px', left: '20px', bottom: 'auto', right: 'auto' }
+        };
+        const pos = positions[settings.layout.position] || positions['bottom-right'];
+        Object.keys(pos).forEach(key => {
+          widget.style[key] = pos[key];
+        });
+      }
+
+      // Apply messages
+      if (settings.messages) {
+        const titleEl = widget.querySelector('.cc-widget-title');
+        if (titleEl) titleEl.textContent = settings.messages.welcomeMessage;
+
+        const inputEl = widget.querySelector('#cc-message-input');
+        if (inputEl) inputEl.placeholder = settings.messages.placeholder;
+
+        const sendBtn = widget.querySelector('#cc-send-button');
+        if (sendBtn) sendBtn.textContent = settings.messages.sendButtonText;
+      }
+
+      // Apply behavior
+      if (settings.behavior) {
+        if (settings.behavior.openBehavior === 'auto' && settings.behavior.autoOpenDelay > 0) {
+          setTimeout(() => {
+            if (!this.isOpen) {
+              this.toggleWidget();
+            }
+          }, settings.behavior.autoOpenDelay * 1000);
+        }
+      }
+
+      // Apply accessibility
+      if (settings.accessibility) {
+        if (settings.accessibility.darkMode) {
+          widget.classList.add('cc-dark-mode');
+        }
+        if (settings.accessibility.highContrast) {
+          widget.classList.add('cc-high-contrast');
+        }
+        if (!settings.accessibility.focusOutline) {
+          widget.classList.add('cc-no-focus-outline');
+        }
+      }
     },
 
     createWidget: function() {
@@ -70,19 +170,39 @@
     injectStyles: function() {
       const style = document.createElement('style');
       style.textContent = `
+        :root {
+          --cc-primary: #007bff;
+          --cc-secondary: #6c757d;
+          --cc-background: #ffffff;
+          --cc-text: #333333;
+          --cc-button-text: #ffffff;
+          --cc-link-color: #007bff;
+          --cc-border-color: #ddd;
+          --cc-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+          --cc-font-size: 14px;
+          --cc-font-weight: 400;
+          --cc-line-height: 1.5;
+          --cc-border-radius: 10px;
+          --cc-box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+          --cc-z-index: 10000;
+          --cc-max-width: 350px;
+          --cc-max-height: 500px;
+          --cc-opacity: 1;
+        }
         #chatter-cheetah-widget {
           position: fixed;
           bottom: 20px;
           right: 20px;
-          z-index: 10000;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+          z-index: var(--cc-z-index);
+          font-family: var(--cc-font-family);
+          opacity: var(--cc-opacity);
         }
         .cc-widget-toggle {
           width: 60px;
           height: 60px;
           border-radius: 50%;
-          background: #007bff;
-          color: white;
+          background: var(--cc-primary);
+          color: var(--cc-button-text);
           border: none;
           font-size: 24px;
           cursor: pointer;
@@ -93,18 +213,18 @@
           transform: scale(1.1);
         }
         .cc-widget-container {
-          width: 350px;
-          height: 500px;
-          background: white;
-          border-radius: 10px;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+          width: var(--cc-max-width);
+          height: var(--cc-max-height);
+          background: var(--cc-background);
+          border-radius: var(--cc-border-radius);
+          box-shadow: var(--cc-box-shadow);
           display: flex;
           flex-direction: column;
           overflow: hidden;
         }
         .cc-widget-header {
-          background: #007bff;
-          color: white;
+          background: var(--cc-primary);
+          color: var(--cc-button-text);
           padding: 15px;
           display: flex;
           justify-content: space-between;
@@ -116,7 +236,7 @@
         .cc-widget-minimize, .cc-widget-close {
           background: none;
           border: none;
-          color: white;
+          color: var(--cc-button-text);
           font-size: 20px;
           cursor: pointer;
           padding: 0 5px;
@@ -133,42 +253,46 @@
           border-radius: 8px;
           max-width: 80%;
           word-wrap: break-word;
+          font-size: var(--cc-font-size);
+          line-height: var(--cc-line-height);
         }
         .cc-message.user {
-          background: #007bff;
-          color: white;
+          background: var(--cc-primary);
+          color: var(--cc-button-text);
           margin-left: auto;
           text-align: right;
         }
         .cc-message.assistant {
-          background: white;
-          color: #333;
-          border: 1px solid #ddd;
+          background: var(--cc-background);
+          color: var(--cc-text);
+          border: 1px solid var(--cc-border-color);
         }
         .cc-widget-input-container {
           padding: 15px;
-          border-top: 1px solid #ddd;
+          border-top: 1px solid var(--cc-border-color);
           display: flex;
           gap: 10px;
         }
         #cc-message-input {
           flex: 1;
           padding: 10px;
-          border: 1px solid #ddd;
+          border: 1px solid var(--cc-border-color);
           border-radius: 5px;
-          font-size: 14px;
+          font-size: var(--cc-font-size);
+          font-family: var(--cc-font-family);
         }
         #cc-send-button {
           padding: 10px 20px;
-          background: #007bff;
-          color: white;
+          background: var(--cc-primary);
+          color: var(--cc-button-text);
           border: none;
           border-radius: 5px;
           cursor: pointer;
           font-weight: 600;
+          font-family: var(--cc-font-family);
         }
         #cc-send-button:hover {
-          background: #0056b3;
+          opacity: 0.9;
         }
         #cc-send-button:disabled {
           background: #ccc;
@@ -176,16 +300,17 @@
         }
         .cc-widget-contact-form {
           padding: 15px;
-          border-top: 1px solid #ddd;
+          border-top: 1px solid var(--cc-border-color);
           background: #fff3cd;
         }
         .cc-widget-contact-form input {
           width: 100%;
           padding: 8px;
           margin: 5px 0;
-          border: 1px solid #ddd;
+          border: 1px solid var(--cc-border-color);
           border-radius: 5px;
           box-sizing: border-box;
+          font-family: var(--cc-font-family);
         }
         #cc-submit-contact {
           width: 100%;
@@ -196,6 +321,7 @@
           border-radius: 5px;
           cursor: pointer;
           margin-top: 10px;
+          font-family: var(--cc-font-family);
         }
         .cc-widget-loading {
           padding: 10px;
@@ -210,6 +336,28 @@
         .cc-widget-container.minimized .cc-widget-input-container,
         .cc-widget-container.minimized .cc-widget-contact-form {
           display: none;
+        }
+        /* Accessibility classes */
+        .cc-dark-mode .cc-widget-container {
+          background: #1a1a1a;
+          color: #ffffff;
+        }
+        .cc-dark-mode .cc-widget-messages {
+          background: #2a2a2a;
+        }
+        .cc-dark-mode .cc-message.assistant {
+          background: #333;
+          color: #fff;
+          border-color: #444;
+        }
+        .cc-high-contrast .cc-widget-container {
+          border: 2px solid #000;
+        }
+        .cc-high-contrast .cc-message {
+          border: 2px solid currentColor;
+        }
+        .cc-no-focus-outline *:focus {
+          outline: none;
         }
       `;
       document.head.appendChild(style);

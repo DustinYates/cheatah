@@ -518,6 +518,18 @@ class ApiClient {
     const query = new URLSearchParams({ ...params, contact_id: contactId }).toString();
     return this.request(`/email/conversations${query ? `?${query}` : ''}`);
   }
+
+  // Widget settings methods
+  async getWidgetSettings() {
+    return this.request('/widget/settings');
+  }
+
+  async updateWidgetSettings(data) {
+    return this.request('/widget/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const api = new ApiClient();

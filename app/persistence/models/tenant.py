@@ -65,6 +65,9 @@ class Tenant(Base):
     email_config = relationship(
         "TenantEmailConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
     )
+    widget_config = relationship(
+        "TenantWidgetConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Tenant(id={self.id}, name={self.name}, subdomain={self.subdomain})>"

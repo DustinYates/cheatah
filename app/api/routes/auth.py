@@ -7,11 +7,13 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
 from app.core.auth import create_access_token
-from app.core.password import verify_password
+from app.core.password import verify_password, hash_password
 from app.api.deps import get_current_user, is_global_admin
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 from app.persistence.repositories.user_repository import UserRepository
+from app.persistence.repositories.tenant_repository import TenantRepository
+from app.domain.services.user_contact_link_service import UserContactLinkService
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -38,12 +40,31 @@ class LoginResponse(BaseModel):
 
 class UserInfoResponse(BaseModel):
     """Current user info response."""
-    
+
     id: int
     email: str
     role: str
     tenant_id: int | None = None
     is_global_admin: bool = False
+
+
+class SignupRequest(BaseModel):
+    """Signup request."""
+
+    email: str
+    password: str
+    tenant_subdomain: str
+
+
+class SignupResponse(BaseModel):
+    """Signup response."""
+
+    user_id: int
+    email: str
+    tenant_id: int
+    contact_linked: bool
+    contact_id: int | None = None
+    message: str
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -86,6 +107,70 @@ async def login(
         role=user.role,
         email=user.email,
         is_global_admin=is_global_admin(user),
+    )
+
+
+@router.post("/signup", response_model=SignupResponse)
+async def signup(
+    signup_data: SignupRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SignupResponse:
+    """Public signup endpoint for new users.
+
+    Creates a new user account and auto-links to existing contact
+    if email matches.
+
+    Args:
+        signup_data: Signup credentials
+        db: Database session
+
+    Returns:
+        User info and contact linking status
+    """
+    # Validate tenant exists
+    tenant_repo = TenantRepository(db)
+    tenant = await tenant_repo.get_by_subdomain(signup_data.tenant_subdomain)
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found"
+        )
+
+    # Check if user already exists
+    user_repo = UserRepository(db)
+    existing = await user_repo.get_by_email(signup_data.email)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email already exists"
+        )
+
+    # Hash password
+    hashed = hash_password(signup_data.password)
+
+    # Create user
+    user = await user_repo.create(
+        tenant_id=tenant.id,
+        email=signup_data.email.lower().strip(),
+        hashed_password=hashed,
+        role="user"
+    )
+
+    # Auto-link to contact
+    link_service = UserContactLinkService(db)
+    linked_contact = await link_service.link_user_to_contact_by_email(user)
+
+    return SignupResponse(
+        user_id=user.id,
+        email=user.email,
+        tenant_id=user.tenant_id,
+        contact_linked=linked_contact is not None,
+        contact_id=linked_contact.id if linked_contact else None,
+        message=(
+            f"Account created and linked to existing contact"
+            if linked_contact
+            else "Account created"
+        )
     )
 
 

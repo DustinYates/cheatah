@@ -26,3 +26,22 @@ class UserRepository(BaseRepository[User]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def link_contact(self, user_id: int, contact_id: int) -> User | None:
+        """Link a user to a contact by setting user.contact_id.
+
+        Args:
+            user_id: User ID
+            contact_id: Contact ID to link
+
+        Returns:
+            Updated user or None if not found
+        """
+        user = await self.get_by_id(None, user_id)
+        if not user:
+            return None
+
+        user.contact_id = contact_id
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
+

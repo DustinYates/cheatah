@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select, or_, and_, func
 from sqlalchemy.orm import selectinload
 
 from app.persistence.models.contact import Contact
@@ -80,27 +80,27 @@ class ContactRepository(BaseRepository[Contact]):
         self, tenant_id: int, email: str | None = None, phone: str | None = None
     ) -> Contact | None:
         """Get contact by email or phone.
-        
+
         Returns the first matching contact if multiple exist (duplicates
         should be merged using the merge feature).
-        
+
         Args:
             tenant_id: Tenant ID
             email: Optional email to search
             phone: Optional phone to search
-            
+
         Returns:
             Contact or None if not found
         """
         if not email and not phone:
             return None
-            
+
         conditions = []
         if email:
             conditions.append(Contact.email == email)
         if phone:
             conditions.append(Contact.phone == phone)
-        
+
         stmt = (
             select(Contact)
             .where(
@@ -114,6 +114,37 @@ class ContactRepository(BaseRepository[Contact]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_all_by_email(
+        self, tenant_id: int, email: str
+    ) -> list[Contact]:
+        """Get all contacts matching an email (for auto-join).
+
+        Returns all active contacts with this email, ordered by created_at
+        (oldest first) for selecting the primary contact.
+
+        Args:
+            tenant_id: Tenant ID
+            email: Email to search (case-insensitive)
+
+        Returns:
+            List of contacts (empty if none found)
+        """
+        if not email:
+            return []
+
+        stmt = (
+            select(Contact)
+            .where(
+                Contact.tenant_id == tenant_id,
+                func.lower(Contact.email) == email.lower().strip(),
+                Contact.deleted_at.is_(None),
+                Contact.merged_into_contact_id.is_(None)
+            )
+            .order_by(Contact.created_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
     async def list_by_tenant(
         self, tenant_id: int, skip: int = 0, limit: int = 100

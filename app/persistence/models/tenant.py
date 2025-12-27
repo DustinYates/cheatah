@@ -109,10 +109,12 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default="user")  # admin, tenant_admin, user
+    contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
     tenant = relationship("Tenant", back_populates="users")
+    contact = relationship("Contact", foreign_keys=[contact_id])
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:

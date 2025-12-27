@@ -116,8 +116,9 @@
 
 .leads-table th.col-actions,
 .leads-table td.col-actions {
-  width: 15%;
-  min-width: 180px;
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
   text-align: right;
 }
 
@@ -150,25 +151,33 @@
 .actions-cell {
   white-space: nowrap;
   text-align: right;
+  vertical-align: middle;
+}
+
+.actions-container {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .btn-action {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  font-size: var(--font-size-xs);
-  font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
-  margin-left: 6px;
-  line-height: 1.2;
+  flex-shrink: 0;
 }
 
-.btn-action:first-child {
-  margin-left: 0;
+.btn-action:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .btn-action:disabled {
@@ -176,7 +185,23 @@
   cursor: not-allowed;
 }
 
-/* Verify/Sync button - Green theme */
+.btn-action .icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.btn-action .spinner {
+  font-size: 14px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Verify button - Green theme */
 .btn-verify {
   background: #e8f5e9;
   color: #2e7d32;
@@ -187,6 +212,29 @@
   background: #c8e6c9;
   border-color: #a5d6a7;
   transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(46, 125, 50, 0.15);
+}
+
+.btn-verify:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Sync button - Blue theme */
+.btn-sync {
+  background: #e3f2fd;
+  color: #1976d2;
+  border-color: #bbdefb;
+}
+
+.btn-sync:hover:not(:disabled) {
+  background: #bbdefb;
+  border-color: #90caf9;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(25, 118, 210, 0.15);
+}
+
+.btn-sync:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 /* Unknown button - Orange theme */
@@ -200,6 +248,11 @@
   background: #ffe0b2;
   border-color: #ffcc80;
   transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(230, 81, 0, 0.15);
+}
+
+.btn-unknown:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 /* Delete button - Red theme */
@@ -213,12 +266,18 @@
   background: #ffcdd2;
   border-color: #ef9a9a;
   transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(198, 40, 40, 0.15);
 }
 
-.action-done {
-  color: var(--color-text-light);
-  font-size: var(--font-size-xs);
-  padding: 6px 10px;
+.btn-delete:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Placeholder for maintaining consistent layout */
+.action-placeholder {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
 }
 
 /* Empty State */
@@ -260,8 +319,17 @@
   }
 
   .btn-action {
-    padding: 4px 8px;
-    font-size: 0.7rem;
+    width: 28px;
+    height: 28px;
+  }
+
+  .btn-action .icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .actions-container {
+    gap: 4px;
   }
 }
 

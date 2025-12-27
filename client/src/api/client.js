@@ -102,6 +102,13 @@ class ApiClient {
     return this.request('/admin/tenants');
   }
 
+  async createTenant(tenantData) {
+    return this.request('/admin/tenants', {
+      method: 'POST',
+      body: JSON.stringify(tenantData),
+    });
+  }
+
   async getLeads(params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/leads${query ? `?${query}` : ''}`);

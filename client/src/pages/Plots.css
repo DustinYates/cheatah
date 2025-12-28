@@ -1,0 +1,17 @@
+.plots-page {
+  max-width: 1200px;
+}
+
+.plots-page h1 {
+  margin: 0 0 var(--spacing-lg) 0;
+  font-size: var(--font-size-2xl);
+  color: var(--color-text-primary);
+}
+
+.plots-empty {
+  background: var(--color-bg-white);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-2xl);
+  text-align: center;
+  color: var(--color-text-secondary);
+}

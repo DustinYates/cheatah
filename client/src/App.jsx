@@ -10,6 +10,7 @@ import ContactDetail from './pages/ContactDetail';
 import Calls from './pages/Calls';
 import UnknownLeads from './pages/UnknownLeads';
 import UnknownLeadDetail from './pages/UnknownLeadDetail';
+import Plots from './pages/Plots';
 import Onboarding from './pages/Onboarding';
 import Settings from './pages/Settings';
 import SmsSettings from './pages/SmsSettings';
@@ -43,8 +44,9 @@ function App() {
             <Route path="contacts" element={<Contacts />} />
             <Route path="contacts/:id" element={<ContactDetail />} />
             <Route path="calls" element={<Calls />} />
-            <Route path="unknown" element={<UnknownLeads />} />
-            <Route path="unknown/:id" element={<UnknownLeadDetail />} />
+            <Route path="analytics/unknowns" element={<UnknownLeads />} />
+            <Route path="analytics/unknowns/:id" element={<UnknownLeadDetail />} />
+            <Route path="analytics/plots" element={<Plots />} />
             <Route path="settings" element={<Settings />} />
             <Route path="settings/email" element={<EmailSettings />} />
             <Route path="sms" element={<SmsSettings />} />

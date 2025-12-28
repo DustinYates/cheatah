@@ -1,10 +1,13 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import './Layout.css';
 
 export default function Layout() {
   const { user, logout, tenants, selectedTenantId, selectTenant } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [analyticsOpen, setAnalyticsOpen] = useState(location.pathname.startsWith('/analytics'));
 
   const handleLogout = () => {
     logout();
@@ -58,8 +61,24 @@ export default function Layout() {
           <li>
             <NavLink to="/calls">Calls</NavLink>
           </li>
-          <li>
-            <NavLink to="/unknown">Unknown</NavLink>
+          <li className="nav-section">
+            <button
+              className={`nav-section-toggle ${analyticsOpen ? 'open' : ''}`}
+              onClick={() => setAnalyticsOpen(!analyticsOpen)}
+            >
+              Analytics
+              <span className="toggle-icon">{analyticsOpen ? '−' : '+'}</span>
+            </button>
+            {analyticsOpen && (
+              <ul className="nav-submenu">
+                <li>
+                  <NavLink to="/analytics/unknowns">Unknowns</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/analytics/plots">Plots</NavLink>
+                </li>
+              </ul>
+            )}
           </li>
           <li>
             <NavLink to="/sms">SMS</NavLink>

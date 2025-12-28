@@ -38,7 +38,7 @@ export default function UnknownLeadDetail() {
   const handleDismiss = async () => {
     try {
       await api.updateLeadStatus(id, 'dismissed');
-      navigate('/unknown');
+      navigate('/analytics/unknowns');
     } catch (err) {
       console.error('Failed to dismiss:', err);
     }
@@ -51,7 +51,7 @@ export default function UnknownLeadDetail() {
   if (leadError) {
     return (
       <div className="contact-detail-page">
-        <ErrorState message={leadError} onRetry={() => navigate('/unknown')} />
+        <ErrorState message={leadError} onRetry={() => navigate('/analytics/unknowns')} />
       </div>
     );
   }
@@ -67,7 +67,7 @@ export default function UnknownLeadDetail() {
   return (
     <div className="contact-detail-page">
       <div className="page-header">
-        <button className="back-btn" onClick={() => navigate('/unknown')}>
+        <button className="back-btn" onClick={() => navigate('/analytics/unknowns')}>
           ← Back to Unknown Leads
         </button>
         <h1>Review Lead</h1>

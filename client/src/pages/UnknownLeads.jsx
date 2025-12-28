@@ -27,7 +27,7 @@ export default function UnknownLeads() {
   );
 
   const handleViewConversation = (lead) => {
-    navigate(`/unknown/${lead.id}`);
+    navigate(`/analytics/unknowns/${lead.id}`);
   };
 
   const handleMarkVerified = async (leadId) => {

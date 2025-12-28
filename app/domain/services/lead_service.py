@@ -51,6 +51,19 @@ class LeadService:
             name=name,
             extra_data=metadata,  # Map metadata parameter to extra_data field
         )
+
+        # Schedule SMS follow-up if conditions are met
+        if phone and metadata and metadata.get("source") in ["voice_call", "sms", "email"]:
+            try:
+                from app.domain.services.followup_service import FollowUpService
+                followup_service = FollowUpService(self.session)
+                task_name = await followup_service.schedule_followup(tenant_id, lead.id)
+                if task_name:
+                    logger.info(f"Scheduled follow-up for lead {lead.id}: {task_name}")
+            except Exception as e:
+                # Don't fail lead creation if follow-up scheduling fails
+                logger.error(f"Failed to schedule follow-up for lead {lead.id}: {e}")
+
         return lead
 
     async def get_lead(self, tenant_id: int, lead_id: int) -> Lead | None:
@@ -101,6 +114,7 @@ class LeadService:
         email: str | None = None,
         phone: str | None = None,
         name: str | None = None,
+        force_name_update: bool = False,
     ) -> Lead | None:
         """Update lead information, only filling in missing fields.
 
@@ -113,6 +127,8 @@ class LeadService:
             email: Email to set if currently missing
             phone: Phone to set if currently missing
             name: Name to set if currently missing
+            force_name_update: If True, overwrite existing name (used when user
+                explicitly states their name like "my name is X" or "I'm X")
 
         Returns:
             Updated lead or None if not found
@@ -131,7 +147,10 @@ class LeadService:
             lead.phone = phone
             updated = True
             logger.info(f"Updated lead {lead_id} with phone: {phone}")
-        if name and not lead.name:
+        # For name: update if missing, OR if force_name_update is True (explicit name introduction)
+        if name and (not lead.name or force_name_update):
+            if lead.name and force_name_update:
+                logger.info(f"Overwriting lead {lead_id} name from '{lead.name}' to '{name}' (explicit introduction)")
             lead.name = name
             updated = True
             logger.info(f"Updated lead {lead_id} with name: {name}")

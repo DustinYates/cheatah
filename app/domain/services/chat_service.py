@@ -221,18 +221,22 @@ class ChatService:
         extracted_name = extracted_info.get("name")
         extracted_email = extracted_info.get("email")
         extracted_phone = extracted_info.get("phone")
-        
+        name_is_explicit = extracted_info.get("name_is_explicit", False)
+
         # If any contact info was extracted, create or update lead
         if extracted_name or extracted_email or extracted_phone:
             try:
                 if existing_lead:
-                    # Update existing lead with new information (only missing fields)
+                    # Update existing lead with new information
+                    # If name is from explicit introduction ("my name is X", "I'm X"),
+                    # allow it to override a previously captured (possibly wrong) name
                     updated_lead = await self.lead_service.update_lead_info(
                         tenant_id=tenant_id,
                         lead_id=existing_lead.id,
                         email=extracted_email,
                         phone=extracted_phone,
                         name=extracted_name,
+                        force_name_update=name_is_explicit,
                     )
                     if updated_lead:
                         logger.info(
@@ -447,66 +451,103 @@ class ChatService:
                     return digits
         return None
     
-    def _extract_name_regex(self, text: str) -> str | None:
-        """Extract name using regex patterns as fallback."""
-        # Patterns like "I'm X", "my name is X", "I am X", "this is X", "im X"
-        # Use case-insensitive matching to catch lowercase names like "im janji"
-        patterns = [
-            r"(?:I'?m|I am|my name is|this is|im|name's)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)",
-            r"([A-Z][a-z]+\s+[A-Z][a-z]+)",  # First Last format (capitalized)
-        ]
-        
+    def _extract_name_regex(self, text: str) -> tuple[str | None, bool]:
+        """Extract name using regex patterns as fallback.
+
+        Returns:
+            Tuple of (name, is_explicit) where is_explicit indicates if the name
+            came from an explicit introduction like "my name is X" or "I'm X".
+            Explicit names should be allowed to overwrite previously captured names.
+        """
+        # Common false positives - phrases that look like names but aren't
+        # These are common chat phrases that get incorrectly matched
+        false_positive_names = {
+            'hey whats', 'hey what', 'hi there', 'hello there', 'going good',
+            'doing good', 'pretty good', 'sounds good', 'looks good',
+            'thank you', 'thanks much', 'nice one', 'good morning',
+            'good afternoon', 'good evening', 'good night', 'how are',
+            'what is', 'who is', 'where is', 'when is', 'why is',
+            'can you', 'could you', 'would you', 'will you', 'should you',
+        }
+
         # Common stop words that indicate the name has ended
-        stop_words = {'and', 'is', 'my', 'the', 'a', 'an', 'with', 'or', 'to', 'for', 'in', 'on', 'at', 'from'}
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            if matches:
-                name = matches[0].strip()
-                # Split into words and stop at first stop word
-                name_parts = []
-                for word in name.split():
-                    if word.lower() in stop_words:
-                        break
-                    name_parts.append(word)
-                    # Limit to 2 words (first name, last name)
-                    if len(name_parts) >= 2:
-                        break
-                
-                if name_parts:
-                    name = ' '.join(name_parts)
-                    # Capitalize first letter of each word for consistency
-                    name = ' '.join(word.capitalize() for word in name.split())
-                    # Filter out common false positives (words that are too short or common)
-                    if len(name.split()) >= 1 and len(name) > 2:
-                        # Skip if it looks like a sentence starter
-                        if name.lower() not in ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all']:
-                            return name
-        return None
+        # Includes conjunctions, prepositions, and common response words that appear after names
+        stop_words = {
+            'and', 'is', 'my', 'the', 'a', 'an', 'with', 'or', 'to', 'for', 'in', 'on', 'at', 'from',
+            'yea', 'yeah', 'yes', 'no', 'ok', 'okay', 'sure', 'thanks', 'thank', 'please', 'hi', 'hey',
+            'i', 'we', 'you', 'they', 'he', 'she', 'it', 'this', 'that', 'here', 'there',
+        }
+
+        # Pattern 1: Explicit name introduction phrases (case insensitive)
+        # Patterns like "I'm X", "my name is X", "I am X", "this is X", "im X", "call me X"
+        # Use word boundary \b to avoid matching "im" inside words like "swim"
+        explicit_pattern = r"\b(?:I'?m|I am|my name is|this is|im|name's|call me|it's|its)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)"
+        matches = re.findall(explicit_pattern, text, re.IGNORECASE)
+        if matches:
+            name = matches[0].strip()
+            # Split into words and stop at first stop word
+            name_parts = []
+            for word in name.split():
+                if word.lower() in stop_words:
+                    break
+                name_parts.append(word)
+                # Limit to 2 words (first name, last name)
+                if len(name_parts) >= 2:
+                    break
+
+            if name_parts:
+                name = ' '.join(name_parts)
+                # Capitalize first letter of each word for consistency
+                name = ' '.join(word.capitalize() for word in name.split())
+                # Filter out common false positives
+                if len(name) > 2 and name.lower() not in false_positive_names:
+                    # Skip common sentence starters/words
+                    if name.lower() not in ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'here', 'there', 'just']:
+                        return (name, True)  # True = explicit name introduction
+
+        # Pattern 2: Proper capitalized First Last format (case SENSITIVE - must be properly capitalized)
+        # This pattern requires actual capital letters to avoid matching casual phrases
+        capitalized_pattern = r"([A-Z][a-z]+\s+[A-Z][a-z]+)"
+        # Use case-sensitive matching here - names should be capitalized
+        matches = re.findall(capitalized_pattern, text)  # No re.IGNORECASE
+        if matches:
+            name = matches[0].strip()
+            # Check it's not a false positive
+            if name.lower() not in false_positive_names:
+                # Additional check: skip if both words are common English words
+                common_words = {'hey', 'hello', 'going', 'doing', 'good', 'nice', 'thank', 'thanks',
+                               'pretty', 'sounds', 'looks', 'what', 'whats', 'how', 'who', 'where',
+                               'when', 'why', 'can', 'could', 'would', 'will', 'should'}
+                words = name.lower().split()
+                if not (words[0] in common_words and words[1] in common_words):
+                    return (name, False)  # False = not an explicit introduction
+
+        return (None, False)
 
     async def _extract_contact_info_from_conversation(
         self,
         messages: list[Message],
         current_user_message: str,
-    ) -> dict[str, str | None]:
+    ) -> dict[str, str | None | bool]:
         """Extract contact information from conversation messages using LLM with regex fallback.
-        
+
         Args:
             messages: Previous messages in conversation
             current_user_message: Current user message
-            
+
         Returns:
-            Dictionary with 'name', 'email', 'phone' keys (values may be None)
+            Dictionary with 'name', 'email', 'phone' keys (values may be None),
+            and 'name_is_explicit' bool indicating if name came from explicit introduction
         """
         # First, try regex extraction from the current message as a quick fallback
         all_text = current_user_message
         for msg in messages:
             if msg.role == "user":
                 all_text += " " + msg.content
-        
+
         regex_email = self._extract_email_regex(all_text)
         regex_phone = self._extract_phone_regex(all_text)
-        regex_name = self._extract_name_regex(all_text)
+        regex_name, name_is_explicit = self._extract_name_regex(all_text)
         
         logger.debug(
             f"Regex extraction results - name={regex_name}, email={regex_email}, phone={regex_phone}"
@@ -542,7 +583,7 @@ IMPORTANT:
 Respond with ONLY a valid JSON object in this exact format, no other text:
 {{"name": null, "email": null, "phone": null}}""".format("\n".join(recent_messages))
 
-        result = {"name": regex_name, "email": regex_email, "phone": regex_phone}
+        result = {"name": regex_name, "email": regex_email, "phone": regex_phone, "name_is_explicit": name_is_explicit}
         
         try:
             logger.debug(f"Attempting LLM extraction with prompt length: {len(extraction_prompt)}")
@@ -579,14 +620,20 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             llm_email = extracted.get("email")
             llm_phone = extracted.get("phone")
             
+            # If LLM found a name, it's always considered explicit (LLM only extracts
+            # when user explicitly stated their name)
+            final_name = llm_name if llm_name and llm_name != "null" else regex_name
+            final_name_is_explicit = True if (llm_name and llm_name != "null") else name_is_explicit
+
             result = {
-                "name": llm_name if llm_name and llm_name != "null" else regex_name,
+                "name": final_name,
                 "email": llm_email if llm_email and llm_email != "null" else regex_email,
                 "phone": llm_phone if llm_phone and llm_phone != "null" else regex_phone,
+                "name_is_explicit": final_name_is_explicit,
             }
             
-            # Clean up empty strings
-            for key in result:
+            # Clean up empty strings (skip boolean fields)
+            for key in ['name', 'email', 'phone']:
                 if result[key] == "" or result[key] == "null":
                     result[key] = None
                     

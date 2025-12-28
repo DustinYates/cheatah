@@ -98,6 +98,32 @@ export default function Settings() {
   const [widgetSuccess, setWidgetSuccess] = useState('');
   const [widgetError, setWidgetError] = useState('');
   const [widgetLoading, setWidgetLoading] = useState(false);
+  const iconSizeMap = {
+    small: '50px',
+    medium: '60px',
+    large: '75px',
+    'extra-large': '90px'
+  };
+  const previewIconSize = widgetSettings.icon.size === 'custom'
+    ? widgetSettings.icon.customSize || iconSizeMap.medium
+    : iconSizeMap[widgetSettings.icon.size] || iconSizeMap.medium;
+  const previewIconRadius = (() => {
+    switch (widgetSettings.icon.shape) {
+      case 'rounded-square':
+        return '16px';
+      case 'pill':
+        return '999px';
+      case 'square':
+        return '6px';
+      case 'custom':
+        return widgetSettings.icon.customBorderRadius || '18px';
+      case 'circle':
+      default:
+        return '50%';
+    }
+  })();
+  const previewFontFamily = widgetSettings.typography.fontFamily || 'inherit';
+  const previewFontSize = widgetSettings.typography.fontSize || '14px';
 
   const fetchProfile = useCallback(() => api.getBusinessProfile(), []);
   const { data: profile, loading, error, refetch } = useFetchData(fetchProfile);
@@ -403,7 +429,8 @@ export default function Settings() {
         )}
 
         {!widgetLoading && (
-          <form onSubmit={handleWidgetSubmit} className="settings-form">
+          <div className="widget-customization-layout">
+            <form onSubmit={handleWidgetSubmit} className="settings-form widget-customization-form">
             {/* Colors & Branding */}
             <details open>
               <summary>Colors & Branding</summary>
@@ -935,7 +962,105 @@ export default function Settings() {
             <button type="submit" className="save-btn" disabled={widgetSaving}>
               {widgetSaving ? 'Saving...' : 'Save Widget Settings'}
             </button>
-          </form>
+            </form>
+
+            <div className="widget-customization-preview" aria-label="Widget preview">
+              <div className="widget-preview-card">
+                <div className="widget-preview-header">
+                  <h3>Live Preview</h3>
+                  <p>See your widget styles update in real time.</p>
+                </div>
+
+                <div className="widget-preview-viewport">
+                  <div
+                    className="widget-preview-window"
+                    style={{
+                      background: widgetSettings.colors.background,
+                      color: widgetSettings.colors.text,
+                      borderColor: widgetSettings.colors.borderColor,
+                      borderRadius: widgetSettings.layout.borderRadius,
+                      boxShadow: widgetSettings.layout.boxShadow,
+                      maxWidth: widgetSettings.layout.maxWidth,
+                      fontFamily: previewFontFamily,
+                      fontSize: previewFontSize
+                    }}
+                  >
+                    <div
+                      className="widget-preview-titlebar"
+                      style={{
+                        background: widgetSettings.colors.primary,
+                        color: widgetSettings.colors.buttonText
+                      }}
+                    >
+                      <span>{widgetSettings.messages.welcomeMessage || 'Chat with us'}</span>
+                      <span className="widget-preview-status">Online</span>
+                    </div>
+                    <div className="widget-preview-body">
+                      <div className="widget-preview-bubble widget-preview-bubble-in">
+                        Hi! Need help getting started?
+                      </div>
+                      <div
+                        className="widget-preview-bubble widget-preview-bubble-out"
+                        style={{
+                          background: widgetSettings.colors.secondary,
+                          color: widgetSettings.colors.buttonText
+                        }}
+                      >
+                        I want to customize the widget.
+                      </div>
+                    </div>
+                    <div className="widget-preview-input">
+                      <span className="widget-preview-placeholder">
+                        {widgetSettings.messages.placeholder || 'Type your message...'}
+                      </span>
+                      <button
+                        type="button"
+                        style={{
+                          background: widgetSettings.colors.primary,
+                          color: widgetSettings.colors.buttonText
+                        }}
+                      >
+                        {widgetSettings.messages.sendButtonText || 'Send'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="widget-preview-icon-wrap">
+                    <div
+                      className="widget-preview-icon"
+                      style={{
+                        width: previewIconSize,
+                        height: previewIconSize,
+                        borderRadius: previewIconRadius,
+                        background: widgetSettings.colors.primary,
+                        color: widgetSettings.colors.buttonText
+                      }}
+                    >
+                      {widgetSettings.icon.type === 'emoji' && (widgetSettings.icon.emoji || '💬')}
+                      {widgetSettings.icon.type === 'image' && widgetSettings.icon.imageUrl && (
+                        <img src={widgetSettings.icon.imageUrl} alt="Widget icon preview" />
+                      )}
+                      {widgetSettings.icon.type === 'image' && !widgetSettings.icon.imageUrl && (
+                        <span>{widgetSettings.icon.fallbackToEmoji ? (widgetSettings.icon.emoji || '💬') : '◎'}</span>
+                      )}
+                    </div>
+                    {widgetSettings.icon.showLabel && (
+                      <div
+                        className={`widget-preview-label widget-preview-label-${widgetSettings.icon.labelPosition}`}
+                        style={{
+                          background: widgetSettings.icon.labelBackgroundColor,
+                          color: widgetSettings.icon.labelTextColor,
+                          fontSize: widgetSettings.icon.labelFontSize
+                        }}
+                      >
+                        {widgetSettings.icon.labelText || 'Chat'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

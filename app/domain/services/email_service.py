@@ -208,7 +208,7 @@ class EmailService:
         if extracted_info and should_capture_lead:
             print(f"[LEAD_CAPTURE] All conditions met, attempting to create lead", flush=True)
             # Build metadata for lead (include additional fields and parsing metadata)
-            metadata = {}
+            metadata = {"source": "email"}
             if extracted_info.get("additional_fields"):
                 metadata.update(extracted_info["additional_fields"])
             if extracted_info.get("metadata"):

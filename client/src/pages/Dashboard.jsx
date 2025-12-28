@@ -53,11 +53,31 @@ const EnvelopeIcon = () => (
   </svg>
 );
 
+// Chat icon SVG component
+const ChatIcon = () => (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle' }}
+  >
+    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+  </svg>
+);
+
 export default function Dashboard() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(null);
+  const [selectedLead, setSelectedLead] = useState(null);
+  const [conversationData, setConversationData] = useState(null);
+  const [loadingConversation, setLoadingConversation] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -114,7 +134,7 @@ export default function Dashboard() {
     if (!confirm(`Are you sure you want to delete "${leadName || 'this lead'}"? This action cannot be undone.`)) {
       return;
     }
-    
+
     setActionLoading(leadId);
     try {
       await api.deleteLead(leadId);
@@ -131,6 +151,25 @@ export default function Dashboard() {
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleViewDetails = async (lead) => {
+    setSelectedLead(lead);
+    setLoadingConversation(true);
+    setConversationData(null);
+    try {
+      const data = await api.getLeadConversation(lead.id);
+      setConversationData(data);
+    } catch (err) {
+      console.error('Failed to load conversation:', err);
+    } finally {
+      setLoadingConversation(false);
+    }
+  };
+
+  const closeModal = () => {
+    setSelectedLead(null);
+    setConversationData(null);
   };
 
   if (loading) {
@@ -227,6 +266,14 @@ export default function Dashboard() {
                         <span className={`status-badge ${lead.status || 'new'}`}>
                           {lead.status || 'New'}
                         </span>
+                        <button
+                          className="btn-chat-icon"
+                          onClick={() => handleViewDetails(lead)}
+                          title="View details"
+                          aria-label="View lead details"
+                        >
+                          <ChatIcon />
+                        </button>
                       </td>
                       <td className="actions-cell col-actions">
                         <div className="actions-container">
@@ -307,6 +354,78 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Lead Details Modal */}
+      {selectedLead && (
+        <div className="lead-detail-modal-overlay" onClick={closeModal}>
+          <div className="lead-detail-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="lead-detail-modal-header">
+              <h3>Lead Details</h3>
+              <button className="btn-close" onClick={closeModal}>×</button>
+            </div>
+            <div className="lead-detail-modal-body">
+              {/* Lead Info Section */}
+              <div className="lead-detail-section">
+                <h4>Contact Information</h4>
+                <div className="lead-detail-row">
+                  <span className="label">Name:</span>
+                  <span className="value">{selectedLead.name || 'Unknown'}</span>
+                </div>
+                <div className="lead-detail-row">
+                  <span className="label">Email:</span>
+                  <span className="value">{selectedLead.email || '-'}</span>
+                </div>
+                <div className="lead-detail-row">
+                  <span className="label">Phone:</span>
+                  <span className="value">{selectedLead.phone || '-'}</span>
+                </div>
+                <div className="lead-detail-row">
+                  <span className="label">Source:</span>
+                  <span className="value">{selectedLead.extra_data?.source || 'chatbot'}</span>
+                </div>
+              </div>
+
+              {/* Form Submission Data */}
+              {selectedLead.extra_data && Object.keys(selectedLead.extra_data).filter(k => k !== 'source' && k !== 'parsing_metadata').length > 0 && (
+                <div className="lead-detail-section">
+                  <h4>Form Submission Details</h4>
+                  <p className="form-note">This person completed a form for more information.</p>
+                  <div className="form-fields">
+                    {Object.entries(selectedLead.extra_data)
+                      .filter(([key]) => key !== 'source' && key !== 'parsing_metadata')
+                      .map(([key, value]) => (
+                        <div className="lead-detail-row" key={key}>
+                          <span className="label">{key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}:</span>
+                          <span className="value">{String(value)}</span>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+              )}
+
+              {/* Conversation History */}
+              <div className="lead-detail-section">
+                <h4>Conversation History</h4>
+                {loadingConversation ? (
+                  <LoadingState message="Loading conversation..." />
+                ) : conversationData && conversationData.messages?.length > 0 ? (
+                  <div className="messages-list">
+                    {conversationData.messages.map((msg, idx) => (
+                      <div key={idx} className={`message ${msg.role}`}>
+                        <div className="message-role">{msg.role === 'user' ? 'User' : 'Bot'}</div>
+                        <div className="message-content">{msg.content}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="no-conversation">No conversation history available.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

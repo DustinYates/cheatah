@@ -63,8 +63,9 @@ app.add_middleware(IdempotencyMiddleware)
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 # Include worker routes (for Cloud Tasks)
-from app.workers import sms_worker, email_worker
+from app.workers import sms_worker, email_worker, followup_worker
 app.include_router(sms_worker.router, prefix="/workers", tags=["workers"])
+app.include_router(followup_worker.router, prefix="/workers", tags=["workers"])
 app.include_router(email_worker.router, prefix="/workers/email", tags=["email-workers"])
 
 @app.get("/health")

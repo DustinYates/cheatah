@@ -1,0 +1,194 @@
+"""Follow-up worker for processing scheduled SMS follow-up tasks."""
+
+import logging
+from datetime import datetime, timezone
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.domain.services.conversation_service import ConversationService
+from app.domain.services.opt_in_service import OptInService
+from app.infrastructure.twilio_client import TwilioSmsClient
+from app.persistence.database import get_db
+from app.persistence.models.lead import Lead
+from app.persistence.models.tenant_sms_config import TenantSmsConfig
+from app.persistence.repositories.lead_repository import LeadRepository
+from app.settings import settings
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+class FollowUpTaskPayload(BaseModel):
+    """Payload for follow-up processing task."""
+
+    tenant_id: int
+    lead_id: int
+    phone_number: str
+
+
+@router.post("/followup")
+async def process_followup_task(
+    request: Request,
+    payload: FollowUpTaskPayload,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, Any]:
+    """Process scheduled follow-up SMS task.
+
+    This endpoint is called by Cloud Tasks after the configured delay.
+    It initiates the outbound SMS conversation for lead qualification.
+    """
+    try:
+        lead_repo = LeadRepository(db)
+        lead = await lead_repo.get_by_id(payload.tenant_id, payload.lead_id)
+
+        if not lead:
+            logger.warning(f"Lead {payload.lead_id} not found for follow-up")
+            return {"status": "skipped", "reason": "lead_not_found"}
+
+        # Check if follow-up was already sent (prevent duplicate sends)
+        if lead.extra_data and lead.extra_data.get("followup_sent_at"):
+            logger.info(f"Follow-up already sent for lead {payload.lead_id}")
+            return {"status": "skipped", "reason": "already_sent"}
+
+        # Get SMS config for Twilio credentials
+        stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == payload.tenant_id)
+        result = await db.execute(stmt)
+        sms_config = result.scalar_one_or_none()
+
+        if not sms_config or not sms_config.is_enabled:
+            logger.warning(f"SMS not enabled for tenant {payload.tenant_id}")
+            return {"status": "skipped", "reason": "sms_not_enabled"}
+
+        if not sms_config.twilio_phone_number:
+            logger.warning(f"No Twilio phone number configured for tenant {payload.tenant_id}")
+            return {"status": "skipped", "reason": "no_twilio_number"}
+
+        # Check opt-in status
+        opt_in_service = OptInService(db)
+        is_opted_in = await opt_in_service.is_opted_in(payload.tenant_id, payload.phone_number)
+
+        if not is_opted_in:
+            # For leads from voice calls, consider implied consent
+            source = lead.extra_data.get("source") if lead.extra_data else None
+            if source == "voice_call":
+                # Auto opt-in with consent type "implied_voice_followup"
+                await opt_in_service.opt_in(
+                    payload.tenant_id,
+                    payload.phone_number,
+                    method="implied_voice_followup"
+                )
+                logger.info(f"Auto opted-in {payload.phone_number} for voice call follow-up")
+            else:
+                logger.info(f"Phone {payload.phone_number} not opted in, skipping follow-up")
+                return {"status": "skipped", "reason": "not_opted_in"}
+
+        # Create new conversation for follow-up
+        conversation_service = ConversationService(db)
+        conversation = await conversation_service.create_conversation(
+            tenant_id=payload.tenant_id,
+            channel="sms",
+            external_id=f"followup-{payload.lead_id}",
+        )
+
+        # Update conversation with phone number
+        from app.persistence.repositories.conversation_repository import ConversationRepository
+        conv_repo = ConversationRepository(db)
+        conv = await conv_repo.get_by_id(payload.tenant_id, conversation.id)
+        if conv:
+            conv.phone_number = payload.phone_number
+            await db.commit()
+
+        # Update lead with follow-up info
+        extra_data = lead.extra_data or {}
+        extra_data["followup_conversation_id"] = conversation.id
+        extra_data["followup_sent_at"] = datetime.now(timezone.utc).isoformat()
+        lead.extra_data = extra_data
+        lead.conversation_id = conversation.id  # Update primary conversation link
+        await db.commit()
+
+        # Generate initial follow-up message
+        initial_message = _generate_initial_message(lead, sms_config)
+
+        # Send via Twilio
+        twilio_client = TwilioSmsClient(
+            account_sid=sms_config.twilio_account_sid,
+            auth_token=sms_config.twilio_auth_token,
+        )
+
+        status_callback_url = None
+        if settings.twilio_webhook_url_base:
+            status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1/sms/status"
+
+        send_result = twilio_client.send_sms(
+            to=payload.phone_number,
+            from_=sms_config.twilio_phone_number,
+            body=initial_message,
+            status_callback=status_callback_url,
+        )
+
+        # Store initial message in conversation
+        await conversation_service.add_message(
+            payload.tenant_id,
+            conversation.id,
+            "assistant",
+            initial_message,
+        )
+
+        logger.info(
+            f"Follow-up SMS sent: lead_id={payload.lead_id}, "
+            f"conversation_id={conversation.id}, message_sid={send_result.get('sid')}"
+        )
+
+        return {
+            "status": "success",
+            "conversation_id": conversation.id,
+            "message_sid": send_result.get("sid"),
+        }
+
+    except Exception as e:
+        logger.error(f"Error processing follow-up task: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Follow-up processing failed: {str(e)}",
+        )
+
+
+def _generate_initial_message(lead: Lead, sms_config: TenantSmsConfig) -> str:
+    """Generate the initial follow-up message.
+
+    Uses custom template if configured, otherwise generates contextual message.
+    """
+    # Check for custom template in settings
+    custom_template = None
+    if sms_config.settings:
+        custom_template = sms_config.settings.get("followup_initial_message")
+
+    lead_name = lead.name or ""
+    first_name = lead_name.split()[0] if lead_name else ""
+
+    if custom_template:
+        # Template variable substitution
+        message = custom_template.replace("{name}", lead_name or "there")
+        message = message.replace("{first_name}", first_name or "there")
+        return message
+
+    # Default contextual message based on source
+    source = lead.extra_data.get("source") if lead.extra_data else "contact"
+
+    if source == "voice_call":
+        if first_name:
+            return f"Hi {first_name}! Thanks for calling earlier. I wanted to follow up and see if I can help with any other questions. What brings you to us today?"
+        return "Hi! Thanks for calling earlier. I wanted to follow up and see if I can help with any other questions. What brings you to us today?"
+    elif source == "email":
+        if first_name:
+            return f"Hi {first_name}! Following up on your email inquiry. I'm here to help - what questions can I answer for you?"
+        return "Hi! Following up on your email inquiry. I'm here to help - what questions can I answer for you?"
+    else:
+        if first_name:
+            return f"Hi {first_name}! Thanks for reaching out. I wanted to follow up and see how I can help you today."
+        return "Hi! Thanks for reaching out. I wanted to follow up and see how I can help you today."

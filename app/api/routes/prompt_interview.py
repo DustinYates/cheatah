@@ -1,5 +1,6 @@
 """Prompt interview routes for conversational prompt building."""
 
+import re
 from typing import Annotated
 from enum import Enum
 
@@ -498,21 +499,56 @@ def get_next_step_and_question(
     
     # Classes branching
     if current_step == InterviewStep.CLASSES_LIST:
-        # Store the class name temporarily
-        collected_data["_current_class_name"] = answer
-        return InterviewStep.CLASS_URL, INTERVIEW_QUESTIONS[InterviewStep.CLASS_URL], f"What's the registration or signup URL for '{answer}'? (Leave blank if none)"
-    
+        # Parse the answer into individual classes (split by newlines, commas, or bullet points)
+        # Split by newlines, then clean up each line
+        raw_classes = re.split(r'[\n\r]+', answer)
+        parsed_classes = []
+        for line in raw_classes:
+            # Remove bullet points, numbers, and leading/trailing whitespace
+            line = re.sub(r'^[\s•\-\*\d\.]+', '', line).strip()
+            if line:
+                # If the line contains commas, it might be a list like "Tadpole, Swimboree, Seahorse"
+                # But also might be "Turtle 1, Turtle 2" which are separate classes
+                # Split by comma only if the parts look like separate class names
+                if ',' in line:
+                    parts = [p.strip() for p in line.split(',')]
+                    # Add each part as a separate class
+                    parsed_classes.extend([p for p in parts if p])
+                else:
+                    parsed_classes.append(line)
+
+        # Store the pending classes queue
+        if parsed_classes:
+            collected_data["_pending_classes"] = parsed_classes[1:]  # Rest of classes
+            collected_data["_current_class_name"] = parsed_classes[0]  # First class
+            return InterviewStep.CLASS_URL, INTERVIEW_QUESTIONS[InterviewStep.CLASS_URL], f"What's the registration or signup URL for '{parsed_classes[0]}'? (Leave blank if none)"
+        else:
+            # No valid classes parsed, ask again
+            return InterviewStep.CLASSES_LIST, INTERVIEW_QUESTIONS[InterviewStep.CLASSES_LIST], "I didn't catch any class names. What classes or programs do you offer? (List one per line)"
+
     if current_step == InterviewStep.CLASS_URL:
         # Store the class with its URL
         if "classes" not in collected_data:
             collected_data["classes"] = []
         class_name = collected_data.pop("_current_class_name", "Unknown Class")
         collected_data["classes"].append({"name": class_name, "url": answer or ""})
-        return InterviewStep.CLASSES_MORE, INTERVIEW_QUESTIONS[InterviewStep.CLASSES_MORE], None
-    
+
+        # Check if there are more pending classes from the initial batch
+        pending_classes = collected_data.get("_pending_classes", [])
+        if pending_classes:
+            # Pop the next class from the queue
+            next_class = pending_classes.pop(0)
+            collected_data["_pending_classes"] = pending_classes
+            collected_data["_current_class_name"] = next_class
+            return InterviewStep.CLASS_URL, INTERVIEW_QUESTIONS[InterviewStep.CLASS_URL], f"What's the registration or signup URL for '{next_class}'? (Leave blank if none)"
+        else:
+            # No more pending classes, ask if they have more to add
+            collected_data.pop("_pending_classes", None)  # Clean up
+            return InterviewStep.CLASSES_MORE, INTERVIEW_QUESTIONS[InterviewStep.CLASSES_MORE], None
+
     if current_step == InterviewStep.CLASSES_MORE:
         if answer == "yes":
-            return InterviewStep.CLASSES_LIST, INTERVIEW_QUESTIONS[InterviewStep.CLASSES_LIST], "What's the name of the next class or program?"
+            return InterviewStep.CLASSES_LIST, INTERVIEW_QUESTIONS[InterviewStep.CLASSES_LIST], "What's the name of the next class or program? (You can list multiple, one per line)"
         else:
             return InterviewStep.HOURS, INTERVIEW_QUESTIONS[InterviewStep.HOURS], None
     
@@ -665,7 +701,7 @@ async def generate_prompt_from_interview(
     tone_info = TONE_DESCRIPTIONS.get(ToneChoice(tone), TONE_DESCRIPTIONS[ToneChoice.FRIENDLY_CASUAL])
     
     # Generate system prompt based on tone
-    system_content = f"""You are a helpful customer service assistant for {business_name}. 
+    system_content = f"""You are a helpful customer service assistant for {business_name}.
 Your communication style is: {tone_info['label']} - {tone_info['description']}.
 
 Key behaviors:
@@ -673,7 +709,18 @@ Key behaviors:
 - If you don't know something, say so honestly and offer to help find the answer
 - Never make up information about services, pricing, or policies
 - Keep responses concise but thorough
-- Ask ONE question at a time to keep the conversation natural"""
+- Ask ONE question at a time to keep the conversation natural
+
+CRITICAL - Keep the conversation flowing:
+- ALWAYS end your response with a question or invitation to continue the conversation
+- Never give dead-end responses that leave the customer with nothing to respond to
+- After answering, ask a relevant follow-up question to understand their needs better
+- Examples of good endings:
+  * "What age group would this be for?"
+  * "Would you like me to tell you more about our class options?"
+  * "Is there a particular day or time that works best for you?"
+  * "What questions do you have about getting started?"
+- The conversation should feel like a natural back-and-forth, not a FAQ lookup"""
 
     # Build business info section with multiple locations support
     business_info_parts = []
@@ -790,30 +837,41 @@ Key behaviors:
 
 Goal: Collect customer's name and email/phone naturally during conversation.
 
+CRITICAL RULE - NO EMAIL COMMUNICATION:
+- NEVER offer to email or send information to the customer
+- NEVER say "I can email you..." or "Would you like me to send you..."
+- Instead, direct customers to URLs where they can find information
+- If a registration URL exists, share it directly: "You can register at [URL]"
+- If asked for schedules/details, share any URL you have or offer to have someone call them
+
 Guidelines:
 - Be helpful FIRST, collect info SECOND - always answer their question before asking for contact info
 - Don't be pushy - if they don't want to share, that's okay
 - Ask for ONE piece of info at a time (don't ask for name, email, AND phone all at once)
 - Make it feel conversational, not like filling out a form
+- Share URLs and links when available instead of offering to email
 
 Progressive Collection Pattern:
 1. First, try to get email OR phone (whichever feels more natural)
-   - "Would you like me to send you more details? I can email them to you."
    - "I'd be happy to have someone follow up with you. What's the best way to reach you?"
+   - "Would you like us to give you a call to discuss this further?"
 2. If they provide email, you can optionally ask for phone:
    - "Thanks! In case we need to reach you quickly, would you like to share a phone number too?"
 3. After getting contact info, ask for their name once:
    - "And may I ask who I'm speaking with today?"
 
 Examples of GOOD (natural) approaches:
-- "That's a great question! I can send you our full pricing breakdown - what email should I use?"
-- "I'd love to help you find the right option. To follow up with you, could I get your email?"
+- "You can find all our class schedules at [website URL]. Would you like someone to call you to help pick the right one?"
+- "I'd love to help you find the right option. Can I have someone give you a call?"
+- "Here's the link to sign up: [URL]. If you have questions, I can have our team reach out!"
 
-Examples of BAD (pushy) approaches:
-- "Before I answer, I'll need your name, email, and phone number."
-- "Please provide your contact information to continue."
+Examples of BAD (avoid these):
+- "I can email you our schedule" - DON'T offer to email
+- "Would you like me to send that to your email?" - DON'T offer to send emails
+- "Before I answer, I'll need your name, email, and phone number." - DON'T be pushy
+- "Please provide your contact information to continue." - DON'T block conversation
 
-Remember: One piece of contact info is acceptable. Name + (email or phone) is ideal. Never make them feel pressured."""
+Remember: One piece of contact info is acceptable. Name + (email or phone) is ideal. Never make them feel pressured. Direct them to URLs for information rather than offering to email."""
 
     # Create the prompt bundle
     prompt_repo = PromptRepository(db)

@@ -187,22 +187,25 @@ class EmailService:
                 status="escalated",
             )
         
-        # Extract lead info from email signature and content
-        lead_captured = False
-        lead_id = None
-        extracted_info = self._extract_contact_info(from_email, sender_name, body)
-        
         # Check if this email's subject matches lead capture prefixes
         should_capture_lead = self._should_capture_lead_from_subject(
             subject=subject,
             email_config=email_config,
+        )
+
+        # Extract lead info from email signature and content
+        # Pass should_capture_lead so form submissions use body data only (not sender info)
+        lead_captured = False
+        lead_id = None
+        extracted_info = self._extract_contact_info(
+            from_email, sender_name, body, is_lead_capture_email=should_capture_lead
         )
         
         print(f"[LEAD_CAPTURE] subject='{subject}', should_capture={should_capture_lead}, has_extracted_info={extracted_info is not None}, existing_lead_id={email_conversation.lead_id}", flush=True)
         print(f"[LEAD_CAPTURE] extracted_info={extracted_info}", flush=True)
         logger.info(f"Lead capture check: subject='{subject}', should_capture={should_capture_lead}, has_extracted_info={extracted_info is not None}, has_existing_lead={email_conversation.lead_id is not None}")
         
-        if extracted_info and not email_conversation.lead_id and should_capture_lead:
+        if extracted_info and should_capture_lead:
             print(f"[LEAD_CAPTURE] All conditions met, attempting to create lead", flush=True)
             # Build metadata for lead (include additional fields and parsing metadata)
             metadata = {}
@@ -242,8 +245,6 @@ class EmailService:
             logger.info(f"Skipping lead capture for email with subject '{subject}' - does not match configured prefixes")
         elif not extracted_info:
             print(f"[LEAD_CAPTURE] SKIP: no extracted_info", flush=True)
-        elif email_conversation.lead_id:
-            print(f"[LEAD_CAPTURE] SKIP: lead already exists (id={email_conversation.lead_id})", flush=True)
         
         # Compose prompt with email-specific context
         additional_context = self._build_email_context(
@@ -582,14 +583,16 @@ class EmailService:
         from_email: str,
         sender_name: str,
         body: str,
+        is_lead_capture_email: bool = False,
     ) -> dict[str, Any] | None:
         """Extract contact info from email content using structured parser.
-        
+
         Args:
             from_email: Sender email address
             sender_name: Sender name
             body: Email body text
-            
+            is_lead_capture_email: If True, treat as form submission (use body data only, never sender info)
+
         Returns:
             Dictionary with name, email, phone, and metadata, or None if no info found
         """
@@ -616,7 +619,9 @@ class EmailService:
         )
         
         # Also check if we have additional fields or multiple parsed fields (suggests structured data)
+        # If is_lead_capture_email is True, always treat as structured data (form submission)
         has_structured_data = bool(
+            is_lead_capture_email or  # Lead capture emails are always form submissions
             has_form_indicators or
             (additional_fields and len(additional_fields) > 0) or
             (parsed_fields and len(parsed_fields) > 3)  # More than just name/email/phone

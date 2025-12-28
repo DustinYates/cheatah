@@ -142,6 +142,7 @@ class ChatService:
                     email=user_email,
                     phone=user_phone,
                     name=user_name,
+                    metadata={"source": "chatbot"},
                 )
                 lead_captured = True
 
@@ -257,6 +258,7 @@ class ChatService:
                         email=extracted_email,
                         phone=extracted_phone,
                         name=extracted_name,
+                        metadata={"source": "chatbot"},
                     )
                     lead_captured = True
                     logger.info(
@@ -471,11 +473,14 @@ class ChatService:
         }
 
         # Common stop words that indicate the name has ended
-        # Includes conjunctions, prepositions, and common response words that appear after names
+        # Includes conjunctions, prepositions, common response words, and verbs that often follow names in requests
         stop_words = {
             'and', 'is', 'my', 'the', 'a', 'an', 'with', 'or', 'to', 'for', 'in', 'on', 'at', 'from',
             'yea', 'yeah', 'yes', 'no', 'ok', 'okay', 'sure', 'thanks', 'thank', 'please', 'hi', 'hey',
             'i', 'we', 'you', 'they', 'he', 'she', 'it', 'this', 'that', 'here', 'there',
+            # Common verbs that follow names in requests like "im ralph give me the schedule"
+            'give', 'send', 'tell', 'show', 'get', 'need', 'want', 'can', 'could', 'would', 'will',
+            'let', 'help', 'just', 'now', 'looking', 'interested', 'calling', 'texting', 'asking',
         }
 
         # Pattern 1: Explicit name introduction phrases (case insensitive)

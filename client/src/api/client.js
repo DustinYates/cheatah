@@ -109,6 +109,13 @@ class ApiClient {
     });
   }
 
+  async updateTenant(tenantId, updates) {
+    return this.request(`/admin/tenants/${tenantId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
   async getLeads(params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/leads${query ? `?${query}` : ''}`);

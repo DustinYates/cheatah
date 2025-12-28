@@ -327,7 +327,7 @@ Call Ending:
                     contact_context += f"- Consider naturally asking for email OR phone when contextually appropriate (after answering questions, when discussing services, etc.)\n"
         
         chat_instructions = """
-        
+
 WEB CHAT COMMUNICATION STYLE:
 
 Your Approach:
@@ -336,11 +336,107 @@ Your Approach:
 - Ask ONE question at a time to avoid overwhelming the customer
 - Follow up questions should feel natural and conversational
 
+CRITICAL - KEEP THE CONVERSATION FLOWING:
+- ALWAYS end your response with a question or invitation to continue
+- Never give dead-end responses that leave the customer with nothing to respond to
+- After answering a question, ask a relevant follow-up to understand their needs better
+- Good follow-up examples:
+  * "What age group would this be for?"
+  * "Would you like me to tell you more about our options?"
+  * "Is there a particular day or time that works best for you?"
+  * "What questions do you have about getting started?"
+- The conversation should feel like a natural back-and-forth dialogue
+
+CRITICAL - NO EMAIL COMMUNICATION:
+- NEVER offer to email or send information to the customer
+- NEVER say "I can email you...", "Would you like me to send you...", or similar
+- Instead, direct customers to URLs/links where they can find information
+- If asked for schedules/pricing/details, share URLs if available OR offer to have someone call them
+- You may ACCEPT and CAPTURE emails when customers provide them, but don't offer to send emails
+
 Contact Information Collection:
 - Remember to collect contact information naturally during the conversation
 - Only ask when it makes sense contextually (after answering questions, discussing services, etc.)
 - Follow the progressive collection pattern described in your base instructions
-- Be helpful and friendly, never pushy or salesy"""
-        
+- Be helpful and friendly, never pushy or salesy
+- Prefer offering a callback over offering to email information"""
+
         return base_prompt + contact_context + chat_instructions
+
+    async def compose_prompt_sms_qualification(
+        self, tenant_id: int | None, context: dict | None = None
+    ) -> str | None:
+        """Compose SMS-specific prompt for lead qualification follow-ups.
+
+        This prompt guides the AI to collect qualification data:
+        - Name (if not already captured)
+        - Email address
+        - Budget/price range
+        - Timeline/urgency
+        - Specific needs/services interested in
+
+        Args:
+            tenant_id: Tenant ID (None for global)
+            context: Optional context dict that may include:
+                - collected_name: bool - Whether user's name has been collected
+                - collected_email: bool - Whether user's email has been collected
+                - collected_phone: bool - Whether user's phone has been collected
+                - collected_budget: bool - Whether budget has been collected
+                - collected_timeline: bool - Whether timeline has been collected
+                - collected_needs: bool - Whether needs have been collected
+
+        Returns:
+            Composed prompt string with qualification instructions, or None if no prompt is configured
+        """
+        base_prompt = await self.compose_prompt_sms(tenant_id, context)
+
+        if base_prompt is None:
+            return None
+
+        # Build qualification context based on what's been collected
+        qualification_context = ""
+        if context:
+            collected_name = context.get("collected_name", False)
+            collected_email = context.get("collected_email", False)
+            collected_budget = context.get("collected_budget", False)
+            collected_timeline = context.get("collected_timeline", False)
+            collected_needs = context.get("collected_needs", False)
+
+            still_needed = []
+            if not collected_name:
+                still_needed.append("name")
+            if not collected_email:
+                still_needed.append("email")
+            if not collected_needs:
+                still_needed.append("what they're looking for")
+            if not collected_timeline:
+                still_needed.append("timeline")
+            if not collected_budget:
+                still_needed.append("budget range")
+
+            if still_needed:
+                qualification_context = f"\n\nINFORMATION TO COLLECT (naturally, one at a time):\n"
+                qualification_context += f"Still need: {', '.join(still_needed)}\n"
+                qualification_context += "Priority order: name > email > needs > timeline > budget\n"
+
+        qualification_instructions = """
+
+LEAD QUALIFICATION GOALS:
+You are following up to qualify this lead. Your goal is to naturally collect:
+1. Their name (if not already known)
+2. Email address (for sending information)
+3. What they're looking for (specific services/needs)
+4. Their timeline (when they need it)
+5. Budget expectations (price range they're considering)
+
+APPROACH:
+- Be warm and helpful, not pushy or sales-y
+- Answer their questions first before asking yours
+- Ask ONE qualifying question per message
+- If they provide information voluntarily, acknowledge it
+- Keep messages SHORT (under 160 chars when possible)
+- Be conversational, not like filling out a form
+- If they seem uninterested, don't push - thank them and leave the door open"""
+
+        return base_prompt + qualification_context + qualification_instructions
 

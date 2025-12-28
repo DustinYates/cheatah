@@ -61,6 +61,22 @@
   color: #1f2937;
 }
 
+.tenant-input {
+  width: 100%;
+  min-width: 120px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: #fff;
+}
+
+.tenant-input:focus {
+  outline: none;
+  border-color: #4ade80;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.15);
+}
+
 .tenants-table tbody tr:hover {
   background: #f9fafb;
 }
@@ -211,4 +227,3 @@
 .btn-secondary:hover {
   background: #e5e7eb;
 }
-

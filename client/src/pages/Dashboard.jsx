@@ -4,6 +4,55 @@ import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import './Dashboard.css';
 
+// Robot icon SVG component
+const RobotIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle' }}
+  >
+    {/* Antenna */}
+    <line x1="12" y1="2" x2="12" y2="6" />
+    <circle cx="12" cy="2" r="1" fill="currentColor" />
+    {/* Head */}
+    <rect x="4" y="6" width="16" height="12" rx="2" />
+    {/* Eyes */}
+    <circle cx="9" cy="11" r="1.5" fill="currentColor" />
+    <circle cx="15" cy="11" r="1.5" fill="currentColor" />
+    {/* Mouth */}
+    <line x1="9" y1="15" x2="15" y2="15" />
+    {/* Ears */}
+    <rect x="1" y="9" width="2" height="5" rx="1" />
+    <rect x="21" y="9" width="2" height="5" rx="1" />
+  </svg>
+);
+
+// Envelope icon SVG component for email source
+const EnvelopeIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle' }}
+  >
+    {/* Envelope body */}
+    <rect x="2" y="4" width="20" height="16" rx="2" />
+    {/* Envelope flap/seal lines */}
+    <polyline points="2,4 12,13 22,4" />
+  </svg>
+);
+
 export default function Dashboard() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -99,6 +148,36 @@ export default function Dashboard() {
     return 'lead-row';
   };
 
+  const getSourceIcon = (lead) => {
+    const source = lead.extra_data?.source;
+    switch (source) {
+      case 'chatbot':
+      case 'web_chat':
+      case 'web_chat_lead':
+        return { icon: <RobotIcon />, title: 'Chatbot' };
+      case 'voice_call':
+      case 'phone':
+      case 'call':
+        return { icon: '📞', title: 'Phone Call' };
+      case 'sms':
+      case 'text':
+        return { icon: '💬', title: 'Text Message' };
+      case 'email':
+        return { icon: <EnvelopeIcon />, title: 'Email' };
+      default:
+        return { icon: <RobotIcon />, title: 'Chatbot' };
+    }
+  };
+
+  const getResponseIndicator = (lead) => {
+    if (lead.llm_responded === true) {
+      return { className: 'responded', title: 'LLM responded' };
+    } else if (lead.llm_responded === false) {
+      return { className: 'not-responded', title: 'No LLM response' };
+    }
+    return { className: 'no-conversation', title: 'No conversation' };
+  };
+
   return (
     <div className="dashboard">
       <h1>Dashboard</h1>
@@ -122,6 +201,7 @@ export default function Dashboard() {
                     <th className="col-name">Name</th>
                     <th className="col-email">Email</th>
                     <th className="col-phone">Phone</th>
+                    <th className="col-source">Source</th>
                     <th className="col-date">Date</th>
                     <th className="col-status">Status</th>
                     <th className="col-actions">Actions</th>
@@ -133,6 +213,15 @@ export default function Dashboard() {
                       <td className="col-name">{lead.name || 'Unknown'}</td>
                       <td className="col-email">{lead.email || '-'}</td>
                       <td className="col-phone">{lead.phone || '-'}</td>
+                      <td className="col-source">
+                        <span className="source-icon" title={getSourceIcon(lead).title}>
+                          {getSourceIcon(lead).icon}
+                        </span>
+                        <span
+                          className={`response-indicator ${getResponseIndicator(lead).className}`}
+                          title={getResponseIndicator(lead).title}
+                        />
+                      </td>
                       <td className="col-date">{formatSmartDateTime(lead.created_at)}</td>
                       <td className="col-status">
                         <span className={`status-badge ${lead.status || 'new'}`}>

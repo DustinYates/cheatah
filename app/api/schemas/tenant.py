@@ -1,5 +1,7 @@
 """Tenant-related schemas."""
 
+from datetime import date
+
 from pydantic import BaseModel
 
 
@@ -26,6 +28,28 @@ class TenantResponse(BaseModel):
     subdomain: str
     is_active: bool
     created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class AdminTenantUpdate(BaseModel):
+    """Admin tenant update request."""
+
+    end_date: date | None = None
+    tier: str | None = None
+
+
+class AdminTenantResponse(BaseModel):
+    """Admin tenant response."""
+
+    id: int
+    name: str
+    subdomain: str
+    is_active: bool
+    created_at: str
+    end_date: str | None
+    tier: str | None
 
     class Config:
         from_attributes = True

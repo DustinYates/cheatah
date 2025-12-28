@@ -1,5 +1,7 @@
 """SMS service for processing SMS messages via Twilio."""
 
+import json
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -15,9 +17,13 @@ from app.domain.services.opt_in_service import OptInService
 from app.domain.services.prompt_service import PromptService
 from app.infrastructure.twilio_client import TwilioSmsClient
 from app.persistence.models.conversation import Conversation, Message
+from app.persistence.models.lead import Lead
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.repositories.conversation_repository import ConversationRepository
+from app.persistence.repositories.lead_repository import LeadRepository
 from app.persistence.repositories.tenant_repository import TenantRepository
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -125,19 +131,19 @@ class SmsService:
         conversation = await self._get_or_create_sms_conversation(
             tenant_id, phone_number
         )
-        
+
         # Get conversation history
         from app.domain.services.conversation_service import ConversationService
         conversation_service = ConversationService(self.session)
         messages = await conversation_service.get_conversation_history(
             tenant_id, conversation.id
         )
-        
+
         # Add user message with metadata
         user_message = await conversation_service.add_message(
             tenant_id, conversation.id, "user", message_body
         )
-        
+
         # Add Twilio metadata to message
         if twilio_message_sid:
             user_message.message_metadata = {
@@ -145,10 +151,26 @@ class SmsService:
                 "phone_number": phone_number,
             }
             await self.session.commit()
-        
+
+        # Check if this is a follow-up conversation and extract qualification data
+        lead = await self._get_lead_for_conversation(tenant_id, conversation.id)
+        is_followup = False
+        qualification_context = None
+
+        if lead and lead.extra_data:
+            followup_conv_id = lead.extra_data.get("followup_conversation_id")
+            if followup_conv_id == conversation.id:
+                is_followup = True
+                # Extract qualification data from the user's message
+                extracted = await self._extract_qualification_data(message_body)
+                if extracted:
+                    await self._update_lead_qualification(lead, extracted)
+                # Build context for qualification prompt
+                qualification_context = await self._build_qualification_context(lead)
+
         # Detect intent
         intent_result = self.intent_detector.detect_intent(message_body)
-        
+
         # Check for escalation
         escalation = await self.escalation_service.check_and_escalate(
             tenant_id=tenant_id,
@@ -156,7 +178,7 @@ class SmsService:
             user_message=message_body,
             confidence_score=intent_result.confidence if intent_result.intent == "human_handoff" else None,
         )
-        
+
         # If escalation created, return escalation message
         if escalation:
             return SmsResult(
@@ -167,17 +189,30 @@ class SmsService:
                 requires_escalation=True,
                 escalation_id=escalation.id,
             )
-        
-        # Process with LLM (reuse ChatService core logic)
-        llm_response, llm_latency_ms = await self.chat_service._process_chat_core(
-            tenant_id=tenant_id,
-            conversation_id=conversation.id,
-            user_message=message_body,
-            messages=messages,
-            system_prompt_method=self.prompt_service.compose_prompt_sms,
-            requires_contact_info=False,  # SMS doesn't need contact info nudge
-            additional_context=None,
-        )
+
+        # Choose prompt method based on whether this is a follow-up conversation
+        if is_followup and qualification_context:
+            # Use qualification prompt for follow-up conversations
+            llm_response, llm_latency_ms = await self.chat_service._process_chat_core(
+                tenant_id=tenant_id,
+                conversation_id=conversation.id,
+                user_message=message_body,
+                messages=messages,
+                system_prompt_method=self.prompt_service.compose_prompt_sms_qualification,
+                requires_contact_info=False,
+                additional_context=qualification_context,
+            )
+        else:
+            # Process with regular SMS prompt
+            llm_response, llm_latency_ms = await self.chat_service._process_chat_core(
+                tenant_id=tenant_id,
+                conversation_id=conversation.id,
+                user_message=message_body,
+                messages=messages,
+                system_prompt_method=self.prompt_service.compose_prompt_sms,
+                requires_contact_info=False,
+                additional_context=None,
+            )
         
         # Format response for SMS (short, no markdown)
         formatted_response = self._format_sms_response(llm_response)
@@ -311,10 +346,10 @@ class SmsService:
 
     async def _is_business_hours(self, sms_config: TenantSmsConfig) -> bool:
         """Check if current time is within business hours.
-        
+
         Args:
             sms_config: SMS configuration
-            
+
         Returns:
             True if within business hours
         """
@@ -323,24 +358,129 @@ class SmsService:
         try:
             import pytz
             from datetime import datetime
-            
+
             if not sms_config.business_hours:
                 return True  # No hours configured, assume always open
-            
+
             tz = pytz.timezone(sms_config.timezone)
             now = datetime.now(tz)
             day_name = now.strftime("%A").lower()  # monday, tuesday, etc.
-            
+
             hours = sms_config.business_hours.get(day_name)
             if not hours:
                 return False  # No hours for this day
-            
+
             current_time = now.strftime("%H:%M")
             start_time = hours.get("start", "00:00")
             end_time = hours.get("end", "23:59")
-            
+
             return start_time <= current_time <= end_time
         except Exception:
             # On error, assume business hours
             return True
+
+    async def _get_lead_for_conversation(
+        self, tenant_id: int, conversation_id: int
+    ) -> Lead | None:
+        """Get lead associated with a conversation.
+
+        Args:
+            tenant_id: Tenant ID
+            conversation_id: Conversation ID
+
+        Returns:
+            Lead or None if not found
+        """
+        lead_repo = LeadRepository(self.session)
+        return await lead_repo.get_by_conversation(tenant_id, conversation_id)
+
+    async def _build_qualification_context(self, lead: Lead) -> dict:
+        """Build context about what qualification data has been collected.
+
+        Args:
+            lead: Lead to check
+
+        Returns:
+            Context dictionary for qualification prompt
+        """
+        qual_data = lead.extra_data.get("qualification_data", {}) if lead.extra_data else {}
+
+        return {
+            "collected_name": bool(lead.name or qual_data.get("name")),
+            "collected_email": bool(lead.email or qual_data.get("email")),
+            "collected_phone": True,  # We always have phone for SMS
+            "collected_budget": bool(qual_data.get("budget")),
+            "collected_timeline": bool(qual_data.get("timeline")),
+            "collected_needs": bool(qual_data.get("needs")),
+        }
+
+    async def _extract_qualification_data(self, message: str) -> dict | None:
+        """Extract qualification data from user message using LLM.
+
+        Args:
+            message: User message to extract from
+
+        Returns:
+            Dictionary with extracted data or None
+        """
+        extraction_prompt = f"""Extract any contact or qualification information from this message.
+
+Message: "{message}"
+
+Extract:
+- name: Their name if mentioned
+- email: Email address if provided
+- budget: Budget or price range mentioned
+- timeline: Timeline or urgency mentioned
+- needs: Specific services or needs mentioned
+
+Respond with ONLY valid JSON, no explanation:
+{{"name": null, "email": null, "budget": null, "timeline": null, "needs": null}}"""
+
+        try:
+            response = await self.chat_service.llm_orchestrator.generate(
+                extraction_prompt,
+                context={"temperature": 0.0, "max_tokens": 150},
+            )
+
+            # Parse JSON response
+            data = json.loads(response.strip())
+
+            # Filter out null values
+            extracted = {k: v for k, v in data.items() if v and v != "null"}
+            return extracted if extracted else None
+
+        except Exception as e:
+            logger.warning(f"Qualification extraction failed: {e}")
+            return None
+
+    async def _update_lead_qualification(self, lead: Lead, extracted: dict) -> None:
+        """Update lead with extracted qualification data.
+
+        Args:
+            lead: Lead to update
+            extracted: Extracted data dictionary
+        """
+        extra_data = lead.extra_data or {}
+        qual_data = extra_data.get("qualification_data", {})
+
+        # Update qualification data (don't overwrite existing values)
+        for key, value in extracted.items():
+            if key in ["name", "email"]:
+                # These go to main lead fields
+                if key == "name" and not lead.name and value:
+                    lead.name = value
+                    logger.info(f"Updated lead {lead.id} name: {value}")
+                elif key == "email" and not lead.email and value:
+                    lead.email = value
+                    logger.info(f"Updated lead {lead.id} email: {value}")
+            else:
+                # Store in qualification_data
+                if not qual_data.get(key) and value:
+                    qual_data[key] = value
+                    logger.info(f"Updated lead {lead.id} {key}: {value}")
+
+        extra_data["qualification_data"] = qual_data
+        lead.extra_data = extra_data
+        await self.session.commit()
 

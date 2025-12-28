@@ -231,12 +231,43 @@ class EmailBodyParser:
                     key = re.sub(r'\*\*?', '', key).strip()
                     # Remove HTML tags from value (but not email angle brackets like <email@example.com>)
                     value = self._strip_html_tags(value)
-                    if key and value:
-                        parsed[key.lower()] = value
+
+                    # Check if value contains another field label concatenated (e.g., "abc@aol.comPhone:212")
+                    # This handles cases where line breaks were stripped from HTML
+                    if value:
+                        # Find the EARLIEST occurrence of any known label in the value
+                        earliest_idx = len(value)
+                        earliest_label = None
+                        for label in known_labels:
+                            # Create case-insensitive pattern to find label followed by colon
+                            label_pattern = re.compile(rf'({re.escape(label)})\s*:', re.IGNORECASE)
+                            label_match = label_pattern.search(value)
+                            if label_match and label_match.start() < earliest_idx and label_match.start() > 0:
+                                earliest_idx = label_match.start()
+                                earliest_label = label
+
+                        if earliest_label is not None:
+                            # Split the value at the earliest label
+                            actual_value = value[:earliest_idx].strip()
+                            remaining = value[earliest_idx:].strip()
+                            if actual_value:
+                                parsed[key.lower()] = actual_value
+                                logger.debug(f"Split concatenated value: '{key}' = '{actual_value}', remaining: '{remaining}'")
+                            # Add remaining as a virtual line to parse later
+                            if remaining:
+                                lines.insert(i + 1, remaining)
+                            i += 1
+                            continue  # Continue to process the inserted line
+                        else:
+                            # No label found in value, use as-is
+                            if key and value:
+                                parsed[key.lower()] = value
+                                i += 1
+                                continue
+                    else:
                         i += 1
-                        continue
                     # If key exists but value is empty, check next line
-                    elif key and not value:
+                    if key and not value:
                         if i + 1 < len(lines):
                             next_line = lines[i + 1].strip()
                             # Next line should be a value (not another key)
@@ -453,16 +484,16 @@ class EmailBodyParser:
 
     def _clean_email(self, email: str) -> str | None:
         """Clean and validate an email address.
-        
+
         Args:
             email: Raw email string (may include "Name <email@example.com>" format)
-            
+
         Returns:
             Cleaned email address or None if invalid
         """
         if not email:
             return None
-        
+
         # Extract email from "Name <email@example.com>" format
         match = re.search(r'<([^>]+)>', email)
         if match:
@@ -477,23 +508,34 @@ class EmailBodyParser:
                     if '@' in part:
                         email = part.strip('<>')
                         break
-        
+
         # Clean whitespace
         email = email.strip()
-        
+
+        # Use search to find the actual email within the string
+        # This handles cases like "abc@aol.comPhone:212-212-1111" where text is concatenated
+        # Use a stricter pattern that stops at uppercase letters after TLD (likely next field label)
+        email_extract_pattern = re.compile(
+            r'([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,})(?=[A-Z]|$|[^a-zA-Z0-9.])',
+            re.IGNORECASE
+        )
+        extract_match = email_extract_pattern.search(email)
+        if extract_match:
+            email = extract_match.group(1)
+
         # Basic validation: must contain @ and look like an email
         if not self.EMAIL_PATTERN.match(email):
             return None
-        
+
         # Don't accept names as emails (basic check)
         # If it doesn't have @, it's not an email
         if '@' not in email:
             return None
-        
+
         # Check for common non-email patterns
         if email.lower() in ['name', 'email', 'phone', 'n/a', 'none', 'null']:
             return None
-        
+
         return email.lower()
 
     def _extract_phone(self, parsed_data: dict[str, str], email_body: str) -> str | None:

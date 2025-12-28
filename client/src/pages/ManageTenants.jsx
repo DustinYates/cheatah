@@ -49,6 +49,27 @@ export default function ManageTenants() {
     }
   };
 
+  const handleTenantFieldChange = (tenantId, field, value) => {
+    setTenants((prevTenants) =>
+      prevTenants.map((tenant) =>
+        tenant.id === tenantId ? { ...tenant, [field]: value } : tenant
+      )
+    );
+  };
+
+  const handleTenantFieldBlur = async (tenantId, field, value) => {
+    const normalizedValue = value === '' ? null : value;
+    setError(null);
+    try {
+      const updated = await api.updateTenant(tenantId, { [field]: normalizedValue });
+      setTenants((prevTenants) =>
+        prevTenants.map((tenant) => (tenant.id === tenantId ? updated : tenant))
+      );
+    } catch (err) {
+      setError(err.message || 'Failed to update tenant');
+    }
+  };
+
   if (loading) {
     return <LoadingState message="Loading tenants..." fullPage />;
   }
@@ -91,6 +112,8 @@ export default function ManageTenants() {
                 <th>Subdomain</th>
                 <th>Status</th>
                 <th>Created</th>
+                <th>End Date</th>
+                <th>Tier</th>
               </tr>
             </thead>
             <tbody>
@@ -105,6 +128,35 @@ export default function ManageTenants() {
                     </span>
                   </td>
                   <td>{new Date(tenant.created_at).toLocaleDateString()}</td>
+                  <td>
+                    <input
+                      className="tenant-input"
+                      type="date"
+                      value={tenant.end_date || ''}
+                      onChange={(e) =>
+                        handleTenantFieldChange(tenant.id, 'end_date', e.target.value)
+                      }
+                      onBlur={(e) =>
+                        handleTenantFieldBlur(tenant.id, 'end_date', e.target.value)
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="tenant-input"
+                      type="text"
+                      value={tenant.tier || ''}
+                      onChange={(e) =>
+                        handleTenantFieldChange(tenant.id, 'tier', e.target.value)
+                      }
+                      onBlur={(e) => {
+                        const trimmedValue = e.target.value.trim();
+                        handleTenantFieldChange(tenant.id, 'tier', trimmedValue);
+                        handleTenantFieldBlur(tenant.id, 'tier', trimmedValue);
+                      }}
+                      placeholder="-"
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -156,4 +208,3 @@ export default function ManageTenants() {
     </div>
   );
 }
-

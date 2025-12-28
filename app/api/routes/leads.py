@@ -6,10 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from app.api.deps import get_current_user, require_tenant_context
 from app.domain.services.lead_service import LeadService
 from app.domain.services.conversation_service import ConversationService
 from app.persistence.database import get_db
+from app.persistence.models.conversation import Message
 from app.persistence.models.tenant import User
 
 router = APIRouter()
@@ -27,6 +30,7 @@ class LeadResponse(BaseModel):
     status: str | None
     extra_data: dict | None
     created_at: str
+    llm_responded: bool | None = None  # True if assistant responded, False if not, None if no conversation
 
     class Config:
         from_attributes = True
@@ -69,6 +73,19 @@ class ConversationResponse(BaseModel):
         from_attributes = True
 
 
+async def _check_llm_responded(db: AsyncSession, conversation_id: int | None) -> bool | None:
+    """Check if LLM responded in a conversation (has assistant messages)."""
+    if not conversation_id:
+        return None
+    result = await db.execute(
+        select(Message.id)
+        .where(Message.conversation_id == conversation_id)
+        .where(Message.role == "assistant")
+        .limit(1)
+    )
+    return result.scalar() is not None
+
+
 @router.get("", response_model=LeadsListResponse)
 async def list_leads(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -81,13 +98,16 @@ async def list_leads(
     """List leads for the current tenant, optionally filtered by status."""
     lead_service = LeadService(db)
     leads = await lead_service.list_leads(tenant_id, skip=skip, limit=limit)
-    
+
     # Filter by status if provided
     if status:
         leads = [l for l in leads if l.status == status]
-    
-    return LeadsListResponse(
-        leads=[
+
+    # Build response with llm_responded field
+    lead_responses = []
+    for lead in leads:
+        llm_responded = await _check_llm_responded(db, lead.conversation_id)
+        lead_responses.append(
             LeadResponse(
                 id=lead.id,
                 tenant_id=lead.tenant_id,
@@ -98,9 +118,12 @@ async def list_leads(
                 status=lead.status if hasattr(lead, 'status') else None,
                 extra_data=lead.extra_data,
                 created_at=lead.created_at.isoformat() if lead.created_at else None,
+                llm_responded=llm_responded,
             )
-            for lead in leads
-        ],
+        )
+
+    return LeadsListResponse(
+        leads=lead_responses,
         total=len(leads),
     )
 
@@ -115,13 +138,15 @@ async def get_lead(
     """Get a specific lead by ID."""
     lead_service = LeadService(db)
     lead = await lead_service.get_lead(tenant_id, lead_id)
-    
+
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lead not found",
         )
-    
+
+    llm_responded = await _check_llm_responded(db, lead.conversation_id)
+
     return LeadResponse(
         id=lead.id,
         tenant_id=lead.tenant_id,
@@ -132,6 +157,7 @@ async def get_lead(
         status=lead.status if hasattr(lead, 'status') else None,
         extra_data=lead.extra_data,
         created_at=lead.created_at.isoformat() if lead.created_at else None,
+        llm_responded=llm_responded,
     )
 
 
@@ -198,16 +224,18 @@ async def update_lead_status(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid status. Must be one of: {valid_statuses}",
         )
-    
+
     lead_service = LeadService(db)
     lead = await lead_service.update_lead_status(tenant_id, lead_id, status_update.status)
-    
+
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lead not found",
         )
-    
+
+    llm_responded = await _check_llm_responded(db, lead.conversation_id)
+
     return LeadResponse(
         id=lead.id,
         tenant_id=lead.tenant_id,
@@ -218,6 +246,7 @@ async def update_lead_status(
         status=lead.status if hasattr(lead, 'status') else None,
         extra_data=lead.extra_data,
         created_at=lead.created_at.isoformat() if lead.created_at else None,
+        llm_responded=llm_responded,
     )
 
 

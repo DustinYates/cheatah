@@ -280,50 +280,6 @@ export default function EmailSettings() {
       {settings?.is_connected && (
         <form onSubmit={handleSubmit} className="settings-form">
           <section className="settings-section">
-            <h2>Responder Settings</h2>
-
-            <div className="form-group checkbox-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="is_enabled"
-                  checked={formData.is_enabled}
-                  onChange={handleChange}
-                />
-                <span className="checkbox-text">Enable Email Responder</span>
-              </label>
-              <small>When enabled, AI will automatically respond to incoming emails.</small>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="max_thread_depth">Thread Context Depth</label>
-              <input
-                type="number"
-                id="max_thread_depth"
-                name="max_thread_depth"
-                value={formData.max_thread_depth}
-                onChange={handleChange}
-                min="1"
-                max="50"
-              />
-              <small>Number of previous messages in thread to use as context (max 50)</small>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="response_signature">Email Signature</label>
-              <textarea
-                id="response_signature"
-                name="response_signature"
-                value={formData.response_signature}
-                onChange={handleChange}
-                placeholder="Best regards,&#10;Your Business Name&#10;Phone: (555) 123-4567"
-                rows={4}
-              />
-              <small>Signature to append to all AI-generated responses</small>
-            </div>
-          </section>
-
-          <section className="settings-section">
             <h2>Lead Capture</h2>
             <p className="section-description">
               Configure which email subjects should create leads. Only emails with subjects that start with one of these prefixes will create leads.
@@ -375,50 +331,6 @@ export default function EmailSettings() {
             </div>
           </section>
 
-          <section className="settings-section">
-            <h2>Business Hours</h2>
-
-            <div className="form-group checkbox-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="business_hours_enabled"
-                  checked={formData.business_hours_enabled}
-                  onChange={handleChange}
-                />
-                <span className="checkbox-text">Enable Business Hours</span>
-              </label>
-              <small>Use your business hours from profile settings</small>
-            </div>
-
-            <div className="form-group checkbox-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="auto_reply_outside_hours"
-                  checked={formData.auto_reply_outside_hours}
-                  onChange={handleChange}
-                  disabled={!formData.business_hours_enabled}
-                />
-                <span className="checkbox-text">Auto-reply Outside Hours</span>
-              </label>
-              <small>Send an automatic response when emails arrive outside business hours</small>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="auto_reply_message">Auto-reply Message</label>
-              <textarea
-                id="auto_reply_message"
-                name="auto_reply_message"
-                value={formData.auto_reply_message}
-                onChange={handleChange}
-                placeholder="Thank you for your email. We're currently outside our business hours. We'll respond as soon as possible during our next business day."
-                rows={3}
-                disabled={!formData.business_hours_enabled || !formData.auto_reply_outside_hours}
-              />
-            </div>
-          </section>
-
           <button type="submit" className="save-btn" disabled={saving}>
             {saving ? 'Saving...' : 'Save Settings'}
           </button>
@@ -427,4 +339,3 @@ export default function EmailSettings() {
     </div>
   );
 }
-

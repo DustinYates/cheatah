@@ -360,11 +360,67 @@ kimiknight1964@gmail.com
 Phone
 (254) 640-0994
         """
-        
+
         result = self.parser.parse(body)
-        
+
         # The parsed name should be from the form, not from any email header
         assert result["name"] == "Kimi Knight"
         # Should have structured data indicators
         assert result["metadata"]["parsed_fields"]
+
+    def test_no_space_after_colon_in_phone(self):
+        """Test parsing when Phone has no space after colon (Phone:212-212-1111)."""
+        body = """Name: Nick Riedel
+Email: abc@aol.com
+Phone:212-212-1111"""
+
+        result = self.parser.parse(body)
+
+        assert result["name"] == "Nick Riedel"
+        assert result["email"] == "abc@aol.com"
+        assert result["phone"] == "+12122121111"
+
+    def test_booking_page_email_format(self):
+        """Test the exact format from the booking page email capture."""
+        # This is the exact format shown in the user's screenshot
+        body = "Name: Nick Riedel\nEmail: abc@aol.com\nPhone:212-212-1111"
+
+        result = self.parser.parse(body)
+
+        assert result["name"] == "Nick Riedel"
+        assert result["email"] == "abc@aol.com"
+        assert result["phone"] == "+12122121111"
+
+    def test_fields_without_line_breaks(self):
+        """Test parsing when fields might be concatenated without proper line breaks."""
+        # Test case where fields might run together
+        body = "Name: Nick RiedelEmail: abc@aol.comPhone:212-212-1111"
+
+        result = self.parser.parse(body)
+
+        # Even with no line breaks, try to extract what we can
+        # Name should still be extracted
+        assert result["name"] is not None or result["email"] is not None or result["phone"] is not None
+
+    def test_email_concatenated_with_phone_label(self):
+        """Test parsing when email value has Phone label concatenated (no line break)."""
+        # This happens when HTML line breaks are stripped
+        body = "Email: abc@aol.comPhone:212-212-1111"
+
+        result = self.parser.parse(body)
+
+        # Email should NOT have "phone" appended
+        assert result["email"] == "abc@aol.com"
+        assert result["phone"] == "+12122121111"
+
+    def test_all_fields_concatenated(self):
+        """Test parsing when all fields are on one line without line breaks."""
+        body = "Name: Nick RiedelEmail: abc@aol.comPhone:212-212-1111"
+
+        result = self.parser.parse(body)
+
+        # All fields should be extracted correctly
+        assert result["name"] == "Nick Riedel"
+        assert result["email"] == "abc@aol.com"
+        assert result["phone"] == "+12122121111"
 

@@ -255,77 +255,43 @@ class ContactMergeService:
         to_contact_id: int
     ) -> None:
         """Reassign related entities from one contact to another.
-        
+
         Args:
             tenant_id: Tenant ID
             from_contact_id: Contact ID to reassign from
             to_contact_id: Contact ID to reassign to
         """
-        # Update leads that reference this contact
-        leads_stmt = (
-            update(Lead)
-            .where(
-                Lead.tenant_id == tenant_id,
-                Lead.contact_id == from_contact_id
-            )
-            .values(contact_id=to_contact_id)
-        )
-        await self.session.execute(leads_stmt)
-        
-        # Update conversations that reference this contact
-        convs_stmt = (
-            update(Conversation)
-            .where(
-                Conversation.tenant_id == tenant_id,
-                Conversation.contact_id == from_contact_id
-            )
-            .values(contact_id=to_contact_id)
-        )
-        await self.session.execute(convs_stmt)
+        # Note: Neither Lead nor Conversation has a contact_id field.
+        # The relationships work differently:
+        # - Contact has a lead_id field pointing to Lead
+        # - Lead has a conversation_id field pointing to Conversation
+        # No direct reassignment needed - the merge log tracks what was merged.
+        pass
 
     async def get_combined_conversation_history(
         self, tenant_id: int, contact_id: int
     ) -> list[Conversation]:
         """Get combined conversation history including merged contacts.
-        
+
         Args:
             tenant_id: Tenant ID
             contact_id: Primary contact ID
-            
+
         Returns:
             List of all conversations, including from merged contacts
         """
         from sqlalchemy.orm import selectinload
-        
+
         # Get the primary contact and all contacts merged into it
         merged_contacts = await self.contact_repo.get_merged_contacts(tenant_id, contact_id)
         all_contact_ids = [contact_id] + [c.id for c in merged_contacts]
-        
-        # Get all conversations for these contacts
-        # First via direct contact_id link
-        stmt = (
-            select(Conversation)
-            .options(selectinload(Conversation.messages))
-            .where(
-                Conversation.tenant_id == tenant_id,
-                Conversation.contact_id.in_(all_contact_ids)
-            )
-            .order_by(Conversation.created_at.desc())
-        )
-        result = await self.session.execute(stmt)
-        direct_conversations = list(result.scalars().all())
-        
-        # Also get conversations via lead_id chain
-        # Get contacts with their lead IDs
-        contacts = await self.contact_repo.get_multiple_by_ids(tenant_id, [contact_id])
-        # Include merged contacts
-        for mc in merged_contacts:
-            mc_full = await self.contact_repo.get_by_id_any_status(tenant_id, mc.id)
-            if mc_full:
-                contacts.append(mc_full)
-        
+
+        # Get conversations via lead_id chain (Contact -> Lead -> Conversation)
+        contacts = await self.contact_repo.get_multiple_by_ids(tenant_id, all_contact_ids)
+
         lead_ids = [c.lead_id for c in contacts if c.lead_id]
-        
+
+        conversations = []
         if lead_ids:
             # Get leads
             leads_stmt = select(Lead).where(
@@ -334,9 +300,9 @@ class ContactMergeService:
             )
             leads_result = await self.session.execute(leads_stmt)
             leads = leads_result.scalars().all()
-            
+
             conv_ids = [l.conversation_id for l in leads if l.conversation_id]
-            
+
             if conv_ids:
                 # Get those conversations
                 conv_stmt = (
@@ -346,19 +312,12 @@ class ContactMergeService:
                         Conversation.tenant_id == tenant_id,
                         Conversation.id.in_(conv_ids)
                     )
+                    .order_by(Conversation.created_at.desc())
                 )
                 conv_result = await self.session.execute(conv_stmt)
-                lead_conversations = list(conv_result.scalars().all())
-                
-                # Combine and dedupe
-                all_conv_ids = {c.id for c in direct_conversations}
-                for conv in lead_conversations:
-                    if conv.id not in all_conv_ids:
-                        direct_conversations.append(conv)
-        
-        # Sort by date
-        direct_conversations.sort(key=lambda c: c.created_at, reverse=True)
-        return direct_conversations
+                conversations = list(conv_result.scalars().all())
+
+        return conversations
 
     async def get_merge_history(
         self, tenant_id: int, contact_id: int

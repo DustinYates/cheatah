@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.conversation_service import ConversationService
 from app.domain.services.opt_in_service import OptInService
-from app.infrastructure.twilio_client import TwilioSmsClient
+from app.infrastructure.telephony.factory import TelephonyProviderFactory
 from app.persistence.database import get_db
 from app.persistence.models.lead import Lead
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
@@ -55,18 +55,24 @@ async def process_followup_task(
             logger.info(f"Follow-up already sent for lead {payload.lead_id}")
             return {"status": "skipped", "reason": "already_sent"}
 
-        # Get SMS config for Twilio credentials
-        stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == payload.tenant_id)
-        result = await db.execute(stmt)
-        sms_config = result.scalar_one_or_none()
+        # Get SMS provider using factory (supports Twilio and Telnyx)
+        factory = TelephonyProviderFactory(db)
+        sms_config = await factory.get_config(payload.tenant_id)
 
         if not sms_config or not sms_config.is_enabled:
             logger.warning(f"SMS not enabled for tenant {payload.tenant_id}")
             return {"status": "skipped", "reason": "sms_not_enabled"}
 
-        if not sms_config.twilio_phone_number:
-            logger.warning(f"No Twilio phone number configured for tenant {payload.tenant_id}")
-            return {"status": "skipped", "reason": "no_twilio_number"}
+        # Get the correct phone number based on provider
+        from_phone = factory.get_sms_phone_number(sms_config)
+        if not from_phone:
+            logger.warning(f"No phone number configured for tenant {payload.tenant_id} (provider: {sms_config.provider})")
+            return {"status": "skipped", "reason": "no_phone_number"}
+
+        sms_provider = await factory.get_sms_provider(payload.tenant_id)
+        if not sms_provider:
+            logger.warning(f"Could not get SMS provider for tenant {payload.tenant_id}")
+            return {"status": "skipped", "reason": "provider_not_configured"}
 
         # Check opt-in status
         opt_in_service = OptInService(db)
@@ -114,19 +120,16 @@ async def process_followup_task(
         # Generate initial follow-up message
         initial_message = _generate_initial_message(lead, sms_config)
 
-        # Send via Twilio
-        twilio_client = TwilioSmsClient(
-            account_sid=sms_config.twilio_account_sid,
-            auth_token=sms_config.twilio_auth_token,
-        )
-
+        # Build status callback URL based on provider
         status_callback_url = None
         if settings.twilio_webhook_url_base:
-            status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1/sms/status"
+            webhook_prefix = factory.get_webhook_path_prefix(sms_config)
+            status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1/sms{webhook_prefix}/status"
 
-        send_result = twilio_client.send_sms(
+        # Send SMS via the configured provider (Twilio or Telnyx)
+        send_result = await sms_provider.send_sms(
             to=payload.phone_number,
-            from_=sms_config.twilio_phone_number,
+            from_=from_phone,
             body=initial_message,
             status_callback=status_callback_url,
         )
@@ -141,13 +144,15 @@ async def process_followup_task(
 
         logger.info(
             f"Follow-up SMS sent: lead_id={payload.lead_id}, "
-            f"conversation_id={conversation.id}, message_sid={send_result.get('sid')}"
+            f"conversation_id={conversation.id}, message_id={send_result.message_id}, "
+            f"provider={send_result.provider}"
         )
 
         return {
             "status": "success",
             "conversation_id": conversation.id,
-            "message_sid": send_result.get("sid"),
+            "message_id": send_result.message_id,
+            "provider": send_result.provider,
         }
 
     except Exception as e:

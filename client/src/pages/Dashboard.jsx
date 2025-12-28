@@ -70,6 +70,28 @@ const ChatIcon = () => (
   </svg>
 );
 
+// SMS Follow-up icon SVG component
+const SmsFollowUpIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle' }}
+  >
+    {/* Phone with outgoing message */}
+    <rect x="5" y="2" width="14" height="20" rx="2" />
+    <line x1="12" y1="18" x2="12" y2="18.01" />
+    {/* Arrow/send indicator */}
+    <path d="M9 9l3-3 3 3" />
+    <line x1="12" y1="6" x2="12" y2="12" />
+  </svg>
+);
+
 export default function Dashboard() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -151,6 +173,46 @@ export default function Dashboard() {
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleTriggerFollowUp = async (lead) => {
+    if (!lead.phone) {
+      setError('Cannot send follow-up: Lead has no phone number');
+      return;
+    }
+
+    if (!confirm(`Send a follow-up SMS to ${lead.name || 'this lead'} at ${lead.phone}?`)) {
+      return;
+    }
+
+    setActionLoading(`followup-${lead.id}`);
+    try {
+      const result = await api.triggerFollowUp(lead.id);
+      if (result.success) {
+        // Update local state to mark follow-up as scheduled
+        setLeads(prevLeads => prevLeads.map(l =>
+          l.id === lead.id
+            ? { ...l, extra_data: { ...l.extra_data, followup_scheduled: true } }
+            : l
+        ));
+        setError(''); // Clear any previous errors
+      } else {
+        setError(result.message || 'Failed to trigger follow-up');
+      }
+    } catch (err) {
+      console.error('Follow-up error:', err);
+      setError(`Failed to trigger follow-up: ${err.message || 'Unknown error'}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Check if a lead needs follow-up (red indicator + has phone + not already sent)
+  const needsFollowUp = (lead) => {
+    return lead.llm_responded === false &&
+           lead.phone &&
+           !lead.extra_data?.followup_sent_at &&
+           !lead.extra_data?.followup_scheduled;
   };
 
   const handleViewDetails = async (lead) => {
@@ -277,6 +339,22 @@ export default function Dashboard() {
                       </td>
                       <td className="actions-cell col-actions">
                         <div className="actions-container">
+                          {/* Follow-up button - shown for leads with red indicator and phone number */}
+                          {needsFollowUp(lead) && (
+                            <button
+                              className="btn-action btn-followup"
+                              onClick={() => handleTriggerFollowUp(lead)}
+                              disabled={actionLoading === `followup-${lead.id}`}
+                              title="Send follow-up SMS"
+                              aria-label="Send follow-up SMS"
+                            >
+                              {actionLoading === `followup-${lead.id}` ? (
+                                <span className="spinner">⋯</span>
+                              ) : (
+                                <SmsFollowUpIcon />
+                              )}
+                            </button>
+                          )}
                           {(!lead.status || lead.status === 'new') ? (
                             <>
                               <button

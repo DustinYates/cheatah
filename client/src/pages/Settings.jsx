@@ -13,6 +13,25 @@ const defaultFormData = {
   email: '',
 };
 
+// Helper to get the active SMS phone number from telephony config
+const getActiveSmsPhone = (telephonyConfig) => {
+  if (!telephonyConfig) return { phone: '', provider: 'twilio', label: 'SMS Phone Number' };
+
+  const provider = telephonyConfig.provider || 'twilio';
+  if (provider === 'telnyx') {
+    return {
+      phone: telephonyConfig.telnyx_phone_number || '',
+      provider: 'telnyx',
+      label: 'Telnyx Phone Number'
+    };
+  }
+  return {
+    phone: telephonyConfig.twilio_phone_number || '',
+    provider: 'twilio',
+    label: 'Twilio Phone Number'
+  };
+};
+
 const defaultWidgetSettings = {
   colors: {
     primary: '#007bff',
@@ -44,7 +63,9 @@ const defaultWidgetSettings = {
     openBehavior: 'click',
     autoOpenDelay: 0,
     showOnPages: '*',
-    cooldownDays: 0
+    cooldownDays: 0,
+    autoOpenMessageEnabled: false,
+    autoOpenMessage: ''
   },
   animations: {
     type: 'none',
@@ -79,6 +100,58 @@ const defaultWidgetSettings = {
   }
 };
 
+const fontOptions = [
+  {
+    label: 'System',
+    value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif"
+  },
+  {
+    label: 'Open Sans',
+    value: "'Open Sans', Arial, sans-serif"
+  },
+  {
+    label: 'Source Sans 3',
+    value: "'Source Sans 3', 'Source Sans Pro', Arial, sans-serif"
+  },
+  {
+    label: 'Roboto',
+    value: "'Roboto', Arial, sans-serif"
+  },
+  {
+    label: 'Montserrat',
+    value: "'Montserrat', 'Helvetica Neue', Arial, sans-serif"
+  },
+  {
+    label: 'Poppins',
+    value: "'Poppins', 'Helvetica Neue', Arial, sans-serif"
+  },
+  {
+    label: 'Playfair Display',
+    value: "'Playfair Display', 'Times New Roman', serif"
+  },
+  {
+    label: 'Merriweather',
+    value: "'Merriweather', Georgia, serif"
+  },
+  {
+    label: 'Lora',
+    value: "'Lora', Georgia, serif"
+  }
+];
+
+const emojiOptions = [
+  { label: 'Speech Bubble', value: '💬' },
+  { label: 'Waving Hand', value: '👋' },
+  { label: 'Robot', value: '🤖' },
+  { label: 'Headset', value: '🎧' },
+  { label: 'Sparkles', value: '✨' },
+  { label: 'Lightning', value: '⚡' },
+  { label: 'Question Mark', value: '❓' },
+  { label: 'Chat Bubble', value: '🗨️' },
+  { label: 'Smile', value: '😊' },
+  { label: 'Megaphone', value: '📣' }
+];
+
 export default function Settings() {
   const { user, selectedTenantId } = useAuth();
   const [saving, setSaving] = useState(false);
@@ -98,6 +171,9 @@ export default function Settings() {
   const [widgetSuccess, setWidgetSuccess] = useState('');
   const [widgetError, setWidgetError] = useState('');
   const [widgetLoading, setWidgetLoading] = useState(false);
+
+  // Telephony config state (for SMS phone number display)
+  const [telephonyConfig, setTelephonyConfig] = useState(null);
   const iconSizeMap = {
     small: '50px',
     medium: '60px',
@@ -165,6 +241,22 @@ export default function Settings() {
   useEffect(() => {
     fetchWidgetSettings();
   }, [fetchWidgetSettings]);
+
+  // Fetch telephony config for SMS phone display
+  const fetchTelephonyConfig = useCallback(async () => {
+    if (user?.is_global_admin && !selectedTenantId) return;
+    try {
+      const data = await api.getTelephonyConfig();
+      setTelephonyConfig(data);
+    } catch (err) {
+      // Telephony config is optional, don't show error
+      console.log('Telephony config not available:', err.message);
+    }
+  }, [user, selectedTenantId]);
+
+  useEffect(() => {
+    fetchTelephonyConfig();
+  }, [fetchTelephonyConfig]);
 
   // Check if global admin without tenant selected
   const needsTenant = user?.is_global_admin && !selectedTenantId;
@@ -314,16 +406,20 @@ export default function Settings() {
         </div>
 
         <div className="form-group">
-          <label htmlFor="twilio_phone">Twilio Phone Number</label>
+          <label htmlFor="twilio_phone">{getActiveSmsPhone(telephonyConfig).label}</label>
           <input
             type="tel"
             id="twilio_phone"
             name="twilio_phone"
-            value={formData.twilio_phone}
-            onChange={handleChange}
-            placeholder="+15551234567"
+            value={getActiveSmsPhone(telephonyConfig).phone || formData.twilio_phone}
+            readOnly
+            placeholder="Not configured"
+            className="readonly-input"
           />
-          <small>Your Twilio number for SMS communications</small>
+          <small>
+            Your {getActiveSmsPhone(telephonyConfig).provider === 'telnyx' ? 'Telnyx' : 'Twilio'} number for SMS communications.
+            {' '}<a href="/telephony-settings">Configure in Telephony Settings</a>
+          </small>
         </div>
 
         <div className="form-group">
@@ -522,14 +618,17 @@ export default function Settings() {
                     <label htmlFor="widget-icon-emoji">
                       Emoji Character <span className="info-icon" title="Enter emoji character (e.g., 💬, 🤖, 👋)">ℹ️</span>
                     </label>
-                    <input
-                      type="text"
+                    <select
                       id="widget-icon-emoji"
                       value={widgetSettings.icon.emoji}
                       onChange={(e) => handleWidgetChange('icon', 'emoji', e.target.value)}
-                      placeholder="💬"
-                      maxLength={2}
-                    />
+                    >
+                      {emojiOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.value} {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 )}
 
@@ -633,14 +732,16 @@ export default function Settings() {
 
                 {/* Label Section */}
                 <div className="form-group">
-                  <label>
+                  <label className="checkbox-label">
                     <input
                       type="checkbox"
                       checked={widgetSettings.icon.showLabel}
                       onChange={(e) => handleWidgetChange('icon', 'showLabel', e.target.checked)}
                     />
-                    Show Label/Badge <span className="info-icon" title="Display text label with the icon">ℹ️</span>
+                    <span>Show label/badge</span>
+                    <span className="info-icon" title="Adds a small text label near the chat icon">ℹ️</span>
                   </label>
+                  <small className="checkbox-helper">Helpful for prompting visitors to start a chat.</small>
                 </div>
 
                 {widgetSettings.icon.showLabel && (
@@ -724,13 +825,17 @@ export default function Settings() {
                   <label htmlFor="widget-font-family">
                     Font Family <span className="info-icon" title="Font family for widget text">ℹ️</span>
                   </label>
-                  <input
-                    type="text"
+                  <select
                     id="widget-font-family"
                     value={widgetSettings.typography.fontFamily}
                     onChange={(e) => handleWidgetChange('typography', 'fontFamily', e.target.value)}
-                    placeholder="System font stack"
-                  />
+                  >
+                    {fontOptions.map((option) => (
+                      <option key={option.value} value={option.value} style={{ fontFamily: option.value }}>
+                        {option.label} - Aa Bb 123
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="form-group">
@@ -858,19 +963,50 @@ export default function Settings() {
                 </div>
 
                 {widgetSettings.behavior.openBehavior === 'auto' && (
-                  <div className="form-group">
-                    <label htmlFor="widget-auto-open-delay">
-                      Auto-Open Delay (seconds) <span className="info-icon" title="Delay before auto-opening">ℹ️</span>
-                    </label>
-                    <input
-                      type="number"
-                      id="widget-auto-open-delay"
-                      value={widgetSettings.behavior.autoOpenDelay}
-                      onChange={(e) => handleWidgetChange('behavior', 'autoOpenDelay', parseInt(e.target.value) || 0)}
-                      min="0"
-                      placeholder="0"
-                    />
-                  </div>
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="widget-auto-open-delay">
+                        Auto-Open Delay (seconds) <span className="info-icon" title="Delay before auto-opening">ℹ️</span>
+                      </label>
+                      <input
+                        type="number"
+                        id="widget-auto-open-delay"
+                        value={widgetSettings.behavior.autoOpenDelay}
+                        onChange={(e) => handleWidgetChange('behavior', 'autoOpenDelay', parseInt(e.target.value) || 0)}
+                        min="0"
+                        placeholder="0"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={widgetSettings.behavior.autoOpenMessageEnabled}
+                          onChange={(e) => handleWidgetChange('behavior', 'autoOpenMessageEnabled', e.target.checked)}
+                        />
+                        <span>Show auto-open message</span>
+                        <span className="info-icon" title="Display a short prompt when the widget auto-opens">ℹ️</span>
+                      </label>
+                      <small className="checkbox-helper">A friendly message can boost responses.</small>
+                    </div>
+
+                    {widgetSettings.behavior.autoOpenMessageEnabled && (
+                      <div className="form-group">
+                        <label htmlFor="widget-auto-open-message">
+                          Auto-Open Message <span className="info-icon" title="Text shown when the widget opens automatically">ℹ️</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="widget-auto-open-message"
+                          value={widgetSettings.behavior.autoOpenMessage}
+                          onChange={(e) => handleWidgetChange('behavior', 'autoOpenMessage', e.target.value)}
+                          placeholder="Hi there! Want help finding the right solution?"
+                          maxLength={120}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </details>

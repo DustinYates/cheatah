@@ -56,6 +56,11 @@ class FollowUpService:
             logger.debug(f"SMS not enabled for tenant {tenant_id}")
             return False
 
+        # Verify phone number is configured for the selected provider
+        if not self._has_sms_phone_number(config):
+            logger.debug(f"No SMS phone number configured for tenant {tenant_id} (provider: {config.provider})")
+            return False
+
         # Check if follow-up is enabled in settings
         followup_enabled = False
         if config.settings:
@@ -158,8 +163,101 @@ class FollowUpService:
             logger.error(f"Failed to schedule follow-up task for lead {lead_id}: {e}", exc_info=True)
             return None
 
+    async def trigger_immediate_followup(
+        self,
+        tenant_id: int,
+        lead_id: int,
+    ) -> str | None:
+        """Trigger an immediate follow-up SMS task (no delay).
+
+        Used for manual follow-up triggers from the dashboard.
+
+        Args:
+            tenant_id: Tenant ID
+            lead_id: Lead ID
+
+        Returns:
+            Cloud Task name if scheduled, None otherwise
+        """
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            logger.warning(f"Lead {lead_id} not found for immediate follow-up")
+            return None
+
+        if not lead.phone:
+            logger.warning(f"Lead {lead_id} has no phone number")
+            return None
+
+        # Check if already sent
+        if lead.extra_data and lead.extra_data.get("followup_sent_at"):
+            logger.info(f"Follow-up already sent for lead {lead_id}")
+            return None
+
+        # Verify SMS is configured
+        config = await self._get_sms_config(tenant_id)
+        if not config or not config.is_enabled:
+            logger.warning(f"SMS not enabled for tenant {tenant_id}")
+            return None
+
+        if not self._has_sms_phone_number(config):
+            logger.warning(f"No SMS phone number configured for tenant {tenant_id}")
+            return None
+
+        # Build worker URL
+        worker_base_url = settings.cloud_tasks_worker_url
+        if not worker_base_url:
+            logger.warning("cloud_tasks_worker_url not configured")
+            return None
+
+        if worker_base_url.endswith("/process-sms"):
+            worker_base_url = worker_base_url[:-12]
+        task_url = f"{worker_base_url.rstrip('/')}/followup"
+
+        # Schedule immediate task (0 delay)
+        try:
+            cloud_tasks = CloudTasksClient()
+            task_name = await cloud_tasks.create_task_async(
+                payload={
+                    "tenant_id": tenant_id,
+                    "lead_id": lead_id,
+                    "phone_number": lead.phone,
+                },
+                url=task_url,
+                delay_seconds=0,  # Immediate execution
+            )
+
+            # Update lead extra_data
+            extra_data = lead.extra_data or {}
+            extra_data["followup_scheduled"] = True
+            extra_data["followup_task_id"] = task_name
+            extra_data["followup_scheduled_at"] = datetime.now(timezone.utc).isoformat()
+            extra_data["followup_triggered_manually"] = True
+            lead.extra_data = extra_data
+            await self.session.commit()
+
+            logger.info(f"Triggered immediate follow-up for lead {lead_id}: {task_name}")
+            return task_name
+
+        except Exception as e:
+            logger.error(f"Failed to trigger immediate follow-up for lead {lead_id}: {e}", exc_info=True)
+            return None
+
     async def _get_sms_config(self, tenant_id: int) -> TenantSmsConfig | None:
         """Get tenant SMS configuration."""
         stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    def _has_sms_phone_number(self, config: TenantSmsConfig) -> bool:
+        """Check if the tenant has an SMS phone number configured for their provider.
+
+        Args:
+            config: Tenant SMS configuration
+
+        Returns:
+            True if a phone number is configured for the active provider
+        """
+        if config.provider == "telnyx":
+            return bool(config.telnyx_phone_number)
+        # Default to Twilio
+        return bool(config.twilio_phone_number)

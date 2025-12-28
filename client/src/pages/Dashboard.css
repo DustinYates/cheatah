@@ -312,6 +312,24 @@
   transform: translateY(0);
 }
 
+/* Follow-up button - Purple theme (for SMS follow-up) */
+.btn-followup {
+  background: #f3e5f5;
+  color: #7b1fa2;
+  border-color: #e1bee7;
+}
+
+.btn-followup:hover:not(:disabled) {
+  background: #e1bee7;
+  border-color: #ce93d8;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(123, 31, 162, 0.15);
+}
+
+.btn-followup:active:not(:disabled) {
+  transform: translateY(0);
+}
+
 /* Placeholder for maintaining consistent layout */
 .action-placeholder {
   width: 32px;

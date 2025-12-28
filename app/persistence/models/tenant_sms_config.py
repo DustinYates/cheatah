@@ -22,12 +22,25 @@ class TenantSmsConfig(Base):
     
     # Enable/disable
     is_enabled = Column(Boolean, default=False, nullable=False)
-    
+
+    # Provider selection (twilio or telnyx)
+    provider = Column(String(20), default="twilio", nullable=False)
+
     # Twilio configuration
     twilio_account_sid = Column(String(255), nullable=True)
     twilio_auth_token = Column(String(255), nullable=True)  # Should be encrypted in production
     twilio_phone_number = Column(String(50), nullable=True)  # Tenant's Twilio phone number
-    
+
+    # Telnyx configuration
+    telnyx_api_key = Column(String(255), nullable=True)  # Telnyx API v2 key
+    telnyx_messaging_profile_id = Column(String(255), nullable=True)  # Required for SMS
+    telnyx_connection_id = Column(String(255), nullable=True)  # Required for Voice/TeXML
+    telnyx_phone_number = Column(String(50), nullable=True)  # Tenant's Telnyx phone number
+
+    # Voice configuration
+    voice_enabled = Column(Boolean, default=False, nullable=False)
+    voice_phone_number = Column(String(50), nullable=True)  # Optional separate voice number
+
     # Business hours
     business_hours_enabled = Column(Boolean, default=False, nullable=False)
     timezone = Column(String(50), default="UTC", nullable=False)  # e.g., "America/New_York"

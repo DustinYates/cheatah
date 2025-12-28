@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.api.deps import get_current_user, require_tenant_context
 from app.domain.services.lead_service import LeadService
 from app.domain.services.conversation_service import ConversationService
+from app.domain.services.followup_service import FollowUpService
 from app.persistence.database import get_db
 from app.persistence.models.conversation import Message
 from app.persistence.models.tenant import User
@@ -260,11 +261,11 @@ async def delete_lead(
     """Delete a lead by ID."""
     import logging
     logger = logging.getLogger(__name__)
-    
+
     try:
         lead_service = LeadService(db)
         deleted = await lead_service.delete_lead(tenant_id, lead_id)
-        
+
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -277,4 +278,81 @@ async def delete_lead(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete lead: {str(e)}",
+        )
+
+
+class TriggerFollowUpResponse(BaseModel):
+    """Response for trigger follow-up endpoint."""
+
+    success: bool
+    message: str
+    task_id: str | None = None
+
+
+@router.post("/{lead_id}/trigger-followup", response_model=TriggerFollowUpResponse)
+async def trigger_followup(
+    lead_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> TriggerFollowUpResponse:
+    """Trigger an immediate follow-up SMS for a lead.
+
+    Sends a follow-up SMS to the lead using the configured telephony provider
+    (Twilio or Telnyx) and the Gemini LLM for intelligent responses.
+
+    The lead must:
+    - Have a phone number
+    - Not have already received a follow-up
+
+    Args:
+        lead_id: Lead ID to trigger follow-up for
+        db: Database session
+        current_user: Authenticated user
+        tenant_id: Tenant context
+
+    Returns:
+        TriggerFollowUpResponse with success status and task ID
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Verify lead exists
+    lead_service = LeadService(db)
+    lead = await lead_service.get_lead(tenant_id, lead_id)
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found",
+        )
+
+    if not lead.phone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lead has no phone number",
+        )
+
+    # Check if follow-up already sent
+    if lead.extra_data and lead.extra_data.get("followup_sent_at"):
+        return TriggerFollowUpResponse(
+            success=False,
+            message="Follow-up already sent for this lead",
+        )
+
+    # Trigger immediate follow-up
+    followup_service = FollowUpService(db)
+    task_name = await followup_service.trigger_immediate_followup(tenant_id, lead_id)
+
+    if task_name:
+        logger.info(f"Triggered follow-up for lead {lead_id} by user {current_user.email}")
+        return TriggerFollowUpResponse(
+            success=True,
+            message="Follow-up SMS scheduled successfully",
+            task_id=task_name,
+        )
+    else:
+        return TriggerFollowUpResponse(
+            success=False,
+            message="Failed to schedule follow-up. Check SMS configuration.",
         )

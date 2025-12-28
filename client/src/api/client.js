@@ -148,7 +148,7 @@ class ApiClient {
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
-    
+
     const selectedTenant = this.getSelectedTenant();
     const userInfo = this.getUserInfo();
     if (userInfo?.is_global_admin && selectedTenant) {
@@ -192,6 +192,12 @@ class ApiClient {
     }
 
     return true;
+  }
+
+  async triggerFollowUp(leadId) {
+    return this.request(`/leads/${leadId}/trigger-followup`, {
+      method: 'POST',
+    });
   }
 
   async getPromptBundles() {
@@ -541,6 +547,18 @@ class ApiClient {
   async updateWidgetSettings(data) {
     return this.request('/widget/settings', {
       method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Telephony configuration methods
+  async getTelephonyConfig() {
+    return this.request('/admin/telephony/config');
+  }
+
+  async updateTelephonyConfig(data) {
+    return this.request('/admin/telephony/config', {
+      method: 'POST',
       body: JSON.stringify(data),
     });
   }

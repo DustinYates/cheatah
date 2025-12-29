@@ -1,7 +1,7 @@
 """Add lead_id to contacts table
 
 Revision ID: add_lead_id_to_contacts
-Revises: add_lead_status
+Revises: add_contacts_table
 Create Date: 2025-12-19
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_lead_id_to_contacts'
-down_revision = 'add_lead_status'
+down_revision = 'add_contacts_table'
 branch_labels = None
 depends_on = None
 

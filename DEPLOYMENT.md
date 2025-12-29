@@ -18,7 +18,7 @@ gcloud secrets create database-url --data-file=-
 ### Environment Variables
 | Variable | Description | Example |
 |----------|-------------|---------|
-| DATABASE_URL | PostgreSQL connection string | `postgresql+asyncpg://user:pass@/dbname?host=/cloudsql/project:region:instance` |
+| DATABASE_URL | PostgreSQL connection string (Supabase) | `postgresql://postgres.xxxxx:PASSWORD@aws-1-us-east-2.pooler.supabase.com:5432/postgres` |
 | GEMINI_API_KEY | Google AI API key | From Secret Manager |
 | GEMINI_MODEL | Model to use | `gemini-3-flash-preview` |
 
@@ -64,13 +64,11 @@ gcloud run services update chattercheatah \
 #### 4. DNS resolution failure
 **Error:** `socket.gaierror: [Errno -3] Temporary failure in name resolution`
 
-**Cause:** Cloud SQL connection not configured or DATABASE_URL malformed
+**Cause:** DATABASE_URL malformed or Supabase host unreachable
 
-**Fix:** Ensure Cloud SQL instance is attached:
+**Fix:** Verify DATABASE_URL in Secret Manager is correct:
 ```bash
-gcloud run services update chattercheatah \
-  --region us-central1 \
-  --add-cloudsql-instances=PROJECT:REGION:INSTANCE
+gcloud secrets versions access latest --secret=database-url --project=chatbots-466618
 ```
 
 ### Deploying Updates
@@ -100,7 +98,7 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
 ```
 
 ### Current Production Config
-- **Service URL:** https://chattercheatah-iyv6z6wp7a-uc.a.run.app
+- **Service URL:** https://chattercheatah-900139201687.us-central1.run.app
 - **Region:** us-central1
-- **Cloud SQL:** chatbots-466618:us-central1:chattercheatah-db
+- **Database:** Supabase (PostgreSQL) - aws-1-us-east-2.pooler.supabase.com
 - **Model:** gemini-3-flash-preview

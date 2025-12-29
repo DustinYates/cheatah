@@ -129,20 +129,32 @@ export function AuthProvider({ children }) {
     await loadProfile();
   };
 
+  const refreshTenants = async () => {
+    if (user?.is_global_admin) {
+      try {
+        const tenantList = await api.getTenants();
+        setTenants(tenantList);
+      } catch (err) {
+        console.error('Failed to refresh tenants:', err);
+      }
+    }
+  };
+
   // Get effective tenant ID (selected tenant for global admin, or user's tenant)
   const effectiveTenantId = user?.is_global_admin ? selectedTenantId : user?.tenant_id;
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      login, 
-      logout, 
+    <AuthContext.Provider value={{
+      user,
+      login,
+      logout,
       loading,
       profileLoading,
       profileComplete,
       refreshProfile,
-      tenants, 
-      selectedTenantId, 
+      refreshTenants,
+      tenants,
+      selectedTenantId,
       selectTenant,
       effectiveTenantId,
     }}>

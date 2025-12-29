@@ -47,7 +47,9 @@ DEFAULT_SETTINGS = {
         "openBehavior": "click",
         "autoOpenDelay": 0,
         "showOnPages": "*",
-        "cooldownDays": 0
+        "cooldownDays": 0,
+        "autoOpenMessageEnabled": False,
+        "autoOpenMessage": ""
     },
     "animations": {
         "type": "none",
@@ -79,6 +81,70 @@ DEFAULT_SETTINGS = {
         "labelTextColor": "#333333",
         "labelFontSize": "12px",
         "fallbackToEmoji": True
+    },
+    "attention": {
+        "attentionAnimation": "none",
+        "attentionCycles": 2,
+        "unreadDot": False,
+        "unreadDotColor": "#ff3b30",
+        "unreadDotPosition": "top-right"
+    },
+    "motion": {
+        "launcherVisibility": "immediate",
+        "entryAnimation": "none",
+        "openAnimation": "none",
+        "delaySeconds": 8,
+        "scrollPercent": 35,
+        "exitIntentEnabled": False,
+        "exitIntentAction": "show"
+    },
+    "microInteractions": {
+        "typingIndicator": False,
+        "typingIndicatorDurationMs": 1200,
+        "blinkCursor": False,
+        "hoverEffect": "scale",
+        "buttonAnimation": "none"
+    },
+    "copy": {
+        "launcherPromptsEnabled": False,
+        "launcherPrompts": [
+            "Have a question?",
+            "Need help right now?",
+            "Get a quick answer"
+        ],
+        "launcherPromptRotateSeconds": 6,
+        "contextualPromptsEnabled": False,
+        "contextualPrompts": [
+            {"match": "/pricing", "text": "Want help choosing a plan?"},
+            {"match": "/contact", "text": "Prefer texting instead?"}
+        ],
+        "greetingEnabled": False,
+        "greetingMode": "time",
+        "greetingMorning": "Good morning! How can we help?",
+        "greetingAfternoon": "Good afternoon! How can we help?",
+        "greetingEvening": "Good evening! How can we help?",
+        "greetingPageRules": []
+    },
+    "sound": {
+        "chimeOnOpen": False,
+        "messageTicks": False,
+        "hapticFeedback": False,
+        "volume": 0.2
+    },
+    "socialProof": {
+        "showResponseTime": False,
+        "responseTimeText": "Typically replies in under 1 min",
+        "availabilityText": "",
+        "showAvatar": False,
+        "avatarUrl": "",
+        "agentName": "Cheetah Assistant"
+    },
+    "rules": {
+        "animateOncePerSession": True,
+        "stopAfterInteraction": True,
+        "maxAnimationSeconds": 3,
+        "respectReducedMotion": True,
+        "disableOnMobile": False
     }
 }
 
@@ -95,6 +161,13 @@ class WidgetSettingsResponse(BaseModel):
     messages: dict
     accessibility: dict
     icon: dict
+    attention: dict
+    motion: dict
+    microInteractions: dict
+    copy: dict
+    sound: dict
+    socialProof: dict
+    rules: dict
 
 
 class UpdateWidgetSettingsRequest(BaseModel):
@@ -107,6 +180,13 @@ class UpdateWidgetSettingsRequest(BaseModel):
     messages: dict | None = None
     accessibility: dict | None = None
     icon: dict | None = None
+    attention: dict | None = None
+    motion: dict | None = None
+    microInteractions: dict | None = None
+    copy: dict | None = None
+    sound: dict | None = None
+    socialProof: dict | None = None
+    rules: dict | None = None
 
 
 # Endpoints

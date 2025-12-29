@@ -36,14 +36,18 @@ class TenantResponse(BaseModel):
 class AdminTenantUpdate(BaseModel):
     """Admin tenant update request."""
 
+    tenant_number: str | None = None
     end_date: date | None = None
     tier: str | None = None
+    name: str | None = None
+    is_active: bool | None = None
 
 
 class AdminTenantResponse(BaseModel):
     """Admin tenant response."""
 
     id: int
+    tenant_number: str | None
     name: str
     subdomain: str
     is_active: bool

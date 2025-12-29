@@ -24,6 +24,7 @@ class Tenant(Base):
     __tablename__ = "tenants"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_number = Column(String(50), unique=True, nullable=True, index=True)  # Admin-assignable ID
     name = Column(String(255), nullable=False)
     subdomain = Column(String(100), unique=True, nullable=False, index=True)
     is_active = Column(Boolean, default=True, nullable=False)

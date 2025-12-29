@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import './ManageTenants.css';
 
 export default function ManageTenants() {
+  const navigate = useNavigate();
+  const { selectTenant, refreshTenants } = useAuth();
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -14,6 +18,12 @@ export default function ManageTenants() {
     is_active: true,
   });
   const [creating, setCreating] = useState(false);
+
+  // Single-tenant view mode
+  const [viewMode, setViewMode] = useState('list'); // 'list' or 'single'
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [editingTenant, setEditingTenant] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchTenants();
@@ -42,6 +52,7 @@ export default function ManageTenants() {
       setTenants([...tenants, created]);
       setNewTenant({ name: '', subdomain: '', is_active: true });
       setShowCreate(false);
+      if (refreshTenants) refreshTenants();
     } catch (err) {
       setError(err.message || 'Failed to create tenant');
     } finally {
@@ -55,6 +66,10 @@ export default function ManageTenants() {
         tenant.id === tenantId ? { ...tenant, [field]: value } : tenant
       )
     );
+    // Also update editingTenant if in single view
+    if (editingTenant && editingTenant.id === tenantId) {
+      setEditingTenant({ ...editingTenant, [field]: value });
+    }
   };
 
   const handleTenantFieldBlur = async (tenantId, field, value) => {
@@ -65,9 +80,69 @@ export default function ManageTenants() {
       setTenants((prevTenants) =>
         prevTenants.map((tenant) => (tenant.id === tenantId ? updated : tenant))
       );
+      if (editingTenant && editingTenant.id === tenantId) {
+        setEditingTenant(updated);
+      }
+      if (refreshTenants) refreshTenants();
     } catch (err) {
       setError(err.message || 'Failed to update tenant');
     }
+  };
+
+  const handleSaveTenant = async () => {
+    if (!editingTenant) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.updateTenant(editingTenant.id, {
+        tenant_number: editingTenant.tenant_number || null,
+        name: editingTenant.name,
+        tier: editingTenant.tier || null,
+        end_date: editingTenant.end_date || null,
+        is_active: editingTenant.is_active,
+      });
+      setTenants((prevTenants) =>
+        prevTenants.map((tenant) => (tenant.id === updated.id ? updated : tenant))
+      );
+      setEditingTenant(updated);
+      if (refreshTenants) refreshTenants();
+    } catch (err) {
+      setError(err.message || 'Failed to save tenant');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleViewTenant = (index) => {
+    setCurrentIndex(index);
+    setEditingTenant({ ...tenants[index] });
+    setViewMode('single');
+  };
+
+  const handlePrevTenant = () => {
+    if (currentIndex > 0) {
+      const newIndex = currentIndex - 1;
+      setCurrentIndex(newIndex);
+      setEditingTenant({ ...tenants[newIndex] });
+    }
+  };
+
+  const handleNextTenant = () => {
+    if (currentIndex < tenants.length - 1) {
+      const newIndex = currentIndex + 1;
+      setCurrentIndex(newIndex);
+      setEditingTenant({ ...tenants[newIndex] });
+    }
+  };
+
+  const handleImpersonate = (tenantId) => {
+    selectTenant(tenantId);
+    navigate('/');
+  };
+
+  const handleBackToList = () => {
+    setViewMode('list');
+    setEditingTenant(null);
   };
 
   if (loading) {
@@ -78,6 +153,135 @@ export default function ManageTenants() {
     return <ErrorState message={error} onRetry={fetchTenants} />;
   }
 
+  // Single Tenant View Mode
+  if (viewMode === 'single' && editingTenant) {
+    return (
+      <div className="manage-tenants-page">
+        <div className="single-view-header">
+          <button className="btn-back" onClick={handleBackToList}>
+            ← Back to List
+          </button>
+          <div className="tenant-nav">
+            <button
+              className="btn-nav"
+              onClick={handlePrevTenant}
+              disabled={currentIndex === 0}
+            >
+              ← Previous
+            </button>
+            <span className="nav-indicator">
+              Tenant {currentIndex + 1} of {tenants.length}
+            </span>
+            <button
+              className="btn-nav"
+              onClick={handleNextTenant}
+              disabled={currentIndex === tenants.length - 1}
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
+
+        <div className="tenant-detail-card">
+          <div className="tenant-detail-header">
+            <h2>{editingTenant.name}</h2>
+            <span className={`status ${editingTenant.is_active ? 'active' : 'inactive'}`}>
+              {editingTenant.is_active ? 'Active' : 'Inactive'}
+            </span>
+          </div>
+
+          <div className="tenant-detail-grid">
+            <div className="detail-field">
+              <label>System ID</label>
+              <div className="readonly-value">{editingTenant.id}</div>
+            </div>
+
+            <div className="detail-field">
+              <label>Tenant Number (Assignable ID)</label>
+              <input
+                type="text"
+                value={editingTenant.tenant_number || ''}
+                onChange={(e) => setEditingTenant({ ...editingTenant, tenant_number: e.target.value })}
+                placeholder="Enter custom tenant ID..."
+              />
+              <small>Assign a custom identifier for this tenant</small>
+            </div>
+
+            <div className="detail-field">
+              <label>Name</label>
+              <input
+                type="text"
+                value={editingTenant.name || ''}
+                onChange={(e) => setEditingTenant({ ...editingTenant, name: e.target.value })}
+              />
+            </div>
+
+            <div className="detail-field">
+              <label>Subdomain</label>
+              <div className="readonly-value">{editingTenant.subdomain}</div>
+            </div>
+
+            <div className="detail-field">
+              <label>Tier</label>
+              <input
+                type="text"
+                value={editingTenant.tier || ''}
+                onChange={(e) => setEditingTenant({ ...editingTenant, tier: e.target.value })}
+                placeholder="e.g., basic, pro, enterprise"
+              />
+            </div>
+
+            <div className="detail-field">
+              <label>End Date</label>
+              <input
+                type="date"
+                value={editingTenant.end_date || ''}
+                onChange={(e) => setEditingTenant({ ...editingTenant, end_date: e.target.value })}
+              />
+            </div>
+
+            <div className="detail-field">
+              <label>Status</label>
+              <select
+                value={editingTenant.is_active ? 'active' : 'inactive'}
+                onChange={(e) => setEditingTenant({ ...editingTenant, is_active: e.target.value === 'active' })}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div className="detail-field">
+              <label>Created</label>
+              <div className="readonly-value">
+                {new Date(editingTenant.created_at).toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          <div className="tenant-detail-actions">
+            <button
+              className="btn-primary"
+              onClick={handleSaveTenant}
+              disabled={saving}
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => handleImpersonate(editingTenant.id)}
+            >
+              View Tenant Screens →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // List View Mode
   return (
     <div className="manage-tenants-page">
       <div className="page-header">
@@ -108,18 +312,36 @@ export default function ManageTenants() {
             <thead>
               <tr>
                 <th>ID</th>
+                <th>Tenant #</th>
                 <th>Name</th>
                 <th>Subdomain</th>
                 <th>Status</th>
                 <th>Created</th>
                 <th>End Date</th>
                 <th>Tier</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {tenants.map((tenant) => (
+              {tenants.map((tenant, index) => (
                 <tr key={tenant.id}>
                   <td>{tenant.id}</td>
+                  <td>
+                    <input
+                      className="tenant-input"
+                      type="text"
+                      value={tenant.tenant_number || ''}
+                      onChange={(e) =>
+                        handleTenantFieldChange(tenant.id, 'tenant_number', e.target.value)
+                      }
+                      onBlur={(e) => {
+                        const trimmedValue = e.target.value.trim();
+                        handleTenantFieldChange(tenant.id, 'tenant_number', trimmedValue);
+                        handleTenantFieldBlur(tenant.id, 'tenant_number', trimmedValue);
+                      }}
+                      placeholder="Assign..."
+                    />
+                  </td>
                   <td>{tenant.name}</td>
                   <td>{tenant.subdomain || '-'}</td>
                   <td>
@@ -156,6 +378,22 @@ export default function ManageTenants() {
                       }}
                       placeholder="-"
                     />
+                  </td>
+                  <td className="actions-cell">
+                    <button
+                      className="btn-view"
+                      onClick={() => handleViewTenant(index)}
+                      title="View/Edit tenant details"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="btn-impersonate"
+                      onClick={() => handleImpersonate(tenant.id)}
+                      title="View this tenant's screens"
+                    >
+                      View →
+                    </button>
                   </td>
                 </tr>
               ))}

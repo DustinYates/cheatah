@@ -97,6 +97,70 @@ const defaultWidgetSettings = {
     labelTextColor: '#333333',
     labelFontSize: '12px',
     fallbackToEmoji: true
+  },
+  attention: {
+    attentionAnimation: 'none',
+    attentionCycles: 2,
+    unreadDot: false,
+    unreadDotColor: '#ff3b30',
+    unreadDotPosition: 'top-right'
+  },
+  motion: {
+    launcherVisibility: 'immediate',
+    entryAnimation: 'none',
+    openAnimation: 'none',
+    delaySeconds: 8,
+    scrollPercent: 35,
+    exitIntentEnabled: false,
+    exitIntentAction: 'show'
+  },
+  microInteractions: {
+    typingIndicator: false,
+    typingIndicatorDurationMs: 1200,
+    blinkCursor: false,
+    hoverEffect: 'scale',
+    buttonAnimation: 'none'
+  },
+  copy: {
+    launcherPromptsEnabled: false,
+    launcherPrompts: [
+      'Have a question?',
+      'Need help right now?',
+      'Get a quick answer'
+    ],
+    launcherPromptRotateSeconds: 6,
+    contextualPromptsEnabled: false,
+    contextualPrompts: [
+      { match: '/pricing', text: 'Want help choosing a plan?' },
+      { match: '/contact', text: 'Prefer texting instead?' }
+    ],
+    greetingEnabled: false,
+    greetingMode: 'time',
+    greetingMorning: 'Good morning! How can we help?',
+    greetingAfternoon: 'Good afternoon! How can we help?',
+    greetingEvening: 'Good evening! How can we help?',
+    greetingPageRules: []
+  },
+  sound: {
+    chimeOnOpen: false,
+    messageTicks: false,
+    hapticFeedback: false,
+    volume: 0.2
+  },
+  socialProof: {
+    showResponseTime: false,
+    responseTimeText: 'Typically replies in under 1 min',
+    availabilityText: '',
+    showAvatar: false,
+    avatarUrl: '',
+    agentName: 'Cheetah Assistant'
+  },
+  rules: {
+    animateOncePerSession: true,
+    stopAfterInteraction: true,
+    maxAnimationSeconds: 3,
+    respectReducedMotion: true,
+    disableOnMobile: false
   }
 };
 
@@ -299,6 +363,48 @@ export default function Settings() {
       [category]: {
         ...prev[category],
         [field]: value
+      }
+    }));
+  };
+
+  const handleWidgetListChange = (category, field, list) => {
+    setWidgetSettings(prev => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [field]: list
+      }
+    }));
+  };
+
+  const handleWidgetListItemChange = (category, field, index, key, value) => {
+    setWidgetSettings(prev => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [field]: (prev[category][field] || []).map((item, idx) => (
+          idx === index ? { ...item, [key]: value } : item
+        ))
+      }
+    }));
+  };
+
+  const addWidgetListItem = (category, field, item) => {
+    setWidgetSettings(prev => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [field]: [...(prev[category][field] || []), item]
+      }
+    }));
+  };
+
+  const removeWidgetListItem = (category, field, index) => {
+    setWidgetSettings(prev => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [field]: (prev[category][field] || []).filter((_, idx) => idx !== index)
       }
     }));
   };
@@ -1011,6 +1117,665 @@ export default function Settings() {
               </div>
             </details>
 
+            {/* Visual Attention Cues */}
+            <details>
+              <summary>Visual Attention Cues</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label htmlFor="widget-attention-animation">
+                    Launcher Attention Animation <span className="info-icon" title="Subtle animation to draw attention on first load">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-attention-animation"
+                    value={widgetSettings.attention.attentionAnimation}
+                    onChange={(e) => handleWidgetChange('attention', 'attentionAnimation', e.target.value)}
+                  >
+                    <option value="none">None</option>
+                    <option value="bounce">Subtle Bounce</option>
+                    <option value="pulse">Pulse</option>
+                    <option value="glow">Glow</option>
+                    <option value="breathing">Breathing</option>
+                    <option value="corner-nudge">Corner Nudge</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-attention-cycles">
+                    Animation Cycles <span className="info-icon" title="How many times the attention animation plays (1-2 recommended)">ℹ️</span>
+                  </label>
+                  <input
+                    type="number"
+                    id="widget-attention-cycles"
+                    min="1"
+                    max="3"
+                    value={widgetSettings.attention.attentionCycles}
+                    onChange={(e) => handleWidgetChange('attention', 'attentionCycles', parseInt(e.target.value, 10) || 1)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.attention.unreadDot}
+                      onChange={(e) => handleWidgetChange('attention', 'unreadDot', e.target.checked)}
+                    />
+                    <span>Show unread dot until first interaction</span>
+                    <span className="info-icon" title="Shows a small dot on the launcher until the visitor interacts">ℹ️</span>
+                  </label>
+                </div>
+
+                {widgetSettings.attention.unreadDot && (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="widget-unread-dot-color">Unread Dot Color</label>
+                      <input
+                        type="color"
+                        id="widget-unread-dot-color"
+                        value={widgetSettings.attention.unreadDotColor}
+                        onChange={(e) => handleWidgetChange('attention', 'unreadDotColor', e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="widget-unread-dot-position">Unread Dot Position</label>
+                      <select
+                        id="widget-unread-dot-position"
+                        value={widgetSettings.attention.unreadDotPosition}
+                        onChange={(e) => handleWidgetChange('attention', 'unreadDotPosition', e.target.value)}
+                      >
+                        <option value="top-right">Top Right</option>
+                        <option value="top-left">Top Left</option>
+                        <option value="bottom-right">Bottom Right</option>
+                        <option value="bottom-left">Bottom Left</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+            </details>
+
+            {/* Motion & Entry Effects */}
+            <details>
+              <summary>Motion & Entry Effects</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label htmlFor="widget-launcher-visibility">
+                    Launcher Reveal <span className="info-icon" title="When the launcher appears on the page">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-launcher-visibility"
+                    value={widgetSettings.motion.launcherVisibility}
+                    onChange={(e) => handleWidgetChange('motion', 'launcherVisibility', e.target.value)}
+                  >
+                    <option value="immediate">Immediate</option>
+                    <option value="delay">Delayed Entrance</option>
+                    <option value="scroll">Scroll Trigger</option>
+                    <option value="exit-intent">Exit Intent</option>
+                  </select>
+                </div>
+
+                {widgetSettings.motion.launcherVisibility === 'delay' && (
+                  <div className="form-group">
+                    <label htmlFor="widget-launcher-delay">
+                      Delay (seconds) <span className="info-icon" title="Delay before showing the launcher">ℹ️</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="widget-launcher-delay"
+                      min="1"
+                      max="30"
+                      value={widgetSettings.motion.delaySeconds}
+                      onChange={(e) => handleWidgetChange('motion', 'delaySeconds', parseInt(e.target.value, 10) || 5)}
+                    />
+                  </div>
+                )}
+
+                {widgetSettings.motion.launcherVisibility === 'scroll' && (
+                  <div className="form-group">
+                    <label htmlFor="widget-launcher-scroll">
+                      Scroll Trigger (%) <span className="info-icon" title="Show launcher after user scrolls this percentage">ℹ️</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="widget-launcher-scroll"
+                      min="10"
+                      max="90"
+                      value={widgetSettings.motion.scrollPercent}
+                      onChange={(e) => handleWidgetChange('motion', 'scrollPercent', parseInt(e.target.value, 10) || 30)}
+                    />
+                  </div>
+                )}
+
+                {widgetSettings.motion.launcherVisibility === 'exit-intent' && (
+                  <>
+                    <div className="form-group">
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={widgetSettings.motion.exitIntentEnabled}
+                          onChange={(e) => handleWidgetChange('motion', 'exitIntentEnabled', e.target.checked)}
+                        />
+                        <span>Enable exit-intent detection (desktop only)</span>
+                      </label>
+                    </div>
+
+                    {widgetSettings.motion.exitIntentEnabled && (
+                      <div className="form-group">
+                        <label htmlFor="widget-exit-intent-action">Exit Intent Action</label>
+                        <select
+                          id="widget-exit-intent-action"
+                          value={widgetSettings.motion.exitIntentAction}
+                          onChange={(e) => handleWidgetChange('motion', 'exitIntentAction', e.target.value)}
+                        >
+                          <option value="show">Show Launcher</option>
+                          <option value="open">Open Widget</option>
+                        </select>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div className="form-group">
+                  <label htmlFor="widget-entry-animation">
+                    Launcher Entry Animation <span className="info-icon" title="How the launcher animates into view">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-entry-animation"
+                    value={widgetSettings.motion.entryAnimation}
+                    onChange={(e) => handleWidgetChange('motion', 'entryAnimation', e.target.value)}
+                  >
+                    <option value="none">None</option>
+                    <option value="slide-up">Slide Up</option>
+                    <option value="slide-left">Slide In From Right</option>
+                    <option value="slide-right">Slide In From Left</option>
+                    <option value="fade">Fade</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-open-animation">
+                    Widget Open Animation <span className="info-icon" title="How the chat window opens">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-open-animation"
+                    value={widgetSettings.motion.openAnimation}
+                    onChange={(e) => handleWidgetChange('motion', 'openAnimation', e.target.value)}
+                  >
+                    <option value="none">None</option>
+                    <option value="slide-up">Slide Up</option>
+                    <option value="slide-left">Slide In From Right</option>
+                    <option value="slide-right">Slide In From Left</option>
+                    <option value="fade">Fade</option>
+                  </select>
+                </div>
+              </div>
+            </details>
+
+            {/* Micro-Interactions */}
+            <details>
+              <summary>Micro-Interactions</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.microInteractions.typingIndicator}
+                      onChange={(e) => handleWidgetChange('microInteractions', 'typingIndicator', e.target.checked)}
+                    />
+                    <span>Typing indicator before first message</span>
+                  </label>
+                </div>
+
+                {widgetSettings.microInteractions.typingIndicator && (
+                  <div className="form-group">
+                    <label htmlFor="widget-typing-duration">
+                      Typing Indicator Duration (ms)
+                    </label>
+                    <input
+                      type="number"
+                      id="widget-typing-duration"
+                      min="600"
+                      max="3000"
+                      value={widgetSettings.microInteractions.typingIndicatorDurationMs}
+                      onChange={(e) => handleWidgetChange('microInteractions', 'typingIndicatorDurationMs', parseInt(e.target.value, 10) || 1200)}
+                    />
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.microInteractions.blinkCursor}
+                      onChange={(e) => handleWidgetChange('microInteractions', 'blinkCursor', e.target.checked)}
+                    />
+                    <span>Blinking cursor in input field</span>
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-hover-effect">
+                    Hover Reaction <span className="info-icon" title="How the launcher reacts to hover">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-hover-effect"
+                    value={widgetSettings.microInteractions.hoverEffect}
+                    onChange={(e) => handleWidgetChange('microInteractions', 'hoverEffect', e.target.value)}
+                  >
+                    <option value="none">None</option>
+                    <option value="lift">Slight Lift</option>
+                    <option value="scale">Subtle Scale</option>
+                    <option value="color">Color Shift</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-button-animation">
+                    Button Press Animation <span className="info-icon" title="Feedback on button press">ℹ️</span>
+                  </label>
+                  <select
+                    id="widget-button-animation"
+                    value={widgetSettings.microInteractions.buttonAnimation}
+                    onChange={(e) => handleWidgetChange('microInteractions', 'buttonAnimation', e.target.value)}
+                  >
+                    <option value="none">None</option>
+                    <option value="press">Press</option>
+                    <option value="ripple">Ripple</option>
+                  </select>
+                </div>
+              </div>
+            </details>
+
+            {/* Copy & Prompts */}
+            <details>
+              <summary>Copy & Prompts</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.copy.launcherPromptsEnabled}
+                      onChange={(e) => handleWidgetChange('copy', 'launcherPromptsEnabled', e.target.checked)}
+                    />
+                    <span>Rotate launcher micro-prompts</span>
+                  </label>
+                </div>
+
+                {widgetSettings.copy.launcherPromptsEnabled && (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="widget-launcher-prompts">Launcher Prompts (one per line)</label>
+                      <textarea
+                        id="widget-launcher-prompts"
+                        rows={4}
+                        value={(widgetSettings.copy.launcherPrompts || []).join('\n')}
+                        onChange={(e) => handleWidgetListChange(
+                          'copy',
+                          'launcherPrompts',
+                          e.target.value.split('\n').map((line) => line.trim()).filter(Boolean)
+                        )}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="widget-launcher-rotate">
+                        Rotate Every (seconds)
+                      </label>
+                      <input
+                        type="number"
+                        id="widget-launcher-rotate"
+                        min="3"
+                        max="15"
+                        value={widgetSettings.copy.launcherPromptRotateSeconds}
+                        onChange={(e) => handleWidgetChange('copy', 'launcherPromptRotateSeconds', parseInt(e.target.value, 10) || 6)}
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div className="form-group">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.copy.contextualPromptsEnabled}
+                      onChange={(e) => handleWidgetChange('copy', 'contextualPromptsEnabled', e.target.checked)}
+                    />
+                    <span>Contextual launcher text by page</span>
+                  </label>
+                </div>
+
+                {widgetSettings.copy.contextualPromptsEnabled && (
+                  <div className="form-group">
+                    <label>Contextual Prompt Rules</label>
+                    <div className="rule-list">
+                      {(widgetSettings.copy.contextualPrompts || []).map((rule, index) => (
+                        <div key={`${rule.match}-${index}`} className="rule-row">
+                          <input
+                            type="text"
+                            placeholder="URL match (e.g., /pricing)"
+                            value={rule.match}
+                            onChange={(e) => handleWidgetListItemChange('copy', 'contextualPrompts', index, 'match', e.target.value)}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Prompt text"
+                            value={rule.text}
+                            onChange={(e) => handleWidgetListItemChange('copy', 'contextualPrompts', index, 'text', e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            onClick={() => removeWidgetListItem('copy', 'contextualPrompts', index)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => addWidgetListItem('copy', 'contextualPrompts', { match: '', text: '' })}
+                    >
+                      + Add Rule
+                    </button>
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.copy.greetingEnabled}
+                      onChange={(e) => handleWidgetChange('copy', 'greetingEnabled', e.target.checked)}
+                    />
+                    <span>Personalized greeting</span>
+                  </label>
+                </div>
+
+                {widgetSettings.copy.greetingEnabled && (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="widget-greeting-mode">Greeting Mode</label>
+                      <select
+                        id="widget-greeting-mode"
+                        value={widgetSettings.copy.greetingMode}
+                        onChange={(e) => handleWidgetChange('copy', 'greetingMode', e.target.value)}
+                      >
+                        <option value="time">Time of Day</option>
+                        <option value="page">Page Based</option>
+                        <option value="both">Time + Page</option>
+                      </select>
+                    </div>
+
+                    {(widgetSettings.copy.greetingMode === 'time' || widgetSettings.copy.greetingMode === 'both') && (
+                      <>
+                        <div className="form-group">
+                          <label htmlFor="widget-greeting-morning">Morning Greeting</label>
+                          <input
+                            type="text"
+                            id="widget-greeting-morning"
+                            value={widgetSettings.copy.greetingMorning}
+                            onChange={(e) => handleWidgetChange('copy', 'greetingMorning', e.target.value)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor="widget-greeting-afternoon">Afternoon Greeting</label>
+                          <input
+                            type="text"
+                            id="widget-greeting-afternoon"
+                            value={widgetSettings.copy.greetingAfternoon}
+                            onChange={(e) => handleWidgetChange('copy', 'greetingAfternoon', e.target.value)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor="widget-greeting-evening">Evening Greeting</label>
+                          <input
+                            type="text"
+                            id="widget-greeting-evening"
+                            value={widgetSettings.copy.greetingEvening}
+                            onChange={(e) => handleWidgetChange('copy', 'greetingEvening', e.target.value)}
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {(widgetSettings.copy.greetingMode === 'page' || widgetSettings.copy.greetingMode === 'both') && (
+                      <div className="form-group">
+                        <label>Page-Based Greeting Rules</label>
+                        <div className="rule-list">
+                          {(widgetSettings.copy.greetingPageRules || []).map((rule, index) => (
+                            <div key={`${rule.match}-${index}`} className="rule-row">
+                              <input
+                                type="text"
+                                placeholder="URL match (e.g., /pricing)"
+                                value={rule.match}
+                                onChange={(e) => handleWidgetListItemChange('copy', 'greetingPageRules', index, 'match', e.target.value)}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Greeting text"
+                                value={rule.text}
+                                onChange={(e) => handleWidgetListItemChange('copy', 'greetingPageRules', index, 'text', e.target.value)}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-danger btn-sm"
+                                onClick={() => removeWidgetListItem('copy', 'greetingPageRules', index)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => addWidgetListItem('copy', 'greetingPageRules', { match: '', text: '' })}
+                        >
+                          + Add Rule
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </details>
+
+            {/* Sound & Feedback */}
+            <details>
+              <summary>Sound & Feedback</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.sound.chimeOnOpen}
+                      onChange={(e) => handleWidgetChange('sound', 'chimeOnOpen', e.target.checked)}
+                    />
+                    Soft chime on first open
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.sound.messageTicks}
+                      onChange={(e) => handleWidgetChange('sound', 'messageTicks', e.target.checked)}
+                    />
+                    Message sent/received ticks
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.sound.hapticFeedback}
+                      onChange={(e) => handleWidgetChange('sound', 'hapticFeedback', e.target.checked)}
+                    />
+                    Haptic-style click feedback (mobile)
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-sound-volume">
+                    Volume (0-1)
+                  </label>
+                  <input
+                    type="number"
+                    id="widget-sound-volume"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={widgetSettings.sound.volume}
+                    onChange={(e) => handleWidgetChange('sound', 'volume', parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+            </details>
+
+            {/* Social Proof & Trust */}
+            <details>
+              <summary>Social Proof & Trust</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.socialProof.showResponseTime}
+                      onChange={(e) => handleWidgetChange('socialProof', 'showResponseTime', e.target.checked)}
+                    />
+                    Show response time
+                  </label>
+                </div>
+
+                {widgetSettings.socialProof.showResponseTime && (
+                  <div className="form-group">
+                    <label htmlFor="widget-response-time">Response Time Text</label>
+                    <input
+                      type="text"
+                      id="widget-response-time"
+                      value={widgetSettings.socialProof.responseTimeText}
+                      onChange={(e) => handleWidgetChange('socialProof', 'responseTimeText', e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label htmlFor="widget-availability-text">Availability Text</label>
+                  <input
+                    type="text"
+                    id="widget-availability-text"
+                    value={widgetSettings.socialProof.availabilityText}
+                    onChange={(e) => handleWidgetChange('socialProof', 'availabilityText', e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.socialProof.showAvatar}
+                      onChange={(e) => handleWidgetChange('socialProof', 'showAvatar', e.target.checked)}
+                    />
+                    Show avatar + name
+                  </label>
+                </div>
+
+                {widgetSettings.socialProof.showAvatar && (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="widget-agent-name">Agent Name</label>
+                      <input
+                        type="text"
+                        id="widget-agent-name"
+                        value={widgetSettings.socialProof.agentName}
+                        onChange={(e) => handleWidgetChange('socialProof', 'agentName', e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="widget-avatar-url">Avatar URL</label>
+                      <input
+                        type="url"
+                        id="widget-avatar-url"
+                        value={widgetSettings.socialProof.avatarUrl}
+                        onChange={(e) => handleWidgetChange('socialProof', 'avatarUrl', e.target.value)}
+                        placeholder="https://example.com/avatar.png"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </details>
+
+            {/* Behavioral Rules */}
+            <details>
+              <summary>Behavioral Rules</summary>
+              <div className="form-section">
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.rules.animateOncePerSession}
+                      onChange={(e) => handleWidgetChange('rules', 'animateOncePerSession', e.target.checked)}
+                    />
+                    Animate once per session
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.rules.stopAfterInteraction}
+                      onChange={(e) => handleWidgetChange('rules', 'stopAfterInteraction', e.target.checked)}
+                    />
+                    Stop attention effects after first interaction
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="widget-max-animation">
+                    Max Animation Duration (seconds)
+                  </label>
+                  <input
+                    type="number"
+                    id="widget-max-animation"
+                    min="1"
+                    max="5"
+                    value={widgetSettings.rules.maxAnimationSeconds}
+                    onChange={(e) => handleWidgetChange('rules', 'maxAnimationSeconds', parseInt(e.target.value, 10) || 3)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.rules.respectReducedMotion}
+                      onChange={(e) => handleWidgetChange('rules', 'respectReducedMotion', e.target.checked)}
+                    />
+                    Respect prefers-reduced-motion
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={widgetSettings.rules.disableOnMobile}
+                      onChange={(e) => handleWidgetChange('rules', 'disableOnMobile', e.target.checked)}
+                    />
+                    Disable attention effects on mobile
+                  </label>
+                </div>
+              </div>
+            </details>
+
             {/* Messages */}
             <details>
               <summary>Messages</summary>
@@ -1178,6 +1943,12 @@ export default function Settings() {
                       )}
                       {widgetSettings.icon.type === 'image' && !widgetSettings.icon.imageUrl && (
                         <span>{widgetSettings.icon.fallbackToEmoji ? (widgetSettings.icon.emoji || '💬') : '◎'}</span>
+                      )}
+                      {widgetSettings.attention.unreadDot && (
+                        <span
+                          className={`widget-preview-unread widget-preview-unread-${widgetSettings.attention.unreadDotPosition}`}
+                          style={{ background: widgetSettings.attention.unreadDotColor }}
+                        />
                       )}
                     </div>
                     {widgetSettings.icon.showLabel && (

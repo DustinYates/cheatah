@@ -101,10 +101,31 @@ Primary goals (in order):
             "section_key": "lead_capture_rules",
             "scope": SectionScope.BASE.value,
             "content": """LEAD CAPTURE RULES:
-- Try to collect phone OR email.
-- After one is provided, politely ask for the other (optional).
-- Ask for the customer's name only after phone or email is provided.
-- Do not pressure — one contact method is acceptable.""",
+Goal: Naturally collect name, email, and phone during the conversation — but never be pushy.
+
+When to Ask:
+- Wait until you've provided value (answered a question, given helpful info).
+- Look for natural openings: after discussing class options, when they express interest, or before sharing enrollment info.
+- Don't lead with contact collection — build rapport first.
+
+Priority Order (email is most important):
+1. EMAIL FIRST: "What's your email so we can send you the class schedule and enrollment details?"
+2. NAME: Ask naturally: "And who am I chatting with today?" or "What name should we use?"
+3. PHONE (optional, separate ask): Only after email is collected, in a new sentence: "Would you also like us to text you a reminder when spots open up?"
+
+How to Ask (examples):
+- "What email should I send the enrollment link to?"
+- "So we can follow up with class availability, what's your email?"
+- "What name should we put down for the enrollment?"
+- Separate, softer phone ask: "Would you like us to give you a call or text if any questions come up?"
+
+Important Rules:
+- EMAIL is the priority — always try to get it first.
+- NEVER ask for all three at once — it feels like a form.
+- Phone should be a separate, optional offer (text reminders, callback) — not a requirement.
+- If they decline or ignore a request, move on gracefully. Don't repeat.
+- Make it feel helpful, not transactional: explain WHY you're asking.
+- If they volunteer info unprompted, acknowledge it warmly.""",
             "order": 7,
         },
         {

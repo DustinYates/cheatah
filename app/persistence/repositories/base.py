@@ -57,7 +57,13 @@ class BaseRepository(Generic[ModelType]):
         for key, value in filters.items():
             if hasattr(self.model, key):
                 stmt = stmt.where(getattr(self.model, key) == value)
-        
+
+        # Order by created_at descending if the model has that field, otherwise by id descending
+        if hasattr(self.model, 'created_at'):
+            stmt = stmt.order_by(self.model.created_at.desc())
+        elif hasattr(self.model, 'id'):
+            stmt = stmt.order_by(self.model.id.desc())
+
         stmt = stmt.offset(skip).limit(limit)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -70,6 +76,9 @@ class BaseRepository(Generic[ModelType]):
         self.session.add(instance)
         await self.session.commit()
         await self.session.refresh(instance)
+        logger.info(
+            f"Created {self.model.__name__} with id={instance.id}, tenant_id={tenant_id}"
+        )
         return instance
 
     async def update(self, tenant_id: int | None, id: int, **data) -> ModelType | None:

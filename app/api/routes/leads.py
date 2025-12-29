@@ -97,8 +97,14 @@ async def list_leads(
     status: str | None = Query(None),
 ) -> LeadsListResponse:
     """List leads for the current tenant, optionally filtered by status."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Listing leads for tenant_id={tenant_id}, user={current_user.email}")
+
     lead_service = LeadService(db)
     leads = await lead_service.list_leads(tenant_id, skip=skip, limit=limit)
+
+    logger.info(f"Found {len(leads)} leads for tenant_id={tenant_id}")
 
     # Filter by status if provided
     if status:

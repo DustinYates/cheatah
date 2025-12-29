@@ -574,16 +574,24 @@ Conversation:
 {}
 
 Extract the following information if present:
-- name: The user's full name or first name (e.g., if user says "I'm John Doe" or "my name is Bob", extract "John Doe" or "Bob")
-- email: The user's email address (look for patterns like "user@domain.com")
+- name: The user's full name or first name
+- email: The user's email address
 - phone: The user's phone number (any format)
 
-IMPORTANT:
-- Only extract information that was explicitly stated by the user
-- Names can appear in various forms: "I'm X", "my name is X", "I am X", "this is X", or just "X"
+NAME EXTRACTION RULES (IMPORTANT):
+- Look for names in ALL these patterns:
+  * Direct introductions: "I'm John", "my name is Sarah", "I am Mike", "this is Jane"
+  * Casual introductions: "im ralph", "im John Anthony", "John here", "it's Sarah"
+  * Names stated alone when asked: If asked "what's your name?" and they reply "John Anthony", extract "John Anthony"
+  * Names in context: "You can call me Mike", "My friends call me Sam"
+- Extract the COMPLETE name including first and last name if provided
+- Do NOT extract business names, product names, or other non-person names
+- If multiple names are mentioned, extract the most recent or most clearly stated one
+
+GENERAL RULES:
+- Only extract information explicitly stated by the user
 - Do not make up or infer contact details
 - Return null for any field not found
-- For phone, include any format provided
 
 Respond with ONLY a valid JSON object in this exact format, no other text:
 {{"name": null, "email": null, "phone": null}}""".format("\n".join(recent_messages))
@@ -624,11 +632,19 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             llm_name = extracted.get("name")
             llm_email = extracted.get("email")
             llm_phone = extracted.get("phone")
-            
-            # If LLM found a name, it's always considered explicit (LLM only extracts
-            # when user explicitly stated their name)
+
+            # If LLM found a name, it's ALWAYS considered explicit because the LLM
+            # only extracts names when users clearly state their name in conversation.
+            # This allows LLM-extracted names to override previously captured (possibly
+            # incorrect) names like generic placeholders or misextracted text.
             final_name = llm_name if llm_name and llm_name != "null" else regex_name
+            # Always mark LLM-extracted names as explicit to allow name updates
             final_name_is_explicit = True if (llm_name and llm_name != "null") else name_is_explicit
+
+            logger.info(
+                f"Name extraction result: llm_name={llm_name}, regex_name={regex_name}, "
+                f"final_name={final_name}, is_explicit={final_name_is_explicit}"
+            )
 
             result = {
                 "name": final_name,

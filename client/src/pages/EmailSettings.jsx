@@ -280,6 +280,22 @@ export default function EmailSettings() {
       {settings?.is_connected && (
         <form onSubmit={handleSubmit} className="settings-form">
           <section className="settings-section">
+            <h2>Email Responder</h2>
+            <div className="checkbox-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  name="is_enabled"
+                  checked={formData.is_enabled}
+                  onChange={handleChange}
+                />
+                <span className="checkbox-text">Enable Email Responder</span>
+              </label>
+              <small>When enabled, incoming emails will be processed and leads will be created based on subject prefixes.</small>
+            </div>
+          </section>
+
+          <section className="settings-section">
             <h2>Lead Capture</h2>
             <p className="section-description">
               Configure which email subjects should create leads. Only emails with subjects that start with one of these prefixes will create leads.

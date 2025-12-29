@@ -21,12 +21,92 @@
     isOpen: false,
     isMinimized: false,
     settings: null,
+    messages: [], // In-memory message cache
+
+    // Storage keys (tenant-specific to avoid conflicts)
+    getStorageKey: function(suffix) {
+      return `cc_${this.config.tenantId}_${suffix}`;
+    },
 
     init: function(config) {
       this.config = config;
       this.createWidget();
       this.attachEventListeners();
       this.fetchSettings();
+      this.restoreSession(); // Restore previous session on init
+    },
+
+    // Restore session from localStorage
+    restoreSession: function() {
+      try {
+        const storedSessionId = localStorage.getItem(this.getStorageKey('session_id'));
+        const storedMessages = localStorage.getItem(this.getStorageKey('messages'));
+        const storedIsOpen = localStorage.getItem(this.getStorageKey('is_open'));
+
+        if (storedSessionId) {
+          this.sessionId = storedSessionId;
+        }
+
+        if (storedMessages) {
+          this.messages = JSON.parse(storedMessages);
+          this.messages.forEach(msg => {
+            this.renderMessage(msg.text, msg.role, false);
+          });
+        }
+
+        // Restore open/closed state
+        if (storedIsOpen === 'true') {
+          this.toggleWidget();
+        }
+      } catch (err) {
+        console.error('Failed to restore chat session:', err);
+      }
+    },
+
+    // Save session to localStorage
+    saveSession: function() {
+      try {
+        if (this.sessionId) {
+          localStorage.setItem(this.getStorageKey('session_id'), this.sessionId);
+        }
+        localStorage.setItem(this.getStorageKey('messages'), JSON.stringify(this.messages));
+        localStorage.setItem(this.getStorageKey('is_open'), this.isOpen.toString());
+      } catch (err) {
+        console.error('Failed to save chat session:', err);
+      }
+    },
+
+    // Clear session (for starting fresh)
+    clearSession: function() {
+      try {
+        localStorage.removeItem(this.getStorageKey('session_id'));
+        localStorage.removeItem(this.getStorageKey('messages'));
+        localStorage.removeItem(this.getStorageKey('is_open'));
+        this.sessionId = null;
+        this.messages = [];
+        const messagesContainer = document.getElementById('cc-messages');
+        if (messagesContainer) {
+          messagesContainer.innerHTML = '';
+        }
+      } catch (err) {
+        console.error('Failed to clear chat session:', err);
+      }
+    },
+
+    // Start a new chat conversation
+    startNewChat: function() {
+      this.clearSession();
+      this.hideContactForm();
+      // Re-enable inputs in case they were disabled
+      const messageInput = document.getElementById('cc-message-input');
+      const sendButton = document.getElementById('cc-send-button');
+      if (messageInput) {
+        messageInput.disabled = false;
+        messageInput.focus();
+      }
+      if (sendButton) {
+        sendButton.disabled = false;
+      }
     },
 
     fetchSettings: async function() {
@@ -214,6 +294,7 @@
         <div class="cc-widget-container" style="display: none;">
           <div class="cc-widget-header">
             <span class="cc-widget-title">Chat with us</span>
+            <button class="cc-widget-new-chat" aria-label="New chat" title="Start new conversation">↻</button>
             <button class="cc-widget-minimize" aria-label="Minimize">−</button>
             <button class="cc-widget-close" aria-label="Close">×</button>
           </div>
@@ -369,13 +450,22 @@
         .cc-widget-title {
           font-weight: 600;
         }
-        .cc-widget-minimize, .cc-widget-close {
+        .cc-widget-minimize, .cc-widget-close, .cc-widget-new-chat {
           background: none;
           border: none;
           color: var(--cc-button-text);
           font-size: 20px;
           cursor: pointer;
           padding: 0 5px;
+        }
+        .cc-widget-new-chat {
+          font-size: 16px;
+          opacity: 0.8;
+          margin-left: auto;
+          margin-right: 5px;
+        }
+        .cc-widget-new-chat:hover {
+          opacity: 1;
         }
         .cc-widget-messages {
           flex: 1;
@@ -503,6 +593,7 @@
       const toggle = document.getElementById('cc-toggle');
       const close = document.querySelector('.cc-widget-close');
       const minimize = document.querySelector('.cc-widget-minimize');
+      const newChat = document.querySelector('.cc-widget-new-chat');
       const sendButton = document.getElementById('cc-send-button');
       const messageInput = document.getElementById('cc-message-input');
       const submitContact = document.getElementById('cc-submit-contact');
@@ -510,6 +601,7 @@
       toggle.addEventListener('click', () => this.toggleWidget());
       close.addEventListener('click', () => this.closeWidget());
       minimize.addEventListener('click', () => this.minimizeWidget());
+      newChat.addEventListener('click', () => this.startNewChat());
       sendButton.addEventListener('click', () => this.sendMessage());
       submitContact.addEventListener('click', () => this.submitContactInfo());
 
@@ -523,7 +615,7 @@
     toggleWidget: function() {
       const container = document.querySelector('.cc-widget-container');
       const toggle = document.getElementById('cc-toggle');
-      
+
       if (this.isOpen) {
         this.closeWidget();
       } else {
@@ -531,7 +623,11 @@
         toggle.style.display = 'none';
         this.isOpen = true;
         this.isMinimized = false;
+        this.saveSession(); // Persist open state
         document.getElementById('cc-message-input').focus();
+        // Scroll to bottom after restoring messages
+        const messagesContainer = document.getElementById('cc-messages');
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
       }
     },
 
@@ -541,6 +637,7 @@
       container.style.display = 'none';
       toggle.style.display = 'block';
       this.isOpen = false;
+      this.saveSession(); // Persist closed state
     },
 
     minimizeWidget: function() {
@@ -549,13 +646,23 @@
       this.isMinimized = !this.isMinimized;
     },
 
-    addMessage: function(text, role) {
+    // Render message to DOM (without saving - used for restoration)
+    renderMessage: function(text, role, scroll = true) {
       const messagesContainer = document.getElementById('cc-messages');
       const message = document.createElement('div');
       message.className = `cc-message ${role}`;
       message.textContent = text;
       messagesContainer.appendChild(message);
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      if (scroll) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+    },
+
+    // Add message to UI and save to storage
+    addMessage: function(text, role) {
+      this.messages.push({ text, role, timestamp: Date.now() });
+      this.renderMessage(text, role, true);
+      this.saveSession();
     },
 
     showContactForm: function() {
@@ -625,9 +732,10 @@
         }
 
         const data = await response.json();
-        
-        // Update session ID
+
+        // Update session ID and persist it
         this.sessionId = data.session_id;
+        this.saveSession();
 
         // Add assistant response
         this.addMessage(data.response, 'assistant');

@@ -120,44 +120,53 @@ class PromptService:
     async def activate_bundle(
         self, tenant_id: int | None, bundle_id: int
     ) -> PromptBundle | None:
-        """Activate a prompt bundle (deactivates others)."""
+        """Activate a prompt bundle (deactivates others).
+
+        Args:
+            tenant_id: The tenant context (used for access control). If None (global admin),
+                       the bundle's actual tenant_id is used for deactivating other bundles.
+            bundle_id: The ID of the bundle to activate.
+        """
         bundle = await self.prompt_repo.get_by_id(tenant_id, bundle_id)
         if not bundle:
             return None
 
-        await self.prompt_repo.deactivate_all_bundles(tenant_id)
+        # Use the bundle's actual tenant_id to deactivate other bundles
+        # This ensures we only deactivate bundles belonging to the same tenant
+        actual_tenant_id = bundle.tenant_id
+        await self.prompt_repo.deactivate_all_bundles(actual_tenant_id)
 
         bundle.is_active = True
         await self.session.commit()
         await self.session.refresh(bundle)
-        
-        # Invalidate cache for this tenant
-        PromptCache.invalidate(tenant_id)
-        
+
+        # Invalidate cache for the bundle's actual tenant
+        PromptCache.invalidate(actual_tenant_id)
+
         return bundle
 
     async def publish_bundle(self, tenant_id: int | None, bundle_id: int) -> PromptBundle | None:
         """Publish a bundle to production."""
         result = await self.prompt_repo.publish_bundle(tenant_id, bundle_id)
         if result:
-            # Invalidate cache for this tenant
-            PromptCache.invalidate(tenant_id)
+            # Invalidate cache for the bundle's actual tenant (not the passed tenant_id)
+            PromptCache.invalidate(result.tenant_id)
         return result
 
     async def set_testing(self, tenant_id: int | None, bundle_id: int) -> PromptBundle | None:
         """Set a bundle to testing status."""
         result = await self.prompt_repo.set_testing(tenant_id, bundle_id)
         if result:
-            # Invalidate cache for this tenant
-            PromptCache.invalidate(tenant_id)
+            # Invalidate cache for the bundle's actual tenant
+            PromptCache.invalidate(result.tenant_id)
         return result
 
     async def deactivate_bundle(self, tenant_id: int | None, bundle_id: int) -> PromptBundle | None:
         """Deactivate a bundle (move from production to draft)."""
         result = await self.prompt_repo.deactivate_bundle(tenant_id, bundle_id)
         if result:
-            # Invalidate cache for this tenant
-            PromptCache.invalidate(tenant_id)
+            # Invalidate cache for the bundle's actual tenant
+            PromptCache.invalidate(result.tenant_id)
         return result
 
     async def compose_prompt_sms(

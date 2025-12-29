@@ -75,12 +75,25 @@ class PromptRepository(BaseRepository[PromptBundle]):
         await self.session.commit()
 
     async def publish_bundle(self, tenant_id: int | None, bundle_id: int) -> PromptBundle | None:
-        """Publish a bundle to production."""
+        """Publish a bundle to production.
+
+        Args:
+            tenant_id: The tenant context (used for access control). If None (global admin),
+                       the bundle's actual tenant_id is used for finding the old production bundle.
+            bundle_id: The ID of the bundle to publish.
+
+        Returns:
+            The published bundle, or None if not found.
+        """
         bundle = await self.get_by_id(tenant_id, bundle_id)
         if not bundle:
             return None
 
-        old_prod = await self.get_production_bundle(tenant_id)
+        # Use the bundle's actual tenant_id to find/demote the old production bundle
+        # This ensures we demote the correct tenant's old production prompt,
+        # not a global one when a global admin is operating
+        actual_tenant_id = bundle.tenant_id
+        old_prod = await self.get_production_bundle(actual_tenant_id)
         if old_prod and old_prod.id != bundle_id:
             old_prod.status = PromptStatus.DRAFT.value
             old_prod.is_active = False

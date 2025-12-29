@@ -36,12 +36,12 @@
       this.restoreSession(); // Restore previous session on init
     },
 
-    // Restore session from localStorage
+    // Restore session from sessionStorage (clears when tab closes)
     restoreSession: function() {
       try {
-        const storedSessionId = localStorage.getItem(this.getStorageKey('session_id'));
-        const storedMessages = localStorage.getItem(this.getStorageKey('messages'));
-        const storedIsOpen = localStorage.getItem(this.getStorageKey('is_open'));
+        const storedSessionId = sessionStorage.getItem(this.getStorageKey('session_id'));
+        const storedMessages = sessionStorage.getItem(this.getStorageKey('messages'));
+        const storedIsOpen = sessionStorage.getItem(this.getStorageKey('is_open'));
 
         if (storedSessionId) {
           this.sessionId = storedSessionId;
@@ -63,14 +63,14 @@
       }
     },
 
-    // Save session to localStorage
+    // Save session to sessionStorage (clears when tab closes)
     saveSession: function() {
       try {
         if (this.sessionId) {
-          localStorage.setItem(this.getStorageKey('session_id'), this.sessionId);
+          sessionStorage.setItem(this.getStorageKey('session_id'), this.sessionId);
         }
-        localStorage.setItem(this.getStorageKey('messages'), JSON.stringify(this.messages));
-        localStorage.setItem(this.getStorageKey('is_open'), this.isOpen.toString());
+        sessionStorage.setItem(this.getStorageKey('messages'), JSON.stringify(this.messages));
+        sessionStorage.setItem(this.getStorageKey('is_open'), this.isOpen.toString());
       } catch (err) {
         console.error('Failed to save chat session:', err);
       }
@@ -79,9 +79,9 @@
     // Clear session (for starting fresh)
     clearSession: function() {
       try {
-        localStorage.removeItem(this.getStorageKey('session_id'));
-        localStorage.removeItem(this.getStorageKey('messages'));
-        localStorage.removeItem(this.getStorageKey('is_open'));
+        sessionStorage.removeItem(this.getStorageKey('session_id'));
+        sessionStorage.removeItem(this.getStorageKey('messages'));
+        sessionStorage.removeItem(this.getStorageKey('is_open'));
         this.sessionId = null;
         this.messages = [];
         const messagesContainer = document.getElementById('cc-messages');

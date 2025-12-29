@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     gmail_oauth_redirect_uri: str | None = None  # OAuth callback URL
     frontend_url: str | None = None  # Frontend URL for OAuth redirects
 
+    # Customer Service / Zapier Integration
+    zapier_default_callback_timeout: int = 30  # Default timeout waiting for Zapier callback
+    zapier_signature_header: str = "X-Zapier-Signature"  # Header for HMAC signature
+    customer_service_cache_ttl_seconds: int = 3600  # 1 hour cache for Jackrabbit customers
+    customer_lookup_retry_count: int = 2  # Number of retries for failed lookups
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

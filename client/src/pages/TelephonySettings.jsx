@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../api/client';
 import { LoadingState, ErrorState, EmptyState } from '../components/ui';
 
-const API_BASE = '/api/v1';
-
 export default function TelephonySettings() {
-  const { token, user, selectedTenantId } = useAuth();
+  const { user, selectedTenantId } = useAuth();
   const [config, setConfig] = useState({
     id: 0,
     tenant_id: 0,
@@ -21,6 +20,10 @@ export default function TelephonySettings() {
     telnyx_messaging_profile_id: '',
     telnyx_connection_id: '',
     telnyx_phone_number: '',
+    // Voxie (SMS only)
+    voxie_api_key_prefix: '',
+    voxie_team_id: '',
+    voxie_phone_number: '',
     // Voice
     voice_phone_number: '',
   });
@@ -39,6 +42,10 @@ export default function TelephonySettings() {
     telnyx_messaging_profile_id: '',
     telnyx_connection_id: '',
     telnyx_phone_number: '',
+    // Voxie (SMS only)
+    voxie_api_key: '',
+    voxie_team_id: '',
+    voxie_phone_number: '',
     // Voice
     voice_phone_number: '',
   });
@@ -51,40 +58,35 @@ export default function TelephonySettings() {
 
   useEffect(() => {
     fetchConfig();
-  }, [token, selectedTenantId]);
+  }, [selectedTenantId]);
 
   const fetchConfig = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE}/admin/telephony/config`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setConfig(data);
-        // Populate form with existing values (but not secrets)
-        setFormData(prev => ({
-          ...prev,
-          provider: data.provider || 'twilio',
-          sms_enabled: data.sms_enabled || false,
-          voice_enabled: data.voice_enabled || false,
-          twilio_account_sid: data.twilio_account_sid || '',
-          twilio_phone_number: data.twilio_phone_number || '',
-          telnyx_messaging_profile_id: data.telnyx_messaging_profile_id || '',
-          telnyx_connection_id: data.telnyx_connection_id || '',
-          telnyx_phone_number: data.telnyx_phone_number || '',
-          voice_phone_number: data.voice_phone_number || '',
-        }));
-      } else if (response.status === 404) {
-        // No config yet, use defaults
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        setError(errorData.detail || 'Failed to load telephony config');
-      }
+      const data = await api.getTelephonyConfig();
+      setConfig(data);
+      // Populate form with existing values (but not secrets)
+      setFormData(prev => ({
+        ...prev,
+        provider: data.provider || 'twilio',
+        sms_enabled: data.sms_enabled || false,
+        voice_enabled: data.voice_enabled || false,
+        twilio_account_sid: data.twilio_account_sid || '',
+        twilio_phone_number: data.twilio_phone_number || '',
+        telnyx_messaging_profile_id: data.telnyx_messaging_profile_id || '',
+        telnyx_connection_id: data.telnyx_connection_id || '',
+        telnyx_phone_number: data.telnyx_phone_number || '',
+        voxie_team_id: data.voxie_team_id || '',
+        voxie_phone_number: data.voxie_phone_number || '',
+        voice_phone_number: data.voice_phone_number || '',
+      }));
     } catch (err) {
       console.error('Error fetching telephony config:', err);
-      setError(err.message || 'Failed to load telephony config');
+      // 404 means no config yet - use defaults
+      if (!err.message?.includes('404')) {
+        setError(err.message || 'Failed to load telephony config');
+      }
     } finally {
       setLoading(false);
     }
@@ -95,31 +97,18 @@ export default function TelephonySettings() {
     setMessage({ type: '', text: '' });
 
     try {
-      const response = await fetch(`${API_BASE}/admin/telephony/config`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setConfig(data);
-        setMessage({ type: 'success', text: 'Telephony configuration saved successfully!' });
-        // Clear secret fields after save
-        setFormData(prev => ({
-          ...prev,
-          twilio_auth_token: '',
-          telnyx_api_key: '',
-        }));
-      } else {
-        const errorData = await response.json();
-        setMessage({ type: 'error', text: errorData.detail || 'Failed to save configuration' });
-      }
+      const data = await api.updateTelephonyConfig(formData);
+      setConfig(data);
+      setMessage({ type: 'success', text: 'Telephony configuration saved successfully!' });
+      // Clear secret fields after save
+      setFormData(prev => ({
+        ...prev,
+        twilio_auth_token: '',
+        telnyx_api_key: '',
+        voxie_api_key: '',
+      }));
     } catch (err) {
-      setMessage({ type: 'error', text: 'Network error. Please try again.' });
+      setMessage({ type: 'error', text: err.message || 'Failed to save configuration' });
     } finally {
       setSaving(false);
     }
@@ -136,21 +125,15 @@ export default function TelephonySettings() {
     if (formData.provider === 'twilio') {
       payload.twilio_account_sid = formData.twilio_account_sid;
       payload.twilio_auth_token = formData.twilio_auth_token;
-    } else {
+    } else if (formData.provider === 'telnyx') {
       payload.telnyx_api_key = formData.telnyx_api_key;
+    } else if (formData.provider === 'voxie') {
+      payload.voxie_api_key = formData.voxie_api_key;
+      payload.voxie_team_id = formData.voxie_team_id;
     }
 
     try {
-      const response = await fetch(`${API_BASE}/admin/telephony/validate-credentials`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
+      const data = await api.validateTelephonyCredentials(payload);
 
       if (data.valid) {
         setMessage({ type: 'success', text: data.message || 'Credentials are valid!' });
@@ -158,7 +141,7 @@ export default function TelephonySettings() {
         setMessage({ type: 'error', text: data.error || 'Invalid credentials' });
       }
     } catch (err) {
-      setMessage({ type: 'error', text: 'Network error. Please try again.' });
+      setMessage({ type: 'error', text: err.message || 'Network error. Please try again.' });
     } finally {
       setValidating(false);
     }
@@ -168,10 +151,17 @@ export default function TelephonySettings() {
     const baseUrl = window.location.origin;
     if (formData.provider === 'telnyx') {
       return {
-        smsInbound: `${baseUrl}/api/v1/sms/telnyx/inbound`,
-        smsStatus: `${baseUrl}/api/v1/sms/telnyx/status`,
+        smsInbound: `${baseUrl}/api/v1/telnyx/sms/inbound`,
+        smsStatus: `${baseUrl}/api/v1/telnyx/sms/status`,
         voiceInbound: `${baseUrl}/api/v1/voice/telnyx/inbound`,
         voiceStatus: `${baseUrl}/api/v1/voice/telnyx/status`,
+      };
+    } else if (formData.provider === 'voxie') {
+      return {
+        smsInbound: `${baseUrl}/api/v1/voxie/sms/inbound`,
+        smsStatus: `${baseUrl}/api/v1/voxie/sms/status`,
+        voiceInbound: null, // Voxie doesn't support voice
+        voiceStatus: null,
       };
     }
     return {
@@ -270,6 +260,20 @@ export default function TelephonySettings() {
               <span>Cost-effective alternative with TeXML support</span>
             </div>
           </label>
+
+          <label className={`provider-option ${formData.provider === 'voxie' ? 'selected' : ''}`}>
+            <input
+              type="radio"
+              name="provider"
+              value="voxie"
+              checked={formData.provider === 'voxie'}
+              onChange={(e) => setFormData({ ...formData, provider: e.target.value, voice_enabled: false })}
+            />
+            <div className="provider-info">
+              <strong>Voxie</strong>
+              <span>SMS-only provider with automation features</span>
+            </div>
+          </label>
         </div>
       </div>
 
@@ -284,18 +288,19 @@ export default function TelephonySettings() {
             onChange={(e) => setFormData({ ...formData, sms_enabled: e.target.checked })}
           />
         </label>
-        <label className="toggle-row">
-          <span>Enable Voice</span>
+        <label className={`toggle-row ${formData.provider === 'voxie' ? 'disabled' : ''}`}>
+          <span>Enable Voice {formData.provider === 'voxie' && <span className="badge">Not available with Voxie</span>}</span>
           <input
             type="checkbox"
             checked={formData.voice_enabled}
             onChange={(e) => setFormData({ ...formData, voice_enabled: e.target.checked })}
+            disabled={formData.provider === 'voxie'}
           />
         </label>
       </div>
 
       {/* Provider-specific Credentials */}
-      {formData.provider === 'twilio' ? (
+      {formData.provider === 'twilio' && (
         <div className="card">
           <h2>Twilio Credentials</h2>
 
@@ -340,7 +345,9 @@ export default function TelephonySettings() {
             {validating ? 'Validating...' : 'Test Credentials'}
           </button>
         </div>
-      ) : (
+      )}
+
+      {formData.provider === 'telnyx' && (
         <div className="card">
           <h2>Telnyx Credentials</h2>
 
@@ -399,6 +406,55 @@ export default function TelephonySettings() {
         </div>
       )}
 
+      {formData.provider === 'voxie' && (
+        <div className="card">
+          <h2>Voxie Credentials</h2>
+          <p className="help-text">Voxie is an SMS-only provider. Voice calls are not supported.</p>
+
+          <div className="form-group">
+            <label>API Key {config.voxie_api_key_prefix && <span className="saved-indicator">(saved: {config.voxie_api_key_prefix})</span>}</label>
+            <input
+              type="password"
+              value={formData.voxie_api_key}
+              onChange={(e) => setFormData({ ...formData, voxie_api_key: e.target.value })}
+              placeholder={config.voxie_api_key_prefix ? '••••••••••••' : 'Enter Voxie API key'}
+            />
+            {config.voxie_api_key_prefix && (
+              <p className="help-text">Leave empty to keep existing key</p>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label>Team ID</label>
+            <input
+              type="text"
+              value={formData.voxie_team_id}
+              onChange={(e) => setFormData({ ...formData, voxie_team_id: e.target.value })}
+              placeholder="123456"
+            />
+            <p className="help-text">Your Voxie Team ID - find this in Voxie dashboard</p>
+          </div>
+
+          <div className="form-group">
+            <label>SMS Phone Number</label>
+            <input
+              type="tel"
+              value={formData.voxie_phone_number}
+              onChange={(e) => setFormData({ ...formData, voxie_phone_number: e.target.value })}
+              placeholder="+15551234567"
+            />
+          </div>
+
+          <button
+            className="btn btn-secondary"
+            onClick={validateCredentials}
+            disabled={validating || !formData.voxie_api_key || !formData.voxie_team_id}
+          >
+            {validating ? 'Validating...' : 'Test Credentials'}
+          </button>
+        </div>
+      )}
+
       {/* Voice Phone Number */}
       {formData.voice_enabled && (
         <div className="card">
@@ -418,7 +474,7 @@ export default function TelephonySettings() {
       {/* Webhook URLs */}
       <div className="card">
         <h2>Webhook URLs</h2>
-        <p className="help-text">Configure these URLs in your {formData.provider === 'telnyx' ? 'Telnyx' : 'Twilio'} dashboard</p>
+        <p className="help-text">Configure these URLs in your {formData.provider === 'voxie' ? 'Voxie' : formData.provider === 'telnyx' ? 'Telnyx' : 'Twilio'} dashboard</p>
 
         <div className="webhook-list">
           <div className="webhook-item">
@@ -429,7 +485,7 @@ export default function TelephonySettings() {
             <label>SMS Status Callback</label>
             <code>{webhookUrls.smsStatus}</code>
           </div>
-          {formData.voice_enabled && (
+          {formData.voice_enabled && webhookUrls.voiceInbound && (
             <>
               <div className="webhook-item">
                 <label>Voice Inbound</label>
@@ -543,6 +599,25 @@ export default function TelephonySettings() {
           width: 20px;
           height: 20px;
           cursor: pointer;
+        }
+
+        .toggle-row.disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .toggle-row.disabled input[type="checkbox"] {
+          cursor: not-allowed;
+        }
+
+        .badge {
+          font-size: 0.75rem;
+          background: #f5f5f5;
+          color: #666;
+          padding: 0.2rem 0.5rem;
+          border-radius: 4px;
+          margin-left: 0.5rem;
+          font-weight: normal;
         }
 
         .form-group {

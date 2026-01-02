@@ -51,6 +51,43 @@ class ApiClient {
     return response.json();
   }
 
+  async requestFormData(endpoint, formData, options = {}) {
+    const headers = {
+      ...options.headers,
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const selectedTenant = this.getSelectedTenant();
+    const userInfo = this.getUserInfo();
+    if (userInfo?.is_global_admin && selectedTenant) {
+      headers['X-Tenant-Id'] = selectedTenant.toString();
+    }
+
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      method: options.method || 'POST',
+      body: formData,
+      headers,
+    });
+
+    if (response.status === 401) {
+      this.setToken(null);
+      localStorage.removeItem('userInfo');
+      localStorage.removeItem('selectedTenantId');
+      window.location.href = '/login';
+      throw new Error('Unauthorized');
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+      throw new Error(error.detail || 'Request failed');
+    }
+
+    return response.json();
+  }
+
   async login(email, password) {
     const response = await this.request('/auth/login', {
       method: 'POST',
@@ -551,6 +588,12 @@ class ApiClient {
     });
   }
 
+  async uploadWidgetIcon(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.requestFormData('/widget/icon/upload', formData);
+  }
+
   // Telephony configuration methods
   async getTelephonyConfig() {
     return this.request('/admin/telephony/config');
@@ -560,6 +603,37 @@ class ApiClient {
     return this.request('/admin/telephony/config', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async validateTelephonyCredentials(data) {
+    return this.request('/admin/telephony/validate-credentials', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Configuration History methods
+  async getConfigHistory(limit = 10) {
+    return this.request(`/config/history?limit=${limit}`);
+  }
+
+  async getConfigSnapshot(snapshotId) {
+    return this.request(`/config/history/${snapshotId}`);
+  }
+
+  async getConfigSnapshotByVersionId(versionId) {
+    return this.request(`/config/history/by-version/${versionId}`);
+  }
+
+  async getConfigDiff(snapshotId, compareToId = null) {
+    const query = compareToId ? `?compare_to=${compareToId}` : '';
+    return this.request(`/config/history/${snapshotId}/diff${query}`);
+  }
+
+  async rollbackToSnapshot(snapshotId) {
+    return this.request(`/config/history/${snapshotId}/rollback`, {
+      method: 'POST',
     });
   }
 }

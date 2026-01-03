@@ -97,9 +97,15 @@ class EmailService:
         
         # Parse sender information
         sender_name, sender_email = GmailClient.parse_email_address(from_email)
-        
-        # Check if this is a no-reply or automated email
-        if self._is_automated_email(sender_email, subject, body):
+
+        # Check if this is a lead capture email (should be processed even if from no-reply)
+        is_lead_capture = self._should_capture_lead(
+            subject=subject,
+            prefixes=email_config.lead_capture_subject_prefixes,
+        )
+
+        # Check if this is a no-reply or automated email (skip unless it's a lead capture email)
+        if not is_lead_capture and self._is_automated_email(sender_email, subject, body):
             logger.info(f"Skipping automated email from {sender_email}")
             return EmailResult(
                 response_message="Automated email detected, skipping response.",

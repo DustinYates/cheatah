@@ -251,7 +251,19 @@ class EmailService:
             logger.info(f"Skipping lead capture for email with subject '{subject}' - does not match configured prefixes")
         elif not extracted_info:
             print(f"[LEAD_CAPTURE] SKIP: no extracted_info", flush=True)
-        
+
+        # For lead capture emails, just capture the lead and return without sending a response
+        # This prevents auto-replies to form submission emails
+        if should_capture_lead:
+            print(f"[LEAD_CAPTURE] Lead capture email - skipping LLM response and email reply", flush=True)
+            logger.info(f"Lead capture email processed - not sending automated response")
+            return EmailResult(
+                response_message="Lead captured from form submission (no response sent)",
+                thread_id=thread_id,
+                lead_captured=lead_captured,
+                lead_id=lead_id,
+            )
+
         # Compose prompt with email-specific context
         additional_context = self._build_email_context(
             subject=subject,

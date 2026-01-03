@@ -563,17 +563,34 @@ class EmailService:
             print(f"[LEAD_CAPTURE] No prefixes - capturing all", flush=True)
             return True
         
-        # Check if subject starts with any configured prefix (case-insensitive)
+        # Strip common email prefixes (Fwd:, Re:, etc.) before checking
         subject_lower = (subject or "").lower().strip()
-        print(f"[LEAD_CAPTURE] Checking subject '{subject_lower}' against prefixes", flush=True)
+
+        # Remove common email prefixes (can be stacked, e.g., "Re: Fwd: ")
+        email_prefixes = ['fwd:', 're:', 'fw:', 'fyi:']
+        cleaned_subject = subject_lower
+        while True:
+            changed = False
+            for email_prefix in email_prefixes:
+                if cleaned_subject.startswith(email_prefix):
+                    cleaned_subject = cleaned_subject[len(email_prefix):].strip()
+                    changed = True
+                    break
+            if not changed:
+                break
+
+        print(f"[LEAD_CAPTURE] Checking subject '{cleaned_subject}' against prefixes", flush=True)
+        if cleaned_subject != subject_lower:
+            print(f"[LEAD_CAPTURE] Original subject: '{subject_lower}'", flush=True)
+
         for prefix in prefixes:
             # Strip whitespace from prefix to handle any trailing spaces in database
             prefix_lower = (prefix or "").lower().strip()
-            if subject_lower.startswith(prefix_lower):
+            if cleaned_subject.startswith(prefix_lower):
                 print(f"[LEAD_CAPTURE] MATCH: Subject '{subject}' matches prefix '{prefix}'", flush=True)
                 logger.debug(f"Subject '{subject}' matches prefix '{prefix}'")
                 return True
-        
+
         print(f"[LEAD_CAPTURE] NO MATCH: Subject '{subject}' does not match any prefixes: {prefixes}", flush=True)
         logger.debug(f"Subject '{subject}' does not match any prefixes: {prefixes}")
         return False

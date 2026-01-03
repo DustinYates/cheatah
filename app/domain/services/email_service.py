@@ -756,9 +756,9 @@ class EmailService:
         
         return "\n".join(context_parts)
 
-    async def _get_email_prompt(self, tenant_id: int, conversation_id: int) -> str:
+    async def _get_email_prompt(self, tenant_id: int, context: dict | None = None) -> str:
         """Get system prompt for email responses."""
-        base_prompt = await self.prompt_service.compose_prompt(tenant_id, conversation_id)
+        base_prompt = await self.prompt_service.compose_prompt(tenant_id, context)
         
         email_instructions = """
 

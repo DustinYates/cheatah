@@ -726,6 +726,8 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             )
             # Clean up response - remove any "Draft X:" prefixes that LLM might add
             llm_response = self._clean_llm_response(llm_response)
+            if self._response_needs_completion(llm_response):
+                llm_response = await self._complete_response(llm_response)
         except Exception as e:
             logger.error(f"LLM generation failed: {e}", exc_info=True)
             llm_response = "I apologize, but I'm having trouble processing your request right now. Please try again in a moment."
@@ -756,3 +758,57 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
 
         return cleaned
 
+    def _response_needs_completion(self, response: str) -> bool:
+        """Check if the response appears to be cut off mid-sentence."""
+        if not response:
+            return False
+
+        trimmed = response.strip()
+        if trimmed.endswith((".", "!", "?")):
+            return False
+
+        trimmed = trimmed.rstrip(')"\'')
+        if trimmed.endswith((".", "!", "?")):
+            return False
+
+        match = re.search(r"([A-Za-z]+)$", trimmed)
+        if not match:
+            return False
+
+        dangling_words = {
+            "and",
+            "or",
+            "but",
+            "because",
+            "so",
+            "with",
+            "for",
+            "to",
+            "of",
+            "in",
+        }
+        return match.group(1).lower() in dangling_words
+
+    async def _complete_response(self, response: str) -> str:
+        """Ask the LLM to finish a cut-off response in a short continuation."""
+        completion_prompt = (
+            "The assistant response was cut off mid-sentence.\n"
+            f"Response so far: \"{response}\"\n\n"
+            "Continue and finish the thought in one short sentence. "
+            "Only provide the continuation text, no repetition."
+        )
+
+        try:
+            continuation = await self.llm_orchestrator.generate(
+                completion_prompt,
+                context={"temperature": 0.2, "max_tokens": 80},
+            )
+        except Exception as e:
+            logger.warning(f"Failed to complete response: {e}")
+            return response
+
+        continuation = (continuation or "").strip()
+        if not continuation:
+            return response
+
+        return f"{response.rstrip()} {continuation.lstrip()}".strip()

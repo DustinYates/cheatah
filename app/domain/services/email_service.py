@@ -204,7 +204,7 @@ class EmailService:
         lead_captured = False
         lead_id = None
         extracted_info = self._extract_contact_info(
-            from_email, sender_name, body, is_lead_capture_email=should_capture_lead
+            from_email, sender_name, body, subject=subject, is_lead_capture_email=should_capture_lead
         )
         
         print(f"[LEAD_CAPTURE] subject='{subject}', should_capture={should_capture_lead}, has_extracted_info={extracted_info is not None}, existing_lead_id={email_conversation.lead_id}", flush=True)
@@ -600,11 +600,69 @@ class EmailService:
         logger.debug(f"Subject '{subject}' does not match any prefixes: {prefixes}")
         return False
 
+    def _parse_booking_page_subject(self, subject: str) -> dict[str, str] | None:
+        """Parse contact info from 'Email Capture from Booking Page' subject line.
+
+        Subject format: "Email Capture from Booking Page - email@example.com - ClassName - 1234567890"
+
+        Args:
+            subject: Email subject line
+
+        Returns:
+            Dictionary with email and phone if found, or None if not a booking page email
+        """
+        if not subject:
+            return None
+
+        # Check if this is a booking page email
+        subject_lower = subject.lower().strip()
+        if not subject_lower.startswith("email capture from booking page"):
+            return None
+
+        # Split by " - " to get the parts after the prefix
+        parts = subject.split(" - ")
+        if len(parts) < 2:
+            return None
+
+        result = {}
+
+        # Look for email pattern in parts
+        email_pattern = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
+        # Look for phone pattern (10 digits, possibly with formatting)
+        phone_pattern = re.compile(r'\b(\d{10})\b|\b(\d{3}[-.\s]?\d{3}[-.\s]?\d{4})\b')
+
+        for part in parts[1:]:  # Skip the "Email Capture from Booking Page" prefix
+            part = part.strip()
+
+            # Check for email
+            email_match = email_pattern.search(part)
+            if email_match and "email" not in result:
+                result["email"] = email_match.group(0).lower()
+                logger.debug(f"Found email in booking page subject: {result['email']}")
+                continue
+
+            # Check for phone (10 digits)
+            phone_match = phone_pattern.search(part)
+            if phone_match and "phone" not in result:
+                # Get the matched phone number and clean it
+                raw_phone = phone_match.group(0)
+                digits = re.sub(r'\D', '', raw_phone)
+                if len(digits) == 10:
+                    result["phone"] = f"+1{digits}"  # E.164 format
+                    logger.debug(f"Found phone in booking page subject: {result['phone']}")
+
+        if result:
+            logger.info(f"Parsed booking page subject: {result}")
+            return result
+
+        return None
+
     def _extract_contact_info(
         self,
         from_email: str,
         sender_name: str,
         body: str,
+        subject: str = "",
         is_lead_capture_email: bool = False,
     ) -> dict[str, Any] | None:
         """Extract contact info from email content using structured parser.
@@ -613,6 +671,7 @@ class EmailService:
             from_email: Sender email address
             sender_name: Sender name
             body: Email body text
+            subject: Email subject line (used for booking page emails)
             is_lead_capture_email: If True, treat as form submission (use body data only, never sender info)
 
         Returns:
@@ -620,6 +679,17 @@ class EmailService:
         """
         # Parse structured data from email body
         parsed = self.body_parser.parse(body)
+
+        # For "Email Capture from Booking Page" emails, also parse the subject line
+        # Subject format: "Email Capture from Booking Page - email@example.com - ClassName - 1234567890"
+        subject_data = self._parse_booking_page_subject(subject)
+        if subject_data:
+            # Merge subject data with body parsed data (subject takes precedence for email/phone)
+            if subject_data.get("email") and not parsed.get("email"):
+                parsed["email"] = subject_data["email"]
+            if subject_data.get("phone") and not parsed.get("phone"):
+                parsed["phone"] = subject_data["phone"]
+            logger.info(f"Extracted from booking page subject: email={subject_data.get('email')}, phone={subject_data.get('phone')}")
         
         # Check if we found structured form data
         # Look for form-specific fields that indicate this is a form submission

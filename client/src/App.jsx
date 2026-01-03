@@ -12,7 +12,8 @@ import UnknownLeads from './pages/UnknownLeads';
 import UnknownLeadDetail from './pages/UnknownLeadDetail';
 import Plots from './pages/Plots';
 import Onboarding from './pages/Onboarding';
-import Settings from './pages/Settings';
+import BusinessProfile from './pages/BusinessProfile';
+import WidgetSettings from './pages/WidgetSettings';
 import SmsSettings from './pages/SmsSettings';
 import EmailSettings from './pages/EmailSettings';
 import ManageTenants from './pages/ManageTenants';
@@ -39,18 +40,27 @@ function App() {
             }
           >
             <Route index element={<Dashboard />} />
-            <Route path="prompts" element={<Prompts />} />
-            <Route path="prompts/wizard" element={<PromptWizard />} />
             <Route path="contacts" element={<Contacts />} />
             <Route path="contacts/:id" element={<ContactDetail />} />
             <Route path="calls" element={<Calls />} />
             <Route path="analytics/unknowns" element={<UnknownLeads />} />
             <Route path="analytics/unknowns/:id" element={<UnknownLeadDetail />} />
             <Route path="analytics/plots" element={<Plots />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="settings/email" element={<EmailSettings />} />
             <Route path="sms" element={<SmsSettings />} />
-            <Route path="email" element={<EmailSettings />} />
+
+            {/* Settings routes */}
+            <Route path="settings" element={<Navigate to="/settings/prompts" replace />} />
+            <Route path="settings/prompts" element={<Prompts />} />
+            <Route path="settings/prompts/wizard" element={<PromptWizard />} />
+            <Route path="settings/widget" element={<WidgetSettings />} />
+            <Route path="settings/email" element={<EmailSettings />} />
+            <Route path="settings/profile" element={<BusinessProfile />} />
+
+            {/* Redirects for backward compatibility */}
+            <Route path="prompts" element={<Navigate to="/settings/prompts" replace />} />
+            <Route path="prompts/wizard" element={<Navigate to="/settings/prompts/wizard" replace />} />
+            <Route path="email" element={<Navigate to="/settings/email" replace />} />
+
             <Route path="admin/tenants" element={<ManageTenants />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

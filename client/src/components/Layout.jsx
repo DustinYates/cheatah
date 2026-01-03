@@ -8,6 +8,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [analyticsOpen, setAnalyticsOpen] = useState(location.pathname.startsWith('/analytics'));
+  const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/settings'));
 
   const handleLogout = () => {
     logout();
@@ -53,9 +54,6 @@ export default function Layout() {
             <NavLink to="/" end>Dashboard</NavLink>
           </li>
           <li>
-            <NavLink to="/prompts">Prompts</NavLink>
-          </li>
-          <li>
             <NavLink to="/contacts">Contacts</NavLink>
           </li>
           <li>
@@ -83,11 +81,30 @@ export default function Layout() {
           <li>
             <NavLink to="/sms">SMS</NavLink>
           </li>
-          <li>
-            <NavLink to="/email">Email</NavLink>
-          </li>
-          <li>
-            <NavLink to="/settings">Settings</NavLink>
+          <li className="nav-section">
+            <button
+              className={`nav-section-toggle ${settingsOpen ? 'open' : ''}`}
+              onClick={() => setSettingsOpen(!settingsOpen)}
+            >
+              Settings
+              <span className="toggle-icon">{settingsOpen ? '−' : '+'}</span>
+            </button>
+            {settingsOpen && (
+              <ul className="nav-submenu">
+                <li>
+                  <NavLink to="/settings/prompts">Prompts Setup</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/settings/widget">Website Widget</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/settings/email">Email Setup</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/settings/profile">Business Profile</NavLink>
+                </li>
+              </ul>
+            )}
           </li>
           {user?.is_global_admin && !selectedTenantId && (
             <li>

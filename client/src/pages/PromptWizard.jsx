@@ -172,14 +172,14 @@ export default function PromptWizard() {
   };
 
   const goToPrompts = () => {
-    navigate('/prompts');
+    navigate('/settings/prompts');
   };
 
   return (
     <div className="prompt-wizard">
       {/* Header */}
       <div className="wizard-header">
-        <button className="back-button" onClick={() => navigate('/prompts')}>
+        <button className="back-button" onClick={() => navigate('/settings/prompts')}>
           ← Back to Prompts
         </button>
         <div className="wizard-title">
@@ -315,9 +315,9 @@ export default function PromptWizard() {
                         </button>
                       </div>
                       <div className="action-buttons">
-                        <button 
+                        <button
                           className="secondary-button"
-                          onClick={() => navigate(`/prompts?test=${generatedPrompt.bundle_id}`)}
+                          onClick={() => navigate(`/settings/prompts?test=${generatedPrompt.bundle_id}`)}
                         >
                           Test First
                         </button>
@@ -339,9 +339,9 @@ export default function PromptWizard() {
                         Visitors to your website will now see responses from your new chatbot prompt.
                       </p>
                       <div className="action-buttons">
-                        <button 
+                        <button
                           className="primary-button"
-                          onClick={() => navigate(`/prompts?test=${generatedPrompt.bundle_id}`)}
+                          onClick={() => navigate(`/settings/prompts?test=${generatedPrompt.bundle_id}`)}
                         >
                           Test Your Chatbot
                         </button>

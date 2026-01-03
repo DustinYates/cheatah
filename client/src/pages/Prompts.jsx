@@ -322,9 +322,9 @@ export default function Prompts() {
           </p>
         </div>
         <div className="prompts-header__actions">
-          <button 
+          <button
             className="btn btn--ai"
-            onClick={() => navigate('/prompts/wizard')}
+            onClick={() => navigate('/settings/prompts/wizard')}
           >
             <span className="btn__icon">✨</span>
             Build with AI
@@ -628,9 +628,9 @@ export default function Prompts() {
             <h2>No custom prompts yet</h2>
             <p>Create your first chatbot prompt using the AI Wizard - just answer a few questions about your business!</p>
             <div className="empty-state-wizard__actions">
-              <button 
+              <button
                 className="btn btn--ai btn--lg"
-                onClick={() => navigate('/prompts/wizard')}
+                onClick={() => navigate('/settings/prompts/wizard')}
               >
                 <span className="btn__icon">✨</span>
                 Build with AI Wizard

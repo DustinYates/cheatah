@@ -10,6 +10,10 @@
 __pycache__/
 *.pyc
 
+# runtime files
+*.log
+*.pid
+
 # node
 client/node_modules/
 client/dist/

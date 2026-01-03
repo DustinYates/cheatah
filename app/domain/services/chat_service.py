@@ -724,11 +724,35 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
                 conversation_context,
                 context={"temperature": 0.3, "max_tokens": 500},  # Deterministic defaults
             )
+            # Clean up response - remove any "Draft X:" prefixes that LLM might add
+            llm_response = self._clean_llm_response(llm_response)
         except Exception as e:
             logger.error(f"LLM generation failed: {e}", exc_info=True)
             llm_response = "I apologize, but I'm having trouble processing your request right now. Please try again in a moment."
-        
+
         llm_latency_ms = (time.time() - llm_start) * 1000
-        
+
         return llm_response, llm_latency_ms
+
+    def _clean_llm_response(self, response: str) -> str:
+        """Clean up LLM response by removing unwanted prefixes and formatting.
+
+        Args:
+            response: Raw LLM response
+
+        Returns:
+            Cleaned response
+        """
+        if not response:
+            return response
+
+        # Strip whitespace
+        cleaned = response.strip()
+
+        # Remove "Draft X:" prefix (case insensitive)
+        # Matches patterns like "Draft 1:", "draft 2:", "DRAFT 3:", etc.
+        draft_pattern = r'(?i)^draft\s+\d+:\s*'
+        cleaned = re.sub(draft_pattern, '', cleaned)
+
+        return cleaned
 

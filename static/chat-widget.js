@@ -23,9 +23,13 @@
     settings: null,
     messages: [], // In-memory message cache
     promptInterval: null,
+    promptTarget: null,
+    promptUsesBubble: true,
+    labelDefaultText: '',
     typingTimeout: null,
     entryTimeout: null,
     attentionTimeout: null,
+    autoOpenTimeout: null,
     exitIntentBound: false,
     scrollHandler: null,
 
@@ -216,12 +220,14 @@
 
       // Apply behavior
       if (settings.behavior) {
-        if (settings.behavior.openBehavior === 'auto' && settings.behavior.autoOpenDelay > 0) {
-          setTimeout(() => {
+        if (settings.behavior.openBehavior === 'auto') {
+          const delaySeconds = Math.max(0, settings.behavior.autoOpenDelay || 0);
+          clearTimeout(this.autoOpenTimeout);
+          this.autoOpenTimeout = setTimeout(() => {
             if (!this.isOpen) {
-              this.toggleWidget();
+              this.toggleWidget({ autoOpen: true });
             }
-          }, settings.behavior.autoOpenDelay * 1000);
+          }, delaySeconds * 1000);
         }
       }
 
@@ -315,6 +321,7 @@
       // Apply label settings
       if (iconSettings.showLabel && iconSettings.labelText) {
         if (iconLabel) {
+          this.labelDefaultText = iconSettings.labelText;
           iconLabel.textContent = iconSettings.labelText;
           iconLabel.style.display = 'block';
           iconLabel.style.backgroundColor = iconSettings.labelBackgroundColor;
@@ -322,7 +329,8 @@
           iconLabel.style.fontSize = iconSettings.labelFontSize;
 
           // Position label based on labelPosition
-          toggle.setAttribute('data-label-position', iconSettings.labelPosition);
+          const labelPosition = iconSettings.labelPosition === 'beside' ? 'left' : iconSettings.labelPosition;
+          toggle.setAttribute('data-label-position', labelPosition);
         }
       } else {
         if (iconLabel) {
@@ -399,6 +407,8 @@
     applyCopySettings: function(settings) {
       const copySettings = settings.copy || {};
       const promptEl = document.querySelector('.cc-launcher-prompt');
+      const iconLabel = document.querySelector('.cc-icon-label');
+      const useLabelPrompt = iconLabel && iconLabel.style.display !== 'none';
       if (!promptEl) return;
       if (settings.rules?.stopAfterInteraction && this.getSessionFlag('interacted')) {
         this.stopPromptRotation();
@@ -411,9 +421,25 @@
 
       if (copySettings.launcherPromptsEnabled && copySettings.launcherPrompts?.length) {
         const prompts = contextualText ? [contextualText] : copySettings.launcherPrompts;
-        this.startPromptRotation(prompts, copySettings.launcherPromptRotateSeconds || 6);
+        if (useLabelPrompt) {
+          if (promptEl) {
+            promptEl.classList.remove('is-visible');
+            promptEl.style.display = 'none';
+          }
+          this.startPromptRotation(prompts, copySettings.launcherPromptRotateSeconds || 6, iconLabel, false);
+        } else {
+          this.startPromptRotation(prompts, copySettings.launcherPromptRotateSeconds || 6, promptEl, true);
+        }
       } else if (contextualText) {
-        this.startPromptRotation([contextualText], copySettings.launcherPromptRotateSeconds || 6);
+        if (useLabelPrompt) {
+          if (promptEl) {
+            promptEl.classList.remove('is-visible');
+            promptEl.style.display = 'none';
+          }
+          this.startPromptRotation([contextualText], copySettings.launcherPromptRotateSeconds || 6, iconLabel, false);
+        } else {
+          this.startPromptRotation([contextualText], copySettings.launcherPromptRotateSeconds || 6, promptEl, true);
+        }
       } else {
         this.stopPromptRotation();
       }
@@ -534,6 +560,12 @@
         return;
       }
 
+      if (toggle.style.display === 'none') {
+        toggle.classList.remove('cc-attention');
+        toggle.removeAttribute('data-attention');
+        return;
+      }
+
       if (rules.stopAfterInteraction && this.getSessionFlag('interacted')) {
         return;
       }
@@ -584,34 +616,42 @@
           setTimeout(() => toggle.classList.remove('cc-launcher-entry'), 400);
         }
       }
+      this.applyAttentionSettings(this.settings || {});
     },
 
-    startPromptRotation: function(prompts, rotateSeconds) {
-      const promptEl = document.querySelector('.cc-launcher-prompt');
-      if (!promptEl || !prompts?.length) return;
-
+    startPromptRotation: function(prompts, rotateSeconds, targetEl, usesBubble) {
+      if (!targetEl || !prompts?.length) return;
       clearInterval(this.promptInterval);
+      this.promptTarget = targetEl;
+      this.promptUsesBubble = !!usesBubble;
       let index = 0;
-      promptEl.textContent = prompts[index];
-      promptEl.style.display = 'block';
-      promptEl.classList.add('is-visible');
+      targetEl.textContent = prompts[index];
+      targetEl.style.display = 'block';
+      if (this.promptUsesBubble) {
+        targetEl.classList.add('is-visible');
+      }
 
       if (prompts.length > 1) {
         this.promptInterval = setInterval(() => {
           index = (index + 1) % prompts.length;
-          promptEl.textContent = prompts[index];
+          targetEl.textContent = prompts[index];
         }, Math.max(3, rotateSeconds || 6) * 1000);
       }
     },
 
     stopPromptRotation: function() {
-      const promptEl = document.querySelector('.cc-launcher-prompt');
       clearInterval(this.promptInterval);
       this.promptInterval = null;
-      if (promptEl) {
-        promptEl.classList.remove('is-visible');
-        promptEl.style.display = 'none';
+      if (this.promptTarget) {
+        if (this.promptUsesBubble) {
+          this.promptTarget.classList.remove('is-visible');
+          this.promptTarget.style.display = 'none';
+        } else if (this.labelDefaultText) {
+          this.promptTarget.textContent = this.labelDefaultText;
+        }
       }
+      this.promptTarget = null;
+      this.promptUsesBubble = true;
     },
 
     getContextualText: function(rules = []) {
@@ -924,8 +964,13 @@
           left: 50%;
           transform: translateX(-50%);
         }
-        .cc-widget-toggle[data-label-position="beside"] .cc-icon-label {
+        .cc-widget-toggle[data-label-position="left"] .cc-icon-label {
           right: calc(100% + 10px);
+          top: 50%;
+          transform: translateY(-50%);
+        }
+        .cc-widget-toggle[data-label-position="right"] .cc-icon-label {
+          left: calc(100% + 10px);
           top: 50%;
           transform: translateY(-50%);
         }
@@ -1029,6 +1074,8 @@
           border-radius: 8px;
           max-width: 80%;
           word-wrap: break-word;
+          white-space: pre-wrap;
+          overflow-wrap: break-word;
           font-size: var(--cc-font-size);
           line-height: var(--cc-line-height);
         }
@@ -1298,7 +1345,7 @@
       messageInput.addEventListener('focus', () => this.markInteracted());
     },
 
-    toggleWidget: function() {
+    toggleWidget: function(options = {}) {
       const container = document.querySelector('.cc-widget-container');
       const toggle = document.getElementById('cc-toggle');
 
@@ -1322,6 +1369,13 @@
         }
         if (this.settings?.microInteractions?.typingIndicator) {
           this.showTypingIndicator(this.settings.microInteractions.typingIndicatorDurationMs);
+        }
+        if (options.autoOpen && this.settings?.behavior?.autoOpenMessageEnabled) {
+          const message = (this.settings.behavior.autoOpenMessage || '').trim();
+          if (message && !this.getSessionFlag('auto_open_message')) {
+            this.addMessage(message, 'assistant');
+            this.setSessionFlag('auto_open_message', true);
+          }
         }
         // Scroll to bottom after restoring messages
         const messagesContainer = document.getElementById('cc-messages');

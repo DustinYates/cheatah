@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -203,6 +203,23 @@ const fontOptions = [
   }
 ];
 
+const previewTargetByCategory = {
+  colors: 'window',
+  typography: 'window',
+  layout: 'window',
+  behavior: 'window',
+  messages: 'window',
+  copy: 'window',
+  microInteractions: 'window',
+  sound: 'window',
+  socialProof: 'window',
+  accessibility: 'window',
+  icon: 'launcher',
+  attention: 'launcher',
+  motion: 'launcher',
+  rules: 'launcher'
+};
+
 const emojiOptions = [
   { label: 'Speech Bubble', value: '💬' },
   { label: 'Waving Hand', value: '👋' },
@@ -231,10 +248,15 @@ export default function Settings() {
 
   // Widget settings state
   const [widgetSettings, setWidgetSettings] = useState(defaultWidgetSettings);
+  const [widgetBaseline, setWidgetBaseline] = useState(defaultWidgetSettings);
   const [widgetSaving, setWidgetSaving] = useState(false);
   const [widgetSuccess, setWidgetSuccess] = useState('');
   const [widgetError, setWidgetError] = useState('');
   const [widgetLoading, setWidgetLoading] = useState(false);
+  const [showWidgetAdvanced, setShowWidgetAdvanced] = useState(false);
+  const [previewFocus, setPreviewFocus] = useState('');
+  const [previewPulse, setPreviewPulse] = useState('');
+  const previewPulseTimeout = useRef(null);
 
   // Telephony config state (for SMS phone number display)
   const [telephonyConfig, setTelephonyConfig] = useState(null);
@@ -264,6 +286,13 @@ export default function Settings() {
   })();
   const previewFontFamily = widgetSettings.typography.fontFamily || 'inherit';
   const previewFontSize = widgetSettings.typography.fontSize || '14px';
+  const previewLabelPosition = widgetSettings.icon.labelPosition === 'beside'
+    ? 'left'
+    : widgetSettings.icon.labelPosition;
+  const hasWidgetChanges = useMemo(
+    () => JSON.stringify(widgetSettings) !== JSON.stringify(widgetBaseline),
+    [widgetSettings, widgetBaseline]
+  );
 
   const fetchProfile = useCallback(() => api.getBusinessProfile(), []);
   const { data: profile, loading, error, refetch } = useFetchData(fetchProfile);
@@ -295,6 +324,7 @@ export default function Settings() {
     try {
       const data = await api.getWidgetSettings();
       setWidgetSettings(data);
+      setWidgetBaseline(data);
     } catch (err) {
       setWidgetError(err.message || 'Failed to load widget settings');
     } finally {
@@ -305,6 +335,22 @@ export default function Settings() {
   useEffect(() => {
     fetchWidgetSettings();
   }, [fetchWidgetSettings]);
+
+  useEffect(() => {
+    if (!hasWidgetChanges) return;
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasWidgetChanges]);
+
+  useEffect(() => () => {
+    if (previewPulseTimeout.current) {
+      clearTimeout(previewPulseTimeout.current);
+    }
+  }, []);
 
   // Fetch telephony config for SMS phone display
   const fetchTelephonyConfig = useCallback(async () => {
@@ -357,6 +403,23 @@ export default function Settings() {
     }
   };
 
+  const pulsePreview = useCallback((category) => {
+    const target = previewTargetByCategory[category] || 'window';
+    setPreviewPulse(target);
+    if (previewPulseTimeout.current) {
+      clearTimeout(previewPulseTimeout.current);
+    }
+    previewPulseTimeout.current = setTimeout(() => {
+      setPreviewPulse('');
+    }, 650);
+  }, []);
+
+  const handlePreviewHover = useCallback((event) => {
+    const targetElement = event.target.closest('[data-preview-target]');
+    if (!targetElement) return;
+    setPreviewFocus(targetElement.dataset.previewTarget || '');
+  }, []);
+
   const handleWidgetChange = (category, field, value) => {
     setWidgetSettings(prev => ({
       ...prev,
@@ -365,6 +428,7 @@ export default function Settings() {
         [field]: value
       }
     }));
+    pulsePreview(category);
   };
 
   const handleWidgetListChange = (category, field, list) => {
@@ -375,6 +439,7 @@ export default function Settings() {
         [field]: list
       }
     }));
+    pulsePreview(category);
   };
 
   const handleWidgetListItemChange = (category, field, index, key, value) => {
@@ -387,6 +452,7 @@ export default function Settings() {
         ))
       }
     }));
+    pulsePreview(category);
   };
 
   const addWidgetListItem = (category, field, item) => {
@@ -397,6 +463,7 @@ export default function Settings() {
         [field]: [...(prev[category][field] || []), item]
       }
     }));
+    pulsePreview(category);
   };
 
   const removeWidgetListItem = (category, field, index) => {
@@ -407,6 +474,7 @@ export default function Settings() {
         [field]: (prev[category][field] || []).filter((_, idx) => idx !== index)
       }
     }));
+    pulsePreview(category);
   };
 
   const handleWidgetSubmit = async (e) => {
@@ -417,7 +485,8 @@ export default function Settings() {
 
     try {
       await api.updateWidgetSettings(widgetSettings);
-      setWidgetSuccess('Widget settings updated successfully');
+      setWidgetBaseline(widgetSettings);
+      setWidgetSuccess('Saved for this tenant');
       setTimeout(() => setWidgetSuccess(''), 3000);
     } catch (err) {
       setWidgetError(err.message || 'Failed to save widget settings');
@@ -626,1243 +695,1301 @@ export default function Settings() {
           <div className="error-message">{widgetError}</div>
         )}
 
-        {widgetSuccess && (
-          <div className="success-message">{widgetSuccess}</div>
-        )}
-
         {!widgetLoading && (
           <div className="widget-customization-layout">
-            <form onSubmit={handleWidgetSubmit} className="settings-form widget-customization-form">
-            {/* Colors & Branding */}
-            <details open>
-              <summary>Colors & Branding</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label htmlFor="widget-primary-color">
-                    Primary Color <span className="info-icon" title="Main color used for buttons and headers">ℹ️</span>
-                  </label>
+            <form
+              onSubmit={handleWidgetSubmit}
+              className="settings-form widget-customization-form"
+              onMouseOver={handlePreviewHover}
+              onMouseLeave={() => setPreviewFocus('')}
+            >
+              <div className="widget-customization-toolbar">
+                <label className="checkbox-label">
                   <input
-                    type="color"
-                    id="widget-primary-color"
-                    value={widgetSettings.colors.primary}
-                    onChange={(e) => handleWidgetChange('colors', 'primary', e.target.value)}
+                    type="checkbox"
+                    checked={showWidgetAdvanced}
+                    onChange={(e) => setShowWidgetAdvanced(e.target.checked)}
                   />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-secondary-color">
-                    Secondary Color <span className="info-icon" title="Secondary accent color">ℹ️</span>
-                  </label>
-                  <input
-                    type="color"
-                    id="widget-secondary-color"
-                    value={widgetSettings.colors.secondary}
-                    onChange={(e) => handleWidgetChange('colors', 'secondary', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-background-color">
-                    Background Color <span className="info-icon" title="Widget background color">ℹ️</span>
-                  </label>
-                  <input
-                    type="color"
-                    id="widget-background-color"
-                    value={widgetSettings.colors.background}
-                    onChange={(e) => handleWidgetChange('colors', 'background', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-text-color">
-                    Text Color <span className="info-icon" title="Default text color">ℹ️</span>
-                  </label>
-                  <input
-                    type="color"
-                    id="widget-text-color"
-                    value={widgetSettings.colors.text}
-                    onChange={(e) => handleWidgetChange('colors', 'text', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-border-color">
-                    Border Color <span className="info-icon" title="Border and divider color">ℹ️</span>
-                  </label>
-                  <input
-                    type="color"
-                    id="widget-border-color"
-                    value={widgetSettings.colors.borderColor}
-                    onChange={(e) => handleWidgetChange('colors', 'borderColor', e.target.value)}
-                  />
-                </div>
+                  <span>Show advanced settings</span>
+                  <span className="info-icon" title="Reveals power-user controls like z-index and motion limits.">ⓘ</span>
+                </label>
               </div>
-            </details>
 
-            {/* Icon Customization */}
-            <details open>
-              <summary>Chat Icon</summary>
-              <div className="form-section">
-                {/* Icon Type */}
-                <div className="form-group">
-                  <label htmlFor="widget-icon-type">
-                    Icon Type <span className="info-icon" title="Choose how to display the chat icon">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-icon-type"
-                    value={widgetSettings.icon.type}
-                    onChange={(e) => handleWidgetChange('icon', 'type', e.target.value)}
-                  >
-                    <option value="emoji">Emoji</option>
-                    <option value="image">Custom Image</option>
-                  </select>
-                </div>
+              <details open>
+                <summary>Core Appearance</summary>
+                <div className="form-section" data-preview-target="window">
+                  <div className="form-group color-control">
+                    <label htmlFor="widget-primary-color">
+                      <span>Primary Color</span>
+                      <span className="info-icon" title="Select the primary brand color used for headers and buttons.">ⓘ</span>
+                    </label>
+                    <input
+                      type="color"
+                      id="widget-primary-color"
+                      className="color-swatch"
+                      value={widgetSettings.colors.primary}
+                      onChange={(e) => handleWidgetChange('colors', 'primary', e.target.value)}
+                    />
+                  </div>
 
-                {/* Emoji Input */}
-                {widgetSettings.icon.type === 'emoji' && (
+                  <div className="form-group color-control">
+                    <label htmlFor="widget-secondary-color">
+                      <span>Secondary Color</span>
+                      <span className="info-icon" title="Accent color used for secondary buttons and highlights.">ⓘ</span>
+                    </label>
+                    <input
+                      type="color"
+                      id="widget-secondary-color"
+                      className="color-swatch"
+                      value={widgetSettings.colors.secondary}
+                      onChange={(e) => handleWidgetChange('colors', 'secondary', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group color-control">
+                    <label htmlFor="widget-background-color">
+                      <span>Background Color</span>
+                      <span className="info-icon" title="Sets the widget body background color.">ⓘ</span>
+                    </label>
+                    <input
+                      type="color"
+                      id="widget-background-color"
+                      className="color-swatch"
+                      value={widgetSettings.colors.background}
+                      onChange={(e) => handleWidgetChange('colors', 'background', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group color-control">
+                    <label htmlFor="widget-text-color">
+                      <span>Text Color</span>
+                      <span className="info-icon" title="Controls the default text color inside the widget.">ⓘ</span>
+                    </label>
+                    <input
+                      type="color"
+                      id="widget-text-color"
+                      className="color-swatch"
+                      value={widgetSettings.colors.text}
+                      onChange={(e) => handleWidgetChange('colors', 'text', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group color-control">
+                    <label htmlFor="widget-border-color">
+                      <span>Border Color</span>
+                      <span className="info-icon" title="Defines the border and divider color.">ⓘ</span>
+                    </label>
+                    <input
+                      type="color"
+                      id="widget-border-color"
+                      className="color-swatch"
+                      value={widgetSettings.colors.borderColor}
+                      onChange={(e) => handleWidgetChange('colors', 'borderColor', e.target.value)}
+                    />
+                  </div>
+
                   <div className="form-group">
-                    <label htmlFor="widget-icon-emoji">
-                      Emoji Character <span className="info-icon" title="Enter emoji character (e.g., 💬, 🤖, 👋)">ℹ️</span>
+                    <label htmlFor="widget-border-radius">
+                      Border Radius <span className="info-icon" title="Controls how rounded the widget corners appear.">ⓘ</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="widget-border-radius"
+                      value={widgetSettings.layout.borderRadius}
+                      onChange={(e) => handleWidgetChange('layout', 'borderRadius', e.target.value)}
+                      placeholder="10px"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="widget-font-family">
+                      Font Family <span className="info-icon" title="Sets the font used throughout the widget.">ⓘ</span>
                     </label>
                     <select
-                      id="widget-icon-emoji"
-                      value={widgetSettings.icon.emoji}
-                      onChange={(e) => handleWidgetChange('icon', 'emoji', e.target.value)}
+                      id="widget-font-family"
+                      value={widgetSettings.typography.fontFamily}
+                      onChange={(e) => handleWidgetChange('typography', 'fontFamily', e.target.value)}
                     >
-                      {emojiOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.value} {option.label}
+                      {fontOptions.map((option) => (
+                        <option key={option.value} value={option.value} style={{ fontFamily: option.value }}>
+                          {option.label} - Aa Bb 123
                         </option>
                       ))}
                     </select>
                   </div>
-                )}
 
-                {/* Image URL Input */}
-                {widgetSettings.icon.type === 'image' && (
-                  <>
+                  <div className="form-group">
+                    <label htmlFor="widget-font-size">
+                      Font Size <span className="info-icon" title="Sets the base text size for messages and buttons.">ⓘ</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="widget-font-size"
+                      value={widgetSettings.typography.fontSize}
+                      onChange={(e) => handleWidgetChange('typography', 'fontSize', e.target.value)}
+                      placeholder="14px"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="widget-font-weight">
+                      Font Weight <span className="info-icon" title="Controls the boldness of text in the widget.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-font-weight"
+                      value={widgetSettings.typography.fontWeight}
+                      onChange={(e) => handleWidgetChange('typography', 'fontWeight', e.target.value)}
+                    >
+                      <option value="300">Light (300)</option>
+                      <option value="400">Normal (400)</option>
+                      <option value="500">Medium (500)</option>
+                      <option value="600">Semi-Bold (600)</option>
+                      <option value="700">Bold (700)</option>
+                    </select>
+                  </div>
+                </div>
+              </details>
+
+              <details>
+                <summary>Launcher Button</summary>
+                <div className="form-section" data-preview-target="launcher">
+                  <div className="form-group">
+                    <label htmlFor="widget-icon-type">
+                      Icon Type <span className="info-icon" title="Choose whether to use an emoji or custom image.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-icon-type"
+                      value={widgetSettings.icon.type}
+                      onChange={(e) => handleWidgetChange('icon', 'type', e.target.value)}
+                    >
+                      <option value="emoji">Emoji</option>
+                      <option value="image">Custom Image</option>
+                    </select>
+                  </div>
+
+                  {widgetSettings.icon.type === 'emoji' && (
                     <div className="form-group">
-                      <label htmlFor="widget-icon-image-url">
-                        Image URL <span className="info-icon" title="URL to your logo or custom image">ℹ️</span>
+                      <label htmlFor="widget-icon-emoji">
+                        Emoji / Icon Selector <span className="info-icon" title="Pick the emoji that appears in the launcher.">ⓘ</span>
                       </label>
-                      <input
-                        type="url"
-                        id="widget-icon-image-url"
-                        value={widgetSettings.icon.imageUrl}
-                        onChange={(e) => handleWidgetChange('icon', 'imageUrl', e.target.value)}
-                        placeholder="https://example.com/logo.png"
-                      />
-                      <small>Recommended: Square image, PNG or SVG format, transparent background</small>
+                      <select
+                        id="widget-icon-emoji"
+                        value={widgetSettings.icon.emoji}
+                        onChange={(e) => handleWidgetChange('icon', 'emoji', e.target.value)}
+                      >
+                        {emojiOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.value} {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
+                  )}
 
-                    <div className="form-group">
-                      <label>
+                  {widgetSettings.icon.type === 'image' && (
+                    <>
+                      <div className="form-group">
+                        <label htmlFor="widget-icon-image-url">
+                          Image URL <span className="info-icon" title="Paste the URL of your logo or custom icon.">ⓘ</span>
+                        </label>
                         <input
-                          type="checkbox"
-                          checked={widgetSettings.icon.fallbackToEmoji}
-                          onChange={(e) => handleWidgetChange('icon', 'fallbackToEmoji', e.target.checked)}
+                          type="url"
+                          id="widget-icon-image-url"
+                          value={widgetSettings.icon.imageUrl}
+                          onChange={(e) => handleWidgetChange('icon', 'imageUrl', e.target.value)}
+                          placeholder="https://example.com/logo.png"
                         />
-                        Fallback to emoji if image fails to load
-                      </label>
-                    </div>
-                  </>
-                )}
+                        <small>Recommended: Square image, PNG or SVG format, transparent background.</small>
+                      </div>
 
-                {/* Icon Shape */}
-                <div className="form-group">
-                  <label htmlFor="widget-icon-shape">
-                    Icon Shape <span className="info-icon" title="Shape of the chat icon button">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-icon-shape"
-                    value={widgetSettings.icon.shape}
-                    onChange={(e) => handleWidgetChange('icon', 'shape', e.target.value)}
-                  >
-                    <option value="circle">Circle</option>
-                    <option value="rounded-square">Rounded Square</option>
-                    <option value="pill">Pill/Capsule</option>
-                    <option value="square">Square</option>
-                    <option value="custom">Custom Border Radius</option>
-                  </select>
-                </div>
+                      <div className="form-group">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={widgetSettings.icon.fallbackToEmoji}
+                            onChange={(e) => handleWidgetChange('icon', 'fallbackToEmoji', e.target.checked)}
+                          />
+                          <span>Fallback to emoji if image fails to load</span>
+                          <span className="info-icon" title="Shows the emoji when the image URL cannot be loaded.">ⓘ</span>
+                        </label>
+                      </div>
+                    </>
+                  )}
 
-                {/* Custom Border Radius */}
-                {widgetSettings.icon.shape === 'custom' && (
                   <div className="form-group">
-                    <label htmlFor="widget-icon-border-radius">
-                      Custom Border Radius <span className="info-icon" title="CSS border-radius value (e.g., 15px, 25%)">ℹ️</span>
+                    <label htmlFor="widget-icon-shape">
+                      Icon Shape <span className="info-icon" title="Defines the launcher button shape.">ⓘ</span>
                     </label>
-                    <input
-                      type="text"
-                      id="widget-icon-border-radius"
-                      value={widgetSettings.icon.customBorderRadius}
-                      onChange={(e) => handleWidgetChange('icon', 'customBorderRadius', e.target.value)}
-                      placeholder="50%"
-                    />
+                    <select
+                      id="widget-icon-shape"
+                      value={widgetSettings.icon.shape}
+                      onChange={(e) => handleWidgetChange('icon', 'shape', e.target.value)}
+                    >
+                      <option value="circle">Circle</option>
+                      <option value="rounded-square">Rounded Square</option>
+                      <option value="pill">Pill/Capsule</option>
+                      <option value="square">Square</option>
+                      <option value="custom">Custom Border Radius</option>
+                    </select>
                   </div>
-                )}
 
-                {/* Icon Size */}
-                <div className="form-group">
-                  <label htmlFor="widget-icon-size">
-                    Icon Size <span className="info-icon" title="Size of the chat icon button">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-icon-size"
-                    value={widgetSettings.icon.size}
-                    onChange={(e) => handleWidgetChange('icon', 'size', e.target.value)}
-                  >
-                    <option value="small">Small (50px)</option>
-                    <option value="medium">Medium (60px)</option>
-                    <option value="large">Large (75px)</option>
-                    <option value="extra-large">Extra Large (90px)</option>
-                    <option value="custom">Custom Size</option>
-                  </select>
-                </div>
-
-                {/* Custom Size */}
-                {widgetSettings.icon.size === 'custom' && (
-                  <div className="form-group">
-                    <label htmlFor="widget-icon-custom-size">
-                      Custom Size <span className="info-icon" title="Size in pixels (e.g., 70px)">ℹ️</span>
-                    </label>
-                    <input
-                      type="text"
-                      id="widget-icon-custom-size"
-                      value={widgetSettings.icon.customSize}
-                      onChange={(e) => handleWidgetChange('icon', 'customSize', e.target.value)}
-                      placeholder="60px"
-                    />
-                  </div>
-                )}
-
-                {/* Label Section */}
-                <div className="form-group">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.icon.showLabel}
-                      onChange={(e) => handleWidgetChange('icon', 'showLabel', e.target.checked)}
-                    />
-                    <span>Show label/badge</span>
-                    <span className="info-icon" title="Adds a small text label near the chat icon">ℹ️</span>
-                  </label>
-                  <small className="checkbox-helper">Helpful for prompting visitors to start a chat.</small>
-                </div>
-
-                {widgetSettings.icon.showLabel && (
-                  <>
+                  {widgetSettings.icon.shape === 'custom' && (
                     <div className="form-group">
-                      <label htmlFor="widget-icon-label-text">
-                        Label Text <span className="info-icon" title="Text to display on/near the icon">ℹ️</span>
+                      <label htmlFor="widget-icon-border-radius">
+                        Custom Border Radius <span className="info-icon" title="CSS border-radius value (e.g., 15px, 25%).">ⓘ</span>
                       </label>
                       <input
                         type="text"
-                        id="widget-icon-label-text"
-                        value={widgetSettings.icon.labelText}
-                        onChange={(e) => handleWidgetChange('icon', 'labelText', e.target.value)}
-                        placeholder="Chat"
-                        maxLength={20}
+                        id="widget-icon-border-radius"
+                        value={widgetSettings.icon.customBorderRadius}
+                        onChange={(e) => handleWidgetChange('icon', 'customBorderRadius', e.target.value)}
+                        placeholder="50%"
                       />
                     </div>
+                  )}
 
+                  <div className="form-group">
+                    <label htmlFor="widget-icon-size">
+                      Icon Size <span className="info-icon" title="Controls the launcher button size.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-icon-size"
+                      value={widgetSettings.icon.size}
+                      onChange={(e) => handleWidgetChange('icon', 'size', e.target.value)}
+                    >
+                      <option value="small">Small (50px)</option>
+                      <option value="medium">Medium (60px)</option>
+                      <option value="large">Large (75px)</option>
+                      <option value="extra-large">Extra Large (90px)</option>
+                      <option value="custom">Custom Size</option>
+                    </select>
+                  </div>
+
+                  {widgetSettings.icon.size === 'custom' && (
                     <div className="form-group">
+                      <label htmlFor="widget-icon-custom-size">
+                        Custom Size <span className="info-icon" title="Set a custom size in pixels (e.g., 70px).">ⓘ</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="widget-icon-custom-size"
+                        value={widgetSettings.icon.customSize}
+                        onChange={(e) => handleWidgetChange('icon', 'customSize', e.target.value)}
+                        placeholder="60px"
+                      />
+                    </div>
+                  )}
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.icon.showLabel}
+                        onChange={(e) => handleWidgetChange('icon', 'showLabel', e.target.checked)}
+                      />
+                      <span>Show Label / Badge</span>
+                      <span className="info-icon" title="Adds a short label near the launcher to invite clicks.">ⓘ</span>
+                    </label>
+                    <small className="checkbox-helper">Helpful for prompting visitors to start a chat.</small>
+                  </div>
+
+                  {widgetSettings.icon.showLabel && (
+                    <>
+                      <div className="form-group">
+                        <label htmlFor="widget-icon-label-text">
+                          Label Text <span className="info-icon" title="Text displayed inside or near the launcher.">ⓘ</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="widget-icon-label-text"
+                          value={widgetSettings.icon.labelText}
+                          onChange={(e) => handleWidgetChange('icon', 'labelText', e.target.value)}
+                          placeholder="Chat"
+                          maxLength={20}
+                        />
+                      </div>
+
+                      <div className="form-group">
                       <label htmlFor="widget-icon-label-position">
-                        Label Position <span className="info-icon" title="Where to display the label">ℹ️</span>
+                        Label Position <span className="info-icon" title="Controls where the label appears around the launcher.">ⓘ</span>
                       </label>
                       <select
                         id="widget-icon-label-position"
-                        value={widgetSettings.icon.labelPosition}
+                        value={previewLabelPosition}
                         onChange={(e) => handleWidgetChange('icon', 'labelPosition', e.target.value)}
                       >
                         <option value="inside">Inside Icon</option>
                         <option value="below">Below Icon</option>
-                        <option value="beside">Beside Icon (Right)</option>
+                        <option value="left">Left of Icon</option>
+                        <option value="right">Right of Icon</option>
                         <option value="hover">Show on Hover</option>
                       </select>
                     </div>
 
-                    <div className="form-group">
-                      <label htmlFor="widget-icon-label-bg-color">
-                        Label Background Color
-                      </label>
-                      <input
-                        type="color"
-                        id="widget-icon-label-bg-color"
-                        value={widgetSettings.icon.labelBackgroundColor}
-                        onChange={(e) => handleWidgetChange('icon', 'labelBackgroundColor', e.target.value)}
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor="widget-icon-label-text-color">
-                        Label Text Color
-                      </label>
-                      <input
-                        type="color"
-                        id="widget-icon-label-text-color"
-                        value={widgetSettings.icon.labelTextColor}
-                        onChange={(e) => handleWidgetChange('icon', 'labelTextColor', e.target.value)}
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor="widget-icon-label-font-size">
-                        Label Font Size <span className="info-icon" title="Font size for label text (e.g., 12px)">ℹ️</span>
-                      </label>
-                      <input
-                        type="text"
-                        id="widget-icon-label-font-size"
-                        value={widgetSettings.icon.labelFontSize}
-                        onChange={(e) => handleWidgetChange('icon', 'labelFontSize', e.target.value)}
-                        placeholder="12px"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            </details>
-
-            {/* Typography */}
-            <details>
-              <summary>Typography</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label htmlFor="widget-font-family">
-                    Font Family <span className="info-icon" title="Font family for widget text">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-font-family"
-                    value={widgetSettings.typography.fontFamily}
-                    onChange={(e) => handleWidgetChange('typography', 'fontFamily', e.target.value)}
-                  >
-                    {fontOptions.map((option) => (
-                      <option key={option.value} value={option.value} style={{ fontFamily: option.value }}>
-                        {option.label} - Aa Bb 123
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-font-size">
-                    Font Size <span className="info-icon" title="Base font size (e.g., 14px, 1rem)">ℹ️</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="widget-font-size"
-                    value={widgetSettings.typography.fontSize}
-                    onChange={(e) => handleWidgetChange('typography', 'fontSize', e.target.value)}
-                    placeholder="14px"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-font-weight">
-                    Font Weight <span className="info-icon" title="Font weight (100-900)">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-font-weight"
-                    value={widgetSettings.typography.fontWeight}
-                    onChange={(e) => handleWidgetChange('typography', 'fontWeight', e.target.value)}
-                  >
-                    <option value="300">Light (300)</option>
-                    <option value="400">Normal (400)</option>
-                    <option value="500">Medium (500)</option>
-                    <option value="600">Semi-Bold (600)</option>
-                    <option value="700">Bold (700)</option>
-                  </select>
-                </div>
-              </div>
-            </details>
-
-            {/* Layout & Appearance */}
-            <details>
-              <summary>Layout & Appearance</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label htmlFor="widget-position">
-                    Position <span className="info-icon" title="Widget position on the page">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-position"
-                    value={widgetSettings.layout.position}
-                    onChange={(e) => handleWidgetChange('layout', 'position', e.target.value)}
-                  >
-                    <option value="bottom-right">Bottom Right</option>
-                    <option value="bottom-left">Bottom Left</option>
-                    <option value="top-right">Top Right</option>
-                    <option value="top-left">Top Left</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-max-width">
-                    Max Width <span className="info-icon" title="Maximum widget width (e.g., 350px)">ℹ️</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="widget-max-width"
-                    value={widgetSettings.layout.maxWidth}
-                    onChange={(e) => handleWidgetChange('layout', 'maxWidth', e.target.value)}
-                    placeholder="350px"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-max-height">
-                    Max Height <span className="info-icon" title="Maximum widget height (e.g., 500px)">ℹ️</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="widget-max-height"
-                    value={widgetSettings.layout.maxHeight}
-                    onChange={(e) => handleWidgetChange('layout', 'maxHeight', e.target.value)}
-                    placeholder="500px"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-border-radius">
-                    Border Radius <span className="info-icon" title="Corner roundness (e.g., 10px)">ℹ️</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="widget-border-radius"
-                    value={widgetSettings.layout.borderRadius}
-                    onChange={(e) => handleWidgetChange('layout', 'borderRadius', e.target.value)}
-                    placeholder="10px"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-z-index">
-                    Z-Index <span className="info-icon" title="Layering priority (higher = on top)">ℹ️</span>
-                  </label>
-                  <input
-                    type="number"
-                    id="widget-z-index"
-                    value={widgetSettings.layout.zIndex}
-                    onChange={(e) => handleWidgetChange('layout', 'zIndex', e.target.value)}
-                    placeholder="10000"
-                  />
-                </div>
-              </div>
-            </details>
-
-            {/* Behavior */}
-            <details>
-              <summary>Behavior</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label htmlFor="widget-open-behavior">
-                    Open Behavior <span className="info-icon" title="How the widget opens">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-open-behavior"
-                    value={widgetSettings.behavior.openBehavior}
-                    onChange={(e) => handleWidgetChange('behavior', 'openBehavior', e.target.value)}
-                  >
-                    <option value="click">Click to Open</option>
-                    <option value="auto">Auto-Open</option>
-                  </select>
-                </div>
-
-                {widgetSettings.behavior.openBehavior === 'auto' && (
-                  <>
-                    <div className="form-group">
-                      <label htmlFor="widget-auto-open-delay">
-                        Auto-Open Delay (seconds) <span className="info-icon" title="Delay before auto-opening">ℹ️</span>
-                      </label>
-                      <input
-                        type="number"
-                        id="widget-auto-open-delay"
-                        value={widgetSettings.behavior.autoOpenDelay}
-                        onChange={(e) => handleWidgetChange('behavior', 'autoOpenDelay', parseInt(e.target.value) || 0)}
-                        min="0"
-                        placeholder="0"
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label className="checkbox-label">
+                      <div className="form-group color-control">
+                        <label htmlFor="widget-icon-label-bg-color">
+                          <span>Label Background Color</span>
+                          <span className="info-icon" title="Background color for the label or badge.">ⓘ</span>
+                        </label>
                         <input
-                          type="checkbox"
-                          checked={widgetSettings.behavior.autoOpenMessageEnabled}
-                          onChange={(e) => handleWidgetChange('behavior', 'autoOpenMessageEnabled', e.target.checked)}
+                          type="color"
+                          id="widget-icon-label-bg-color"
+                          className="color-swatch"
+                          value={widgetSettings.icon.labelBackgroundColor}
+                          onChange={(e) => handleWidgetChange('icon', 'labelBackgroundColor', e.target.value)}
                         />
-                        <span>Show auto-open message</span>
-                        <span className="info-icon" title="Display a short prompt when the widget auto-opens">ℹ️</span>
-                      </label>
-                      <small className="checkbox-helper">A friendly message can boost responses.</small>
-                    </div>
+                      </div>
 
-                    {widgetSettings.behavior.autoOpenMessageEnabled && (
+                      <div className="form-group color-control">
+                        <label htmlFor="widget-icon-label-text-color">
+                          <span>Label Text Color</span>
+                          <span className="info-icon" title="Color for the label text.">ⓘ</span>
+                        </label>
+                        <input
+                          type="color"
+                          id="widget-icon-label-text-color"
+                          className="color-swatch"
+                          value={widgetSettings.icon.labelTextColor}
+                          onChange={(e) => handleWidgetChange('icon', 'labelTextColor', e.target.value)}
+                        />
+                      </div>
+
                       <div className="form-group">
-                        <label htmlFor="widget-auto-open-message">
-                          Auto-Open Message <span className="info-icon" title="Text shown when the widget opens automatically">ℹ️</span>
+                        <label htmlFor="widget-icon-label-font-size">
+                          Label Font Size <span className="info-icon" title="Font size for label text (e.g., 12px).">ⓘ</span>
                         </label>
                         <input
                           type="text"
-                          id="widget-auto-open-message"
-                          value={widgetSettings.behavior.autoOpenMessage}
-                          onChange={(e) => handleWidgetChange('behavior', 'autoOpenMessage', e.target.value)}
-                          placeholder="Hi there! Want help finding the right solution?"
-                          maxLength={120}
+                          id="widget-icon-label-font-size"
+                          value={widgetSettings.icon.labelFontSize}
+                          onChange={(e) => handleWidgetChange('icon', 'labelFontSize', e.target.value)}
+                          placeholder="12px"
                         />
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </details>
-
-            {/* Visual Attention Cues */}
-            <details>
-              <summary>Visual Attention Cues</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label htmlFor="widget-attention-animation">
-                    Launcher Attention Animation <span className="info-icon" title="Subtle animation to draw attention on first load">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-attention-animation"
-                    value={widgetSettings.attention.attentionAnimation}
-                    onChange={(e) => handleWidgetChange('attention', 'attentionAnimation', e.target.value)}
-                  >
-                    <option value="none">None</option>
-                    <option value="bounce">Subtle Bounce</option>
-                    <option value="pulse">Pulse</option>
-                    <option value="glow">Glow</option>
-                    <option value="breathing">Breathing</option>
-                    <option value="corner-nudge">Corner Nudge</option>
-                  </select>
+                    </>
+                  )}
                 </div>
+              </details>
 
-                <div className="form-group">
-                  <label htmlFor="widget-attention-cycles">
-                    Animation Cycles <span className="info-icon" title="How many times the attention animation plays (1-2 recommended)">ℹ️</span>
-                  </label>
-                  <input
-                    type="number"
-                    id="widget-attention-cycles"
-                    min="1"
-                    max="3"
-                    value={widgetSettings.attention.attentionCycles}
-                    onChange={(e) => handleWidgetChange('attention', 'attentionCycles', parseInt(e.target.value, 10) || 1)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.attention.unreadDot}
-                      onChange={(e) => handleWidgetChange('attention', 'unreadDot', e.target.checked)}
-                    />
-                    <span>Show unread dot until first interaction</span>
-                    <span className="info-icon" title="Shows a small dot on the launcher until the visitor interacts">ℹ️</span>
-                  </label>
-                </div>
-
-                {widgetSettings.attention.unreadDot && (
-                  <>
-                    <div className="form-group">
-                      <label htmlFor="widget-unread-dot-color">Unread Dot Color</label>
-                      <input
-                        type="color"
-                        id="widget-unread-dot-color"
-                        value={widgetSettings.attention.unreadDotColor}
-                        onChange={(e) => handleWidgetChange('attention', 'unreadDotColor', e.target.value)}
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor="widget-unread-dot-position">Unread Dot Position</label>
-                      <select
-                        id="widget-unread-dot-position"
-                        value={widgetSettings.attention.unreadDotPosition}
-                        onChange={(e) => handleWidgetChange('attention', 'unreadDotPosition', e.target.value)}
-                      >
-                        <option value="top-right">Top Right</option>
-                        <option value="top-left">Top Left</option>
-                        <option value="bottom-right">Bottom Right</option>
-                        <option value="bottom-left">Bottom Left</option>
-                      </select>
-                    </div>
-                  </>
-                )}
-              </div>
-            </details>
-
-            {/* Motion & Entry Effects */}
-            <details>
-              <summary>Motion & Entry Effects</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label htmlFor="widget-launcher-visibility">
-                    Launcher Reveal <span className="info-icon" title="When the launcher appears on the page">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-launcher-visibility"
-                    value={widgetSettings.motion.launcherVisibility}
-                    onChange={(e) => handleWidgetChange('motion', 'launcherVisibility', e.target.value)}
-                  >
-                    <option value="immediate">Immediate</option>
-                    <option value="delay">Delayed Entrance</option>
-                    <option value="scroll">Scroll Trigger</option>
-                    <option value="exit-intent">Exit Intent</option>
-                  </select>
-                </div>
-
-                {widgetSettings.motion.launcherVisibility === 'delay' && (
+              <details>
+                <summary>Layout & Placement</summary>
+                <div className="form-section" data-preview-target="window">
                   <div className="form-group">
-                    <label htmlFor="widget-launcher-delay">
-                      Delay (seconds) <span className="info-icon" title="Delay before showing the launcher">ℹ️</span>
+                    <label htmlFor="widget-position">
+                      Position <span className="info-icon" title="Choose where the widget appears on the page.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-position"
+                      value={widgetSettings.layout.position}
+                      onChange={(e) => handleWidgetChange('layout', 'position', e.target.value)}
+                    >
+                      <option value="bottom-right">Bottom Right</option>
+                      <option value="bottom-left">Bottom Left</option>
+                      <option value="top-right">Top Right</option>
+                      <option value="top-left">Top Left</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="widget-max-width">
+                      Max Width <span className="info-icon" title="Sets the maximum width of the widget window.">ⓘ</span>
                     </label>
                     <input
-                      type="number"
-                      id="widget-launcher-delay"
-                      min="1"
-                      max="30"
-                      value={widgetSettings.motion.delaySeconds}
-                      onChange={(e) => handleWidgetChange('motion', 'delaySeconds', parseInt(e.target.value, 10) || 5)}
+                      type="text"
+                      id="widget-max-width"
+                      value={widgetSettings.layout.maxWidth}
+                      onChange={(e) => handleWidgetChange('layout', 'maxWidth', e.target.value)}
+                      placeholder="350px"
                     />
                   </div>
-                )}
 
-                {widgetSettings.motion.launcherVisibility === 'scroll' && (
                   <div className="form-group">
-                    <label htmlFor="widget-launcher-scroll">
-                      Scroll Trigger (%) <span className="info-icon" title="Show launcher after user scrolls this percentage">ℹ️</span>
+                    <label htmlFor="widget-max-height">
+                      Max Height <span className="info-icon" title="Sets the maximum height of the widget window.">ⓘ</span>
                     </label>
                     <input
-                      type="number"
-                      id="widget-launcher-scroll"
-                      min="10"
-                      max="90"
-                      value={widgetSettings.motion.scrollPercent}
-                      onChange={(e) => handleWidgetChange('motion', 'scrollPercent', parseInt(e.target.value, 10) || 30)}
+                      type="text"
+                      id="widget-max-height"
+                      value={widgetSettings.layout.maxHeight}
+                      onChange={(e) => handleWidgetChange('layout', 'maxHeight', e.target.value)}
+                      placeholder="500px"
                     />
                   </div>
-                )}
 
-                {widgetSettings.motion.launcherVisibility === 'exit-intent' && (
-                  <>
+                  {showWidgetAdvanced && (
                     <div className="form-group">
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={widgetSettings.motion.exitIntentEnabled}
-                          onChange={(e) => handleWidgetChange('motion', 'exitIntentEnabled', e.target.checked)}
-                        />
-                        <span>Enable exit-intent detection (desktop only)</span>
-                      </label>
-                    </div>
-
-                    {widgetSettings.motion.exitIntentEnabled && (
-                      <div className="form-group">
-                        <label htmlFor="widget-exit-intent-action">Exit Intent Action</label>
-                        <select
-                          id="widget-exit-intent-action"
-                          value={widgetSettings.motion.exitIntentAction}
-                          onChange={(e) => handleWidgetChange('motion', 'exitIntentAction', e.target.value)}
-                        >
-                          <option value="show">Show Launcher</option>
-                          <option value="open">Open Widget</option>
-                        </select>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                <div className="form-group">
-                  <label htmlFor="widget-entry-animation">
-                    Launcher Entry Animation <span className="info-icon" title="How the launcher animates into view">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-entry-animation"
-                    value={widgetSettings.motion.entryAnimation}
-                    onChange={(e) => handleWidgetChange('motion', 'entryAnimation', e.target.value)}
-                  >
-                    <option value="none">None</option>
-                    <option value="slide-up">Slide Up</option>
-                    <option value="slide-left">Slide In From Right</option>
-                    <option value="slide-right">Slide In From Left</option>
-                    <option value="fade">Fade</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-open-animation">
-                    Widget Open Animation <span className="info-icon" title="How the chat window opens">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-open-animation"
-                    value={widgetSettings.motion.openAnimation}
-                    onChange={(e) => handleWidgetChange('motion', 'openAnimation', e.target.value)}
-                  >
-                    <option value="none">None</option>
-                    <option value="slide-up">Slide Up</option>
-                    <option value="slide-left">Slide In From Right</option>
-                    <option value="slide-right">Slide In From Left</option>
-                    <option value="fade">Fade</option>
-                  </select>
-                </div>
-              </div>
-            </details>
-
-            {/* Micro-Interactions */}
-            <details>
-              <summary>Micro-Interactions</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.microInteractions.typingIndicator}
-                      onChange={(e) => handleWidgetChange('microInteractions', 'typingIndicator', e.target.checked)}
-                    />
-                    <span>Typing indicator before first message</span>
-                  </label>
-                </div>
-
-                {widgetSettings.microInteractions.typingIndicator && (
-                  <div className="form-group">
-                    <label htmlFor="widget-typing-duration">
-                      Typing Indicator Duration (ms)
-                    </label>
-                    <input
-                      type="number"
-                      id="widget-typing-duration"
-                      min="600"
-                      max="3000"
-                      value={widgetSettings.microInteractions.typingIndicatorDurationMs}
-                      onChange={(e) => handleWidgetChange('microInteractions', 'typingIndicatorDurationMs', parseInt(e.target.value, 10) || 1200)}
-                    />
-                  </div>
-                )}
-
-                <div className="form-group">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.microInteractions.blinkCursor}
-                      onChange={(e) => handleWidgetChange('microInteractions', 'blinkCursor', e.target.checked)}
-                    />
-                    <span>Blinking cursor in input field</span>
-                  </label>
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-hover-effect">
-                    Hover Reaction <span className="info-icon" title="How the launcher reacts to hover">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-hover-effect"
-                    value={widgetSettings.microInteractions.hoverEffect}
-                    onChange={(e) => handleWidgetChange('microInteractions', 'hoverEffect', e.target.value)}
-                  >
-                    <option value="none">None</option>
-                    <option value="lift">Slight Lift</option>
-                    <option value="scale">Subtle Scale</option>
-                    <option value="color">Color Shift</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-button-animation">
-                    Button Press Animation <span className="info-icon" title="Feedback on button press">ℹ️</span>
-                  </label>
-                  <select
-                    id="widget-button-animation"
-                    value={widgetSettings.microInteractions.buttonAnimation}
-                    onChange={(e) => handleWidgetChange('microInteractions', 'buttonAnimation', e.target.value)}
-                  >
-                    <option value="none">None</option>
-                    <option value="press">Press</option>
-                    <option value="ripple">Ripple</option>
-                  </select>
-                </div>
-              </div>
-            </details>
-
-            {/* Copy & Prompts */}
-            <details>
-              <summary>Copy & Prompts</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.copy.launcherPromptsEnabled}
-                      onChange={(e) => handleWidgetChange('copy', 'launcherPromptsEnabled', e.target.checked)}
-                    />
-                    <span>Rotate launcher micro-prompts</span>
-                  </label>
-                </div>
-
-                {widgetSettings.copy.launcherPromptsEnabled && (
-                  <>
-                    <div className="form-group">
-                      <label htmlFor="widget-launcher-prompts">Launcher Prompts (one per line)</label>
-                      <textarea
-                        id="widget-launcher-prompts"
-                        rows={4}
-                        value={(widgetSettings.copy.launcherPrompts || []).join('\n')}
-                        onChange={(e) => handleWidgetListChange(
-                          'copy',
-                          'launcherPrompts',
-                          e.target.value.split('\n').map((line) => line.trim()).filter(Boolean)
-                        )}
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor="widget-launcher-rotate">
-                        Rotate Every (seconds)
+                      <label htmlFor="widget-z-index">
+                        Z-Index <span className="info-icon" title="Controls stacking order above other page elements.">ⓘ</span>
                       </label>
                       <input
                         type="number"
-                        id="widget-launcher-rotate"
-                        min="3"
-                        max="15"
-                        value={widgetSettings.copy.launcherPromptRotateSeconds}
-                        onChange={(e) => handleWidgetChange('copy', 'launcherPromptRotateSeconds', parseInt(e.target.value, 10) || 6)}
+                        id="widget-z-index"
+                        value={widgetSettings.layout.zIndex}
+                        onChange={(e) => handleWidgetChange('layout', 'zIndex', e.target.value)}
+                        placeholder="10000"
                       />
                     </div>
-                  </>
-                )}
-
-                <div className="form-group">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.copy.contextualPromptsEnabled}
-                      onChange={(e) => handleWidgetChange('copy', 'contextualPromptsEnabled', e.target.checked)}
-                    />
-                    <span>Contextual launcher text by page</span>
-                  </label>
+                  )}
                 </div>
+              </details>
 
-                {widgetSettings.copy.contextualPromptsEnabled && (
+              <details>
+                <summary>Open Behavior</summary>
+                <div className="form-section" data-preview-target="window">
                   <div className="form-group">
-                    <label>Contextual Prompt Rules</label>
-                    <div className="rule-list">
-                      {(widgetSettings.copy.contextualPrompts || []).map((rule, index) => (
-                        <div key={`${rule.match}-${index}`} className="rule-row">
-                          <input
-                            type="text"
-                            placeholder="URL match (e.g., /pricing)"
-                            value={rule.match}
-                            onChange={(e) => handleWidgetListItemChange('copy', 'contextualPrompts', index, 'match', e.target.value)}
-                          />
-                          <input
-                            type="text"
-                            placeholder="Prompt text"
-                            value={rule.text}
-                            onChange={(e) => handleWidgetListItemChange('copy', 'contextualPrompts', index, 'text', e.target.value)}
-                          />
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            onClick={() => removeWidgetListItem('copy', 'contextualPrompts', index)}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => addWidgetListItem('copy', 'contextualPrompts', { match: '', text: '' })}
+                    <label htmlFor="widget-open-behavior">
+                      Open Behavior <span className="info-icon" title="Choose whether the widget opens on click or automatically.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-open-behavior"
+                      value={widgetSettings.behavior.openBehavior}
+                      onChange={(e) => handleWidgetChange('behavior', 'openBehavior', e.target.value)}
                     >
-                      + Add Rule
-                    </button>
+                      <option value="click">Click to Open</option>
+                      <option value="auto">Auto-Open</option>
+                    </select>
                   </div>
-                )}
 
-                <div className="form-group">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.copy.greetingEnabled}
-                      onChange={(e) => handleWidgetChange('copy', 'greetingEnabled', e.target.checked)}
-                    />
-                    <span>Personalized greeting</span>
-                  </label>
-                </div>
-
-                {widgetSettings.copy.greetingEnabled && (
-                  <>
-                    <div className="form-group">
-                      <label htmlFor="widget-greeting-mode">Greeting Mode</label>
-                      <select
-                        id="widget-greeting-mode"
-                        value={widgetSettings.copy.greetingMode}
-                        onChange={(e) => handleWidgetChange('copy', 'greetingMode', e.target.value)}
-                      >
-                        <option value="time">Time of Day</option>
-                        <option value="page">Page Based</option>
-                        <option value="both">Time + Page</option>
-                      </select>
-                    </div>
-
-                    {(widgetSettings.copy.greetingMode === 'time' || widgetSettings.copy.greetingMode === 'both') && (
-                      <>
-                        <div className="form-group">
-                          <label htmlFor="widget-greeting-morning">Morning Greeting</label>
-                          <input
-                            type="text"
-                            id="widget-greeting-morning"
-                            value={widgetSettings.copy.greetingMorning}
-                            onChange={(e) => handleWidgetChange('copy', 'greetingMorning', e.target.value)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label htmlFor="widget-greeting-afternoon">Afternoon Greeting</label>
-                          <input
-                            type="text"
-                            id="widget-greeting-afternoon"
-                            value={widgetSettings.copy.greetingAfternoon}
-                            onChange={(e) => handleWidgetChange('copy', 'greetingAfternoon', e.target.value)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label htmlFor="widget-greeting-evening">Evening Greeting</label>
-                          <input
-                            type="text"
-                            id="widget-greeting-evening"
-                            value={widgetSettings.copy.greetingEvening}
-                            onChange={(e) => handleWidgetChange('copy', 'greetingEvening', e.target.value)}
-                          />
-                        </div>
-                      </>
-                    )}
-
-                    {(widgetSettings.copy.greetingMode === 'page' || widgetSettings.copy.greetingMode === 'both') && (
+                  {widgetSettings.behavior.openBehavior === 'auto' && (
+                    <>
                       <div className="form-group">
-                        <label>Page-Based Greeting Rules</label>
-                        <div className="rule-list">
-                          {(widgetSettings.copy.greetingPageRules || []).map((rule, index) => (
-                            <div key={`${rule.match}-${index}`} className="rule-row">
-                              <input
-                                type="text"
-                                placeholder="URL match (e.g., /pricing)"
-                                value={rule.match}
-                                onChange={(e) => handleWidgetListItemChange('copy', 'greetingPageRules', index, 'match', e.target.value)}
-                              />
-                              <input
-                                type="text"
-                                placeholder="Greeting text"
-                                value={rule.text}
-                                onChange={(e) => handleWidgetListItemChange('copy', 'greetingPageRules', index, 'text', e.target.value)}
-                              />
-                              <button
-                                type="button"
-                                className="btn btn-danger btn-sm"
-                                onClick={() => removeWidgetListItem('copy', 'greetingPageRules', index)}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => addWidgetListItem('copy', 'greetingPageRules', { match: '', text: '' })}
-                        >
-                          + Add Rule
-                        </button>
+                        <label htmlFor="widget-auto-open-delay">
+                          Auto-Open Delay (seconds) <span className="info-icon" title="Delay before the widget opens automatically.">ⓘ</span>
+                        </label>
+                        <input
+                          type="number"
+                          id="widget-auto-open-delay"
+                          value={widgetSettings.behavior.autoOpenDelay}
+                          onChange={(e) => handleWidgetChange('behavior', 'autoOpenDelay', parseInt(e.target.value) || 0)}
+                          min="0"
+                          placeholder="0"
+                        />
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </details>
 
-            {/* Sound & Feedback */}
-            <details>
-              <summary>Sound & Feedback</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.sound.chimeOnOpen}
-                      onChange={(e) => handleWidgetChange('sound', 'chimeOnOpen', e.target.checked)}
-                    />
-                    Soft chime on first open
-                  </label>
-                </div>
+                      <div className="form-group">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={widgetSettings.behavior.autoOpenMessageEnabled}
+                            onChange={(e) => handleWidgetChange('behavior', 'autoOpenMessageEnabled', e.target.checked)}
+                          />
+                          <span>Show auto-open message</span>
+                          <span className="info-icon" title="Adds a short prompt when the widget auto-opens.">ⓘ</span>
+                        </label>
+                        <small className="checkbox-helper">A friendly message can boost responses.</small>
+                      </div>
 
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.sound.messageTicks}
-                      onChange={(e) => handleWidgetChange('sound', 'messageTicks', e.target.checked)}
-                    />
-                    Message sent/received ticks
-                  </label>
-                </div>
+                      {widgetSettings.behavior.autoOpenMessageEnabled && (
+                        <div className="form-group">
+                          <label htmlFor="widget-auto-open-message">
+                            Auto-Open Message <span className="info-icon" title="Text shown when the widget opens automatically.">ⓘ</span>
+                          </label>
+                          <input
+                            type="text"
+                            id="widget-auto-open-message"
+                            value={widgetSettings.behavior.autoOpenMessage}
+                            onChange={(e) => handleWidgetChange('behavior', 'autoOpenMessage', e.target.value)}
+                            placeholder="Hi there! Want help finding the right solution?"
+                            maxLength={120}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
 
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.sound.hapticFeedback}
-                      onChange={(e) => handleWidgetChange('sound', 'hapticFeedback', e.target.checked)}
-                    />
-                    Haptic-style click feedback (mobile)
-                  </label>
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-sound-volume">
-                    Volume (0-1)
-                  </label>
-                  <input
-                    type="number"
-                    id="widget-sound-volume"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value={widgetSettings.sound.volume}
-                    onChange={(e) => handleWidgetChange('sound', 'volume', parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-              </div>
-            </details>
-
-            {/* Social Proof & Trust */}
-            <details>
-              <summary>Social Proof & Trust</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.socialProof.showResponseTime}
-                      onChange={(e) => handleWidgetChange('socialProof', 'showResponseTime', e.target.checked)}
-                    />
-                    Show response time
-                  </label>
-                </div>
-
-                {widgetSettings.socialProof.showResponseTime && (
                   <div className="form-group">
-                    <label htmlFor="widget-response-time">Response Time Text</label>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.rules.animateOncePerSession}
+                        onChange={(e) => handleWidgetChange('rules', 'animateOncePerSession', e.target.checked)}
+                      />
+                      <span>Animate once per session</span>
+                      <span className="info-icon" title="Plays attention effects only once per visitor session.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.rules.stopAfterInteraction}
+                        onChange={(e) => handleWidgetChange('rules', 'stopAfterInteraction', e.target.checked)}
+                      />
+                      <span>Stop attention effects after first interaction</span>
+                      <span className="info-icon" title="Stops attention effects once the visitor engages.">ⓘ</span>
+                    </label>
+                  </div>
+                </div>
+              </details>
+
+              <details>
+                <summary>Attention & Motion</summary>
+                <div className="form-section" data-preview-target="launcher">
+                  <div className="form-group">
+                    <label htmlFor="widget-attention-animation">
+                      Launcher Attention Animation <span className="info-icon" title="Pick a subtle animation to draw attention.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-attention-animation"
+                      value={widgetSettings.attention.attentionAnimation}
+                      onChange={(e) => handleWidgetChange('attention', 'attentionAnimation', e.target.value)}
+                    >
+                      <option value="none">None</option>
+                      <option value="bounce">Subtle Bounce</option>
+                      <option value="pulse">Pulse</option>
+                      <option value="glow">Glow</option>
+                      <option value="breathing">Breathing</option>
+                      <option value="corner-nudge">Corner Nudge</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="widget-attention-cycles">
+                      Animation Cycles <span className="info-icon" title="How many times the attention animation plays.">ⓘ</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="widget-attention-cycles"
+                      min="1"
+                      max="3"
+                      value={widgetSettings.attention.attentionCycles}
+                      onChange={(e) => handleWidgetChange('attention', 'attentionCycles', parseInt(e.target.value, 10) || 1)}
+                    />
+                  </div>
+
+                  {showWidgetAdvanced && (
+                    <div className="form-group">
+                      <label htmlFor="widget-max-animation">
+                        Max Animation Duration (seconds) <span className="info-icon" title="Caps how long attention effects can run.">ⓘ</span>
+                      </label>
+                      <input
+                        type="number"
+                        id="widget-max-animation"
+                        min="1"
+                        max="5"
+                        value={widgetSettings.rules.maxAnimationSeconds}
+                        onChange={(e) => handleWidgetChange('rules', 'maxAnimationSeconds', parseInt(e.target.value, 10) || 3)}
+                      />
+                    </div>
+                  )}
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.attention.unreadDot}
+                        onChange={(e) => handleWidgetChange('attention', 'unreadDot', e.target.checked)}
+                      />
+                      <span>Show unread dot until first interaction</span>
+                      <span className="info-icon" title="Displays a dot on the launcher to suggest unread activity.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  {widgetSettings.attention.unreadDot && (
+                    <>
+                      <div className="form-group color-control">
+                        <label htmlFor="widget-unread-dot-color">
+                          <span>Unread Dot Color</span>
+                          <span className="info-icon" title="Sets the color of the unread dot indicator.">ⓘ</span>
+                        </label>
+                        <input
+                          type="color"
+                          id="widget-unread-dot-color"
+                          className="color-swatch"
+                          value={widgetSettings.attention.unreadDotColor}
+                          onChange={(e) => handleWidgetChange('attention', 'unreadDotColor', e.target.value)}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label htmlFor="widget-unread-dot-position">
+                          Unread Dot Position <span className="info-icon" title="Choose where the unread dot appears on the launcher.">ⓘ</span>
+                        </label>
+                        <select
+                          id="widget-unread-dot-position"
+                          value={widgetSettings.attention.unreadDotPosition}
+                          onChange={(e) => handleWidgetChange('attention', 'unreadDotPosition', e.target.value)}
+                        >
+                          <option value="top-right">Top Right</option>
+                          <option value="top-left">Top Left</option>
+                          <option value="bottom-right">Bottom Right</option>
+                          <option value="bottom-left">Bottom Left</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="form-group">
+                    <label htmlFor="widget-launcher-visibility">
+                      Launcher Reveal <span className="info-icon" title="Controls when the launcher appears on the page.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-launcher-visibility"
+                      value={widgetSettings.motion.launcherVisibility}
+                      onChange={(e) => handleWidgetChange('motion', 'launcherVisibility', e.target.value)}
+                    >
+                      <option value="immediate">Immediate</option>
+                      <option value="delay">Delayed Entrance</option>
+                      <option value="scroll">Scroll Trigger</option>
+                      <option value="exit-intent">Exit Intent</option>
+                    </select>
+                  </div>
+
+                  {widgetSettings.motion.launcherVisibility === 'delay' && (
+                    <div className="form-group">
+                      <label htmlFor="widget-launcher-delay">
+                        Delay (seconds) <span className="info-icon" title="Delay before showing the launcher.">ⓘ</span>
+                      </label>
+                      <input
+                        type="number"
+                        id="widget-launcher-delay"
+                        min="1"
+                        max="30"
+                        value={widgetSettings.motion.delaySeconds}
+                        onChange={(e) => handleWidgetChange('motion', 'delaySeconds', parseInt(e.target.value, 10) || 5)}
+                      />
+                    </div>
+                  )}
+
+                  {widgetSettings.motion.launcherVisibility === 'scroll' && (
+                    <div className="form-group">
+                      <label htmlFor="widget-launcher-scroll">
+                        Scroll Trigger (%) <span className="info-icon" title="Show the launcher after this scroll depth.">ⓘ</span>
+                      </label>
+                      <input
+                        type="number"
+                        id="widget-launcher-scroll"
+                        min="10"
+                        max="90"
+                        value={widgetSettings.motion.scrollPercent}
+                        onChange={(e) => handleWidgetChange('motion', 'scrollPercent', parseInt(e.target.value, 10) || 30)}
+                      />
+                    </div>
+                  )}
+
+                  {widgetSettings.motion.launcherVisibility === 'exit-intent' && (
+                    <>
+                      <div className="form-group">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={widgetSettings.motion.exitIntentEnabled}
+                            onChange={(e) => handleWidgetChange('motion', 'exitIntentEnabled', e.target.checked)}
+                          />
+                          <span>Enable exit-intent detection (desktop only)</span>
+                          <span className="info-icon" title="Detects when a user is about to leave on desktop.">ⓘ</span>
+                        </label>
+                      </div>
+
+                      {widgetSettings.motion.exitIntentEnabled && (
+                        <div className="form-group">
+                          <label htmlFor="widget-exit-intent-action">
+                            Exit Intent Action <span className="info-icon" title="Choose what happens when exit intent is detected.">ⓘ</span>
+                          </label>
+                          <select
+                            id="widget-exit-intent-action"
+                            value={widgetSettings.motion.exitIntentAction}
+                            onChange={(e) => handleWidgetChange('motion', 'exitIntentAction', e.target.value)}
+                          >
+                            <option value="show">Show Launcher</option>
+                            <option value="open">Open Widget</option>
+                          </select>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <div className="form-group">
+                    <label htmlFor="widget-entry-animation">
+                      Launcher Entry Animation <span className="info-icon" title="How the launcher animates into view.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-entry-animation"
+                      value={widgetSettings.motion.entryAnimation}
+                      onChange={(e) => handleWidgetChange('motion', 'entryAnimation', e.target.value)}
+                    >
+                      <option value="none">None</option>
+                      <option value="slide-up">Slide Up</option>
+                      <option value="slide-left">Slide In From Right</option>
+                      <option value="slide-right">Slide In From Left</option>
+                      <option value="fade">Fade</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="widget-open-animation">
+                      Widget Open Animation <span className="info-icon" title="Controls the animation when the chat opens.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-open-animation"
+                      value={widgetSettings.motion.openAnimation}
+                      onChange={(e) => handleWidgetChange('motion', 'openAnimation', e.target.value)}
+                    >
+                      <option value="none">None</option>
+                      <option value="slide-up">Slide Up</option>
+                      <option value="slide-left">Slide In From Right</option>
+                      <option value="slide-right">Slide In From Left</option>
+                      <option value="fade">Fade</option>
+                    </select>
+                  </div>
+
+                  {showWidgetAdvanced && (
+                    <>
+                      <div className="form-group">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={widgetSettings.rules.respectReducedMotion}
+                            onChange={(e) => handleWidgetChange('rules', 'respectReducedMotion', e.target.checked)}
+                          />
+                          <span>Respect prefers-reduced-motion</span>
+                          <span className="info-icon" title="Honors user accessibility settings for motion.">ⓘ</span>
+                        </label>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={widgetSettings.rules.disableOnMobile}
+                            onChange={(e) => handleWidgetChange('rules', 'disableOnMobile', e.target.checked)}
+                          />
+                          <span>Disable attention effects on mobile</span>
+                          <span className="info-icon" title="Turns off attention effects for smaller screens.">ⓘ</span>
+                        </label>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </details>
+
+              <details>
+                <summary>Micro-Interactions</summary>
+                <div className="form-section" data-preview-target="window">
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.microInteractions.typingIndicator}
+                        onChange={(e) => handleWidgetChange('microInteractions', 'typingIndicator', e.target.checked)}
+                      />
+                      <span>Typing indicator before first message</span>
+                      <span className="info-icon" title="Shows a short typing animation before the first reply.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  {widgetSettings.microInteractions.typingIndicator && (
+                    <div className="form-group">
+                      <label htmlFor="widget-typing-duration">
+                        Typing Indicator Duration (ms) <span className="info-icon" title="How long the typing indicator runs.">ⓘ</span>
+                      </label>
+                      <input
+                        type="number"
+                        id="widget-typing-duration"
+                        min="600"
+                        max="3000"
+                        value={widgetSettings.microInteractions.typingIndicatorDurationMs}
+                        onChange={(e) => handleWidgetChange('microInteractions', 'typingIndicatorDurationMs', parseInt(e.target.value, 10) || 1200)}
+                      />
+                    </div>
+                  )}
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.microInteractions.blinkCursor}
+                        onChange={(e) => handleWidgetChange('microInteractions', 'blinkCursor', e.target.checked)}
+                      />
+                      <span>Blinking cursor</span>
+                      <span className="info-icon" title="Adds a blinking cursor in the input field.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="widget-hover-effect">
+                      Hover Reaction <span className="info-icon" title="How the launcher reacts when hovered.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-hover-effect"
+                      value={widgetSettings.microInteractions.hoverEffect}
+                      onChange={(e) => handleWidgetChange('microInteractions', 'hoverEffect', e.target.value)}
+                    >
+                      <option value="none">None</option>
+                      <option value="lift">Slight Lift</option>
+                      <option value="scale">Subtle Scale</option>
+                      <option value="color">Color Shift</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="widget-button-animation">
+                      Button Press Animation <span className="info-icon" title="Feedback animation when pressing buttons.">ⓘ</span>
+                    </label>
+                    <select
+                      id="widget-button-animation"
+                      value={widgetSettings.microInteractions.buttonAnimation}
+                      onChange={(e) => handleWidgetChange('microInteractions', 'buttonAnimation', e.target.value)}
+                    >
+                      <option value="none">None</option>
+                      <option value="press">Press</option>
+                      <option value="ripple">Ripple</option>
+                    </select>
+                  </div>
+                </div>
+              </details>
+
+              <details>
+                <summary>Copy & Messaging</summary>
+                <div className="form-section" data-preview-target="window">
+                  <div className="form-group">
+                    <label htmlFor="widget-welcome-message">
+                      Welcome Message <span className="info-icon" title="Headline shown in the widget header.">ⓘ</span>
+                    </label>
                     <input
                       type="text"
-                      id="widget-response-time"
-                      value={widgetSettings.socialProof.responseTimeText}
-                      onChange={(e) => handleWidgetChange('socialProof', 'responseTimeText', e.target.value)}
+                      id="widget-welcome-message"
+                      value={widgetSettings.messages.welcomeMessage}
+                      onChange={(e) => handleWidgetChange('messages', 'welcomeMessage', e.target.value)}
+                      placeholder="Chat with us"
                     />
                   </div>
-                )}
 
-                <div className="form-group">
-                  <label htmlFor="widget-availability-text">Availability Text</label>
-                  <input
-                    type="text"
-                    id="widget-availability-text"
-                    value={widgetSettings.socialProof.availabilityText}
-                    onChange={(e) => handleWidgetChange('socialProof', 'availabilityText', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>
+                  <div className="form-group">
+                    <label htmlFor="widget-placeholder">
+                      Input Placeholder <span className="info-icon" title="Placeholder text inside the message input.">ⓘ</span>
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={widgetSettings.socialProof.showAvatar}
-                      onChange={(e) => handleWidgetChange('socialProof', 'showAvatar', e.target.checked)}
+                      type="text"
+                      id="widget-placeholder"
+                      value={widgetSettings.messages.placeholder}
+                      onChange={(e) => handleWidgetChange('messages', 'placeholder', e.target.value)}
+                      placeholder="Type your message..."
                     />
-                    Show avatar + name
-                  </label>
-                </div>
+                  </div>
 
-                {widgetSettings.socialProof.showAvatar && (
-                  <>
+                  <div className="form-group">
+                    <label htmlFor="widget-send-button-text">
+                      Send Button Text <span className="info-icon" title="Text shown on the send button.">ⓘ</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="widget-send-button-text"
+                      value={widgetSettings.messages.sendButtonText}
+                      onChange={(e) => handleWidgetChange('messages', 'sendButtonText', e.target.value)}
+                      placeholder="Send"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.copy.launcherPromptsEnabled}
+                        onChange={(e) => handleWidgetChange('copy', 'launcherPromptsEnabled', e.target.checked)}
+                      />
+                      <span>Rotate launcher micro-prompts</span>
+                      <span className="info-icon" title="Cycles short prompts next to the launcher.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  {widgetSettings.copy.launcherPromptsEnabled && (
+                    <>
+                      <div className="form-group">
+                        <label htmlFor="widget-launcher-prompts">
+                          Launcher Prompts (one per line) <span className="info-icon" title="Each line becomes a rotating launcher prompt.">ⓘ</span>
+                        </label>
+                        <textarea
+                          id="widget-launcher-prompts"
+                          rows={4}
+                          value={(widgetSettings.copy.launcherPrompts || []).join('\n')}
+                          onChange={(e) => handleWidgetListChange(
+                            'copy',
+                            'launcherPrompts',
+                            e.target.value.split('\n').map((line) => line.trim()).filter(Boolean)
+                          )}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label htmlFor="widget-launcher-rotate">
+                          Rotate Every (seconds) <span className="info-icon" title="How often the launcher prompt rotates.">ⓘ</span>
+                        </label>
+                        <input
+                          type="number"
+                          id="widget-launcher-rotate"
+                          min="3"
+                          max="15"
+                          value={widgetSettings.copy.launcherPromptRotateSeconds}
+                          onChange={(e) => handleWidgetChange('copy', 'launcherPromptRotateSeconds', parseInt(e.target.value, 10) || 6)}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.copy.contextualPromptsEnabled}
+                        onChange={(e) => handleWidgetChange('copy', 'contextualPromptsEnabled', e.target.checked)}
+                      />
+                      <span>Contextual launcher text</span>
+                      <span className="info-icon" title="Show different launcher prompts by page or URL.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  {widgetSettings.copy.contextualPromptsEnabled && (
                     <div className="form-group">
-                      <label htmlFor="widget-agent-name">Agent Name</label>
+                      <label>
+                        Contextual Prompt Rules <span className="info-icon" title="Match a URL pattern to a custom launcher prompt.">ⓘ</span>
+                      </label>
+                      <div className="rule-list">
+                        {(widgetSettings.copy.contextualPrompts || []).map((rule, index) => (
+                          <div key={`${rule.match}-${index}`} className="rule-row">
+                            <input
+                              type="text"
+                              placeholder="URL match (e.g., /pricing)"
+                              title="Page path or pattern to match."
+                              value={rule.match}
+                              onChange={(e) => handleWidgetListItemChange('copy', 'contextualPrompts', index, 'match', e.target.value)}
+                            />
+                            <input
+                              type="text"
+                              placeholder="Prompt text"
+                              title="Short prompt shown when the URL matches."
+                              value={rule.text}
+                              onChange={(e) => handleWidgetListItemChange('copy', 'contextualPrompts', index, 'text', e.target.value)}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              title="Remove this rule"
+                              onClick={() => removeWidgetListItem('copy', 'contextualPrompts', index)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        title="Add a new rule"
+                        onClick={() => addWidgetListItem('copy', 'contextualPrompts', { match: '', text: '' })}
+                      >
+                        + Add Rule
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.copy.greetingEnabled}
+                        onChange={(e) => handleWidgetChange('copy', 'greetingEnabled', e.target.checked)}
+                      />
+                      <span>Personalized greeting</span>
+                      <span className="info-icon" title="Shows a greeting based on time or page.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  {widgetSettings.copy.greetingEnabled && (
+                    <>
+                      <div className="form-group">
+                        <label htmlFor="widget-greeting-mode">
+                          Greeting Mode <span className="info-icon" title="Choose when greetings should change.">ⓘ</span>
+                        </label>
+                        <select
+                          id="widget-greeting-mode"
+                          value={widgetSettings.copy.greetingMode}
+                          onChange={(e) => handleWidgetChange('copy', 'greetingMode', e.target.value)}
+                        >
+                          <option value="time">Time of Day</option>
+                          <option value="page">Page Based</option>
+                          <option value="both">Time + Page</option>
+                        </select>
+                      </div>
+
+                      {(widgetSettings.copy.greetingMode === 'time' || widgetSettings.copy.greetingMode === 'both') && (
+                        <>
+                          <div className="form-group">
+                            <label htmlFor="widget-greeting-morning">
+                              Morning Greeting <span className="info-icon" title="Greeting shown in the morning hours.">ⓘ</span>
+                            </label>
+                            <input
+                              type="text"
+                              id="widget-greeting-morning"
+                              value={widgetSettings.copy.greetingMorning}
+                              onChange={(e) => handleWidgetChange('copy', 'greetingMorning', e.target.value)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label htmlFor="widget-greeting-afternoon">
+                              Afternoon Greeting <span className="info-icon" title="Greeting shown in the afternoon hours.">ⓘ</span>
+                            </label>
+                            <input
+                              type="text"
+                              id="widget-greeting-afternoon"
+                              value={widgetSettings.copy.greetingAfternoon}
+                              onChange={(e) => handleWidgetChange('copy', 'greetingAfternoon', e.target.value)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label htmlFor="widget-greeting-evening">
+                              Evening Greeting <span className="info-icon" title="Greeting shown in the evening hours.">ⓘ</span>
+                            </label>
+                            <input
+                              type="text"
+                              id="widget-greeting-evening"
+                              value={widgetSettings.copy.greetingEvening}
+                              onChange={(e) => handleWidgetChange('copy', 'greetingEvening', e.target.value)}
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {(widgetSettings.copy.greetingMode === 'page' || widgetSettings.copy.greetingMode === 'both') && (
+                        <div className="form-group">
+                          <label>
+                            Page-Based Greeting Rules <span className="info-icon" title="Match URLs to custom greeting text.">ⓘ</span>
+                          </label>
+                          <div className="rule-list">
+                            {(widgetSettings.copy.greetingPageRules || []).map((rule, index) => (
+                              <div key={`${rule.match}-${index}`} className="rule-row">
+                                <input
+                                  type="text"
+                                  placeholder="URL match (e.g., /pricing)"
+                                  title="Page path or pattern to match."
+                                  value={rule.match}
+                                  onChange={(e) => handleWidgetListItemChange('copy', 'greetingPageRules', index, 'match', e.target.value)}
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Greeting text"
+                                  title="Greeting shown when the URL matches."
+                                  value={rule.text}
+                                  onChange={(e) => handleWidgetListItemChange('copy', 'greetingPageRules', index, 'text', e.target.value)}
+                                />
+                                <button
+                                  type="button"
+                                  className="btn btn-danger btn-sm"
+                                  title="Remove this rule"
+                                  onClick={() => removeWidgetListItem('copy', 'greetingPageRules', index)}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            title="Add a new rule"
+                            onClick={() => addWidgetListItem('copy', 'greetingPageRules', { match: '', text: '' })}
+                          >
+                            + Add Rule
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </details>
+
+              <details>
+                <summary>Sound & Feedback</summary>
+                <div className="form-section" data-preview-target="window">
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.sound.chimeOnOpen}
+                        onChange={(e) => handleWidgetChange('sound', 'chimeOnOpen', e.target.checked)}
+                      />
+                      <span>Soft chime on first open</span>
+                      <span className="info-icon" title="Plays a short sound the first time the widget opens.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.sound.messageTicks}
+                        onChange={(e) => handleWidgetChange('sound', 'messageTicks', e.target.checked)}
+                      />
+                      <span>Message sent/received ticks</span>
+                      <span className="info-icon" title="Adds light tick sounds for send/receive events.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.sound.hapticFeedback}
+                        onChange={(e) => handleWidgetChange('sound', 'hapticFeedback', e.target.checked)}
+                      />
+                      <span>Haptic feedback (mobile)</span>
+                      <span className="info-icon" title="Adds a subtle vibration-style response on mobile.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="widget-sound-volume">
+                      Volume (0-1) <span className="info-icon" title="Set how loud widget sounds should be.">ⓘ</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="widget-sound-volume"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={widgetSettings.sound.volume}
+                      onChange={(e) => handleWidgetChange('sound', 'volume', parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                </div>
+              </details>
+
+              <details>
+                <summary>Social Proof & Trust</summary>
+                <div className="form-section" data-preview-target="window">
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.socialProof.showResponseTime}
+                        onChange={(e) => handleWidgetChange('socialProof', 'showResponseTime', e.target.checked)}
+                      />
+                      <span>Show response time</span>
+                      <span className="info-icon" title="Shows a response time hint to build trust.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  {widgetSettings.socialProof.showResponseTime && (
+                    <div className="form-group">
+                      <label htmlFor="widget-response-time">
+                        Response Time Text <span className="info-icon" title="Text shown under the header to set expectations.">ⓘ</span>
+                      </label>
                       <input
                         type="text"
-                        id="widget-agent-name"
-                        value={widgetSettings.socialProof.agentName}
-                        onChange={(e) => handleWidgetChange('socialProof', 'agentName', e.target.value)}
+                        id="widget-response-time"
+                        value={widgetSettings.socialProof.responseTimeText}
+                        onChange={(e) => handleWidgetChange('socialProof', 'responseTimeText', e.target.value)}
                       />
                     </div>
+                  )}
 
-                    <div className="form-group">
-                      <label htmlFor="widget-avatar-url">Avatar URL</label>
+                  <div className="form-group">
+                    <label htmlFor="widget-availability-text">
+                      Availability Text <span className="info-icon" title="Short line explaining hours or availability.">ⓘ</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="widget-availability-text"
+                      value={widgetSettings.socialProof.availabilityText}
+                      onChange={(e) => handleWidgetChange('socialProof', 'availabilityText', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
                       <input
-                        type="url"
-                        id="widget-avatar-url"
-                        value={widgetSettings.socialProof.avatarUrl}
-                        onChange={(e) => handleWidgetChange('socialProof', 'avatarUrl', e.target.value)}
-                        placeholder="https://example.com/avatar.png"
+                        type="checkbox"
+                        checked={widgetSettings.socialProof.showAvatar}
+                        onChange={(e) => handleWidgetChange('socialProof', 'showAvatar', e.target.checked)}
                       />
-                    </div>
-                  </>
+                      <span>Show avatar + name</span>
+                      <span className="info-icon" title="Displays an agent avatar and name in the widget.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  {widgetSettings.socialProof.showAvatar && (
+                    <>
+                      <div className="form-group">
+                        <label htmlFor="widget-agent-name">
+                          Agent Name <span className="info-icon" title="Name shown next to the avatar.">ⓘ</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="widget-agent-name"
+                          value={widgetSettings.socialProof.agentName}
+                          onChange={(e) => handleWidgetChange('socialProof', 'agentName', e.target.value)}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label htmlFor="widget-avatar-url">
+                          Avatar URL <span className="info-icon" title="Image URL for the agent avatar.">ⓘ</span>
+                        </label>
+                        <input
+                          type="url"
+                          id="widget-avatar-url"
+                          value={widgetSettings.socialProof.avatarUrl}
+                          onChange={(e) => handleWidgetChange('socialProof', 'avatarUrl', e.target.value)}
+                          placeholder="https://example.com/avatar.png"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </details>
+
+              <details>
+                <summary>Accessibility</summary>
+                <div className="form-section" data-preview-target="window">
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.accessibility.darkMode}
+                        onChange={(e) => handleWidgetChange('accessibility', 'darkMode', e.target.checked)}
+                      />
+                      <span>Dark mode</span>
+                      <span className="info-icon" title="Switches the widget to a darker color scheme.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.accessibility.highContrast}
+                        onChange={(e) => handleWidgetChange('accessibility', 'highContrast', e.target.checked)}
+                      />
+                      <span>High contrast</span>
+                      <span className="info-icon" title="Boosts contrast to improve readability.">ⓘ</span>
+                    </label>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={widgetSettings.accessibility.focusOutline}
+                        onChange={(e) => handleWidgetChange('accessibility', 'focusOutline', e.target.checked)}
+                      />
+                      <span>Focus outline</span>
+                      <span className="info-icon" title="Shows focus outlines for keyboard navigation.">ⓘ</span>
+                    </label>
+                  </div>
+                </div>
+              </details>
+
+              <div className="widget-customization-actions">
+                <button type="submit" className="save-btn" disabled={widgetSaving}>
+                  {widgetSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+                {widgetSuccess && (
+                  <span className="widget-save-status" role="status">
+                    {widgetSuccess}
+                  </span>
                 )}
               </div>
-            </details>
-
-            {/* Behavioral Rules */}
-            <details>
-              <summary>Behavioral Rules</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.rules.animateOncePerSession}
-                      onChange={(e) => handleWidgetChange('rules', 'animateOncePerSession', e.target.checked)}
-                    />
-                    Animate once per session
-                  </label>
-                </div>
-
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.rules.stopAfterInteraction}
-                      onChange={(e) => handleWidgetChange('rules', 'stopAfterInteraction', e.target.checked)}
-                    />
-                    Stop attention effects after first interaction
-                  </label>
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-max-animation">
-                    Max Animation Duration (seconds)
-                  </label>
-                  <input
-                    type="number"
-                    id="widget-max-animation"
-                    min="1"
-                    max="5"
-                    value={widgetSettings.rules.maxAnimationSeconds}
-                    onChange={(e) => handleWidgetChange('rules', 'maxAnimationSeconds', parseInt(e.target.value, 10) || 3)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.rules.respectReducedMotion}
-                      onChange={(e) => handleWidgetChange('rules', 'respectReducedMotion', e.target.checked)}
-                    />
-                    Respect prefers-reduced-motion
-                  </label>
-                </div>
-
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.rules.disableOnMobile}
-                      onChange={(e) => handleWidgetChange('rules', 'disableOnMobile', e.target.checked)}
-                    />
-                    Disable attention effects on mobile
-                  </label>
-                </div>
-              </div>
-            </details>
-
-            {/* Messages */}
-            <details>
-              <summary>Messages</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label htmlFor="widget-welcome-message">
-                    Welcome Message <span className="info-icon" title="Header text shown in widget">ℹ️</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="widget-welcome-message"
-                    value={widgetSettings.messages.welcomeMessage}
-                    onChange={(e) => handleWidgetChange('messages', 'welcomeMessage', e.target.value)}
-                    placeholder="Chat with us"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-placeholder">
-                    Input Placeholder <span className="info-icon" title="Placeholder text in message input">ℹ️</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="widget-placeholder"
-                    value={widgetSettings.messages.placeholder}
-                    onChange={(e) => handleWidgetChange('messages', 'placeholder', e.target.value)}
-                    placeholder="Type your message..."
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="widget-send-button-text">
-                    Send Button Text <span className="info-icon" title="Text on the send button">ℹ️</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="widget-send-button-text"
-                    value={widgetSettings.messages.sendButtonText}
-                    onChange={(e) => handleWidgetChange('messages', 'sendButtonText', e.target.value)}
-                    placeholder="Send"
-                  />
-                </div>
-              </div>
-            </details>
-
-            {/* Accessibility */}
-            <details>
-              <summary>Accessibility</summary>
-              <div className="form-section">
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.accessibility.darkMode}
-                      onChange={(e) => handleWidgetChange('accessibility', 'darkMode', e.target.checked)}
-                    />
-                    Dark Mode <span className="info-icon" title="Enable dark mode theme">ℹ️</span>
-                  </label>
-                </div>
-
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.accessibility.highContrast}
-                      onChange={(e) => handleWidgetChange('accessibility', 'highContrast', e.target.checked)}
-                    />
-                    High Contrast <span className="info-icon" title="Increase contrast for better visibility">ℹ️</span>
-                  </label>
-                </div>
-
-                <div className="form-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={widgetSettings.accessibility.focusOutline}
-                      onChange={(e) => handleWidgetChange('accessibility', 'focusOutline', e.target.checked)}
-                    />
-                    Focus Outline <span className="info-icon" title="Show focus outline for keyboard navigation">ℹ️</span>
-                  </label>
-                </div>
-              </div>
-            </details>
-
-            <button type="submit" className="save-btn" disabled={widgetSaving}>
-              {widgetSaving ? 'Saving...' : 'Save Widget Settings'}
-            </button>
             </form>
 
             <div className="widget-customization-preview" aria-label="Widget preview">
@@ -1874,7 +2001,7 @@ export default function Settings() {
 
                 <div className="widget-preview-viewport">
                   <div
-                    className="widget-preview-window"
+                    className={`widget-preview-window${previewFocus === 'window' ? ' preview-highlight' : ''}${previewPulse === 'window' ? ' preview-pulse' : ''}`}
                     style={{
                       background: widgetSettings.colors.background,
                       color: widgetSettings.colors.text,
@@ -1928,7 +2055,7 @@ export default function Settings() {
 
                   <div className="widget-preview-icon-wrap">
                     <div
-                      className="widget-preview-icon"
+                      className={`widget-preview-icon${previewFocus === 'launcher' ? ' preview-highlight' : ''}${previewPulse === 'launcher' ? ' preview-pulse' : ''}`}
                       style={{
                         width: previewIconSize,
                         height: previewIconSize,
@@ -1953,7 +2080,7 @@ export default function Settings() {
                     </div>
                     {widgetSettings.icon.showLabel && (
                       <div
-                        className={`widget-preview-label widget-preview-label-${widgetSettings.icon.labelPosition}`}
+                        className={`widget-preview-label widget-preview-label-${previewLabelPosition}`}
                         style={{
                           background: widgetSettings.icon.labelBackgroundColor,
                           color: widgetSettings.icon.labelTextColor,

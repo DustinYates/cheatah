@@ -81,9 +81,6 @@ class EmailBodyParser:
         parsed_data = self._parse_key_value_pairs(body_lines)
 
         # Log parsed data for debugging
-        print(f"[BODY_PARSER] parsed_data keys: {list(parsed_data.keys())}", flush=True)
-        print(f"[BODY_PARSER] parsed_data: {parsed_data}", flush=True)
-        print(f"[BODY_PARSER] first 500 chars of body: {email_body[:500]}", flush=True)
         logger.debug(f"Email body parser - parsed_data keys: {list(parsed_data.keys())}")
         if 'name' in parsed_data:
             logger.debug(f"Email body parser - found 'name' key with value: {parsed_data['name']}")

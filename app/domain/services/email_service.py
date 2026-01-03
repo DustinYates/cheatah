@@ -933,7 +933,23 @@ class EmailService:
         message: dict[str, Any],
         our_email: str,
     ) -> bool:
-        """Check if message was sent by us."""
+        """Check if message was sent by us (and not received in INBOX).
+
+        For self-sent emails (like booking page forms), we check if the message
+        is in INBOX - if it is, we should process it even if it's from our address.
+        """
+        label_ids = message.get("label_ids", [])
+
+        # If message is in INBOX, it's an incoming message we should process
+        # This handles self-sent emails (from and to same address)
+        if "INBOX" in label_ids:
+            return False
+
+        # If only in SENT (not INBOX), it's outgoing
+        if "SENT" in label_ids:
+            return True
+
+        # Fallback: check if from our email
         from_email = message.get("from", "").lower()
         return our_email.lower() in from_email
 

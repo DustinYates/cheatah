@@ -315,27 +315,30 @@ class GmailClient:
     def get_history(
         self,
         start_history_id: str,
-        label_id: str = "INBOX",
+        label_id: str | None = None,
         history_types: list[str] | None = None,
     ) -> dict[str, Any]:
         """Get mailbox history changes since a history ID.
-        
+
         Args:
             start_history_id: Starting history ID
-            label_id: Label ID to filter history
+            label_id: Label ID to filter history (None = no filter, get all messages)
             history_types: Types to include (messageAdded, messageDeleted, labelAdded, labelRemoved)
-            
+
         Returns:
             History response with messages and new historyId
         """
         try:
             service = self._get_service()
-            response = service.users().history().list(
-                userId="me",
-                startHistoryId=start_history_id,
-                labelId=label_id,
-                historyTypes=history_types or ["messageAdded"],
-            ).execute()
+            params = {
+                "userId": "me",
+                "startHistoryId": start_history_id,
+                "historyTypes": history_types or ["messageAdded"],
+            }
+            # Only add labelId if specified (None means get all labels)
+            if label_id:
+                params["labelId"] = label_id
+            response = service.users().history().list(**params).execute()
             
             messages = []
             for history in response.get("history", []):

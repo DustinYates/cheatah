@@ -101,7 +101,7 @@ class EmailService:
         # Check if this is a lead capture email (should be processed even if from no-reply)
         is_lead_capture = self._should_capture_lead_from_subject(
             subject=subject,
-            prefixes=email_config.lead_capture_subject_prefixes,
+            email_config=email_config,
         )
 
         # Check if this is a no-reply or automated email (skip unless it's a lead capture email)

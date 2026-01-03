@@ -99,7 +99,7 @@ class EmailService:
         sender_name, sender_email = GmailClient.parse_email_address(from_email)
 
         # Check if this is a lead capture email (should be processed even if from no-reply)
-        is_lead_capture = self._should_capture_lead(
+        is_lead_capture = self._should_capture_lead_from_subject(
             subject=subject,
             prefixes=email_config.lead_capture_subject_prefixes,
         )

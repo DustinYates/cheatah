@@ -293,49 +293,62 @@ Call Ending:
             Composed prompt string with chat-specific instructions, or None if no prompt is configured
         """
         base_prompt = await self.compose_prompt(tenant_id, context)
-        
+
         if base_prompt is None:
             return None
-        
-        # Build contact collection context based on what's been collected
-        contact_context = ""
-        if context:
-            collected_name = context.get("collected_name", False)
-            collected_email = context.get("collected_email", False)
-            collected_phone = context.get("collected_phone", False)
-            turn_count = context.get("turn_count", 0)
-            
-            contact_status = []
-            if collected_name:
-                contact_status.append("name")
-            if collected_email:
-                contact_status.append("email")
-            if collected_phone:
-                contact_status.append("phone")
-            
-            if contact_status:
-                contact_context = f"\n\nCURRENT CONVERSATION STATUS:\n"
-                contact_context += f"- Contact information collected: {', '.join(contact_status)}\n"
-                contact_context += f"- Do not ask for information you already have\n"
-                
-                # Guide on what to ask for next
-                if not collected_email and not collected_phone:
-                    contact_context += f"- Consider naturally asking for email OR phone when contextually appropriate\n"
-                elif collected_email and not collected_phone:
-                    contact_context += f"- If helpful, you can ask if they'd like to share phone number as well\n"
-                elif collected_phone and not collected_email:
-                    contact_context += f"- If helpful, you can ask if they'd like to share email as well\n"
-                
-                if (collected_email or collected_phone) and not collected_name:
-                    contact_context += f"- You can politely ask for their name once if it would be helpful\n"
-            else:
-                # No contact info collected yet
-                if turn_count >= 2:  # After a few exchanges
-                    contact_context = f"\n\nCURRENT CONVERSATION STATUS:\n"
-                    contact_context += f"- No contact information collected yet\n"
-                    contact_context += f"- Consider naturally asking for email OR phone when contextually appropriate (after answering questions, when discussing services, etc.)\n"
-        
-        chat_instructions = """
+
+        return await self.compose_prompt_chat_from_base(base_prompt, context)
+
+    async def compose_prompt_chat_from_base(
+        self, base_prompt: str, context: dict | None = None
+    ) -> str:
+        """Attach chat-specific guidance to a pre-composed base prompt."""
+        contact_context = self._build_chat_contact_context(context)
+        return base_prompt + contact_context + self._chat_instructions()
+
+    def _build_chat_contact_context(self, context: dict | None) -> str:
+        if not context:
+            return ""
+
+        collected_name = context.get("collected_name", False)
+        collected_email = context.get("collected_email", False)
+        collected_phone = context.get("collected_phone", False)
+        turn_count = context.get("turn_count", 0)
+
+        contact_status = []
+        if collected_name:
+            contact_status.append("name")
+        if collected_email:
+            contact_status.append("email")
+        if collected_phone:
+            contact_status.append("phone")
+
+        if contact_status:
+            contact_context = f"\n\nCURRENT CONVERSATION STATUS:\n"
+            contact_context += f"- Contact information collected: {', '.join(contact_status)}\n"
+            contact_context += f"- Do not ask for information you already have\n"
+
+            if not collected_email and not collected_phone:
+                contact_context += f"- Consider naturally asking for email OR phone when contextually appropriate\n"
+            elif collected_email and not collected_phone:
+                contact_context += f"- If helpful, you can ask if they'd like to share phone number as well\n"
+            elif collected_phone and not collected_email:
+                contact_context += f"- If helpful, you can ask if they'd like to share email as well\n"
+
+            if (collected_email or collected_phone) and not collected_name:
+                contact_context += f"- You can politely ask for their name once if it would be helpful\n"
+            return contact_context
+
+        if turn_count >= 2:
+            contact_context = f"\n\nCURRENT CONVERSATION STATUS:\n"
+            contact_context += f"- No contact information collected yet\n"
+            contact_context += f"- Consider naturally asking for email OR phone when contextually appropriate (after answering questions, when discussing services, etc.)\n"
+            return contact_context
+
+        return ""
+
+    def _chat_instructions(self) -> str:
+        return """
 
 WEB CHAT COMMUNICATION STYLE:
 
@@ -369,8 +382,6 @@ Contact Information Collection:
 - Follow the progressive collection pattern described in your base instructions
 - Be helpful and friendly, never pushy or salesy
 - Prefer offering a callback over offering to email information"""
-
-        return base_prompt + contact_context + chat_instructions
 
     async def compose_prompt_sms_qualification(
         self, tenant_id: int | None, context: dict | None = None
@@ -448,4 +459,3 @@ APPROACH:
 - If they seem uninterested, don't push - thank them and leave the door open"""
 
         return base_prompt + qualification_context + qualification_instructions
-

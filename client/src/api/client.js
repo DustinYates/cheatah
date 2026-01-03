@@ -307,10 +307,10 @@ class ApiClient {
     return true;
   }
 
-  async testPrompt(bundleId, message) {
+  async testPrompt(bundleId, message, history = []) {
     return this.request('/prompts/test', {
       method: 'POST',
-      body: JSON.stringify({ bundle_id: bundleId, message }),
+      body: JSON.stringify({ bundle_id: bundleId, message, history }),
     });
   }
 

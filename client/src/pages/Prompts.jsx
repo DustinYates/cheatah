@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
@@ -32,12 +32,14 @@ export default function Prompts() {
   const [error, setError] = useState(null);
   const [editBundle, setEditBundle] = useState(null);
   const [testBundle, setTestBundle] = useState(null);
-  const [testMessage, setTestMessage] = useState('');
+  const [testMessages, setTestMessages] = useState([]);
+  const [testInput, setTestInput] = useState('');
   const [testResult, setTestResult] = useState(null);
   const [testLoading, setTestLoading] = useState(false);
   const [publishing, setPublishing] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [deactivating, setDeactivating] = useState(null);
+  const testMessagesEndRef = useRef(null);
   
   // Toolbar state
   const [searchQuery, setSearchQuery] = useState('');
@@ -51,7 +53,7 @@ export default function Prompts() {
     if (testBundleId && bundles.length > 0) {
       const bundleToTest = bundles.find(b => b.id === parseInt(testBundleId, 10));
       if (bundleToTest) {
-        setTestBundle(bundleToTest);
+        openTest(bundleToTest);
         // Clear the parameter from URL
         setSearchParams({});
       }
@@ -61,6 +63,12 @@ export default function Prompts() {
   useEffect(() => {
     fetchBundles();
   }, []);
+
+  useEffect(() => {
+    if (testMessagesEndRef.current) {
+      testMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [testMessages, testLoading]);
 
   const fetchBundles = async () => {
     setLoading(true);
@@ -140,18 +148,48 @@ export default function Prompts() {
     }
   };
 
+  const resetTestState = () => {
+    setTestMessages([]);
+    setTestInput('');
+    setTestResult(null);
+    setTestLoading(false);
+  };
+
   const handleTest = async (e) => {
     e.preventDefault();
+    const message = testInput.trim();
+    if (!message || !testBundle) return;
+
+    const history = testMessages.filter((msg) => msg.role !== 'error');
+    const nextUserMessage = { role: 'user', content: message };
+
+    setTestMessages((prev) => [...prev, nextUserMessage]);
+    setTestInput('');
     setTestLoading(true);
     setTestResult(null);
+
     try {
-      const result = await api.testPrompt(testBundle?.id, testMessage);
-      setTestResult(result);
+      const result = await api.testPrompt(testBundle?.id, message, history);
+      setTestMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: result.response },
+      ]);
+      setTestResult({ composed_prompt: result.composed_prompt });
     } catch (err) {
-      setTestResult({ error: err.message });
+      const errorMessage = err.message || 'Test failed';
+      setTestMessages((prev) => [
+        ...prev,
+        { role: 'error', content: errorMessage },
+      ]);
+      setTestResult({ error: errorMessage });
     } finally {
       setTestLoading(false);
     }
+  };
+
+  const openTest = (bundle) => {
+    resetTestState();
+    setTestBundle(bundle);
   };
 
   const openEdit = async (bundle) => {
@@ -513,51 +551,71 @@ export default function Prompts() {
 
       {/* Test Bundle Modal */}
       {testBundle && (
-        <div className="modal-overlay" onClick={() => { setTestBundle(null); setTestResult(null); }}>
+        <div className="modal-overlay" onClick={() => { setTestBundle(null); resetTestState(); }}>
           <div className="modal test-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Test: {testBundle.name}</h2>
-              <button className="modal-close" onClick={() => { setTestBundle(null); setTestResult(null); }}>×</button>
+              <button className="modal-close" onClick={() => { setTestBundle(null); resetTestState(); }}>×</button>
             </div>
-            <p className="modal-subtitle">Send a test message to see how your chatbot responds</p>
-
-            <form onSubmit={handleTest}>
-              <div className="form-group">
-                <label>Test Message</label>
-                <textarea
-                  value={testMessage}
-                  onChange={(e) => setTestMessage(e.target.value)}
-                  placeholder="Type a message to test... (e.g., 'What swim classes do you offer for a 4 year old?')"
-                  rows={3}
-                  required
-                />
+            <p className="modal-subtitle">Chat with the test bot using the same pipeline as production.</p>
+            <div className="test-chat">
+              <div className="test-chat__header">
+                <span className="test-chat__hint">Tip: press Enter to send, Shift+Enter for a new line.</span>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={resetTestState}>
+                  Clear chat
+                </button>
               </div>
-              <button type="submit" className="btn-primary" disabled={testLoading}>
-                {testLoading ? 'Testing...' : 'Send Test'}
-              </button>
-
-              {testResult && (
-                <div className={`test-result ${testResult.error ? 'error' : 'success'}`}>
-                  {testResult.error ? (
-                    <div className="result-error">
-                      <span className="error-icon">❌</span>
-                      <span>Error: {testResult.error}</span>
+              <div className="test-chat__messages">
+                {testMessages.length === 0 ? (
+                  <div className="test-chat__empty">
+                    Start the conversation to see how your chatbot responds.
+                  </div>
+                ) : (
+                  testMessages.map((message, idx) => (
+                    <div
+                      key={`${message.role}-${idx}`}
+                      className={`test-chat__message test-chat__message--${message.role}`}
+                    >
+                      <div className="test-chat__bubble">{message.content}</div>
                     </div>
-                  ) : (
-                    <>
-                      <div className="result-section">
-                        <label>AI Response:</label>
-                        <div className="ai-response">{testResult.response}</div>
-                      </div>
-                      <details className="debug-details">
-                        <summary>View Composed Prompt (Debug)</summary>
-                        <pre className="composed-prompt">{testResult.composed_prompt}</pre>
-                      </details>
-                    </>
-                  )}
-                </div>
+                  ))
+                )}
+                {testLoading && (
+                  <div className="test-chat__message test-chat__message--assistant">
+                    <div className="test-chat__bubble test-chat__typing">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  </div>
+                )}
+                <div ref={testMessagesEndRef} />
+              </div>
+              <form className="test-chat__composer" onSubmit={handleTest}>
+                <textarea
+                  value={testInput}
+                  onChange={(e) => setTestInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleTest(e);
+                    }
+                  }}
+                  placeholder="Type a message... (e.g., 'What swim classes do you offer for a 4 year old?')"
+                  rows={2}
+                  disabled={testLoading}
+                />
+                <button type="submit" className="btn-primary" disabled={testLoading || !testInput.trim()}>
+                  {testLoading ? 'Sending...' : 'Send'}
+                </button>
+              </form>
+              {testResult?.composed_prompt && (
+                <details className="debug-details">
+                  <summary>View Composed Prompt (Debug)</summary>
+                  <pre className="composed-prompt">{testResult.composed_prompt}</pre>
+                </details>
               )}
-            </form>
+            </div>
           </div>
         </div>
       )}
@@ -637,7 +695,7 @@ export default function Prompts() {
                     
                     <button 
                       className="btn btn--ghost btn--sm"
-                      onClick={() => setTestBundle(bundle)}
+                      onClick={() => openTest(bundle)}
                       title="Test prompt"
                     >
                       Test

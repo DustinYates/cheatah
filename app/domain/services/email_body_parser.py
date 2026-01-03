@@ -114,21 +114,23 @@ class EmailBodyParser:
 
     def _strip_html_tags(self, text: str) -> str:
         """Strip HTML tags from text, but preserve email addresses in angle brackets.
-        
+
+        Converts HTML table structure to newline-separated text to preserve form field structure.
+
         Args:
             text: Text that may contain HTML tags
-            
+
         Returns:
             Text with HTML tags removed but email addresses preserved
         """
         if not text:
             return text
-        
+
         # First, temporarily protect email addresses in angle brackets
         # Match patterns like <email@example.com>
         email_placeholder = {}
         placeholder_idx = 0
-        
+
         def protect_email(match: re.Match) -> str:
             nonlocal placeholder_idx
             email = match.group(0)
@@ -139,17 +141,26 @@ class EmailBodyParser:
                 placeholder_idx += 1
                 return placeholder
             return email
-        
+
         # Protect emails in angle brackets
         text = re.sub(r'<[^>]+@[^>]+\.[^>]+>', protect_email, text)
-        
+
+        # Add newlines after block-level HTML elements to preserve structure
+        # This is critical for parsing HTML tables from form submissions
+        block_tags = ['</tr>', '</td>', '</th>', '</div>', '</p>', '</li>', '<br>', '<br/>', '<br />']
+        for tag in block_tags:
+            text = re.sub(re.escape(tag), tag + '\n', text, flags=re.IGNORECASE)
+
         # Now remove actual HTML tags
         text = re.sub(r'<[^>]+>', '', text)
-        
+
         # Restore protected email addresses
         for placeholder, email in email_placeholder.items():
             text = text.replace(placeholder, email)
-        
+
+        # Clean up multiple consecutive newlines
+        text = re.sub(r'\n\s*\n', '\n', text)
+
         return text.strip()
 
     def _parse_key_value_pairs(self, lines: list[str]) -> dict[str, str]:

@@ -1,9 +1,9 @@
 """Prompt routes for prompt bundle management."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_tenant, get_current_user
 from app.domain.services.prompt_service import PromptService
@@ -81,11 +81,19 @@ class PromptComposeResponse(BaseModel):
     prompt: str
 
 
+class PromptTestMessage(BaseModel):
+    """Message history for prompt testing."""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class PromptTestRequest(BaseModel):
     """Request to test a prompt with a message."""
 
     message: str
     bundle_id: int | None = None
+    history: list[PromptTestMessage] = Field(default_factory=list)
 
 
 class PromptTestResponse(BaseModel):
@@ -374,11 +382,12 @@ async def test_prompt(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PromptTestResponse:
     """Test a prompt with a sample message."""
-    from app.llm.gemini_client import GeminiClient
     from app.persistence.repositories.prompt_repository import PromptRepository
+    from app.domain.services.chat_service import ChatService
     
     prompt_service = PromptService(db)
     prompt_repo = PromptRepository(db)
+    chat_service = ChatService(db)
     
     if test_request.bundle_id:
         bundle = await prompt_repo.get_by_id(tenant_id, test_request.bundle_id)
@@ -401,12 +410,50 @@ async def test_prompt(
         composed_prompt = "\n\n".join([content for _, (content, _) in sorted_sections])
     else:
         composed_prompt = await prompt_service.compose_prompt(tenant_id, use_draft=True)
-    
-    full_prompt = f"{composed_prompt}\n\nUser message: {test_request.message}\n\nAssistant response:"
-    
-    gemini = GeminiClient()
-    response = await gemini.generate(full_prompt)
-    
+
+    if composed_prompt is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No prompt configured for this tenant.",
+        )
+
+    history = test_request.history or []
+    turn_count = len([msg for msg in history if msg.role == "user"])
+
+    user_text = " ".join([msg.content for msg in history if msg.role == "user"] + [test_request.message])
+    extracted_email = chat_service._extract_email_regex(user_text)
+    extracted_phone = chat_service._extract_phone_regex(user_text)
+    extracted_name, _ = chat_service._extract_name_regex(user_text)
+
+    prompt_context = {
+        "collected_name": bool(extracted_name),
+        "collected_email": bool(extracted_email),
+        "collected_phone": bool(extracted_phone),
+        "turn_count": turn_count,
+    }
+
+    composed_prompt = await prompt_service.compose_prompt_chat_from_base(
+        composed_prompt, prompt_context
+    )
+
+    if turn_count >= chat_service.MAX_TURNS:
+        return PromptTestResponse(
+            composed_prompt=composed_prompt,
+            response="Thank you for chatting! I've reached the maximum number of turns. Please contact us directly for further assistance.",
+        )
+
+    async def system_prompt_method(_tenant_id, context=None):
+        return composed_prompt
+
+    response, _ = await chat_service._process_chat_core(
+        tenant_id=tenant_id or 0,
+        conversation_id=0,
+        user_message=test_request.message,
+        messages=history,
+        system_prompt_method=system_prompt_method,
+        prompt_context=prompt_context,
+    )
+
     return PromptTestResponse(
         composed_prompt=composed_prompt,
         response=response,

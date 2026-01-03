@@ -260,7 +260,6 @@ class EmailService:
             user_message=processed_body,
             messages=messages,
             system_prompt_method=self._get_email_prompt,
-            requires_contact_info=False,
             additional_context=additional_context,
         )
         

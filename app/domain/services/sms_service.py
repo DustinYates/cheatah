@@ -199,7 +199,6 @@ class SmsService:
                 user_message=message_body,
                 messages=messages,
                 system_prompt_method=self.prompt_service.compose_prompt_sms_qualification,
-                requires_contact_info=False,
                 additional_context=qualification_context,
             )
         else:
@@ -210,7 +209,6 @@ class SmsService:
                 user_message=message_body,
                 messages=messages,
                 system_prompt_method=self.prompt_service.compose_prompt_sms,
-                requires_contact_info=False,
                 additional_context=None,
             )
         

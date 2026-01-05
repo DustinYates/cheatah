@@ -185,7 +185,7 @@ class TelnyxWebhookRequest(BaseModel):
     data: TelnyxWebhookData | None = None
 
 
-@router.post("/inbound")
+@router.post("/sms/inbound")
 async def telnyx_inbound_sms_webhook(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -288,7 +288,7 @@ async def telnyx_inbound_sms_webhook(
         return JSONResponse(content={"status": "error", "message": str(e)})
 
 
-@router.post("/status")
+@router.post("/sms/status")
 async def telnyx_sms_status_webhook(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],

@@ -15,7 +15,7 @@ from app.domain.services.escalation_service import EscalationService
 from app.domain.services.intent_detector import IntentDetector
 from app.domain.services.opt_in_service import OptInService
 from app.domain.services.prompt_service import PromptService
-from app.infrastructure.twilio_client import TwilioSmsClient
+from app.infrastructure.telephony.factory import TelephonyProviderFactory
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.lead import Lead
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
@@ -220,28 +220,45 @@ class SmsService:
             tenant_id, conversation.id, "assistant", formatted_response
         )
         
-        # Send response via Twilio
-        twilio_client = TwilioSmsClient(
-            account_sid=sms_config.twilio_account_sid,
-            auth_token=sms_config.twilio_auth_token,
-        )
-        
+        # Get SMS provider via factory (Twilio or Telnyx based on config)
+        factory = TelephonyProviderFactory(self.session)
+        sms_provider = await factory.get_sms_provider(tenant_id)
+
+        if not sms_provider:
+            logger.error(f"No SMS provider configured for tenant {tenant_id}")
+            return SmsResult(
+                response_message=formatted_response,
+                message_sid=None,
+            )
+
+        # Get the correct phone number based on provider
+        from_number = factory.get_sms_phone_number(sms_config)
+        if not from_number:
+            logger.error(f"No SMS phone number configured for tenant {tenant_id}")
+            return SmsResult(
+                response_message=formatted_response,
+                message_sid=None,
+            )
+
         # Get webhook base URL from settings
         from app.settings import settings
         status_callback_url = None
         if settings.twilio_webhook_url_base:
-            status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1/sms/status"
-        
-        send_result = twilio_client.send_sms(
+            # Use provider-specific webhook path
+            webhook_prefix = factory.get_webhook_path_prefix(sms_config)
+            status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1{webhook_prefix}/sms/status"
+
+        # Send via the configured provider
+        send_result = await sms_provider.send_sms(
             to=phone_number,
-            from_=sms_config.twilio_phone_number or "",
+            from_=from_number,
             body=formatted_response,
             status_callback=status_callback_url,
         )
-        
+
         return SmsResult(
             response_message=formatted_response,
-            message_sid=send_result.get("sid"),
+            message_sid=send_result.message_id,
         )
 
     async def _get_sms_config(self, tenant_id: int) -> TenantSmsConfig | None:

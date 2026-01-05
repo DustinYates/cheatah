@@ -75,6 +75,10 @@ class TelnyxSmsProvider(SmsProviderProtocol):
         if status_callback:
             payload["webhook_url"] = status_callback
 
+        logger.info(
+            f"Sending SMS via Telnyx: to={to}, from={from_}, body_len={len(body)}, profile={self.messaging_profile_id}"
+        )
+
         async with self._get_client() as client:
             response = await client.post("/messages", json=payload)
             response.raise_for_status()
@@ -83,6 +87,9 @@ class TelnyxSmsProvider(SmsProviderProtocol):
         message_data = data.get("data", {})
         to_info = message_data.get("to", [{}])
         status = to_info[0].get("status", "queued") if to_info else "queued"
+        logger.info(
+            f"Telnyx SMS response: id={message_data.get('id')}, status={status}, to_phone={to_info[0].get('phone_number') if to_info else None}"
+        )
 
         return SmsResult(
             message_id=message_data.get("id", ""),

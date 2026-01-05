@@ -71,6 +71,51 @@ gcloud run services update chattercheatah \
 gcloud secrets versions access latest --secret=database-url --project=chatbots-466618
 ```
 
+#### 5. Telnyx SMS webhooks not received (404)
+**Error:** Telnyx webhook returns 404 or messages not processed
+
+**Cause:** Webhook URL mismatch - Telnyx may be configured with `/api/v1/telnyx/inbound` but code expects `/api/v1/telnyx/sms/inbound`
+
+**Fix:** The endpoint now accepts both paths. When configuring Telnyx webhook URL, either works:
+- `https://YOUR-SERVICE-URL/api/v1/telnyx/inbound`
+- `https://YOUR-SERVICE-URL/api/v1/telnyx/sms/inbound`
+
+#### 6. Datetime timezone mismatch error
+**Error:** `TypeError: can't subtract offset-naive and offset-aware datetimes`
+
+**Cause:** Mixing `datetime.now(timezone.utc)` (aware) with database timestamps (naive)
+
+**Fix:** Use `datetime.utcnow()` for naive datetimes when working with SQLAlchemy/PostgreSQL that stores naive UTC timestamps.
+
+#### 7. Chat responses truncated mid-sentence
+**Error:** Bot responses cut off (e.g., "We offer a" with no completion)
+
+**Cause:** Hardcoded 500 token limit in LLM calls too restrictive
+
+**Fix:** Token limit is now configurable via `CHAT_MAX_TOKENS` env var (default: 1500)
+```bash
+gcloud run services update chattercheatah \
+  --region us-central1 \
+  --update-env-vars="CHAT_MAX_TOKENS=2000"
+```
+
+### SMS Integration Notes
+
+**Opt-in Policy:** The SMS service assumes users have already opted in when they text the number. STOP and HELP keywords are handled for compliance, but no opt-in verification is performed.
+
+**Telnyx Webhook Configuration:**
+- Webhook URL: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/inbound`
+- Both `/telnyx/inbound` and `/telnyx/sms/inbound` paths are supported for backwards compatibility
+
+**Debugging SMS Issues:**
+```bash
+# Check recent SMS webhook logs
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=chattercheatah AND textPayload=~'SMS'" --limit 50
+
+# Check for errors in Telnyx webhooks
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=chattercheatah AND textPayload=~'telnyx'" --limit 30
+```
+
 ### Deploying Updates
 ```bash
 # Build and deploy

@@ -69,7 +69,7 @@ class ConversationService:
         )
 
         message = await self.message_repo.create(
-            tenant_id,
+            None,  # Messages inherit tenant_id from their Conversation
             conversation_id=conversation_id,
             role=role,
             content=content,

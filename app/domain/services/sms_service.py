@@ -76,7 +76,13 @@ class SmsService:
         """
         # Get tenant SMS config
         sms_config = await self._get_sms_config(tenant_id)
-        if not sms_config or not sms_config.is_enabled:
+        if not sms_config:
+            logger.warning(f"No SMS config found for tenant_id={tenant_id}")
+            return SmsResult(
+                response_message="SMS service is not configured for this tenant.",
+            )
+        if not sms_config.is_enabled:
+            logger.info(f"SMS disabled for tenant_id={tenant_id}")
             return SmsResult(
                 response_message="SMS service is not enabled for this tenant.",
             )

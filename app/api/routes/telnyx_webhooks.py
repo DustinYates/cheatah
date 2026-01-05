@@ -249,11 +249,14 @@ async def telnyx_inbound_sms_webhook(
             return JSONResponse(content={"status": "ok"})
 
         # Look up tenant by Telnyx phone number
+        logger.info(f"Looking up tenant for Telnyx number: {to_number}")
         tenant_id = await _get_tenant_from_telnyx_number(to_number, db)
 
         if not tenant_id:
             logger.warning(f"Could not determine tenant for Telnyx number: {to_number}")
             return JSONResponse(content={"status": "ok"})
+
+        logger.info(f"Found tenant_id={tenant_id} for Telnyx number: {to_number}")
 
         # Queue message for async processing
         if settings.cloud_tasks_worker_url:
@@ -273,12 +276,13 @@ async def telnyx_inbound_sms_webhook(
             # Fallback: process synchronously
             logger.warning("Cloud Tasks not configured, processing synchronously")
             sms_service = SmsService(db)
-            await sms_service.process_inbound_sms(
+            result = await sms_service.process_inbound_sms(
                 tenant_id=tenant_id,
                 phone_number=from_number,
                 message_body=message_body,
                 twilio_message_sid=message_id,  # Re-using param name for Telnyx message ID
             )
+            logger.info(f"SMS processed for tenant_id={tenant_id}, response_sent={bool(result.message_sid)}")
 
         return JSONResponse(content={"status": "ok"})
 

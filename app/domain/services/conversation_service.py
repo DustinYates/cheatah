@@ -69,7 +69,7 @@ class ConversationService:
         )
 
         message = await self.message_repo.create(
-            None,
+            tenant_id,
             conversation_id=conversation_id,
             role=role,
             content=content,

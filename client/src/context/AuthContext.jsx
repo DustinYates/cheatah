@@ -5,6 +5,7 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileComplete, setProfileComplete] = useState(null);
@@ -88,6 +89,7 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const data = await api.login(email, password);
+    setToken(localStorage.getItem('token'));
     const userInfo = {
       authenticated: true,
       email: data.email,
@@ -115,6 +117,7 @@ export function AuthProvider({ children }) {
   const logout = () => {
     api.logout();
     setUser(null);
+    setToken(null);
     setTenants([]);
     setSelectedTenantId(null);
     setProfileComplete(null);
@@ -146,6 +149,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user,
+      token,
       login,
       logout,
       loading,

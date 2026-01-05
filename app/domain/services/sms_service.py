@@ -201,6 +201,14 @@ class SmsService:
                 system_prompt_method=self.prompt_service.compose_prompt_sms_qualification,
                 additional_context=qualification_context,
             )
+            # Capture/update lead from follow-up SMS conversation
+            await self._capture_sms_lead(
+                tenant_id=tenant_id,
+                conversation=conversation,
+                phone_number=phone_number,
+                messages=messages,
+                user_message=message_body,
+            )
         else:
             # Process with regular SMS prompt
             llm_response, llm_latency_ms = await self.chat_service._process_chat_core(
@@ -211,7 +219,16 @@ class SmsService:
                 system_prompt_method=self.prompt_service.compose_prompt_sms,
                 additional_context=None,
             )
-        
+
+        # Capture lead from SMS conversation (we always have phone number)
+        await self._capture_sms_lead(
+            tenant_id=tenant_id,
+            conversation=conversation,
+            phone_number=phone_number,
+            messages=messages,
+            user_message=message_body,
+        )
+
         # Format response for SMS (short, no markdown)
         formatted_response = self._format_sms_response(llm_response)
         
@@ -498,4 +515,82 @@ Respond with ONLY valid JSON, no explanation:
         extra_data["qualification_data"] = qual_data
         lead.extra_data = extra_data
         await self.session.commit()
+
+    async def _capture_sms_lead(
+        self,
+        tenant_id: int,
+        conversation: Conversation,
+        phone_number: str,
+        messages: list[Message],
+        user_message: str,
+    ) -> None:
+        """Capture or update lead from SMS conversation.
+
+        SMS always has the phone number, so we can always create a lead.
+        We also extract name/email from conversation if provided.
+
+        Args:
+            tenant_id: Tenant ID
+            conversation: Conversation object
+            phone_number: Sender phone number
+            messages: Previous messages in conversation
+            user_message: Current user message
+        """
+        try:
+            # Check if lead already exists for this conversation
+            lead_repo = LeadRepository(self.session)
+            existing_lead = await lead_repo.get_by_conversation(tenant_id, conversation.id)
+
+            # Extract name/email from conversation using chat_service's extraction
+            extracted_info = await self.chat_service._extract_contact_info_from_conversation(
+                messages, user_message
+            )
+
+            extracted_name = extracted_info.get("name")
+            extracted_email = extracted_info.get("email")
+            name_is_explicit = extracted_info.get("name_is_explicit", False)
+
+            logger.debug(
+                f"SMS lead extraction - phone={phone_number}, name={extracted_name}, "
+                f"email={extracted_email}, existing_lead={existing_lead is not None}"
+            )
+
+            if existing_lead:
+                # Update existing lead with new information
+                updated = False
+                if extracted_name and (not existing_lead.name or name_is_explicit):
+                    existing_lead.name = extracted_name
+                    updated = True
+                if extracted_email and not existing_lead.email:
+                    existing_lead.email = extracted_email
+                    updated = True
+                if updated:
+                    await self.session.commit()
+                    logger.info(
+                        f"SMS lead updated - tenant_id={tenant_id}, lead_id={existing_lead.id}, "
+                        f"name={extracted_name}, email={extracted_email}"
+                    )
+            else:
+                # Create new lead with phone number (always available) + extracted info
+                from app.domain.services.lead_service import LeadService
+                lead_service = LeadService(self.session)
+                lead = await lead_service.capture_lead(
+                    tenant_id=tenant_id,
+                    conversation_id=conversation.id,
+                    email=extracted_email,
+                    phone=phone_number,
+                    name=extracted_name,
+                    metadata={"source": "sms"},
+                )
+                logger.info(
+                    f"SMS lead captured - tenant_id={tenant_id}, lead_id={lead.id}, "
+                    f"phone={phone_number}, name={extracted_name}, email={extracted_email}"
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to capture SMS lead - tenant_id={tenant_id}, "
+                f"conversation_id={conversation.id}, error={e}",
+                exc_info=True
+            )
 

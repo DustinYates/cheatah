@@ -13,7 +13,6 @@ from app.domain.services.chat_service import ChatService
 from app.domain.services.compliance_handler import ComplianceHandler, ComplianceResult
 from app.domain.services.escalation_service import EscalationService
 from app.domain.services.intent_detector import IntentDetector
-from app.domain.services.opt_in_service import OptInService
 from app.domain.services.prompt_service import PromptService
 from app.infrastructure.telephony.factory import TelephonyProviderFactory
 from app.persistence.models.conversation import Conversation, Message
@@ -50,7 +49,6 @@ class SmsService:
         self.chat_service = ChatService(session)
         self.compliance_handler = ComplianceHandler()
         self.intent_detector = IntentDetector()
-        self.opt_in_service = OptInService(session)
         self.escalation_service = EscalationService(session)
         self.prompt_service = PromptService(session)
         self.tenant_repo = TenantRepository(session)
@@ -64,16 +62,18 @@ class SmsService:
         twilio_message_sid: str | None = None,
     ) -> SmsResult:
         """Process an inbound SMS message.
-        
+
         Args:
             tenant_id: Tenant ID
             phone_number: Sender phone number
             message_body: Message text
             twilio_message_sid: Twilio message SID (for audit trail)
-            
+
         Returns:
             SmsResult with response and metadata
         """
+        logger.info(f"SMS processing started - tenant_id={tenant_id}, phone={phone_number}, message_length={len(message_body)}")
+
         # Get tenant SMS config
         sms_config = await self._get_sms_config(tenant_id)
         if not sms_config:
@@ -87,35 +87,9 @@ class SmsService:
                 response_message="SMS service is not enabled for this tenant.",
             )
         
-        # Check compliance (STOP, HELP, etc.)
+        # Check compliance (HELP keyword)
         compliance_result = self.compliance_handler.check_compliance(message_body)
-        
-        # Handle STOP keyword
-        if compliance_result.action == "stop":
-            await self.opt_in_service.opt_out(tenant_id, phone_number, method="STOP")
-            return SmsResult(
-                response_message=compliance_result.response_message or "You have been unsubscribed.",
-                opt_in_status_changed=True,
-            )
-        
-        # Handle OPT-IN keyword
-        if compliance_result.action == "opt_in":
-            await self.opt_in_service.opt_in(tenant_id, phone_number, method="keyword")
-            return SmsResult(
-                response_message=compliance_result.response_message or "You have been subscribed.",
-                opt_in_status_changed=True,
-            )
-        
-        # Check opt-in status
-        is_opted_in = await self.opt_in_service.is_opted_in(tenant_id, phone_number)
-        if not is_opted_in:
-            return SmsResult(
-                response_message=(
-                    "You are not subscribed to receive messages. "
-                    "Reply START to subscribe."
-                ),
-            )
-        
+
         # Handle HELP keyword (return immediately, no LLM)
         if compliance_result.action == "help":
             return SmsResult(
@@ -197,6 +171,7 @@ class SmsService:
             )
 
         # Choose prompt method based on whether this is a follow-up conversation
+        logger.info(f"SMS calling LLM - tenant_id={tenant_id}, is_followup={is_followup}")
         if is_followup and qualification_context:
             # Use qualification prompt for follow-up conversations
             llm_response, llm_latency_ms = await self.chat_service._process_chat_core(
@@ -237,12 +212,13 @@ class SmsService:
 
         # Format response for SMS (short, no markdown)
         formatted_response = self._format_sms_response(llm_response)
-        
+        logger.info(f"SMS LLM response received - tenant_id={tenant_id}, latency_ms={llm_latency_ms}, response_length={len(formatted_response)}")
+
         # Add assistant response
         await conversation_service.add_message(
             tenant_id, conversation.id, "assistant", formatted_response
         )
-        
+
         # Get SMS provider via factory (Twilio or Telnyx based on config)
         factory = TelephonyProviderFactory(self.session)
         sms_provider = await factory.get_sms_provider(tenant_id)
@@ -272,12 +248,14 @@ class SmsService:
             status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1{webhook_prefix}/sms/status"
 
         # Send via the configured provider
+        logger.info(f"SMS sending response - tenant_id={tenant_id}, to={phone_number}, from={from_number}")
         send_result = await sms_provider.send_sms(
             to=phone_number,
             from_=from_number,
             body=formatted_response,
             status_callback=status_callback_url,
         )
+        logger.info(f"SMS sent successfully - tenant_id={tenant_id}, message_id={send_result.message_id}")
 
         return SmsResult(
             response_message=formatted_response,
@@ -286,19 +264,63 @@ class SmsService:
 
     async def _get_sms_config(self, tenant_id: int) -> TenantSmsConfig | None:
         """Get tenant SMS configuration.
-        
+
         Args:
             tenant_id: Tenant ID
-            
+
         Returns:
             SMS config or None if not found
         """
         from sqlalchemy import select
         from app.persistence.models.tenant_sms_config import TenantSmsConfig
-        
+
         stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def _send_early_response(
+        self,
+        tenant_id: int,
+        sms_config: TenantSmsConfig,
+        to_phone: str,
+        message: str,
+    ) -> str | None:
+        """Send an early response SMS (for opt-in, compliance, etc.).
+
+        Used when we need to respond without going through the full LLM flow.
+
+        Args:
+            tenant_id: Tenant ID
+            sms_config: SMS configuration
+            to_phone: Recipient phone number
+            message: Message to send
+
+        Returns:
+            Message SID or None if failed
+        """
+        try:
+            factory = TelephonyProviderFactory(self.session)
+            sms_provider = await factory.get_sms_provider(tenant_id)
+
+            if not sms_provider:
+                logger.error(f"No SMS provider configured for tenant {tenant_id}")
+                return None
+
+            from_number = factory.get_sms_phone_number(sms_config)
+            if not from_number:
+                logger.error(f"No SMS phone number configured for tenant {tenant_id}")
+                return None
+
+            send_result = await sms_provider.send_sms(
+                to=to_phone,
+                from_=from_number,
+                body=message,
+                status_callback=None,
+            )
+            return send_result.message_id
+        except Exception as e:
+            logger.error(f"Failed to send early response SMS: {e}", exc_info=True)
+            return None
 
     async def _get_or_create_sms_conversation(
         self, tenant_id: int, phone_number: str

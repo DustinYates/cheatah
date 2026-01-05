@@ -186,6 +186,7 @@ class TelnyxWebhookRequest(BaseModel):
 
 
 @router.post("/sms/inbound")
+@router.post("/inbound")  # Alternate path for backwards compatibility
 async def telnyx_inbound_sms_webhook(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],

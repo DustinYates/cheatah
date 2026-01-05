@@ -1,6 +1,6 @@
 """Opt-in service for tracking SMS opt-ins."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,7 +50,7 @@ class OptInService:
         if opt_in:
             # Update existing record
             opt_in.is_opted_in = True
-            opt_in.opted_in_at = datetime.now(timezone.utc)
+            opt_in.opted_in_at = datetime.utcnow()
             opt_in.opt_in_method = method
             opt_in.opted_out_at = None
             opt_in.opt_out_method = None
@@ -63,7 +63,7 @@ class OptInService:
                 tenant_id,
                 phone_number=phone_number,
                 is_opted_in=True,
-                opted_in_at=datetime.now(timezone.utc),
+                opted_in_at=datetime.utcnow(),
                 opt_in_method=method,
             )
 
@@ -88,7 +88,7 @@ class OptInService:
         if opt_in:
             # Update existing record
             opt_in.is_opted_in = False
-            opt_in.opted_out_at = datetime.now(timezone.utc)
+            opt_in.opted_out_at = datetime.utcnow()
             opt_in.opt_out_method = method
             await self.session.commit()
             await self.session.refresh(opt_in)
@@ -99,7 +99,7 @@ class OptInService:
                 tenant_id,
                 phone_number=phone_number,
                 is_opted_in=False,
-                opted_out_at=datetime.now(timezone.utc),
+                opted_out_at=datetime.utcnow(),
                 opt_out_method=method,
             )
 

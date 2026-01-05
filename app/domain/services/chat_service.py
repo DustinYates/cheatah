@@ -15,6 +15,7 @@ from app.domain.services.prompt_service import PromptService
 from app.llm.orchestrator import LLMOrchestrator
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.repositories.tenant_repository import TenantRepository
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -722,7 +723,7 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
         try:
             llm_response = await self.llm_orchestrator.generate(
                 conversation_context,
-                context={"temperature": 0.3, "max_tokens": 500},  # Deterministic defaults
+                context={"temperature": 0.3, "max_tokens": settings.chat_max_tokens},
             )
             # Clean up response - remove any "Draft X:" prefixes that LLM might add
             llm_response = self._clean_llm_response(llm_response)
@@ -801,7 +802,7 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
         try:
             continuation = await self.llm_orchestrator.generate(
                 completion_prompt,
-                context={"temperature": 0.2, "max_tokens": 80},
+                context={"temperature": 0.2, "max_tokens": 150},
             )
         except Exception as e:
             logger.warning(f"Failed to complete response: {e}")

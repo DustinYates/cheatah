@@ -46,7 +46,7 @@ class GeminiClient(LLMClient):
         """
         generation_config: dict[str, Any] = {
             "temperature": 0.3,
-            "max_output_tokens": 500,
+            "max_output_tokens": 1500,
         }
         
         if context:

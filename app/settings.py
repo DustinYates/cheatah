@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     chat_max_turns: int = 20
     chat_timeout_seconds: int = 300
     chat_follow_up_nudge_turn: int = 3
+    chat_max_tokens: int = 1500  # Max tokens for LLM chat responses
 
     # Application
     environment: str = "development"

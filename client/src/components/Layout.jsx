@@ -8,6 +8,9 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [analyticsOpen, setAnalyticsOpen] = useState(location.pathname.startsWith('/analytics'));
+  const [communicationsOpen, setCommunicationsOpen] = useState(
+    location.pathname.startsWith('/calls') || location.pathname.startsWith('/sms')
+  );
   const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/settings'));
 
   const handleLogout = () => {
@@ -56,8 +59,24 @@ export default function Layout() {
           <li>
             <NavLink to="/contacts">Contacts</NavLink>
           </li>
-          <li>
-            <NavLink to="/calls">Calls</NavLink>
+          <li className="nav-section">
+            <button
+              className={`nav-section-toggle ${communicationsOpen ? 'open' : ''}`}
+              onClick={() => setCommunicationsOpen(!communicationsOpen)}
+            >
+              Communications
+              <span className="toggle-icon">{communicationsOpen ? '−' : '+'}</span>
+            </button>
+            {communicationsOpen && (
+              <ul className="nav-submenu">
+                <li>
+                  <NavLink to="/calls">Calls</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/sms">SMS</NavLink>
+                </li>
+              </ul>
+            )}
           </li>
           <li className="nav-section">
             <button
@@ -77,9 +96,6 @@ export default function Layout() {
                 </li>
               </ul>
             )}
-          </li>
-          <li>
-            <NavLink to="/sms">SMS</NavLink>
           </li>
           <li className="nav-section">
             <button

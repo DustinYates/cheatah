@@ -1,6 +1,7 @@
 """Leads API endpoints."""
 
 from typing import Annotated
+from datetime import timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -17,6 +18,15 @@ from app.persistence.models.conversation import Message
 from app.persistence.models.tenant import User
 
 router = APIRouter()
+
+def _isoformat_utc(dt):
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat().replace("+00:00", "Z")
 
 
 class LeadResponse(BaseModel):
@@ -124,7 +134,7 @@ async def list_leads(
                 phone=lead.phone,
                 status=lead.status if hasattr(lead, 'status') else None,
                 extra_data=lead.extra_data,
-                created_at=lead.created_at.isoformat() if lead.created_at else None,
+                created_at=_isoformat_utc(lead.created_at),
                 llm_responded=llm_responded,
             )
         )
@@ -163,7 +173,7 @@ async def get_lead(
         phone=lead.phone,
         status=lead.status if hasattr(lead, 'status') else None,
         extra_data=lead.extra_data,
-        created_at=lead.created_at.isoformat() if lead.created_at else None,
+        created_at=_isoformat_utc(lead.created_at),
         llm_responded=llm_responded,
     )
 
@@ -203,13 +213,13 @@ async def get_lead_conversation(
     return ConversationResponse(
         id=conversation.id,
         channel=conversation.channel,
-        created_at=conversation.created_at.isoformat(),
+        created_at=_isoformat_utc(conversation.created_at),
         messages=[
             MessageResponse(
                 id=msg.id,
                 role=msg.role,
                 content=msg.content,
-                created_at=msg.created_at.isoformat(),
+                created_at=_isoformat_utc(msg.created_at),
             )
             for msg in conversation.messages
         ],
@@ -348,7 +358,7 @@ async def trigger_followup(
 
     # Trigger immediate follow-up
     followup_service = FollowUpService(db)
-    task_name = await followup_service.trigger_immediate_followup(tenant_id, lead_id)
+    task_name, error_message = await followup_service.trigger_immediate_followup(tenant_id, lead_id)
 
     if task_name:
         logger.info(f"Triggered follow-up for lead {lead_id} by user {current_user.email}")
@@ -360,5 +370,5 @@ async def trigger_followup(
     else:
         return TriggerFollowUpResponse(
             success=False,
-            message="Failed to schedule follow-up. Check SMS configuration.",
+            message=error_message or "Failed to schedule follow-up. Check SMS configuration.",
         )

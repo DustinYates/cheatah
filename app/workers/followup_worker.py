@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.conversation_service import ConversationService
+from app.domain.services.followup_message_service import FollowUpMessageService
 from app.domain.services.opt_in_service import OptInService
 from app.infrastructure.telephony.factory import TelephonyProviderFactory
 from app.persistence.database import get_db
@@ -117,8 +118,17 @@ async def process_followup_task(
         lead.conversation_id = conversation.id  # Update primary conversation link
         await db.commit()
 
-        # Generate initial follow-up message
-        initial_message = _generate_initial_message(lead, sms_config)
+        # Generate initial follow-up message using LLM
+        followup_msg_service = FollowUpMessageService(db)
+        try:
+            initial_message = await followup_msg_service.compose_followup_message(
+                tenant_id=payload.tenant_id,
+                lead=lead,
+            )
+            logger.info(f"LLM-generated follow-up message for lead {payload.lead_id}")
+        except Exception as e:
+            logger.warning(f"LLM follow-up failed for lead {payload.lead_id}, using fallback: {e}")
+            initial_message = _generate_initial_message(lead, sms_config)
 
         # Build status callback URL based on provider
         status_callback_url = None

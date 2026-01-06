@@ -189,7 +189,8 @@ class PromptService:
             "- Use plain text only\n"
             "- Be concise and direct\n"
             "- If response is too long, split into multiple messages\n"
-            "- Use abbreviations sparingly and only when clear"
+            "- Use abbreviations sparingly and only when clear\n"
+            "- DO NOT ask for their phone number - you already have it since they texted you"
         )
         
         return base_prompt + sms_instructions
@@ -256,7 +257,8 @@ Prohibited Topics (redirect politely):
 - Guarantees or binding promises
 
 Lead Capture:
-- Naturally ask for their name and contact info when appropriate
+- Naturally ask for their name and email when appropriate
+- DO NOT ask for their phone number - you already have it from caller ID
 - Don't make it feel like filling out a form
 
 Call Ending:
@@ -450,6 +452,8 @@ You are following up to qualify this lead. Your goal is to naturally collect:
 4. Their timeline (when they need it)
 5. Budget expectations (price range they're considering)
 
+IMPORTANT: DO NOT ask for their phone number - you already have it since they texted you.
+
 APPROACH:
 - Be warm and helpful, not pushy or sales-y
 - Answer their questions first before asking yours
@@ -460,3 +464,57 @@ APPROACH:
 - If they seem uninterested, don't push - thank them and leave the door open"""
 
         return base_prompt + qualification_context + qualification_instructions
+
+    async def compose_prompt_sms_followup(
+        self, tenant_id: int | None, context: dict | None = None
+    ) -> str | None:
+        """Compose SMS-specific prompt for generating follow-up outreach messages.
+
+        This prompt guides the LLM to compose a contextual follow-up SMS to re-engage
+        with leads who previously contacted the business but didn't complete the conversation.
+
+        Args:
+            tenant_id: Tenant ID (None for global)
+            context: Optional context dict that may include:
+                - lead_name: Lead's name if known
+                - first_name: Lead's first name
+                - lead_source: How they originally contacted us (voice_call, email, sms, chatbot)
+                - time_since_contact: Human-readable time since original contact
+                - conversation_summary: Summary of original conversation
+
+        Returns:
+            Composed prompt string for follow-up message generation, or None if no prompt configured
+        """
+        base_prompt = await self.compose_prompt(tenant_id, context)
+
+        if base_prompt is None:
+            return None
+
+        followup_instructions = """
+
+SMS FOLLOW-UP MESSAGE GENERATION:
+
+You are composing a follow-up SMS message to re-engage with someone who previously contacted the business but the conversation didn't complete or they didn't respond.
+
+CRITICAL CONSTRAINTS:
+- Message MUST be under 160 characters (standard SMS limit)
+- NO markdown, links, URLs, or special formatting
+- Use plain, conversational text only
+- Be warm and friendly, not pushy or salesy
+
+MESSAGE REQUIREMENTS:
+- Reference the previous interaction naturally (call, email, chat, etc.)
+- Use their first name if known
+- Include a simple question or invitation to continue the conversation
+- Match the business's friendly, professional tone
+- Make it feel personal, not automated
+- End with an open question to encourage response
+
+EXAMPLES OF GOOD MESSAGES:
+- "Hi John! Following up from earlier. Still have questions about our services?"
+- "Hey there! Thanks for reaching out. Did you find what you needed?"
+- "Hi Sarah! Wanted to check in after your call. How can I help?"
+
+Generate ONLY the SMS message text, nothing else. No quotes, no explanation, just the message."""
+
+        return base_prompt + followup_instructions

@@ -255,6 +255,25 @@ export default function WidgetSettings() {
   const previewLabelPosition = widgetSettings.icon.labelPosition === 'beside'
     ? 'left'
     : widgetSettings.icon.labelPosition;
+  const attentionDurationMap = {
+    bounce: 1.2,
+    pulse: 1.3,
+    glow: 1.8,
+    breathing: 2.4,
+    'corner-nudge': 1.2
+  };
+  const previewAttentionAnimation = widgetSettings.attention.attentionAnimation;
+  const previewAttentionDuration = attentionDurationMap[previewAttentionAnimation] || 1.2;
+  const previewAttentionIterations = Math.max(1, Math.min(widgetSettings.attention.attentionCycles || 1, 3));
+  const previewPosition = widgetSettings.layout.position || 'bottom-right';
+  const previewNudgeX = previewPosition.endsWith('right') ? -6 : 6;
+  const previewNudgeY = previewPosition.startsWith('bottom') ? -6 : 6;
+  const previewAttentionEnabled = previewAttentionAnimation && previewAttentionAnimation !== 'none';
+  const previewAccessibilityClasses = [
+    widgetSettings.accessibility.darkMode ? 'preview-dark' : '',
+    widgetSettings.accessibility.highContrast ? 'preview-high-contrast' : '',
+    widgetSettings.accessibility.focusOutline ? 'preview-focus-outline' : ''
+  ].filter(Boolean).join(' ');
   const hasWidgetChanges = useMemo(
     () => JSON.stringify(widgetSettings) !== JSON.stringify(widgetBaseline),
     [widgetSettings, widgetBaseline]
@@ -1822,7 +1841,7 @@ export default function WidgetSettings() {
 
                 <div className="widget-preview-viewport">
                   <div
-                    className={`widget-preview-window${previewFocus === 'window' ? ' preview-highlight' : ''}${previewPulse === 'window' ? ' preview-pulse' : ''}`}
+                    className={`widget-preview-window${previewFocus === 'window' ? ' preview-highlight' : ''}${previewPulse === 'window' ? ' preview-pulse' : ''}${previewAccessibilityClasses ? ` ${previewAccessibilityClasses}` : ''}`}
                     style={{
                       background: widgetSettings.colors.background,
                       color: widgetSettings.colors.text,
@@ -1876,13 +1895,18 @@ export default function WidgetSettings() {
 
                   <div className="widget-preview-icon-wrap">
                     <div
-                      className={`widget-preview-icon${previewFocus === 'launcher' ? ' preview-highlight' : ''}${previewPulse === 'launcher' ? ' preview-pulse' : ''}`}
+                      className={`widget-preview-icon${previewFocus === 'launcher' ? ' preview-highlight' : ''}${previewPulse === 'launcher' ? ' preview-pulse' : ''}${previewAttentionEnabled ? ' widget-preview-attention' : ''}`}
+                      data-attention={previewAttentionEnabled ? previewAttentionAnimation : undefined}
                       style={{
                         width: previewIconSize,
                         height: previewIconSize,
                         borderRadius: previewIconRadius,
                         background: widgetSettings.colors.primary,
-                        color: widgetSettings.colors.buttonText
+                        color: widgetSettings.colors.buttonText,
+                        '--cc-attention-duration': `${previewAttentionDuration}s`,
+                        '--cc-attention-iterations': previewAttentionIterations,
+                        '--cc-nudge-x': `${previewNudgeX}px`,
+                        '--cc-nudge-y': `${previewNudgeY}px`
                       }}
                     >
                       {widgetSettings.icon.type === 'emoji' && (widgetSettings.icon.emoji || '💬')}

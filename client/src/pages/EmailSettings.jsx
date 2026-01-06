@@ -17,13 +17,6 @@ export default function EmailSettings() {
   const [refreshingWatch, setRefreshingWatch] = useState(false);
 
   const [formData, setFormData] = useState({
-    is_enabled: false,
-    business_hours_enabled: false,
-    auto_reply_outside_hours: true,
-    auto_reply_message: '',
-    response_signature: '',
-    max_thread_depth: 10,
-    escalation_rules: null,
     lead_capture_subject_prefixes: [],
   });
   const [newPrefix, setNewPrefix] = useState('');
@@ -51,25 +44,10 @@ export default function EmailSettings() {
   useEffect(() => {
     if (settings) {
       setFormData({
-        is_enabled: settings.is_enabled,
-        business_hours_enabled: settings.business_hours_enabled,
-        auto_reply_outside_hours: settings.auto_reply_outside_hours,
-        auto_reply_message: settings.auto_reply_message || '',
-        response_signature: settings.response_signature || '',
-        max_thread_depth: settings.max_thread_depth || 10,
-        escalation_rules: settings.escalation_rules,
         lead_capture_subject_prefixes: settings.lead_capture_subject_prefixes || [],
       });
     }
   }, [settings]);
-
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
-  };
 
   const handleAddPrefix = () => {
     const trimmed = newPrefix.trim();
@@ -128,7 +106,7 @@ export default function EmailSettings() {
   };
 
   const handleDisconnect = async () => {
-    if (!window.confirm('Are you sure you want to disconnect Gmail? Email responses will stop working.')) {
+    if (!window.confirm('Are you sure you want to disconnect Gmail? Lead capture from emails will stop working.')) {
       return;
     }
 
@@ -167,7 +145,7 @@ export default function EmailSettings() {
         <EmptyState
           icon="✉️"
           title="Select a tenant to manage email settings"
-          description="Please select a tenant from the dropdown above to manage their email responder settings."
+          description="Please select a tenant from the dropdown above to manage their email lead capture settings."
         />
       </div>
     );
@@ -188,7 +166,7 @@ export default function EmailSettings() {
           <EmptyState
             icon="✉️"
             title="Select a tenant to manage email settings"
-            description="Please select a tenant from the dropdown above to manage their email responder settings."
+            description="Please select a tenant from the dropdown above to manage their email lead capture settings."
           />
         </div>
       );
@@ -202,9 +180,9 @@ export default function EmailSettings() {
 
   return (
     <div className="email-settings-page">
-      <h1>Email Responder Settings</h1>
+      <h1>Email Lead Capture</h1>
       <p className="description">
-        Connect your Gmail account to automatically respond to customer emails with AI-powered responses.
+        Connect your Gmail account to automatically capture leads from incoming emails.
       </p>
 
       {formError && <div className="error-message">{formError}</div>}
@@ -254,7 +232,7 @@ export default function EmailSettings() {
               <span className="status-dot disconnected"></span>
               <span>Not Connected</span>
             </div>
-            <p>Connect your Gmail account to enable AI-powered email responses.</p>
+            <p>Connect your Gmail account to enable lead capture from emails.</p>
             <button
               type="button"
               className="btn-primary gmail-connect-btn"
@@ -279,22 +257,6 @@ export default function EmailSettings() {
       {/* Settings Form - Only show if connected */}
       {settings?.is_connected && (
         <form onSubmit={handleSubmit} className="settings-form">
-          <section className="settings-section">
-            <h2>Email Responder</h2>
-            <div className="checkbox-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="is_enabled"
-                  checked={formData.is_enabled}
-                  onChange={handleChange}
-                />
-                <span className="checkbox-text">Enable Email Responder</span>
-              </label>
-              <small>When enabled, incoming emails will be processed and leads will be created based on subject prefixes.</small>
-            </div>
-          </section>
-
           <section className="settings-section">
             <h2>Lead Capture</h2>
             <p className="section-description">

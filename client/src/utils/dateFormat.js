@@ -3,11 +3,25 @@ import { toZonedTime, format as formatTz } from 'date-fns-tz';
 
 const CENTRAL_TZ = 'America/Chicago';
 
+function normalizeTimestamp(dateString) {
+  if (!dateString) return dateString;
+
+  const trimmed = dateString.trim();
+  if (!trimmed) return trimmed;
+
+  const hasTimezone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(trimmed);
+  if (hasTimezone) return trimmed;
+
+  const withT = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T');
+  return `${withT}Z`;
+}
+
 export function formatSmartDateTime(dateString) {
   try {
     if (!dateString) return '—';
 
-    const date = new Date(dateString);
+    const normalized = normalizeTimestamp(dateString);
+    const date = new Date(normalized);
     if (isNaN(date.getTime())) return '—';
 
     const centralDate = toZonedTime(date, CENTRAL_TZ);

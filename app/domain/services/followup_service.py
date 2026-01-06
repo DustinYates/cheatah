@@ -167,7 +167,7 @@ class FollowUpService:
         self,
         tenant_id: int,
         lead_id: int,
-    ) -> str | None:
+    ) -> tuple[str | None, str | None]:
         """Trigger an immediate follow-up SMS task (no delay).
 
         Used for manual follow-up triggers from the dashboard.
@@ -177,37 +177,43 @@ class FollowUpService:
             lead_id: Lead ID
 
         Returns:
-            Cloud Task name if scheduled, None otherwise
+            Tuple of (task_name, error_message). If successful, error_message is None.
+            If failed, task_name is None and error_message describes the issue.
         """
         lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
         if not lead:
             logger.warning(f"Lead {lead_id} not found for immediate follow-up")
-            return None
+            return None, "Lead not found"
 
         if not lead.phone:
             logger.warning(f"Lead {lead_id} has no phone number")
-            return None
+            return None, "Lead has no phone number"
 
         # Check if already sent
         if lead.extra_data and lead.extra_data.get("followup_sent_at"):
             logger.info(f"Follow-up already sent for lead {lead_id}")
-            return None
+            return None, "Follow-up already sent"
 
         # Verify SMS is configured
         config = await self._get_sms_config(tenant_id)
-        if not config or not config.is_enabled:
+        if not config:
+            logger.warning(f"No SMS configuration found for tenant {tenant_id}")
+            return None, "SMS not configured. Go to Settings > SMS to configure."
+
+        if not config.is_enabled:
             logger.warning(f"SMS not enabled for tenant {tenant_id}")
-            return None
+            return None, "SMS is disabled. Enable it in Settings > SMS."
 
         if not self._has_sms_phone_number(config):
-            logger.warning(f"No SMS phone number configured for tenant {tenant_id}")
-            return None
+            provider = config.provider or "twilio"
+            logger.warning(f"No SMS phone number configured for tenant {tenant_id} (provider: {provider})")
+            return None, f"No {provider.title()} phone number assigned. Contact support to assign a number."
 
         # Build worker URL
         worker_base_url = settings.cloud_tasks_worker_url
         if not worker_base_url:
             logger.warning("cloud_tasks_worker_url not configured")
-            return None
+            return None, "Server misconfiguration: worker URL not set. Contact support."
 
         if worker_base_url.endswith("/process-sms"):
             worker_base_url = worker_base_url[:-12]
@@ -236,11 +242,11 @@ class FollowUpService:
             await self.session.commit()
 
             logger.info(f"Triggered immediate follow-up for lead {lead_id}: {task_name}")
-            return task_name
+            return task_name, None
 
         except Exception as e:
             logger.error(f"Failed to trigger immediate follow-up for lead {lead_id}: {e}", exc_info=True)
-            return None
+            return None, f"Failed to schedule task: {str(e)}"
 
     async def _get_sms_config(self, tenant_id: int) -> TenantSmsConfig | None:
         """Get tenant SMS configuration."""

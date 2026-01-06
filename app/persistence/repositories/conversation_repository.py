@@ -66,9 +66,9 @@ class ConversationRepository(BaseRepository[Conversation]):
             Conversation.tenant_id == tenant_id,
             Conversation.phone_number == phone_number,
             Conversation.channel == channel
-        ).order_by(Conversation.updated_at.desc())
+        ).order_by(Conversation.updated_at.desc()).limit(1)
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def list_by_channel(
         self, tenant_id: int, channel: str, skip: int = 0, limit: int = 100

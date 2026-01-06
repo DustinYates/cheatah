@@ -28,6 +28,11 @@ class SmsSettingsResponse(BaseModel):
     business_hours_enabled: bool
     timezone: str
     business_hours: dict | None
+    # Follow-up settings
+    followup_enabled: bool
+    followup_delay_minutes: int
+    followup_sources: list[str]
+    followup_initial_message: str | None
 
 
 class UpdateSmsSettingsRequest(BaseModel):
@@ -39,6 +44,11 @@ class UpdateSmsSettingsRequest(BaseModel):
     business_hours_enabled: bool = False
     timezone: str = "America/Chicago"
     business_hours: dict | None = None
+    # Follow-up settings
+    followup_enabled: bool = False
+    followup_delay_minutes: int = 5
+    followup_sources: list[str] = ["email", "voice_call", "sms"]
+    followup_initial_message: str | None = None
 
 
 class InitiateOutreachRequest(BaseModel):
@@ -94,17 +104,28 @@ async def get_sms_settings(
             business_hours_enabled=False,
             timezone="America/Chicago",
             business_hours=None,
+            followup_enabled=False,
+            followup_delay_minutes=5,
+            followup_sources=["email", "voice_call", "sms"],
+            followup_initial_message=None,
         )
-    
+
+    # Extract follow-up settings from config.settings JSON
+    settings_json = config.settings or {}
+
     return SmsSettingsResponse(
         is_enabled=config.is_enabled,
         phone_number=config.twilio_phone_number,  # Read-only, assigned by admin
         auto_reply_enabled=config.auto_reply_outside_hours,
         auto_reply_message=config.auto_reply_message,
-        initial_outreach_message=config.settings.get("initial_outreach_message") if config.settings else None,
+        initial_outreach_message=settings_json.get("initial_outreach_message"),
         business_hours_enabled=config.business_hours_enabled,
         timezone=config.timezone,
         business_hours=config.business_hours,
+        followup_enabled=settings_json.get("followup_enabled", False),
+        followup_delay_minutes=settings_json.get("followup_delay_minutes", 5),
+        followup_sources=settings_json.get("followup_sources", ["email", "voice_call", "sms"]),
+        followup_initial_message=settings_json.get("followup_initial_message"),
     )
 
 
@@ -126,6 +147,15 @@ async def update_sms_settings(
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
     
+    # Build settings JSON with follow-up config
+    new_settings = {
+        "initial_outreach_message": settings_data.initial_outreach_message,
+        "followup_enabled": settings_data.followup_enabled,
+        "followup_delay_minutes": settings_data.followup_delay_minutes,
+        "followup_sources": settings_data.followup_sources,
+        "followup_initial_message": settings_data.followup_initial_message,
+    }
+
     if not config:
         # Create new config (phone number will be assigned by admin later)
         config = TenantSmsConfig(
@@ -136,7 +166,7 @@ async def update_sms_settings(
             business_hours_enabled=settings_data.business_hours_enabled,
             timezone=settings_data.timezone,
             business_hours=settings_data.business_hours,
-            settings={"initial_outreach_message": settings_data.initial_outreach_message},
+            settings=new_settings,
         )
         db.add(config)
     else:
@@ -146,31 +176,38 @@ async def update_sms_settings(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot enable SMS without an assigned phone number. Contact support.",
             )
-        
+
         config.is_enabled = settings_data.is_enabled
         config.auto_reply_outside_hours = settings_data.auto_reply_enabled
         config.auto_reply_message = settings_data.auto_reply_message
         config.business_hours_enabled = settings_data.business_hours_enabled
         config.timezone = settings_data.timezone
         config.business_hours = settings_data.business_hours
-        
-        # Store initial outreach message in settings JSON
+
+        # Merge new settings with existing (preserve any other keys)
         if config.settings is None:
             config.settings = {}
-        config.settings["initial_outreach_message"] = settings_data.initial_outreach_message
-    
+        config.settings.update(new_settings)
+
     await db.commit()
     await db.refresh(config)
-    
+
+    # Extract settings for response
+    settings_json = config.settings or {}
+
     return SmsSettingsResponse(
         is_enabled=config.is_enabled,
         phone_number=config.twilio_phone_number,
         auto_reply_enabled=config.auto_reply_outside_hours,
         auto_reply_message=config.auto_reply_message,
-        initial_outreach_message=config.settings.get("initial_outreach_message") if config.settings else None,
+        initial_outreach_message=settings_json.get("initial_outreach_message"),
         business_hours_enabled=config.business_hours_enabled,
         timezone=config.timezone,
         business_hours=config.business_hours,
+        followup_enabled=settings_json.get("followup_enabled", False),
+        followup_delay_minutes=settings_json.get("followup_delay_minutes", 5),
+        followup_sources=settings_json.get("followup_sources", ["email", "voice_call", "sms"]),
+        followup_initial_message=settings_json.get("followup_initial_message"),
     )
 
 

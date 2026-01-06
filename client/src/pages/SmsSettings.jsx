@@ -14,6 +14,11 @@ export default function SmsSettings() {
     initial_outreach_message: "Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?",
     business_hours_enabled: false,
     timezone: 'America/Chicago',
+    // Follow-up settings
+    followup_enabled: false,
+    followup_delay_minutes: 5,
+    followup_sources: ['email', 'voice_call', 'sms'],
+    followup_initial_message: '',
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -27,14 +32,18 @@ export default function SmsSettings() {
 
   useEffect(() => {
     fetchSettings();
-  }, [token]);
+  }, [token, selectedTenantId]);
 
   const fetchSettings = async () => {
     setLoading(true);
     setError(null);
     try {
+      const headers = { 'Authorization': `Bearer ${token}` };
+      if (user?.is_global_admin && selectedTenantId) {
+        headers['X-Tenant-Id'] = selectedTenantId.toString();
+      }
       const response = await fetch(`${API_BASE}/sms/settings`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers,
       });
       if (response.ok) {
         const data = await response.json();
@@ -51,6 +60,10 @@ export default function SmsSettings() {
           initial_outreach_message: "Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?",
           business_hours_enabled: false,
           timezone: 'America/Chicago',
+          followup_enabled: false,
+          followup_delay_minutes: 5,
+          followup_sources: ['email', 'voice_call', 'sms'],
+          followup_initial_message: '',
         });
         setOutreachMessage("Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?");
       } else {
@@ -69,6 +82,10 @@ export default function SmsSettings() {
           initial_outreach_message: "Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?",
           business_hours_enabled: false,
           timezone: 'America/Chicago',
+          followup_enabled: false,
+          followup_delay_minutes: 5,
+          followup_sources: ['email', 'voice_call', 'sms'],
+          followup_initial_message: '',
         });
         setOutreachMessage("Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?");
       } else {
@@ -85,12 +102,16 @@ export default function SmsSettings() {
     setMessage({ type: '', text: '' });
 
     try {
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
+      if (user?.is_global_admin && selectedTenantId) {
+        headers['X-Tenant-Id'] = selectedTenantId.toString();
+      }
       const response = await fetch(`${API_BASE}/sms/settings`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           is_enabled: settings.is_enabled,
           auto_reply_enabled: settings.auto_reply_enabled,
@@ -98,6 +119,10 @@ export default function SmsSettings() {
           initial_outreach_message: settings.initial_outreach_message,
           business_hours_enabled: settings.business_hours_enabled,
           timezone: settings.timezone,
+          followup_enabled: settings.followup_enabled,
+          followup_delay_minutes: settings.followup_delay_minutes,
+          followup_sources: settings.followup_sources,
+          followup_initial_message: settings.followup_initial_message,
         }),
       });
 
@@ -126,12 +151,16 @@ export default function SmsSettings() {
     setMessage({ type: '', text: '' });
 
     try {
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
+      if (user?.is_global_admin && selectedTenantId) {
+        headers['X-Tenant-Id'] = selectedTenantId.toString();
+      }
       const response = await fetch(`${API_BASE}/sms/outreach`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           phone_number: outreachPhone,
           custom_message: outreachMessage || null,
@@ -312,6 +341,109 @@ export default function SmsSettings() {
         )}
       </div>
 
+      {/* Auto Follow-up Settings */}
+      <div className="card">
+        <h2>Auto Follow-up for New Leads</h2>
+        <p className="help-text">
+          Automatically send a follow-up text message when a new lead is captured from email forms,
+          phone calls, or other sources.
+        </p>
+
+        <label className="toggle-row">
+          <span>Enable auto follow-up</span>
+          <input
+            type="checkbox"
+            checked={settings.followup_enabled}
+            onChange={(e) => setSettings({ ...settings, followup_enabled: e.target.checked })}
+            disabled={!settings.phone_number}
+          />
+        </label>
+        {!settings.phone_number && (
+          <p className="help-text">You need an assigned phone number to enable auto follow-up.</p>
+        )}
+
+        {settings.followup_enabled && (
+          <>
+            <div className="form-group">
+              <label>Delay before sending (minutes)</label>
+              <input
+                type="number"
+                min="1"
+                max="60"
+                value={settings.followup_delay_minutes}
+                onChange={(e) => setSettings({ ...settings, followup_delay_minutes: parseInt(e.target.value) || 5 })}
+              />
+              <p className="help-text">How long to wait after capturing a lead before sending the follow-up text.</p>
+            </div>
+
+            <div className="form-group">
+              <label>Trigger follow-up for leads from:</label>
+              <div className="checkbox-group">
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={settings.followup_sources?.includes('email')}
+                    onChange={(e) => {
+                      const sources = settings.followup_sources || [];
+                      if (e.target.checked) {
+                        setSettings({ ...settings, followup_sources: [...sources, 'email'] });
+                      } else {
+                        setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'email') });
+                      }
+                    }}
+                  />
+                  Email form submissions
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={settings.followup_sources?.includes('voice_call')}
+                    onChange={(e) => {
+                      const sources = settings.followup_sources || [];
+                      if (e.target.checked) {
+                        setSettings({ ...settings, followup_sources: [...sources, 'voice_call'] });
+                      } else {
+                        setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'voice_call') });
+                      }
+                    }}
+                  />
+                  Voice calls
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={settings.followup_sources?.includes('sms')}
+                    onChange={(e) => {
+                      const sources = settings.followup_sources || [];
+                      if (e.target.checked) {
+                        setSettings({ ...settings, followup_sources: [...sources, 'sms'] });
+                      } else {
+                        setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'sms') });
+                      }
+                    }}
+                  />
+                  SMS inquiries
+                </label>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Custom follow-up message (optional)</label>
+              <textarea
+                value={settings.followup_initial_message || ''}
+                onChange={(e) => setSettings({ ...settings, followup_initial_message: e.target.value })}
+                placeholder="Leave empty for AI-generated messages. Use {name} or {first_name} for personalization."
+                rows={3}
+              />
+              <p className="help-text">
+                If empty, the AI will generate a contextual follow-up message based on the lead source.
+                You can use {'{name}'} or {'{first_name}'} placeholders.
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+
       <button className="btn btn-primary" onClick={saveSettings} disabled={saving}>
         {saving ? 'Saving...' : 'Save Settings'}
       </button>
@@ -447,6 +579,35 @@ export default function SmsSettings() {
           display: block;
           margin-bottom: 0.5rem;
           font-weight: 500;
+        }
+
+        .checkbox-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          margin-top: 0.5rem;
+        }
+
+        .checkbox-label {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          font-weight: normal;
+          cursor: pointer;
+        }
+
+        .checkbox-label input[type="checkbox"] {
+          width: 16px;
+          height: 16px;
+          cursor: pointer;
+        }
+
+        input[type="number"] {
+          width: 100px;
+          padding: 0.5rem;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          font-size: 1rem;
           color: #333;
         }
 

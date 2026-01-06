@@ -76,9 +76,15 @@ class EmailBodyParser:
         
         # Normalize line endings and split into lines
         body_lines = email_body.replace('\r\n', '\n').replace('\r', '\n').split('\n')
-        
+
+        # Debug: print first few lines of email body
+        print(f"[EMAIL_BODY_PARSER] Total lines: {len(body_lines)}", flush=True)
+        for idx, line in enumerate(body_lines[:15]):
+            print(f"[EMAIL_BODY_PARSER] Line {idx}: {repr(line)}", flush=True)
+
         # Parse key-value pairs
         parsed_data = self._parse_key_value_pairs(body_lines)
+        print(f"[EMAIL_BODY_PARSER] parsed_data: {parsed_data}", flush=True)
 
         # Log parsed data for debugging
         logger.debug(f"Email body parser - parsed_data keys: {list(parsed_data.keys())}")
@@ -147,9 +153,12 @@ class EmailBodyParser:
 
         # Add newlines after block-level HTML elements to preserve structure
         # This is critical for parsing HTML tables from form submissions
-        block_tags = ['</tr>', '</td>', '</th>', '</div>', '</p>', '</li>', '<br>', '<br/>', '<br />']
+        block_tags = ['</tr>', '</td>', '</th>', '</div>', '</p>', '</li>', '</blockquote>', '<br>', '<br/>', '<br />']
         for tag in block_tags:
             text = re.sub(re.escape(tag), tag + '\n', text, flags=re.IGNORECASE)
+
+        # Remove blockquote tags but keep content (content was already newline-separated above)
+        text = re.sub(r'</?blockquote[^>]*>', '', text, flags=re.IGNORECASE)
 
         # Now remove actual HTML tags
         text = re.sub(r'<[^>]+>', '', text)
@@ -200,9 +209,17 @@ class EmailBodyParser:
             if not line:
                 i += 1
                 continue
-            
+
             # Clean line: replace non-breaking spaces with regular spaces
             line = line.replace('\xa0', ' ').replace('&nbsp;', ' ')
+
+            # Strip common email quote markers (>, |, etc.) from the beginning
+            # These appear when text is in a blockquote or quoted reply section
+            original_line = line
+            while line and line[0] in '>|':
+                line = line[1:].strip()
+            if line != original_line:
+                logger.debug(f"Stripped quote markers: '{original_line}' -> '{line}'")
             
             # Handle pipe-delimited table format: "| Label |" followed by "| \xa0 | Value |"
             # This format comes from HTML tables converted to text

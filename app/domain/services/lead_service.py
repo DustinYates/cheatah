@@ -1,6 +1,7 @@
 """Lead service for managing lead capture (schema + state only)."""
 
 import logging
+import re
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +11,48 @@ from app.persistence.repositories.contact_repository import ContactRepository
 from app.persistence.repositories.lead_repository import LeadRepository
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_phone_e164(phone: str | None) -> str | None:
+    """Normalize phone number to E.164 format (+1XXXXXXXXXX for US numbers).
+
+    Handles various input formats:
+    - 2817882316
+    - (281)788-2316
+    - 281-788-2316
+    - 281.788.2316
+    - +1 281 788 2316
+    - 1-281-788-2316
+
+    Args:
+        phone: Raw phone number string
+
+    Returns:
+        Phone in E.164 format (+1XXXXXXXXXX) or None if invalid
+    """
+    if not phone:
+        return None
+
+    # Remove all non-digit characters except leading +
+    digits = re.sub(r'\D', '', phone)
+
+    # Handle US numbers
+    if len(digits) == 10:
+        # 10 digits: add +1 prefix
+        return f"+1{digits}"
+    elif len(digits) == 11 and digits.startswith('1'):
+        # 11 digits starting with 1: add + prefix
+        return f"+{digits}"
+    elif len(digits) > 10 and phone.strip().startswith('+'):
+        # International format: keep as-is with + prefix
+        return f"+{digits}"
+
+    # If already in E.164 format, return as-is
+    if phone.startswith('+') and len(digits) >= 10:
+        return f"+{digits}"
+
+    logger.warning(f"Could not normalize phone number: {phone}")
+    return phone  # Return original if we can't normalize (better than losing it)
 
 
 class LeadService:
@@ -36,24 +79,29 @@ class LeadService:
             tenant_id: Tenant ID
             conversation_id: Optional conversation ID
             email: Optional email
-            phone: Optional phone
+            phone: Optional phone (will be normalized to E.164 format)
             name: Optional name
             metadata: Optional metadata dictionary (mapped to extra_data)
 
         Returns:
             Created lead
         """
+        # Normalize phone to E.164 format for SMS compatibility
+        normalized_phone = normalize_phone_e164(phone) if phone else None
+        if phone and normalized_phone != phone:
+            logger.info(f"Normalized phone from '{phone}' to '{normalized_phone}'")
+
         lead = await self.lead_repo.create(
             tenant_id,
             conversation_id=conversation_id,
             email=email,
-            phone=phone,
+            phone=normalized_phone,
             name=name,
             extra_data=metadata,  # Map metadata parameter to extra_data field
         )
 
         # Schedule SMS follow-up if conditions are met
-        if phone and metadata and metadata.get("source") in ["voice_call", "sms", "email"]:
+        if normalized_phone and metadata and metadata.get("source") in ["voice_call", "sms", "email"]:
             try:
                 from app.domain.services.followup_service import FollowUpService
                 followup_service = FollowUpService(self.session)
@@ -144,9 +192,10 @@ class LeadService:
             updated = True
             logger.info(f"Updated lead {lead_id} with email: {email}")
         if phone and not lead.phone:
-            lead.phone = phone
+            normalized_phone = normalize_phone_e164(phone)
+            lead.phone = normalized_phone
             updated = True
-            logger.info(f"Updated lead {lead_id} with phone: {phone}")
+            logger.info(f"Updated lead {lead_id} with phone: {normalized_phone}")
         # For name: update if missing, OR if force_name_update is True (explicit name introduction)
         if name and (not lead.name or force_name_update):
             if lead.name and force_name_update:

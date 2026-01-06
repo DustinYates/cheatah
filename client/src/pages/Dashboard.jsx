@@ -207,10 +207,9 @@ export default function Dashboard() {
     }
   };
 
-  // Check if a lead needs follow-up (red indicator + has phone + not already sent)
+  // Check if a lead can receive SMS follow-up (has phone + not already sent)
   const needsFollowUp = (lead) => {
-    return lead.llm_responded === false &&
-           lead.phone &&
+    return lead.phone &&
            !lead.extra_data?.followup_sent_at &&
            !lead.extra_data?.followup_scheduled;
   };

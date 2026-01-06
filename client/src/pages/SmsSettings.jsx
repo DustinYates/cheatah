@@ -25,11 +25,6 @@ export default function SmsSettings() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  // Outreach state
-  const [outreachPhone, setOutreachPhone] = useState('');
-  const [outreachMessage, setOutreachMessage] = useState('');
-  const [sendingOutreach, setSendingOutreach] = useState(false);
-
   useEffect(() => {
     fetchSettings();
   }, [token, selectedTenantId]);
@@ -48,7 +43,6 @@ export default function SmsSettings() {
       if (response.ok) {
         const data = await response.json();
         setSettings(data);
-        setOutreachMessage(data.initial_outreach_message || '');
       } else if (response.status === 404) {
         // 404 means no settings exist yet - use defaults (already set in state)
         // Don't set error, just use default values
@@ -65,7 +59,6 @@ export default function SmsSettings() {
           followup_sources: ['email', 'voice_call', 'sms'],
           followup_initial_message: '',
         });
-        setOutreachMessage("Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?");
       } else {
         const errorData = await response.json().catch(() => ({}));
         setError(errorData.detail || 'Failed to load SMS settings');
@@ -87,7 +80,6 @@ export default function SmsSettings() {
           followup_sources: ['email', 'voice_call', 'sms'],
           followup_initial_message: '',
         });
-        setOutreachMessage("Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?");
       } else {
         console.error('Error fetching SMS settings:', error);
         setError(error.message || 'Failed to load SMS settings');
@@ -141,46 +133,6 @@ export default function SmsSettings() {
     }
   };
 
-  const sendOutreach = async () => {
-    if (!outreachPhone.trim()) {
-      setMessage({ type: 'error', text: 'Please enter a phone number' });
-      return;
-    }
-
-    setSendingOutreach(true);
-    setMessage({ type: '', text: '' });
-
-    try {
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      };
-      if (user?.is_global_admin && selectedTenantId) {
-        headers['X-Tenant-Id'] = selectedTenantId.toString();
-      }
-      const response = await fetch(`${API_BASE}/sms/outreach`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          phone_number: outreachPhone,
-          custom_message: outreachMessage || null,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setMessage({ type: 'success', text: `SMS sent successfully! Message ID: ${data.message_sid}` });
-        setOutreachPhone('');
-      } else {
-        setMessage({ type: 'error', text: data.error || 'Failed to send SMS' });
-      }
-    } catch {
-      setMessage({ type: 'error', text: 'Network error. Please try again.' });
-    } finally {
-      setSendingOutreach(false);
-    }
-  };
 
   // Check if global admin without tenant selected
   const needsTenant = user?.is_global_admin && !selectedTenantId;
@@ -447,44 +399,6 @@ export default function SmsSettings() {
       <button className="btn btn-primary" onClick={saveSettings} disabled={saving}>
         {saving ? 'Saving...' : 'Save Settings'}
       </button>
-
-      {/* Manual Outreach Section */}
-      {settings.is_enabled && settings.phone_number && (
-        <div className="card" style={{ marginTop: '2rem' }}>
-          <h2>Send AI Follow-up</h2>
-          <p className="help-text">
-            Send an initial message to a customer. When they reply, the AI will handle the conversation.
-          </p>
-
-          <div className="form-group">
-            <label>Customer Phone Number</label>
-            <input
-              type="tel"
-              value={outreachPhone}
-              onChange={(e) => setOutreachPhone(e.target.value)}
-              placeholder="+1 (555) 123-4567"
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Message (optional - uses default if empty)</label>
-            <textarea
-              value={outreachMessage}
-              onChange={(e) => setOutreachMessage(e.target.value)}
-              placeholder={settings.initial_outreach_message || "Hi! Thanks for reaching out..."}
-              rows={3}
-            />
-          </div>
-
-          <button
-            className="btn btn-secondary"
-            onClick={sendOutreach}
-            disabled={sendingOutreach || !outreachPhone.trim()}
-          >
-            {sendingOutreach ? 'Sending...' : 'Send SMS'}
-          </button>
-        </div>
-      )}
 
       <style>{`
         .page-container {

@@ -125,12 +125,13 @@ async def sms_status_callback(
     """
     try:
         # Update message metadata with delivery status
-        from sqlalchemy import select
+        from sqlalchemy import select, cast, String
         from app.persistence.models.conversation import Message
-        
+
         # Find message by Twilio SID in metadata
+        # Use cast() instead of .astext for generic JSON columns
         stmt = select(Message).where(
-            Message.message_metadata["twilio_message_sid"].astext == MessageSid
+            cast(Message.message_metadata["twilio_message_sid"], String) == MessageSid
         )
         result = await db.execute(stmt)
         message = result.scalar_one_or_none()

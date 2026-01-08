@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.prompt_service import PromptService
@@ -389,8 +389,9 @@ async def _handle_telnyx_delivery_status(
     status = status_map.get(event_type, event_type)
 
     # Find message by Telnyx message ID in metadata
+    # Use cast() instead of .astext for generic JSON columns
     stmt = select(Message).where(
-        Message.message_metadata["telnyx_message_id"].astext == message_id
+        cast(Message.message_metadata["telnyx_message_id"], String) == message_id
     )
     result = await db.execute(stmt)
     message = result.scalar_one_or_none()

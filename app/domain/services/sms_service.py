@@ -13,6 +13,7 @@ from app.domain.services.chat_service import ChatService
 from app.domain.services.compliance_handler import ComplianceHandler, ComplianceResult
 from app.domain.services.escalation_service import EscalationService
 from app.domain.services.intent_detector import IntentDetector
+from app.domain.services.opt_in_service import OptInService
 from app.domain.services.prompt_service import PromptService
 from app.infrastructure.telephony.factory import TelephonyProviderFactory
 from app.persistence.models.conversation import Conversation, Message
@@ -86,9 +87,44 @@ class SmsService:
             return SmsResult(
                 response_message="SMS service is not enabled for this tenant.",
             )
-        
-        # Check compliance (HELP keyword)
+
+        # Auto opt-in: When someone texts us, they're implicitly opting in
+        opt_in_service = OptInService(self.session)
+        try:
+            is_opted_in = await opt_in_service.is_opted_in(tenant_id, phone_number)
+            if not is_opted_in:
+                await opt_in_service.opt_in(tenant_id, phone_number, method="inbound_sms")
+                logger.info(f"Auto opt-in - tenant_id={tenant_id}, phone={phone_number}")
+        except Exception as e:
+            logger.warning(f"Auto opt-in failed: {e}")
+            # Continue processing even if opt-in fails
+
+        # Check compliance (STOP, HELP, START keywords)
         compliance_result = self.compliance_handler.check_compliance(message_body)
+
+        # Handle STOP keyword - opt out and return immediately
+        if compliance_result.action == "stop":
+            try:
+                await opt_in_service.opt_out(tenant_id, phone_number, method="STOP")
+                logger.info(f"Opt-out via STOP - tenant_id={tenant_id}, phone={phone_number}")
+            except Exception as e:
+                logger.warning(f"Opt-out failed: {e}")
+            return SmsResult(
+                response_message=compliance_result.response_message,
+                opt_in_status_changed=True,
+            )
+
+        # Handle START/opt-in keyword - ensure opted in and continue
+        if compliance_result.action == "opt_in":
+            try:
+                await opt_in_service.opt_in(tenant_id, phone_number, method="START")
+                logger.info(f"Opt-in via START - tenant_id={tenant_id}, phone={phone_number}")
+            except Exception as e:
+                logger.warning(f"Opt-in failed: {e}")
+            return SmsResult(
+                response_message=compliance_result.response_message,
+                opt_in_status_changed=True,
+            )
 
         # Handle HELP keyword (return immediately, no LLM)
         if compliance_result.action == "help":

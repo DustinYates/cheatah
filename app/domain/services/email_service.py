@@ -3,7 +3,7 @@
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,7 @@ from app.persistence.repositories.email_repository import (
     TenantEmailConfigRepository,
 )
 from app.persistence.repositories.tenant_repository import TenantRepository
+from app.infrastructure.pubsub import get_gmail_pubsub_topic
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,9 @@ class EmailService:
     # Email constraints
     MAX_THREAD_MESSAGES = 10  # Max messages in thread to use as context
     MAX_BODY_LENGTH = 10000  # Max email body length to process
+
+    # Watch renewal threshold - refresh if expiring within 1 day
+    WATCH_RENEWAL_THRESHOLD = timedelta(days=1)
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize Email service."""
@@ -121,19 +125,11 @@ class EmailService:
                     "We'll respond as soon as possible during our next business day."
                 )
                 
-                # Send auto-reply
-                if gmail_client:
-                    await self._send_email_response(
-                        gmail_client=gmail_client,
-                        to_email=sender_email,
-                        subject=f"Re: {subject}",
-                        body=auto_reply,
-                        thread_id=thread_id,
-                        email_config=email_config,
-                    )
-                
+                # Outbound email replies are disabled - receive only mode
+                logger.info(f"Skipping auto-reply to {sender_email} - outbound replies disabled")
+
                 return EmailResult(
-                    response_message=auto_reply,
+                    response_message="Outside business hours - no reply sent (receive-only mode)",
                     thread_id=thread_id,
                 )
         
@@ -300,21 +296,10 @@ class EmailService:
             last_response_at=datetime.utcnow(),
         )
         
-        # Send response via Gmail
+        # Outbound email replies are disabled - receive only mode
+        # Email data is captured but no reply is sent
         sent_message_id = None
-        if gmail_client:
-            try:
-                sent_result = await self._send_email_response(
-                    gmail_client=gmail_client,
-                    to_email=sender_email,
-                    subject=f"Re: {subject}",
-                    body=formatted_response,
-                    thread_id=thread_id,
-                    email_config=email_config,
-                )
-                sent_message_id = sent_result.get("id")
-            except GmailAPIError as e:
-                logger.error(f"Failed to send email response: {e}")
+        logger.info(f"Skipping email reply to {sender_email} - outbound replies disabled (receive-only mode)")
         
         return EmailResult(
             response_message=formatted_response,
@@ -363,7 +348,10 @@ class EmailService:
             access_token=email_config.gmail_access_token,
             token_expires_at=email_config.gmail_token_expires_at,
         )
-        
+
+        # Auto-refresh Gmail watch if expiring soon (prevents need for manual refresh)
+        await self._maybe_refresh_watch(email_config, gmail_client)
+
         # Get history since last sync
         start_history_id = email_config.last_history_id or history_id
         
@@ -437,6 +425,59 @@ class EmailService:
     async def _get_email_config(self, tenant_id: int) -> TenantEmailConfig | None:
         """Get tenant email configuration."""
         return await self.email_config_repo.get_by_tenant_id(tenant_id)
+
+    async def _maybe_refresh_watch(
+        self,
+        email_config: TenantEmailConfig,
+        gmail_client: GmailClient,
+    ) -> bool:
+        """Check if Gmail watch is expiring soon and refresh if needed.
+
+        Gmail watches expire after 7 days. This method automatically refreshes
+        the watch if it's within 1 day of expiring, ensuring continuous email
+        notifications without manual intervention.
+
+        Args:
+            email_config: Tenant email configuration
+            gmail_client: Authenticated Gmail client
+
+        Returns:
+            True if watch was refreshed, False otherwise
+        """
+        # Check if watch needs renewal
+        if not email_config.watch_expiration:
+            # No watch expiration set - needs refresh
+            needs_refresh = True
+        else:
+            time_until_expiry = email_config.watch_expiration - datetime.utcnow()
+            needs_refresh = time_until_expiry < self.WATCH_RENEWAL_THRESHOLD
+
+        if not needs_refresh:
+            return False
+
+        # Get Pub/Sub topic for watch
+        topic = get_gmail_pubsub_topic()
+        if not topic:
+            logger.warning(f"Cannot refresh watch for tenant {email_config.tenant_id}: no Pub/Sub topic configured")
+            return False
+
+        try:
+            logger.info(f"Auto-refreshing Gmail watch for tenant {email_config.tenant_id} (expiring soon or not set)")
+            watch_result = gmail_client.watch_mailbox(topic)
+
+            # Update watch expiration in database
+            await self.email_config_repo.update_watch_expiration(
+                tenant_id=email_config.tenant_id,
+                watch_expiration=watch_result["expiration"],
+                history_id=watch_result.get("history_id"),
+            )
+
+            logger.info(f"Gmail watch refreshed for tenant {email_config.tenant_id}, new expiration: {watch_result['expiration']}")
+            return True
+
+        except GmailAPIError as e:
+            logger.error(f"Failed to refresh Gmail watch for tenant {email_config.tenant_id}: {e}")
+            return False
 
     async def _get_or_create_email_conversation(
         self,

@@ -7,7 +7,7 @@ export default function PromptEditChat({ bundle, onClose, onUpdate }) {
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [sections, setSections] = useState(bundle.sections || []);
-  const messagesEndRef = useRef(null);
+  const lastMessageRef = useRef(null);
 
   useEffect(() => {
     // Initial message
@@ -20,7 +20,8 @@ export default function PromptEditChat({ bundle, onClose, onUpdate }) {
   }, [bundle.name]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Scroll to the start of the last message so users can read from the top
+    lastMessageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [messages]);
 
   const submitEdit = async () => {
@@ -90,7 +91,11 @@ export default function PromptEditChat({ bundle, onClose, onUpdate }) {
         {/* Chat Messages */}
         <div className="edit-messages">
           {messages.map((msg, idx) => (
-            <div key={idx} className={`edit-message ${msg.type}`}>
+            <div
+              key={idx}
+              className={`edit-message ${msg.type}`}
+              ref={idx === messages.length - 1 ? lastMessageRef : null}
+            >
               {msg.type === 'assistant' && <span className="avatar">🐆</span>}
               <div className="edit-message-content">
                 {msg.content.split('\n').map((line, i) => (
@@ -99,7 +104,7 @@ export default function PromptEditChat({ bundle, onClose, onUpdate }) {
               </div>
             </div>
           ))}
-          
+
           {loading && (
             <div className="edit-message assistant">
               <span className="avatar">🐆</span>
@@ -108,8 +113,6 @@ export default function PromptEditChat({ bundle, onClose, onUpdate }) {
               </div>
             </div>
           )}
-          
-          <div ref={messagesEndRef} />
         </div>
       </div>
 

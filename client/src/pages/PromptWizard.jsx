@@ -5,7 +5,7 @@ import './PromptWizard.css';
 
 export default function PromptWizard() {
   const navigate = useNavigate();
-  const messagesEndRef = useRef(null);
+  const lastMessageRef = useRef(null);
   
   const [messages, setMessages] = useState([]);
   const [currentStep, setCurrentStep] = useState(null);
@@ -27,9 +27,9 @@ export default function PromptWizard() {
     startInterview();
   }, []);
 
-  // Auto-scroll to bottom when messages change
+  // Scroll to the start of the last message so users can read from the top
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    lastMessageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [messages]);
 
   const startInterview = async () => {
@@ -201,9 +201,10 @@ export default function PromptWizard() {
       <div className="wizard-chat">
         <div className="messages-container">
           {messages.map((msg, idx) => (
-            <div 
-              key={idx} 
+            <div
+              key={idx}
               className={`message ${msg.type}`}
+              ref={idx === messages.length - 1 ? lastMessageRef : null}
             >
               {msg.type === 'assistant' && (
                 <div className="message-avatar">🐆</div>
@@ -213,7 +214,7 @@ export default function PromptWizard() {
               </div>
             </div>
           ))}
-          
+
           {loading && (
             <div className="message assistant">
               <div className="message-avatar">🐆</div>
@@ -222,8 +223,6 @@ export default function PromptWizard() {
               </div>
             </div>
           )}
-          
-          <div ref={messagesEndRef} />
         </div>
 
         {/* Input Area */}

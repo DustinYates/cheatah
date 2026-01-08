@@ -39,7 +39,7 @@ export default function Prompts() {
   const [publishing, setPublishing] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [deactivating, setDeactivating] = useState(null);
-  const testMessagesEndRef = useRef(null);
+  const lastTestMessageRef = useRef(null);
   
   // Toolbar state
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,9 +64,10 @@ export default function Prompts() {
     fetchBundles();
   }, []);
 
+  // Scroll to the start of the last message so users can read from the top
   useEffect(() => {
-    if (testMessagesEndRef.current) {
-      testMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (lastTestMessageRef.current) {
+      lastTestMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [testMessages, testLoading]);
 
@@ -575,6 +576,7 @@ export default function Prompts() {
                     <div
                       key={`${message.role}-${idx}`}
                       className={`test-chat__message test-chat__message--${message.role}`}
+                      ref={idx === testMessages.length - 1 ? lastTestMessageRef : null}
                     >
                       <div className="test-chat__bubble">{message.content}</div>
                     </div>
@@ -589,7 +591,6 @@ export default function Prompts() {
                     </div>
                   </div>
                 )}
-                <div ref={testMessagesEndRef} />
               </div>
               <form className="test-chat__composer" onSubmit={handleTest}>
                 <textarea

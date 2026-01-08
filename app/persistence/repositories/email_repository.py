@@ -165,13 +165,45 @@ class TenantEmailConfigRepository(BaseRepository[TenantEmailConfig]):
 
     async def get_all_enabled(self) -> list[TenantEmailConfig]:
         """Get all enabled email configs (for watch refresh).
-        
+
         Returns:
             List of enabled TenantEmailConfig
         """
         stmt = select(TenantEmailConfig).where(TenantEmailConfig.is_enabled == True)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def update_watch_expiration(
+        self,
+        tenant_id: int,
+        watch_expiration: datetime,
+        history_id: str | None = None,
+    ) -> bool:
+        """Update Gmail watch expiration for a tenant.
+
+        Args:
+            tenant_id: Tenant ID
+            watch_expiration: New watch expiration time
+            history_id: Optional new history ID
+
+        Returns:
+            True if updated successfully
+        """
+        update_data: dict[str, Any] = {
+            "watch_expiration": _to_naive_utc(watch_expiration),
+            "updated_at": datetime.utcnow(),
+        }
+        if history_id:
+            update_data["last_history_id"] = history_id
+
+        stmt = (
+            update(TenantEmailConfig)
+            .where(TenantEmailConfig.tenant_id == tenant_id)
+            .values(**update_data)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return result.rowcount > 0
 
 
 class EmailConversationRepository(BaseRepository[EmailConversation]):

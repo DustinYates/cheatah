@@ -80,16 +80,18 @@ async def process_followup_task(
         is_opted_in = await opt_in_service.is_opted_in(payload.tenant_id, payload.phone_number)
 
         if not is_opted_in:
-            # For leads from voice calls, consider implied consent
+            # For leads from voice calls or email inquiries, consider implied consent
+            # (they provided their phone number expecting to be contacted)
             source = lead.extra_data.get("source") if lead.extra_data else None
-            if source == "voice_call":
-                # Auto opt-in with consent type "implied_voice_followup"
+            if source in ("voice_call", "email"):
+                # Auto opt-in with consent type based on source
+                consent_method = f"implied_{source}_followup"
                 await opt_in_service.opt_in(
                     payload.tenant_id,
                     payload.phone_number,
-                    method="implied_voice_followup"
+                    method=consent_method
                 )
-                logger.info(f"Auto opted-in {payload.phone_number} for voice call follow-up")
+                logger.info(f"Auto opted-in {payload.phone_number} for {source} follow-up")
             else:
                 logger.info(f"Phone {payload.phone_number} not opted in, skipping follow-up")
                 return {"status": "skipped", "reason": "not_opted_in"}

@@ -66,7 +66,7 @@ This document outlines the steps required to fully configure a new tenant in Cha
 
 ### "Server misconfiguration: worker URL not set"
 - The `CLOUD_TASKS_WORKER_URL` environment variable is missing from Cloud Run
-- Run: `gcloud run services update chattercheatah --update-env-vars="CLOUD_TASKS_WORKER_URL=https://chattercheatah-iyv6z6wp7a-uc.a.run.app/workers"`
+- Run: `gcloud run services update chattercheatah --update-env-vars="CLOUD_TASKS_WORKER_URL=https://chattercheatah-900139201687.us-central1.run.app/workers/process-sms"`
 
 ### "Could not get SMS provider for tenant X"
 - Telephony credentials not configured
@@ -99,9 +99,53 @@ These are set in `scripts/deploy-cloud-run.sh`:
 | `GEMINI_API_KEY` | Google AI API key (stored as secret) |
 | `DATABASE_URL` | PostgreSQL connection string (stored as secret) |
 
-## Telnyx Webhook Configuration
+## Telnyx Setup (CRITICAL for New Tenants)
 
-If using Telnyx, configure these webhooks in Telnyx Mission Control:
+### 1. 10DLC Compliance (Required for US SMS)
 
-- SMS Inbound: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/inbound`
-- SMS Status: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/status`
+Before a Telnyx phone number can send/receive SMS in the US, it MUST be registered with a 10DLC campaign:
+
+1. Go to **Telnyx Portal** → **Messaging** → **Compliance**
+2. Create or use existing 10DLC Brand (company verification)
+3. Create a 10DLC Campaign (describe SMS use case)
+4. Assign the phone number to the campaign
+5. Wait for approval (can take 24-48 hours)
+
+**Without 10DLC registration:**
+- Outbound SMS will fail with "not 10DLC-registered" error
+- Inbound SMS won't be delivered by carriers
+
+### 2. Messaging Profile Configuration
+
+Each tenant needs a Telnyx Messaging Profile with correct webhook URLs:
+
+1. Go to **Telnyx Portal** → **Messaging** → **Messaging Profiles**
+2. Create a new profile (e.g., "Tenant Name")
+3. Configure **Inbound** tab:
+   - **Webhook URL**: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/inbound`
+4. Configure **Outbound** tab (optional, for delivery status):
+   - Status webhooks go to: `/api/v1/telnyx/sms/status`
+5. Assign phone number(s) to this messaging profile
+
+### 3. Phone Number Assignment
+
+1. Go to **Telnyx Portal** → **Numbers** → **My Numbers**
+2. Click on the phone number
+3. Assign to the correct Messaging Profile
+4. Verify 10DLC campaign shows "Assigned" status
+
+### Telnyx Webhook URLs
+
+| Webhook Type | URL |
+|-------------|-----|
+| Inbound SMS | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/inbound` |
+| SMS Status | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/status` |
+| Voice (TeXML) | Configure in Telnyx TeXML Application settings |
+
+## SMS Opt-In Behavior
+
+- **Auto opt-in**: Users are automatically opted in when they text inbound
+- **STOP keyword**: User texts "STOP" → opted out, receives unsubscribe confirmation
+- **START keyword**: User texts "START" → opted back in
+- **HELP keyword**: User receives help message with options
+- Opt-in status is tracked per phone number per tenant in `sms_opt_ins` table

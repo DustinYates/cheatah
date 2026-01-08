@@ -82,14 +82,22 @@
 }
 
 /* Chat Container */
+.wizard-body {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-xl);
+  padding: var(--spacing-lg);
+  overflow: hidden;
+}
+
 .wizard-chat {
   flex: 1;
   display: flex;
   flex-direction: column;
   max-width: 800px;
   width: 100%;
-  margin: 0 auto;
-  padding: var(--spacing-lg);
+  margin: 0;
   overflow: hidden;
 }
 
@@ -236,9 +244,158 @@
   line-height: 1;
 }
 
+/* Suggestion Hint */
+.suggestion-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  background: linear-gradient(90deg, rgba(74, 222, 128, 0.1), rgba(74, 222, 128, 0.05));
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  width: 100%;
+  flex-basis: 100%;
+}
+
+.suggestion-hint span {
+  flex: 1;
+}
+
+.use-suggestion-btn {
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--color-primary);
+  color: var(--color-text-primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.use-suggestion-btn:hover {
+  background: var(--color-primary-hover);
+}
+
+/* Scraped Data Panel */
+.scraped-data-panel {
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 var(--spacing-lg);
+}
+
+.panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  width: 100%;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.15), rgba(74, 222, 128, 0.05));
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+
+.panel-toggle:hover {
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.2), rgba(74, 222, 128, 0.1));
+  border-color: rgba(74, 222, 128, 0.5);
+}
+
+.toggle-icon {
+  font-size: var(--font-size-sm);
+  color: var(--color-primary);
+}
+
+.toggle-label {
+  flex: 1;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.toggle-hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.scraped-data-panel.expanded .panel-toggle {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-bottom: none;
+}
+
+.scraped-content {
+  padding: var(--spacing-lg);
+  background: var(--color-bg-white);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-top: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.scraped-section {
+  margin-bottom: var(--spacing-lg);
+}
+
+.scraped-section:last-of-type {
+  margin-bottom: var(--spacing-md);
+}
+
+.scraped-section h4 {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-primary);
+  margin: 0 0 var(--spacing-sm) 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.scraped-section ul {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+}
+
+.scraped-section li {
+  margin-bottom: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.scraped-section li strong {
+  color: var(--color-text-primary);
+}
+
+.scraped-section li p {
+  margin: var(--spacing-xs) 0 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.scraped-section > p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.scraped-note {
+  margin: var(--spacing-md) 0 0 0;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 /* Text Input */
 .text-input-container {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--spacing-md);
   align-items: flex-end;
 }
@@ -530,11 +687,10 @@
 
 /* Preview Panel */
 .preview-panel {
-  position: fixed;
-  right: var(--spacing-lg);
-  top: 100px;
+  flex: 0 0 280px;
+  align-self: flex-start;
   width: 280px;
-  max-height: calc(100vh - 140px);
+  max-height: calc(100vh - 180px);
   overflow-y: auto;
   background: var(--color-bg-white);
   border: 1px solid var(--color-border);
@@ -604,7 +760,7 @@
     width: 100%;
   }
   
-  .wizard-chat {
+  .wizard-body {
     padding: var(--spacing-md);
   }
   

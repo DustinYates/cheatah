@@ -22,7 +22,7 @@ Conventions:
 | `CLOUD_SQL_DATABASE_NAME` | Global | Cloud SQL database name (informational) | `app/settings.py` | Env | `chattercheatah` |
 | `JWT_SECRET_KEY` | Global | JWT signing key | `app/core/auth.py` | Secret Manager | `<redacted>` |
 | `JWT_ALGORITHM` | Global | JWT algorithm | `app/core/auth.py` | Env | `HS256` |
-| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Global | Token TTL | `app/core/auth.py` | Env | `30` |
+| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Global | Token TTL | `app/core/auth.py` | Env | `720` |
 | `ENVIRONMENT` | Global | Runtime environment | `app/settings.py` | Env | `production` |
 | `LOG_LEVEL` | Global | Logging level | `app/logging_config.py` | Env | `INFO` |
 | `API_V1_PREFIX` | Global | API prefix | `app/main.py` | Env | `/api/v1` |

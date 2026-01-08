@@ -29,6 +29,9 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
 )
 
+# Alias for background tasks that need to create their own sessions
+async_session_factory = AsyncSessionLocal
+
 # Base class for models
 Base = declarative_base()
 

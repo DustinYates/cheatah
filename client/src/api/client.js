@@ -494,6 +494,20 @@ class ApiClient {
     });
   }
 
+  async getInterviewSuggestions() {
+    return this.request('/prompts/interview/suggestions');
+  }
+
+  async getScrapeStatus() {
+    return this.request('/tenant/profile/scrape-status');
+  }
+
+  async triggerRescrape() {
+    return this.request('/tenant/profile/rescrape', {
+      method: 'POST',
+    });
+  }
+
   // Calls methods
   async getCalls(params = {}) {
     const query = new URLSearchParams(params).toString();

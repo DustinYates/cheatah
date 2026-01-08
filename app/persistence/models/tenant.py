@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 
 from app.persistence.database import Base
@@ -97,6 +97,19 @@ class TenantBusinessProfile(Base):
     profile_complete = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Scraped website data
+    scraped_services = Column(JSON, nullable=True)  # List of services/programs offered
+    scraped_hours = Column(JSON, nullable=True)  # Business hours by location
+    scraped_locations = Column(JSON, nullable=True)  # Address, phone per location
+    scraped_pricing = Column(JSON, nullable=True)  # Pricing information
+    scraped_faqs = Column(JSON, nullable=True)  # FAQ question/answer pairs
+    scraped_policies = Column(JSON, nullable=True)  # Cancellation, refund, booking policies
+    scraped_programs = Column(JSON, nullable=True)  # Class levels, curriculum details
+    scraped_unique_selling_points = Column(JSON, nullable=True)  # Key differentiators
+    scraped_target_audience = Column(Text, nullable=True)  # Age groups, skill levels
+    scraped_raw_content = Column(Text, nullable=True)  # Raw scraped text for reference
+    last_scraped_at = Column(DateTime, nullable=True)  # When scraping last occurred
 
     # Relationships
     tenant = relationship("Tenant", back_populates="business_profile")

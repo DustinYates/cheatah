@@ -6,7 +6,7 @@ import './PromptWizard.css';
 export default function PromptWizard() {
   const navigate = useNavigate();
   const lastMessageRef = useRef(null);
-  
+
   const [messages, setMessages] = useState([]);
   const [currentStep, setCurrentStep] = useState(null);
   const [questionType, setQuestionType] = useState('text');
@@ -22,10 +22,55 @@ export default function PromptWizard() {
   const [publishing, setPublishing] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
 
-  // Start the interview on mount
+  // Scraped suggestions state
+  const [suggestions, setSuggestions] = useState(null);
+  const [showSuggestionPanel, setShowSuggestionPanel] = useState(false);
+
+  // Start the interview and fetch suggestions on mount
   useEffect(() => {
     startInterview();
+    fetchSuggestions();
   }, []);
+
+  const fetchSuggestions = async () => {
+    try {
+      const data = await api.getInterviewSuggestions();
+      if (data.has_scraped_data) {
+        setSuggestions(data);
+      }
+    } catch (err) {
+      // Suggestions are optional, don't show error
+      console.log('No suggestions available:', err.message);
+    }
+  };
+
+  // Get suggestion for current step
+  const getSuggestionForStep = (step) => {
+    if (!suggestions) return null;
+
+    const stepToSuggestion = {
+      'business_name': suggestions.business_name,
+      'location': suggestions.locations?.[0]?.address,
+      'classes_list': suggestions.programs?.map(p => p.name).join('\n'),
+      'services': suggestions.services?.map(s => s.name).join('\n'),
+      'service_pitch': suggestions.unique_selling_points?.join('\n'),
+      'pricing': suggestions.pricing?.map(p => `${p.item}: ${p.price || 'Contact for pricing'}`).join('\n'),
+      'cancellation_policy': suggestions.policies?.find(p => p.policy_type === 'cancellation')?.description,
+      'refund_policy': suggestions.policies?.find(p => p.policy_type === 'refund')?.description,
+      'age_requirements': suggestions.target_audience,
+      'hours': suggestions.hours?.map(h => `${h.day}: ${h.open_time} - ${h.close_time}`).join('\n'),
+    };
+
+    return stepToSuggestion[step] || null;
+  };
+
+  // Apply suggestion to input
+  const applySuggestion = () => {
+    const suggestion = getSuggestionForStep(currentStep);
+    if (suggestion) {
+      setInputValue(suggestion);
+    }
+  };
 
   // Scroll to the start of the last message so users can read from the top
   useEffect(() => {
@@ -197,8 +242,110 @@ export default function PromptWizard() {
         </div>
       </div>
 
-      {/* Chat Container */}
-      <div className="wizard-chat">
+      {/* Scraped Data Panel */}
+      {suggestions && (
+        <div className={`scraped-data-panel ${showSuggestionPanel ? 'expanded' : 'collapsed'}`}>
+          <button
+            className="panel-toggle"
+            onClick={() => setShowSuggestionPanel(!showSuggestionPanel)}
+          >
+            <span className="toggle-icon">{showSuggestionPanel ? '▼' : '▶'}</span>
+            <span className="toggle-label">
+              ✨ We found information from your website
+            </span>
+            <span className="toggle-hint">
+              {showSuggestionPanel ? 'Click to hide' : 'Click to review'}
+            </span>
+          </button>
+
+          {showSuggestionPanel && (
+            <div className="scraped-content">
+              {suggestions.services?.length > 0 && (
+                <div className="scraped-section">
+                  <h4>Services Found</h4>
+                  <ul>
+                    {suggestions.services.map((s, i) => (
+                      <li key={i}>
+                        <strong>{s.name}</strong>
+                        {s.description && <p>{s.description}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {suggestions.programs?.length > 0 && (
+                <div className="scraped-section">
+                  <h4>Programs/Classes Found</h4>
+                  <ul>
+                    {suggestions.programs.map((p, i) => (
+                      <li key={i}>
+                        <strong>{p.name}</strong>
+                        {p.description && <p>{p.description}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {suggestions.locations?.length > 0 && (
+                <div className="scraped-section">
+                  <h4>Locations Found</h4>
+                  <ul>
+                    {suggestions.locations.map((loc, i) => (
+                      <li key={i}>
+                        {loc.name && <strong>{loc.name}</strong>}
+                        {loc.address && <span> - {loc.address}</span>}
+                        {loc.phone && <span> | {loc.phone}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {suggestions.pricing?.length > 0 && (
+                <div className="scraped-section">
+                  <h4>Pricing Found</h4>
+                  <ul>
+                    {suggestions.pricing.map((p, i) => (
+                      <li key={i}>
+                        <strong>{p.item}</strong>: {p.price || 'Contact for pricing'}
+                        {p.frequency && <span> ({p.frequency})</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {suggestions.target_audience && (
+                <div className="scraped-section">
+                  <h4>Target Audience</h4>
+                  <p>{suggestions.target_audience}</p>
+                </div>
+              )}
+
+              {suggestions.unique_selling_points?.length > 0 && (
+                <div className="scraped-section">
+                  <h4>Key Selling Points</h4>
+                  <ul>
+                    {suggestions.unique_selling_points.map((point, i) => (
+                      <li key={i}>{point}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <p className="scraped-note">
+                This information will be suggested as you answer questions below.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="wizard-body">
+        {/* Chat Container */}
+        <div className="wizard-chat">
         <div className="messages-container">
           {messages.map((msg, idx) => (
             <div
@@ -252,6 +399,18 @@ export default function PromptWizard() {
               </div>
             ) : (
               <div className="text-input-container">
+                {getSuggestionForStep(currentStep) && !inputValue && (
+                  <div className="suggestion-hint">
+                    <span>We found info from your website!</span>
+                    <button
+                      className="use-suggestion-btn"
+                      onClick={applySuggestion}
+                      type="button"
+                    >
+                      Use Suggestion
+                    </button>
+                  </div>
+                )}
                 <textarea
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
@@ -260,7 +419,7 @@ export default function PromptWizard() {
                   disabled={loading}
                   rows={3}
                 />
-                <button 
+                <button
                   className="send-button"
                   onClick={() => submitAnswer(inputValue)}
                   disabled={loading || (!inputValue.trim() && !optionalSteps.includes(currentStep))}
@@ -358,28 +517,29 @@ export default function PromptWizard() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Preview Panel (shows collected data) */}
-      {Object.keys(collectedData).filter(k => !k.startsWith('_') && !k.startsWith('has_')).length > 0 && (
-        <div className="preview-panel">
-          <h3>📋 Collected Information</h3>
-          <div className="collected-data">
-            {Object.entries(collectedData)
-              .filter(([key]) => !key.startsWith('_') && !key.startsWith('has_'))
-              .map(([key, value]) => {
-                const formattedValue = formatValue(key, value);
-                if (formattedValue === null) return null;
-                return (
-                  <div key={key} className="data-item">
-                    <span className="data-label">{formatLabel(key)}:</span>
-                    <span className="data-value">{formattedValue}</span>
-                  </div>
-                );
-              })}
-          </div>
         </div>
-      )}
+
+        {/* Preview Panel (shows collected data) */}
+        {Object.keys(collectedData).filter(k => !k.startsWith('_') && !k.startsWith('has_')).length > 0 && (
+          <div className="preview-panel">
+            <h3>📋 Collected Information</h3>
+            <div className="collected-data">
+              {Object.entries(collectedData)
+                .filter(([key]) => !key.startsWith('_') && !key.startsWith('has_'))
+                .map(([key, value]) => {
+                  const formattedValue = formatValue(key, value);
+                  if (formattedValue === null) return null;
+                  return (
+                    <div key={key} className="data-item">
+                      <span className="data-label">{formatLabel(key)}:</span>
+                      <span className="data-value">{formattedValue}</span>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

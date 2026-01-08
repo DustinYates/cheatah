@@ -51,17 +51,20 @@ class Settings(BaseSettings):
     # JWT
     jwt_secret_key: str = "dev-secret-key-change-in-production"
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 30
+    jwt_access_token_expire_minutes: int = 720
 
     # LLM (Gemini) - optional for basic functionality
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3-flash-preview"  # Using Gemini 3 Flash for faster, higher quality voice responses
+
+    # ScrapingBee API (for scraping sites with bot protection)
+    scrapingbee_api_key: str = ""
     
     # Chat guardrails
     chat_max_turns: int = 20
     chat_timeout_seconds: int = 300
     chat_follow_up_nudge_turn: int = 3
-    chat_max_tokens: int = 1500  # Max tokens for LLM chat responses
+    chat_max_tokens: int = 8000  # Max tokens for LLM chat responses
 
     # Application
     environment: str = "development"
@@ -112,4 +115,3 @@ from app.core.debug import debug_log
 # #region agent log
 debug_log("settings.py:48", "Settings initialized", {"database_url_prefix": settings.database_url[:30] + "..." if len(settings.database_url) > 30 else settings.database_url, "has_cloud_sql_conn": settings.cloud_sql_instance_connection_name is not None, "gcp_project_id": settings.gcp_project_id, "environment": settings.environment})
 # #endregion
-

@@ -42,6 +42,10 @@ export default function BusinessProfile() {
   // Telephony config state (for SMS phone number display)
   const [telephonyConfig, setTelephonyConfig] = useState(null);
 
+  // Scraping state
+  const [scraping, setScraping] = useState(false);
+  const [scrapeStatus, setScrapeStatus] = useState(null);
+
   const fetchProfile = useCallback(() => api.getBusinessProfile(), []);
   const { data: profile, loading, error, refetch } = useFetchData(fetchProfile);
 
@@ -57,9 +61,56 @@ export default function BusinessProfile() {
     }
   }, [user, selectedTenantId]);
 
+  // Fetch scrape status
+  const fetchScrapeStatus = useCallback(async () => {
+    if (user?.is_global_admin && !selectedTenantId) return;
+    try {
+      const data = await api.getScrapeStatus();
+      setScrapeStatus(data);
+    } catch (err) {
+      console.log('Scrape status not available:', err.message);
+    }
+  }, [user, selectedTenantId]);
+
+  // Trigger website rescrape
+  const handleRescrape = async () => {
+    if (!formData.website_url) {
+      setFormError('Please enter a website URL first');
+      return;
+    }
+    setScraping(true);
+    setFormError('');
+    setSuccess('');
+    try {
+      await api.triggerRescrape();
+      setSuccess('Website scraping started! This may take a minute. Refresh to see results.');
+      // Poll for completion
+      const pollInterval = setInterval(async () => {
+        const status = await api.getScrapeStatus();
+        setScrapeStatus(status);
+        if (!status.scraping_in_progress) {
+          clearInterval(pollInterval);
+          setScraping(false);
+          if (status.has_scraped_data) {
+            setSuccess('Website scraped successfully! Go to Prompts Setup to use the extracted data.');
+          }
+        }
+      }, 3000);
+      // Timeout after 2 minutes
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        setScraping(false);
+      }, 120000);
+    } catch (err) {
+      setFormError(err.message || 'Failed to start scraping');
+      setScraping(false);
+    }
+  };
+
   useEffect(() => {
     fetchTelephonyConfig();
-  }, [fetchTelephonyConfig]);
+    fetchScrapeStatus();
+  }, [fetchTelephonyConfig, fetchScrapeStatus]);
 
   // Check if global admin without tenant selected
   const needsTenant = user?.is_global_admin && !selectedTenantId;
@@ -159,14 +210,41 @@ export default function BusinessProfile() {
 
         <div className="form-group">
           <label htmlFor="website_url">Website URL</label>
-          <input
-            type="url"
-            id="website_url"
-            name="website_url"
-            value={formData.website_url}
-            onChange={handleChange}
-            placeholder="https://yourwebsite.com"
-          />
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <input
+              type="url"
+              id="website_url"
+              name="website_url"
+              value={formData.website_url}
+              onChange={handleChange}
+              placeholder="https://yourwebsite.com"
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              onClick={handleRescrape}
+              disabled={scraping || !formData.website_url}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: scraping ? '#ccc' : '#4CAF50',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: scraping ? 'not-allowed' : 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {scraping ? 'Scraping...' : 'Scrape Website'}
+            </button>
+          </div>
+          <small>
+            Click "Scrape Website" to extract business info for the Prompt Wizard.
+            {scrapeStatus?.has_scraped_data && (
+              <span style={{ color: 'green', marginLeft: '8px' }}>
+                Last scraped: {new Date(scrapeStatus.last_scraped_at).toLocaleString()}
+              </span>
+            )}
+          </small>
         </div>
 
         <div className="form-group">

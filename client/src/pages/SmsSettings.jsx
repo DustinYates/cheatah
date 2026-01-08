@@ -4,6 +4,16 @@ import { LoadingState, ErrorState, EmptyState } from '../components/ui';
 
 const API_BASE = '/api/v1';
 
+const defaultBusinessHours = {
+  monday: { start: '09:00', end: '17:00' },
+  tuesday: { start: '09:00', end: '17:00' },
+  wednesday: { start: '09:00', end: '17:00' },
+  thursday: { start: '09:00', end: '17:00' },
+  friday: { start: '09:00', end: '17:00' },
+  saturday: { start: '', end: '' },
+  sunday: { start: '', end: '' },
+};
+
 export default function SmsSettings() {
   const { token, user, selectedTenantId } = useAuth();
   const [settings, setSettings] = useState({
@@ -14,6 +24,7 @@ export default function SmsSettings() {
     initial_outreach_message: "Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?",
     business_hours_enabled: false,
     timezone: 'America/Chicago',
+    business_hours: defaultBusinessHours,
     // Follow-up settings
     followup_enabled: false,
     followup_delay_minutes: 5,
@@ -42,7 +53,10 @@ export default function SmsSettings() {
       });
       if (response.ok) {
         const data = await response.json();
-        setSettings(data);
+        setSettings({
+          ...data,
+          business_hours: data.business_hours || defaultBusinessHours,
+        });
       } else if (response.status === 404) {
         // 404 means no settings exist yet - use defaults (already set in state)
         // Don't set error, just use default values
@@ -54,6 +68,7 @@ export default function SmsSettings() {
           initial_outreach_message: "Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?",
           business_hours_enabled: false,
           timezone: 'America/Chicago',
+          business_hours: defaultBusinessHours,
           followup_enabled: false,
           followup_delay_minutes: 5,
           followup_sources: ['email', 'voice_call', 'sms'],
@@ -75,6 +90,7 @@ export default function SmsSettings() {
           initial_outreach_message: "Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?",
           business_hours_enabled: false,
           timezone: 'America/Chicago',
+          business_hours: defaultBusinessHours,
           followup_enabled: false,
           followup_delay_minutes: 5,
           followup_sources: ['email', 'voice_call', 'sms'],
@@ -111,6 +127,7 @@ export default function SmsSettings() {
           initial_outreach_message: settings.initial_outreach_message,
           business_hours_enabled: settings.business_hours_enabled,
           timezone: settings.timezone,
+          business_hours: settings.business_hours,
           followup_enabled: settings.followup_enabled,
           followup_delay_minutes: settings.followup_delay_minutes,
           followup_sources: settings.followup_sources,
@@ -120,7 +137,10 @@ export default function SmsSettings() {
 
       if (response.ok) {
         const data = await response.json();
-        setSettings(data);
+        setSettings({
+          ...data,
+          business_hours: data.business_hours || defaultBusinessHours,
+        });
         setMessage({ type: 'success', text: 'Settings saved successfully!' });
       } else {
         const errorData = await response.json();
@@ -181,6 +201,29 @@ export default function SmsSettings() {
     }
     // If it was a "Not Found", continue to render the form with defaults
   }
+
+  const updateBusinessHours = (day, field, value) => {
+    setSettings((prev) => ({
+      ...prev,
+      business_hours: {
+        ...prev.business_hours,
+        [day]: {
+          ...prev.business_hours?.[day],
+          [field]: value,
+        },
+      },
+    }));
+  };
+
+  const dayLabels = [
+    { key: 'monday', label: 'Monday' },
+    { key: 'tuesday', label: 'Tuesday' },
+    { key: 'wednesday', label: 'Wednesday' },
+    { key: 'thursday', label: 'Thursday' },
+    { key: 'friday', label: 'Friday' },
+    { key: 'saturday', label: 'Saturday' },
+    { key: 'sunday', label: 'Sunday' },
+  ];
 
   return (
     <div className="page-container">
@@ -245,6 +288,9 @@ export default function SmsSettings() {
       {/* Auto-Reply Settings */}
       <div className="card">
         <h2>Auto-Reply (Outside Business Hours)</h2>
+        <p className="help-text">
+          The AI will respond during the hours you set below. Outside those hours, you can send an auto-reply message.
+        </p>
         <label className="toggle-row">
           <span>Enable business hours</span>
           <input
@@ -267,6 +313,36 @@ export default function SmsSettings() {
                 <option value="America/Denver">Mountain Time</option>
                 <option value="America/Los_Angeles">Pacific Time</option>
               </select>
+            </div>
+
+            <div className="form-group">
+              <label>Business hours</label>
+              <div className="hours-grid">
+                {dayLabels.map((day) => {
+                  const range = settings.business_hours?.[day.key] || { start: '', end: '' };
+                  return (
+                    <div key={day.key} className="hours-row">
+                      <div className="hours-day">{day.label}</div>
+                      <div className="hours-time">
+                        <input
+                          type="time"
+                          value={range.start || ''}
+                          onChange={(e) => updateBusinessHours(day.key, 'start', e.target.value)}
+                          aria-label={`${day.label} start time`}
+                        />
+                        <span className="hours-sep">to</span>
+                        <input
+                          type="time"
+                          value={range.end || ''}
+                          onChange={(e) => updateBusinessHours(day.key, 'end', e.target.value)}
+                          aria-label={`${day.label} end time`}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="help-text">Leave a day blank to mark it as closed.</p>
             </div>
 
             <label className="toggle-row">
@@ -514,6 +590,40 @@ export default function SmsSettings() {
           width: 16px;
           height: 16px;
           cursor: pointer;
+        }
+
+        .hours-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          margin-top: 0.5rem;
+        }
+
+        .hours-row {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          flex-wrap: wrap;
+        }
+
+        .hours-day {
+          width: 110px;
+          font-weight: 500;
+        }
+
+        .hours-time {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        .hours-time input[type="time"] {
+          padding: 0.4rem 0.5rem;
+        }
+
+        .hours-sep {
+          color: #666;
+          font-size: 0.9rem;
         }
 
         input[type="number"] {

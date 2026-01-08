@@ -1,7 +1,7 @@
 """Prompt interview routes for conversational prompt building."""
 
 import re
-from typing import Annotated
+from typing import Annotated, Any
 from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,11 +11,62 @@ from app.api.deps import require_tenant_admin
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 from app.persistence.models.prompt import PromptBundle, PromptSection, PromptStatus
+from app.persistence.repositories.business_profile_repository import BusinessProfileRepository
 from app.persistence.repositories.prompt_repository import PromptRepository
 from app.llm.gemini_client import GeminiClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
+
+
+class InterviewSuggestionsResponse(BaseModel):
+    """Response containing scraped data suggestions for interview pre-fill."""
+
+    business_name: str | None = None
+    services: list[dict[str, Any]] | None = None
+    programs: list[dict[str, Any]] | None = None
+    locations: list[dict[str, Any]] | None = None
+    hours: list[dict[str, Any]] | None = None
+    pricing: list[dict[str, Any]] | None = None
+    faqs: list[dict[str, Any]] | None = None
+    policies: list[dict[str, Any]] | None = None
+    target_audience: str | None = None
+    unique_selling_points: list[str] | None = None
+    last_scraped_at: str | None = None
+    has_scraped_data: bool = False
+
+
+@router.get("/interview/suggestions", response_model=InterviewSuggestionsResponse)
+async def get_interview_suggestions(
+    admin_data: Annotated[tuple[User, int], Depends(require_tenant_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> InterviewSuggestionsResponse:
+    """Get scraped website data to pre-fill the interview.
+
+    Returns business information extracted from the tenant's website
+    that can be used to pre-populate interview answers.
+    """
+    current_user, tenant_id = admin_data
+    profile_repo = BusinessProfileRepository(db)
+    suggestions = await profile_repo.get_scraped_suggestions(tenant_id)
+
+    if not suggestions:
+        return InterviewSuggestionsResponse(has_scraped_data=False)
+
+    return InterviewSuggestionsResponse(
+        business_name=suggestions.get("business_name"),
+        services=suggestions.get("services"),
+        programs=suggestions.get("programs"),
+        locations=suggestions.get("locations"),
+        hours=suggestions.get("hours"),
+        pricing=suggestions.get("pricing"),
+        faqs=suggestions.get("faqs"),
+        policies=suggestions.get("policies"),
+        target_audience=suggestions.get("target_audience"),
+        unique_selling_points=suggestions.get("unique_selling_points"),
+        last_scraped_at=suggestions.get("last_scraped_at"),
+        has_scraped_data=suggestions.get("has_scraped_data", False),
+    )
 
 
 class ToneChoice(str, Enum):
@@ -151,7 +202,8 @@ Examples by age group:
 Example class levels:
 • Tadpole, Swimboree, Seahorse, Starfish, Minnow
 • Turtle 1, Turtle 2, Shark 1, Shark 2
-• Young Adult Level 1/2/3, Adult Level 1/2/3
+• Young Adult 1, Young Adult 2, Young Adult 3
+• Adult Level 1, Adult Level 2, Adult Level 3
 
 Specialty programs:
 • Private Lessons
@@ -468,6 +520,26 @@ async def start_interview(
     )
 
 
+def _expand_class_levels(class_name: str) -> list[str]:
+    match = re.match(
+        r"^(?P<prefix>.+?)\s*(?P<level_label>Level\s*)?(?P<levels>\d+(?:\s*/\s*\d+)+)$",
+        class_name,
+        re.IGNORECASE,
+    )
+    if not match:
+        return [class_name]
+
+    prefix = match.group("prefix").strip()
+    level_label = match.group("level_label") or ""
+    levels = re.split(r"\s*/\s*", match.group("levels"))
+
+    if prefix.lower().endswith("young adult"):
+        level_label = ""
+
+    return [f"{prefix} {level_label}{level}".strip() for level in levels]
+
+
+
 def get_next_step_and_question(
     current_step: InterviewStep,
     answer: str,
@@ -512,10 +584,11 @@ def get_next_step_and_question(
                 # Split by comma only if the parts look like separate class names
                 if ',' in line:
                     parts = [p.strip() for p in line.split(',')]
-                    # Add each part as a separate class
-                    parsed_classes.extend([p for p in parts if p])
+                    for part in parts:
+                        if part:
+                            parsed_classes.extend(_expand_class_levels(part))
                 else:
-                    parsed_classes.append(line)
+                    parsed_classes.extend(_expand_class_levels(line))
 
         # Store the pending classes queue
         if parsed_classes:

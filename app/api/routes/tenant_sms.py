@@ -115,7 +115,7 @@ async def get_sms_settings(
 
     return SmsSettingsResponse(
         is_enabled=config.is_enabled,
-        phone_number=config.twilio_phone_number,  # Read-only, assigned by admin
+        phone_number=config.twilio_phone_number or config.telnyx_phone_number,  # Read-only, assigned by admin
         auto_reply_enabled=config.auto_reply_outside_hours,
         auto_reply_message=config.auto_reply_message,
         initial_outreach_message=settings_json.get("initial_outreach_message"),
@@ -171,7 +171,7 @@ async def update_sms_settings(
         db.add(config)
     else:
         # Update existing - only allow enabling if phone number is assigned
-        if settings_data.is_enabled and not config.twilio_phone_number:
+        if settings_data.is_enabled and not (config.twilio_phone_number or config.telnyx_phone_number):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot enable SMS without an assigned phone number. Contact support.",
@@ -185,9 +185,8 @@ async def update_sms_settings(
         config.business_hours = settings_data.business_hours
 
         # Merge new settings with existing (preserve any other keys)
-        if config.settings is None:
-            config.settings = {}
-        config.settings.update(new_settings)
+        existing_settings = config.settings or {}
+        config.settings = {**existing_settings, **new_settings}
 
     await db.commit()
     await db.refresh(config)
@@ -197,7 +196,7 @@ async def update_sms_settings(
 
     return SmsSettingsResponse(
         is_enabled=config.is_enabled,
-        phone_number=config.twilio_phone_number,
+        phone_number=config.twilio_phone_number or config.telnyx_phone_number,
         auto_reply_enabled=config.auto_reply_outside_hours,
         auto_reply_message=config.auto_reply_message,
         initial_outreach_message=settings_json.get("initial_outreach_message"),

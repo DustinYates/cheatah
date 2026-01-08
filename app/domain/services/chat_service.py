@@ -772,11 +772,17 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
         if trimmed.endswith((".", "!", "?")):
             return False
 
+        if trimmed.endswith((",", ":", ";", "-")):
+            return True
+
         match = re.search(r"([A-Za-z]+)$", trimmed)
         if not match:
             return False
 
         dangling_words = {
+            "a",
+            "an",
+            "the",
             "and",
             "or",
             "but",
@@ -787,8 +793,32 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             "to",
             "of",
             "in",
+            "per",
+            "each",
+            "every",
+            "about",
+            "around",
+            "between",
+            "during",
+            "before",
+            "after",
+            "into",
+            "over",
+            "under",
+            "until",
+            "at",
+            "on",
+            "from",
+            "by",
+            "as",
         }
-        return match.group(1).lower() in dangling_words
+        if match.group(1).lower() in dangling_words:
+            return True
+
+        if len(trimmed) >= 80 and re.search(r"[a-z]$", trimmed):
+            return True
+
+        return False
 
     async def _complete_response(self, response: str) -> str:
         """Ask the LLM to finish a cut-off response in a short continuation."""

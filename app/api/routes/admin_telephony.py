@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_tenant_admin
+from app.api.deps import require_global_admin, require_tenant_context
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
@@ -103,7 +103,8 @@ class ValidateCredentialsResponse(BaseModel):
 
 @router.get("/config", response_model=TelephonyConfigResponse)
 async def get_telephony_config(
-    admin_data: Annotated[tuple[User, int], Depends(require_tenant_admin)],
+    _current_user: Annotated[User, Depends(require_global_admin)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TelephonyConfigResponse:
     """Get telephony configuration for tenant.
@@ -115,8 +116,6 @@ async def get_telephony_config(
     Returns:
         Telephony configuration
     """
-    current_user, tenant_id = admin_data
-
     stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
@@ -140,7 +139,8 @@ async def get_telephony_config(
 @router.post("/config", response_model=TelephonyConfigResponse)
 async def create_or_update_telephony_config(
     config_data: TelephonyConfigRequest,
-    admin_data: Annotated[tuple[User, int], Depends(require_tenant_admin)],
+    _current_user: Annotated[User, Depends(require_global_admin)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TelephonyConfigResponse:
     """Create or update telephony configuration for tenant.
@@ -156,8 +156,6 @@ async def create_or_update_telephony_config(
     Returns:
         Updated telephony configuration
     """
-    current_user, tenant_id = admin_data
-
     # Validate provider-specific credentials
     if config_data.provider == TelephonyProvider.TELNYX:
         if config_data.sms_enabled and not config_data.telnyx_api_key:
@@ -251,7 +249,8 @@ async def create_or_update_telephony_config(
 @router.post("/validate-credentials", response_model=ValidateCredentialsResponse)
 async def validate_telephony_credentials(
     credentials: ValidateCredentialsRequest,
-    admin_data: Annotated[tuple[User, int], Depends(require_tenant_admin)],
+    _current_user: Annotated[User, Depends(require_global_admin)],
+    _tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> ValidateCredentialsResponse:
     """Validate telephony credentials without saving.
 

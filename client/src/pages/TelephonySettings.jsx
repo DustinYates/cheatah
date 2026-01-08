@@ -55,10 +55,14 @@ export default function TelephonySettings() {
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const isGlobalAdmin = user?.is_global_admin;
 
   useEffect(() => {
+    if (!isGlobalAdmin || !selectedTenantId) {
+      return;
+    }
     fetchConfig();
-  }, [selectedTenantId]);
+  }, [selectedTenantId, isGlobalAdmin]);
 
   const fetchConfig = async () => {
     setLoading(true);
@@ -173,7 +177,19 @@ export default function TelephonySettings() {
   };
 
   // Check if global admin without tenant selected
-  const needsTenant = user?.is_global_admin && !selectedTenantId;
+  const needsTenant = isGlobalAdmin && !selectedTenantId;
+
+  if (user && !isGlobalAdmin) {
+    return (
+      <div className="page-container">
+        <EmptyState
+          icon="🔒"
+          title="Admin access required"
+          description="Telephony credentials are only accessible to global admins."
+        />
+      </div>
+    );
+  }
 
   if (needsTenant) {
     return (

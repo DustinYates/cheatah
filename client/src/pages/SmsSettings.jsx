@@ -299,73 +299,70 @@ export default function SmsSettings() {
             onChange={(e) => setSettings({ ...settings, business_hours_enabled: e.target.checked })}
           />
         </label>
+        <p className="help-text">Set hours below even if disabled; enable to enforce them.</p>
 
-        {settings.business_hours_enabled && (
-          <>
-            <div className="form-group">
-              <label>Timezone</label>
-              <select
-                value={settings.timezone}
-                onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
-              >
-                <option value="America/New_York">Eastern Time</option>
-                <option value="America/Chicago">Central Time</option>
-                <option value="America/Denver">Mountain Time</option>
-                <option value="America/Los_Angeles">Pacific Time</option>
-              </select>
-            </div>
+        <div className="form-group">
+          <label>Timezone</label>
+          <select
+            value={settings.timezone}
+            onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
+          >
+            <option value="America/New_York">Eastern Time</option>
+            <option value="America/Chicago">Central Time</option>
+            <option value="America/Denver">Mountain Time</option>
+            <option value="America/Los_Angeles">Pacific Time</option>
+          </select>
+        </div>
 
-            <div className="form-group">
-              <label>Business hours</label>
-              <div className="hours-grid">
-                {dayLabels.map((day) => {
-                  const range = settings.business_hours?.[day.key] || { start: '', end: '' };
-                  return (
-                    <div key={day.key} className="hours-row">
-                      <div className="hours-day">{day.label}</div>
-                      <div className="hours-time">
-                        <input
-                          type="time"
-                          value={range.start || ''}
-                          onChange={(e) => updateBusinessHours(day.key, 'start', e.target.value)}
-                          aria-label={`${day.label} start time`}
-                        />
-                        <span className="hours-sep">to</span>
-                        <input
-                          type="time"
-                          value={range.end || ''}
-                          onChange={(e) => updateBusinessHours(day.key, 'end', e.target.value)}
-                          aria-label={`${day.label} end time`}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="help-text">Leave a day blank to mark it as closed.</p>
-            </div>
+        <div className="form-group">
+          <label>Business hours</label>
+          <div className="hours-grid">
+            {dayLabels.map((day) => {
+              const range = settings.business_hours?.[day.key] || { start: '', end: '' };
+              return (
+                <div key={day.key} className="hours-row">
+                  <div className="hours-day">{day.label}</div>
+                  <div className="hours-time">
+                    <input
+                      type="time"
+                      value={range.start || ''}
+                      onChange={(e) => updateBusinessHours(day.key, 'start', e.target.value)}
+                      aria-label={`${day.label} start time`}
+                    />
+                    <span className="hours-sep">to</span>
+                    <input
+                      type="time"
+                      value={range.end || ''}
+                      onChange={(e) => updateBusinessHours(day.key, 'end', e.target.value)}
+                      aria-label={`${day.label} end time`}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="help-text">Leave a day blank to mark it as closed.</p>
+        </div>
 
-            <label className="toggle-row">
-              <span>Send auto-reply outside hours</span>
-              <input
-                type="checkbox"
-                checked={settings.auto_reply_enabled}
-                onChange={(e) => setSettings({ ...settings, auto_reply_enabled: e.target.checked })}
-              />
-            </label>
+        <label className="toggle-row">
+          <span>Send auto-reply outside hours</span>
+          <input
+            type="checkbox"
+            checked={settings.auto_reply_enabled}
+            onChange={(e) => setSettings({ ...settings, auto_reply_enabled: e.target.checked })}
+          />
+        </label>
 
-            {settings.auto_reply_enabled && (
-              <div className="form-group">
-                <label>Auto-reply message</label>
-                <textarea
-                  value={settings.auto_reply_message || ''}
-                  onChange={(e) => setSettings({ ...settings, auto_reply_message: e.target.value })}
-                  placeholder="We're currently outside business hours. We'll respond as soon as we're back!"
-                  rows={2}
-                />
-              </div>
-            )}
-          </>
+        {settings.auto_reply_enabled && (
+          <div className="form-group">
+            <label>Auto-reply message</label>
+            <textarea
+              value={settings.auto_reply_message || ''}
+              onChange={(e) => setSettings({ ...settings, auto_reply_message: e.target.value })}
+              placeholder="We're currently outside business hours. We'll respond as soon as we're back!"
+              rows={2}
+            />
+          </div>
         )}
       </div>
 

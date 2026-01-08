@@ -15,6 +15,7 @@ import Onboarding from './pages/Onboarding';
 import BusinessProfile from './pages/BusinessProfile';
 import WidgetSettings from './pages/WidgetSettings';
 import SmsSettings from './pages/SmsSettings';
+import TelephonySettings from './pages/TelephonySettings';
 import EmailSettings from './pages/EmailSettings';
 import ManageTenants from './pages/ManageTenants';
 import PromptWizard from './pages/PromptWizard';
@@ -54,6 +55,8 @@ function App() {
             <Route path="settings/prompts/wizard" element={<PromptWizard />} />
             <Route path="settings/widget" element={<WidgetSettings />} />
             <Route path="settings/email" element={<EmailSettings />} />
+            <Route path="settings/telephony" element={<TelephonySettings />} />
+            <Route path="telephony-settings" element={<Navigate to="/settings/telephony" replace />} />
             <Route path="settings/profile" element={<BusinessProfile />} />
 
             {/* Redirects for backward compatibility */}

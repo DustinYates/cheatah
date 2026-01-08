@@ -117,6 +117,9 @@ export default function Layout() {
                   <NavLink to="/settings/email">Email Setup</NavLink>
                 </li>
                 <li>
+                  <NavLink to="/settings/telephony">Telephony</NavLink>
+                </li>
+                <li>
                   <NavLink to="/settings/profile">Business Profile</NavLink>
                 </li>
               </ul>

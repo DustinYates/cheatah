@@ -65,6 +65,7 @@ DEPLOY_CMD="gcloud run deploy ${SERVICE_NAME} \
   --set-env-vars=GEMINI_MODEL=gemini-3-flash-preview \
   --set-env-vars=REDIS_ENABLED=false \
   --set-env-vars=TWILIO_WEBHOOK_URL_BASE=https://${SERVICE_NAME}-900139201687.${REGION}.run.app \
+  --set-env-vars=CLOUD_TASKS_WORKER_URL=https://${SERVICE_NAME}-iyv6z6wp7a-uc.a.run.app/workers \
   --set-secrets=JWT_SECRET_KEY=jwt-secret:latest \
   --set-secrets=GEMINI_API_KEY=gemini-api-key:latest \
   --set-secrets=GMAIL_CLIENT_ID=gmail-client-id:latest \

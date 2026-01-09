@@ -9,7 +9,7 @@ export default function Layout() {
   const location = useLocation();
   const [analyticsOpen, setAnalyticsOpen] = useState(location.pathname.startsWith('/analytics'));
   const [communicationsOpen, setCommunicationsOpen] = useState(
-    location.pathname.startsWith('/calls') || location.pathname.startsWith('/sms')
+    location.pathname.startsWith('/calls')
   );
   const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/settings'));
 
@@ -72,9 +72,6 @@ export default function Layout() {
                 <li>
                   <NavLink to="/calls">Calls</NavLink>
                 </li>
-                <li>
-                  <NavLink to="/sms">SMS</NavLink>
-                </li>
               </ul>
             )}
           </li>
@@ -115,6 +112,9 @@ export default function Layout() {
                 </li>
                 <li>
                   <NavLink to="/settings/email">Email Setup</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/settings/sms">SMS Settings</NavLink>
                 </li>
                 {user?.is_global_admin && (
                   <li>

@@ -72,6 +72,66 @@
   border-bottom: none;
 }
 
+.calls-card {
+  grid-column: 1 / -1;
+}
+
+.calls-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.calls-link {
+  font-size: var(--font-size-sm);
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.calls-link:hover {
+  text-decoration: underline;
+}
+
+.calls-table-container {
+  overflow-x: auto;
+}
+
+.calls-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+}
+
+.calls-table th,
+.calls-table td {
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.calls-table th {
+  font-weight: 500;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.calls-table td {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.calls-table tbody tr:hover {
+  background: var(--color-bg-light);
+}
+
+.calls-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* Processed rows (verified or unknown) */
 .leads-table tbody tr.processed {
   opacity: 0.6;
@@ -184,6 +244,30 @@
 .status-badge.unknown {
   background: #fff3e0;
   color: #f57c00;
+}
+
+.status-badge.status-completed {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+
+.status-badge.status-busy,
+.status-badge.status-no-answer {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+}
+
+.status-badge.status-failed,
+.status-badge.status-canceled {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}
+
+.status-badge.status-ringing,
+.status-badge.status-initiated,
+.status-badge.status-in-progress {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
 }
 
 /* Action Buttons - Enhanced */

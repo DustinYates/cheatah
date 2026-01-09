@@ -94,7 +94,9 @@ const SmsFollowUpIcon = () => (
 
 export default function Dashboard() {
   const [leads, setLeads] = useState([]);
+  const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [callsLoading, setCallsLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(null);
   const [selectedLead, setSelectedLead] = useState(null);
@@ -107,18 +109,38 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     setLoading(true);
+    setCallsLoading(true);
     setError('');
     try {
-      const leadsData = await api.getLeads({ limit: 50 }).catch(() => ({ leads: [] }));
-      // Sort by created_at descending (most recent first)
-      const sortedLeads = (leadsData.leads || leadsData || []).sort(
-        (a, b) => new Date(b.created_at) - new Date(a.created_at)
-      );
-      setLeads(sortedLeads);
+      const [leadsResult, callsResult] = await Promise.allSettled([
+        api.getLeads({ limit: 50 }),
+        api.getCalls({ page: 1, page_size: 5 }),
+      ]);
+
+      if (leadsResult.status === 'fulfilled') {
+        const leadsData = leadsResult.value;
+        // Sort by created_at descending (most recent first)
+        const sortedLeads = (leadsData.leads || leadsData || []).sort(
+          (a, b) => new Date(b.created_at) - new Date(a.created_at)
+        );
+        setLeads(sortedLeads);
+      } else {
+        setLeads([]);
+        throw leadsResult.reason;
+      }
+
+      if (callsResult.status === 'fulfilled') {
+        const callsData = callsResult.value;
+        setCalls(callsData.calls || []);
+      } else {
+        console.warn('Failed to load recent calls:', callsResult.reason);
+        setCalls([]);
+      }
     } catch (err) {
       setError('Failed to load dashboard data');
     } finally {
       setLoading(false);
+      setCallsLoading(false);
     }
   };
 
@@ -278,6 +300,21 @@ export default function Dashboard() {
     return { className: 'no-conversation', title: 'No conversation' };
   };
 
+  const formatDuration = (seconds) => {
+    if (!seconds) return '-';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatPhone = (phone) => {
+    if (!phone) return '-';
+    if (phone.length === 12 && phone.startsWith('+1')) {
+      return `(${phone.slice(2, 5)}) ${phone.slice(5, 8)}-${phone.slice(8)}`;
+    }
+    return phone;
+  };
+
   return (
     <div className="dashboard">
       <h1>Dashboard</h1>
@@ -422,6 +459,50 @@ export default function Dashboard() {
                             )}
                           </button>
                         </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="card calls-card">
+          <div className="calls-card-header">
+            <h2>Recent Calls</h2>
+            <a className="calls-link" href="/calls">View all</a>
+          </div>
+
+          {callsLoading ? (
+            <LoadingState message="Loading calls..." />
+          ) : calls.length === 0 ? (
+            <EmptyState
+              icon="📞"
+              title="No calls yet"
+              description="Voice calls will appear here once customers start calling."
+            />
+          ) : (
+            <div className="calls-table-container">
+              <table className="calls-table">
+                <thead>
+                  <tr>
+                    <th>Date & Time</th>
+                    <th>Caller</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {calls.map((call) => (
+                    <tr key={call.id}>
+                      <td>{formatSmartDateTime(call.created_at)}</td>
+                      <td>{formatPhone(call.from_number)}</td>
+                      <td>{formatDuration(call.duration)}</td>
+                      <td>
+                        <span className={`status-badge status-${call.status || 'new'}`}>
+                          {call.status || 'New'}
+                        </span>
                       </td>
                     </tr>
                   ))}

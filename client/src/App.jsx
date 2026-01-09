@@ -47,7 +47,6 @@ function App() {
             <Route path="analytics/unknowns" element={<UnknownLeads />} />
             <Route path="analytics/unknowns/:id" element={<UnknownLeadDetail />} />
             <Route path="analytics/plots" element={<Plots />} />
-            <Route path="sms" element={<SmsSettings />} />
 
             {/* Settings routes */}
             <Route path="settings" element={<Navigate to="/settings/prompts" replace />} />
@@ -55,8 +54,10 @@ function App() {
             <Route path="settings/prompts/wizard" element={<PromptWizard />} />
             <Route path="settings/widget" element={<WidgetSettings />} />
             <Route path="settings/email" element={<EmailSettings />} />
+            <Route path="settings/sms" element={<SmsSettings />} />
             <Route path="settings/telephony" element={<TelephonySettings />} />
             <Route path="telephony-settings" element={<Navigate to="/settings/telephony" replace />} />
+            <Route path="sms" element={<Navigate to="/settings/sms" replace />} />
             <Route path="settings/profile" element={<BusinessProfile />} />
 
             {/* Redirects for backward compatibility */}

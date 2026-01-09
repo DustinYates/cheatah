@@ -508,18 +508,19 @@ async def telnyx_ai_call_complete(
 
         logger.info(f"Found tenant_id={tenant_id} for AI call")
 
-        # Create Call record
+        # Create Call record (use naive datetime for DB compatibility)
+        now = datetime.utcnow()
         call = Call(
             tenant_id=tenant_id,
-            call_sid=call_id or f"telnyx_ai_{datetime.now(timezone.utc).timestamp()}",
+            call_sid=call_id or f"telnyx_ai_{now.timestamp()}",
             from_number=from_number,
             to_number=to_number,
             direction="inbound",
             status="completed",
             duration=int(duration) if duration else 0,
             recording_url=recording_url or None,
-            started_at=datetime.now(timezone.utc),
-            ended_at=datetime.now(timezone.utc),
+            started_at=now,
+            ended_at=now,
         )
         db.add(call)
         await db.flush()  # Get the call ID
@@ -556,7 +557,7 @@ async def telnyx_ai_call_complete(
             else:
                 # Update existing lead with call info
                 existing_notes = lead.notes or ""
-                call_note = f"\n\n--- AI Voice Call ({datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}) ---\nSummary:\n{summary}\n\nTranscript:\n{transcript[:1000] if transcript else 'No transcript'}"
+                call_note = f"\n\n--- AI Voice Call ({now.strftime('%Y-%m-%d %H:%M')}) ---\nSummary:\n{summary}\n\nTranscript:\n{transcript[:1000] if transcript else 'No transcript'}"
                 lead.notes = existing_notes + call_note
                 logger.info(f"Updated existing Lead with AI call: phone={normalized_from}")
 

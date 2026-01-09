@@ -10,21 +10,35 @@ export default function UnknownLeads() {
   const { user, selectedTenantId } = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'voice', 'chat'
 
-  const fetchUnknownLeads = useCallback(async () => {
-    const data = await api.getLeads({ status: 'unknown' });
+  const fetchLeads = useCallback(async () => {
+    // Fetch all leads, not just unknown
+    const data = await api.getLeads({});
     return Array.isArray(data) ? data : data.leads || [];
   }, []);
 
-  const { data: leads, loading, error, refetch } = useFetchData(fetchUnknownLeads, { defaultValue: [] });
+  const { data: leads, loading, error, refetch } = useFetchData(fetchLeads, { defaultValue: [] });
 
   const needsTenant = user?.is_global_admin && !selectedTenantId;
 
-  const filteredLeads = leads.filter(lead =>
-    (lead.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (lead.phone || '').includes(search) ||
-    (lead.email || '').toLowerCase().includes(search.toLowerCase())
-  );
+  // Helper to check if lead is from voice call
+  const isVoiceLead = (lead) => lead.extra_data?.voice_calls?.length > 0;
+
+  // Filter by search and source
+  const filteredLeads = leads.filter(lead => {
+    const matchesSearch =
+      (lead.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (lead.phone || '').includes(search) ||
+      (lead.email || '').toLowerCase().includes(search.toLowerCase());
+
+    const matchesSource =
+      sourceFilter === 'all' ||
+      (sourceFilter === 'voice' && isVoiceLead(lead)) ||
+      (sourceFilter === 'chat' && !isVoiceLead(lead));
+
+    return matchesSearch && matchesSource;
+  });
 
   const handleViewConversation = (lead) => {
     navigate(`/analytics/unknowns/${lead.id}`);
@@ -79,17 +93,29 @@ export default function UnknownLeads() {
   return (
     <div className="unknown-leads-page">
       <div className="page-header">
-        <h1>Unknown Leads</h1>
+        <h1>Leads</h1>
         <p className="page-description">
-          Leads marked as unknown - review their conversations to verify or dismiss.
+          All captured leads from chat and voice calls.
         </p>
-        <div className="search-box">
-          <input
-            type="text"
-            placeholder="Search unknown leads..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="search-filter-row">
+          <div className="search-box">
+            <input
+              type="text"
+              placeholder="Search leads..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="source-filter">
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+            >
+              <option value="all">All Sources</option>
+              <option value="voice">📞 Voice Calls</option>
+              <option value="chat">💬 Chat</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -104,6 +130,7 @@ export default function UnknownLeads() {
           <table className="leads-table">
             <thead>
               <tr>
+                <th>Source</th>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Phone</th>
@@ -114,6 +141,13 @@ export default function UnknownLeads() {
             <tbody>
               {filteredLeads.map((lead) => (
                 <tr key={lead.id}>
+                  <td className="source-cell">
+                    {isVoiceLead(lead) ? (
+                      <span className="source-icon voice" title="Voice Call">📞</span>
+                    ) : (
+                      <span className="source-icon chat" title="Chat">💬</span>
+                    )}
+                  </td>
                   <td>{lead.name || 'Unknown'}</td>
                   <td>{lead.email || '-'}</td>
                   <td>{lead.phone || '-'}</td>

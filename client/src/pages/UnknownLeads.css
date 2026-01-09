@@ -16,12 +16,44 @@
   font-size: 14px;
 }
 
+.unknown-leads-page .search-filter-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
 .unknown-leads-page .search-box input {
   padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
   width: 300px;
+}
+
+.unknown-leads-page .source-filter select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+}
+
+.source-cell {
+  width: 60px;
+  text-align: center !important;
+}
+
+.source-icon {
+  font-size: 18px;
+}
+
+.source-icon.voice {
+  filter: grayscale(0);
+}
+
+.source-icon.chat {
+  filter: grayscale(0);
 }
 
 .leads-table-container {

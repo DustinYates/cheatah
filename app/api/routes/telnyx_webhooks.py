@@ -451,21 +451,24 @@ async def telnyx_ai_call_complete(
         logger.info(f"Telnyx AI webhook payload: {body_str}")
 
         # Telnyx webhooks typically have: {data: {event_type: ..., payload: {...}}}
-        # But Insights webhooks may have different structure
+        # But Insights webhooks have: {event_type: ..., payload: {metadata: {to, from, ...}, results: [...]}}
         data = body.get("data", body)
         event_type = data.get("event_type") or body.get("event_type") or "unknown"
-        payload = data.get("payload", data)
+        payload = data.get("payload") or body.get("payload") or data
 
         logger.info(f"Telnyx event type: {event_type}")
 
-        # For insights webhook, get conversation info
+        # For insights webhook, metadata contains call info
+        metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
         conversation = body.get("conversation", {}) or data.get("conversation", {})
 
         # Extract call details - try multiple possible field names
         call_id = (
-            payload.get("call_control_id")
-            or payload.get("call_id")
+            metadata.get("call_control_id")
+            or metadata.get("call_session_id")
             or payload.get("conversation_id")
+            or payload.get("call_control_id")
+            or payload.get("call_id")
             or data.get("call_control_id")
             or data.get("conversation_id")
             or body.get("conversation_id")
@@ -474,10 +477,11 @@ async def telnyx_ai_call_complete(
             or ""
         )
 
-        # Phone numbers can be in various locations
-        # Insights webhook may have them in conversation object
+        # Phone numbers - for Insights webhook they're in metadata
         from_number = (
-            payload.get("from")
+            metadata.get("from")
+            or metadata.get("telnyx_end_user_target")
+            or payload.get("from")
             or payload.get("caller_id")
             or payload.get("end_user_target")
             or data.get("from")
@@ -488,7 +492,9 @@ async def telnyx_ai_call_complete(
             or ""
         )
         to_number = (
-            payload.get("to")
+            metadata.get("to")
+            or metadata.get("telnyx_agent_target")
+            or payload.get("to")
             or payload.get("called_number")
             or payload.get("agent_target")
             or data.get("to")
@@ -520,19 +526,30 @@ async def telnyx_ai_call_complete(
                     for m in msgs
                 )
 
-        # Check for insights data
+        # Check for insights data - Telnyx Insights webhook uses "results" array
+        results = payload.get("results", [])
+        if isinstance(results, list) and results:
+            # Get the first result as summary
+            first_result = results[0]
+            if isinstance(first_result, dict):
+                summary = first_result.get("result", "") or first_result.get("value", "")
+            elif isinstance(first_result, str):
+                summary = first_result
+
+        # Also check for insights in other formats
         insights = payload.get("insights", {})
-        if isinstance(insights, dict):
-            summary = insights.get("summary", "")
-            if not transcript and "transcript" in insights:
-                transcript = insights["transcript"]
-        elif isinstance(insights, list):
-            # Multiple insights
-            for insight in insights:
-                if insight.get("name") == "call_summary" or insight.get("type") == "summary":
-                    summary = insight.get("value", insight.get("result", ""))
-                if insight.get("name") == "transcript":
-                    transcript = insight.get("value", insight.get("result", ""))
+        if not summary:
+            if isinstance(insights, dict):
+                summary = insights.get("summary", "")
+                if not transcript and "transcript" in insights:
+                    transcript = insights["transcript"]
+            elif isinstance(insights, list):
+                # Multiple insights
+                for insight in insights:
+                    if insight.get("name") == "call_summary" or insight.get("type") == "summary":
+                        summary = insight.get("value", insight.get("result", ""))
+                    if insight.get("name") == "transcript":
+                        transcript = insight.get("value", insight.get("result", ""))
 
         # Also check for summary at top level
         if not summary:

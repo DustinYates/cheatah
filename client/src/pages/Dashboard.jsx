@@ -271,6 +271,11 @@ export default function Dashboard() {
   };
 
   const getSourceIcon = (lead) => {
+    // Check if lead has voice calls first (voice_calls array)
+    if (lead.extra_data?.voice_calls?.length > 0) {
+      return { icon: '📞', title: 'Phone Call' };
+    }
+
     const source = lead.extra_data?.source;
     switch (source) {
       case 'chatbot':
@@ -315,6 +320,16 @@ export default function Dashboard() {
     return phone;
   };
 
+  // Format name - handle "none", "unknown", null, etc.
+  const formatName = (name) => {
+    if (!name) return 'None';
+    const lower = name.toLowerCase().trim();
+    if (lower === 'none' || lower === 'unknown' || lower === 'n/a' || lower === 'not provided') {
+      return 'None';
+    }
+    return name;
+  };
+
   return (
     <div className="dashboard">
       <h1>Dashboard</h1>
@@ -347,7 +362,7 @@ export default function Dashboard() {
                 <tbody>
                   {leads.map((lead) => (
                     <tr key={lead.id} className={getRowClassName(lead)}>
-                      <td className="col-name">{lead.name || 'Unknown'}</td>
+                      <td className="col-name">{formatName(lead.name)}</td>
                       <td className="col-email">{lead.email || '-'}</td>
                       <td className="col-phone">{lead.phone || '-'}</td>
                       <td className="col-source">
@@ -539,18 +554,61 @@ export default function Dashboard() {
                 </div>
                 <div className="lead-detail-row">
                   <span className="label">Source:</span>
-                  <span className="value">{selectedLead.extra_data?.source || 'chatbot'}</span>
+                  <span className="value">
+                    {selectedLead.extra_data?.voice_calls?.length > 0
+                      ? 'Phone Call'
+                      : selectedLead.extra_data?.source || 'Chatbot'}
+                  </span>
                 </div>
               </div>
 
+              {/* Voice Call Details */}
+              {selectedLead.extra_data?.voice_calls?.length > 0 && (
+                <div className="lead-detail-section">
+                  <h4>Voice Calls</h4>
+                  {selectedLead.extra_data.voice_calls.map((call, idx) => (
+                    <div key={idx} className="voice-call-item" style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', marginBottom: '8px' }}>
+                      <div className="lead-detail-row">
+                        <span className="label">Date:</span>
+                        <span className="value">{call.call_date || 'Unknown'}</span>
+                      </div>
+                      {call.caller_name && (
+                        <div className="lead-detail-row">
+                          <span className="label">Name Given:</span>
+                          <span className="value">{call.caller_name}</span>
+                        </div>
+                      )}
+                      {call.caller_email && (
+                        <div className="lead-detail-row">
+                          <span className="label">Email Given:</span>
+                          <span className="value">{call.caller_email}</span>
+                        </div>
+                      )}
+                      {call.caller_intent && (
+                        <div className="lead-detail-row">
+                          <span className="label">Intent:</span>
+                          <span className="value">{call.caller_intent}</span>
+                        </div>
+                      )}
+                      {call.summary && (
+                        <div className="lead-detail-row" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                          <span className="label">Summary:</span>
+                          <span className="value" style={{ marginTop: '4px' }}>{call.summary}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Form Submission Data */}
-              {selectedLead.extra_data && Object.keys(selectedLead.extra_data).filter(k => k !== 'source' && k !== 'parsing_metadata').length > 0 && (
+              {selectedLead.extra_data && Object.keys(selectedLead.extra_data).filter(k => !['source', 'parsing_metadata', 'voice_calls', 'followup_sent_at', 'followup_scheduled'].includes(k)).length > 0 && (
                 <div className="lead-detail-section">
                   <h4>Form Submission Details</h4>
                   <p className="form-note">This person completed a form for more information.</p>
                   <div className="form-fields">
                     {Object.entries(selectedLead.extra_data)
-                      .filter(([key]) => key !== 'source' && key !== 'parsing_metadata')
+                      .filter(([key]) => !['source', 'parsing_metadata', 'voice_calls', 'followup_sent_at', 'followup_scheduled'].includes(key))
                       .map(([key, value]) => (
                         <div className="lead-detail-row" key={key}>
                           <span className="label">{key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}:</span>

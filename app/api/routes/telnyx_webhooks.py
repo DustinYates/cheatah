@@ -527,14 +527,56 @@ async def telnyx_ai_call_complete(
                 )
 
         # Check for insights data - Telnyx Insights webhook uses "results" array
+        # Multiple insights: summary, caller_name, caller_email, caller_intent
         results = payload.get("results", [])
+        caller_name = ""
+        caller_email = ""
+        caller_intent = ""
+        import re
+
         if isinstance(results, list) and results:
-            # Get the first result as summary
-            first_result = results[0]
-            if isinstance(first_result, dict):
-                summary = first_result.get("result", "") or first_result.get("value", "")
-            elif isinstance(first_result, str):
-                summary = first_result
+            for result_item in results:
+                if isinstance(result_item, dict):
+                    result_text = result_item.get("result", "") or result_item.get("value", "")
+                elif isinstance(result_item, str):
+                    result_text = result_item
+                else:
+                    continue
+
+                if not result_text:
+                    continue
+
+                result_lower = result_text.lower().strip()
+
+                # Identify result type by content
+                # Email detection (contains @ and looks like email)
+                if "@" in result_text and not caller_email:
+                    # Extract email from text
+                    email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', result_text)
+                    if email_match:
+                        caller_email = email_match.group(0)
+                    elif result_lower not in ["none", "unknown", "not provided", "n/a"]:
+                        caller_email = result_text.strip()
+                # Name detection (short text, not email, not "unknown")
+                elif len(result_text) < 100 and "@" not in result_text and not caller_name:
+                    if result_lower not in ["unknown", "none", "not provided", "n/a", ""]:
+                        # Check if it looks like a name (not a full sentence)
+                        if not any(word in result_lower for word in ["the caller", "they", "was", "were", "is", "are"]):
+                            caller_name = result_text.strip()
+                # Intent/Summary detection (longer text)
+                elif len(result_text) > 50:
+                    if not summary:
+                        summary = result_text
+                    elif not caller_intent:
+                        caller_intent = result_text
+
+            # If we still don't have a summary, use first long result
+            if not summary and results:
+                first_result = results[0]
+                if isinstance(first_result, dict):
+                    summary = first_result.get("result", "") or first_result.get("value", "")
+                elif isinstance(first_result, str):
+                    summary = first_result
 
         # Also check for insights in other formats
         insights = payload.get("insights", {})
@@ -550,6 +592,12 @@ async def telnyx_ai_call_complete(
                         summary = insight.get("value", insight.get("result", ""))
                     if insight.get("name") == "transcript":
                         transcript = insight.get("value", insight.get("result", ""))
+                    if insight.get("name") == "caller_name":
+                        caller_name = insight.get("value", insight.get("result", ""))
+                    if insight.get("name") == "caller_email":
+                        caller_email = insight.get("value", insight.get("result", ""))
+                    if insight.get("name") == "caller_intent":
+                        caller_intent = insight.get("value", insight.get("result", ""))
 
         # Also check for summary at top level
         if not summary:
@@ -571,15 +619,7 @@ async def telnyx_ai_call_complete(
             )
 
         logger.info(
-            f"AI call data extracted",
-            extra={
-                "call_id": call_id,
-                "from": from_number,
-                "to": to_number,
-                "duration": duration,
-                "has_transcript": bool(transcript),
-                "has_summary": bool(summary),
-            },
+            f"AI call data extracted: name={caller_name}, email={caller_email}, intent={caller_intent[:50] if caller_intent else 'none'}"
         )
 
         if not to_number:
@@ -640,19 +680,24 @@ async def telnyx_ai_call_complete(
                 "call_id": call.id,
                 "call_date": now.strftime("%Y-%m-%d %H:%M"),
                 "summary": summary,
+                "caller_name": caller_name or None,
+                "caller_email": caller_email or None,
+                "caller_intent": caller_intent or None,
                 "transcript": transcript[:2000] if transcript else None,
             }
 
             if not lead:
-                # Create new lead
+                # Create new lead with extracted info
                 lead = Lead(
                     tenant_id=tenant_id,
                     phone=normalized_from,
+                    name=caller_name or None,  # Set name on lead if extracted
+                    email=caller_email or None,  # Set email on lead if extracted
                     status="new",
                     extra_data={"voice_calls": [call_data]},
                 )
                 db.add(lead)
-                logger.info(f"Created new Lead from AI call: phone={normalized_from}")
+                logger.info(f"Created new Lead from AI call: phone={normalized_from}, name={caller_name}, email={caller_email}")
             else:
                 # Update existing lead with call info
                 existing_data = lead.extra_data or {}
@@ -660,7 +705,12 @@ async def telnyx_ai_call_complete(
                 voice_calls.append(call_data)
                 existing_data["voice_calls"] = voice_calls
                 lead.extra_data = existing_data
-                logger.info(f"Updated existing Lead with AI call: phone={normalized_from}")
+                # Update name/email if we got new info and lead doesn't have it
+                if caller_name and not lead.name:
+                    lead.name = caller_name
+                if caller_email and not lead.email:
+                    lead.email = caller_email
+                logger.info(f"Updated existing Lead with AI call: phone={normalized_from}, name={caller_name}")
 
         await db.commit()
 

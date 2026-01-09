@@ -701,17 +701,24 @@ async def telnyx_ai_call_complete(
                 logger.info(f"Created new Lead from AI call: phone={normalized_from}, name={caller_name}, email={caller_email}")
             else:
                 # Update existing lead with call info
-                existing_data = lead.extra_data or {}
-                voice_calls = existing_data.get("voice_calls", [])
+                # Use copy to ensure SQLAlchemy detects the change
+                from sqlalchemy.orm.attributes import flag_modified
+                logger.info(f"Existing lead extra_data BEFORE: {lead.extra_data}")
+                existing_data = dict(lead.extra_data) if lead.extra_data else {}
+                voice_calls = list(existing_data.get("voice_calls", []))
                 voice_calls.append(call_data)
                 existing_data["voice_calls"] = voice_calls
                 lead.extra_data = existing_data
+                flag_modified(lead, "extra_data")
+                logger.info(f"Lead extra_data AFTER update: {lead.extra_data}")
                 # Update name/email if we got new info and lead doesn't have it
                 if caller_name and not lead.name:
                     lead.name = caller_name
                 if caller_email and not lead.email:
                     lead.email = caller_email
-                logger.info(f"Updated existing Lead with AI call: phone={normalized_from}, name={caller_name}")
+                # Update created_at to now so lead appears at top of dashboard
+                lead.created_at = now
+                logger.info(f"Updated existing Lead id={lead.id} with AI call: phone={normalized_from}, name={caller_name}")
 
             # Flush to get lead ID
             await db.flush()
@@ -747,3 +754,149 @@ async def telnyx_ai_call_complete(
     except Exception as e:
         logger.error(f"Error processing Telnyx AI call webhook: {e}", exc_info=True)
         return JSONResponse(content={"status": "error", "message": str(e)})
+
+
+# =============================================================================
+# ETL: Sync Calls to Leads
+# =============================================================================
+
+
+@router.post("/sync-calls-to-leads")
+async def sync_calls_to_leads(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """ETL endpoint to sync Call records to Lead records.
+
+    This finds all calls that don't have associated leads and creates
+    lead records from the call data (phone number, name, email from CallSummary).
+
+    Can be called manually or via cron/scheduler.
+
+    Args:
+        db: Database session
+
+    Returns:
+        JSON response with count of leads created/updated
+    """
+    from app.persistence.models.call import Call
+    from app.persistence.models.call_summary import CallSummary
+    from app.persistence.models.lead import Lead
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy.orm.attributes import flag_modified
+
+    try:
+        # Find all calls with summaries that don't have lead_id set
+        stmt = (
+            select(Call)
+            .options(joinedload(Call.summary))
+            .where(Call.from_number.isnot(None))
+            .order_by(Call.created_at.desc())
+        )
+        result = await db.execute(stmt)
+        calls = result.unique().scalars().all()
+
+        leads_created = 0
+        leads_updated = 0
+        calls_processed = 0
+
+        for call in calls:
+            if not call.from_number or not call.tenant_id:
+                continue
+
+            normalized_phone = _normalize_phone(call.from_number)
+
+            # Check if lead exists for this phone number
+            lead_stmt = select(Lead).where(
+                Lead.tenant_id == call.tenant_id,
+                Lead.phone == normalized_phone,
+            )
+            lead_result = await db.execute(lead_stmt)
+            lead = lead_result.scalar_one_or_none()
+
+            # Get name/email/summary from CallSummary if available
+            caller_name = None
+            caller_email = None
+            summary_text = None
+            caller_intent = None
+
+            if call.summary:
+                extracted = call.summary.extracted_fields or {}
+                caller_name = extracted.get("name")
+                caller_email = extracted.get("email")
+                caller_intent = extracted.get("reason")
+                summary_text = call.summary.summary_text
+
+            # Build call data for lead's extra_data
+            call_data = {
+                "source": "voice_call",
+                "call_id": call.id,
+                "call_date": call.created_at.strftime("%Y-%m-%d %H:%M") if call.created_at else None,
+                "summary": summary_text,
+                "caller_name": caller_name,
+                "caller_email": caller_email,
+                "caller_intent": caller_intent,
+                "duration": call.duration,
+            }
+
+            if not lead:
+                # Create new lead
+                lead = Lead(
+                    tenant_id=call.tenant_id,
+                    phone=normalized_phone,
+                    name=caller_name,
+                    email=caller_email,
+                    status="new",
+                    extra_data={"voice_calls": [call_data]},
+                )
+                db.add(lead)
+                leads_created += 1
+                logger.info(f"ETL: Created lead for phone {normalized_phone}")
+            else:
+                # Check if this call is already in the lead's voice_calls
+                existing_data = dict(lead.extra_data) if lead.extra_data else {}
+                voice_calls = existing_data.get("voice_calls", [])
+
+                # Check if call already exists (by call_id)
+                existing_call_ids = [vc.get("call_id") for vc in voice_calls if isinstance(vc, dict)]
+
+                if call.id not in existing_call_ids:
+                    # Add this call to the lead
+                    voice_calls = list(voice_calls)
+                    voice_calls.append(call_data)
+                    existing_data["voice_calls"] = voice_calls
+                    lead.extra_data = existing_data
+                    flag_modified(lead, "extra_data")
+
+                    # Update name/email if we have new info
+                    if caller_name and not lead.name:
+                        lead.name = caller_name
+                    if caller_email and not lead.email:
+                        lead.email = caller_email
+
+                    leads_updated += 1
+                    logger.info(f"ETL: Updated lead {lead.id} with call {call.id}")
+
+            # Update CallSummary with lead_id if not set
+            if call.summary and not call.summary.lead_id:
+                await db.flush()  # Ensure lead.id is set
+                call.summary.lead_id = lead.id
+
+            calls_processed += 1
+
+        await db.commit()
+
+        logger.info(f"ETL complete: processed={calls_processed}, created={leads_created}, updated={leads_updated}")
+
+        return JSONResponse(content={
+            "status": "ok",
+            "calls_processed": calls_processed,
+            "leads_created": leads_created,
+            "leads_updated": leads_updated,
+        })
+
+    except Exception as e:
+        logger.error(f"Error in ETL sync-calls-to-leads: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )

@@ -333,15 +333,29 @@
     <!-- Main Dashboard -->
     <div id="dashboard" class="container hidden">
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('sms-config')">SMS Configuration</button>
+            <button class="tab active" onclick="switchTab('leads')">Leads</button>
+            <button class="tab" onclick="switchTab('sms-config')">SMS Configuration</button>
             <button class="tab" onclick="switchTab('conversations')">Conversations</button>
             <button class="tab" onclick="switchTab('escalations')">Escalations</button>
             <button class="tab" onclick="switchTab('opt-ins')">Opt-ins</button>
             <button class="tab" onclick="switchTab('send-sms')">Send SMS</button>
         </div>
 
+        <!-- Leads Tab -->
+        <div id="leads" class="tab-content active">
+            <div class="card">
+                <h2>Leads</h2>
+                <p style="color: #666; margin-bottom: 1rem;">Leads captured from voice calls and chat conversations.</p>
+                <div id="leadsList" class="loading">Loading leads...</div>
+                <div id="leadDetail" class="hidden" style="margin-top: 1.5rem; border-top: 1px solid #ddd; padding-top: 1.5rem;">
+                    <h3 id="leadDetailTitle">Lead Details</h3>
+                    <div id="leadDetailContent"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- SMS Configuration Tab -->
-        <div id="sms-config" class="tab-content active">
+        <div id="sms-config" class="tab-content">
             <div class="card">
                 <h2>SMS Configuration</h2>
                 <div id="configAlert"></div>
@@ -492,6 +506,7 @@
         function showDashboard() {
             document.getElementById('authSection').classList.add('hidden');
             document.getElementById('dashboard').classList.remove('hidden');
+            loadLeads(); // Load leads on dashboard show
         }
 
         function switchTab(tabName) {
@@ -508,13 +523,106 @@
             event.target.classList.add('active');
 
             // Load tab data
-            if (tabName === 'conversations') {
+            if (tabName === 'leads') {
+                loadLeads();
+            } else if (tabName === 'conversations') {
                 loadConversations();
             } else if (tabName === 'escalations') {
                 loadEscalations();
             } else if (tabName === 'opt-ins') {
                 loadOptIns();
             }
+        }
+
+        async function loadLeads() {
+            const listDiv = document.getElementById('leadsList');
+            listDiv.innerHTML = '<div class="loading">Loading leads...</div>';
+            document.getElementById('leadDetail').classList.add('hidden');
+
+            try {
+                const response = await fetch(`${API_BASE}/leads`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const leads = data.leads || [];
+
+                    if (leads.length === 0) {
+                        listDiv.innerHTML = '<p>No leads found.</p>';
+                        return;
+                    }
+
+                    const html = leads.map(lead => {
+                        const hasVoiceCalls = lead.extra_data?.voice_calls?.length > 0;
+                        const source = hasVoiceCalls ? 'Voice' : 'Chat';
+                        const sourceColor = hasVoiceCalls ? '#28a745' : '#007bff';
+
+                        return `
+                            <div class="conversation-item" onclick="showLeadDetail(${lead.id}, ${JSON.stringify(lead).replace(/"/g, '&quot;')})">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong>${lead.name || 'Unknown'}</strong>
+                                        ${lead.phone ? `<span style="color: #666; margin-left: 0.5rem;">${lead.phone}</span>` : ''}
+                                        ${lead.email ? `<span style="color: #666; margin-left: 0.5rem;">${lead.email}</span>` : ''}
+                                    </div>
+                                    <div>
+                                        <span class="status-badge" style="background: ${sourceColor}20; color: ${sourceColor};">${source}</span>
+                                        <span class="status-badge status-${lead.status || 'new'}">${lead.status || 'new'}</span>
+                                    </div>
+                                </div>
+                                ${hasVoiceCalls ? `<div style="font-size: 0.875rem; color: #666; margin-top: 0.5rem;">${lead.extra_data.voice_calls[0].summary?.substring(0, 100) || 'Voice call recorded'}...</div>` : ''}
+                                <div style="font-size: 0.75rem; color: #999; margin-top: 0.25rem;">${new Date(lead.created_at).toLocaleString()}</div>
+                            </div>
+                        `;
+                    }).join('');
+
+                    listDiv.innerHTML = html;
+                } else {
+                    listDiv.innerHTML = '<p>Error loading leads. Please try again.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading leads:', error);
+                listDiv.innerHTML = '<p>Error loading leads. Please try again.</p>';
+            }
+        }
+
+        function showLeadDetail(leadId, lead) {
+            const detailDiv = document.getElementById('leadDetail');
+            const titleDiv = document.getElementById('leadDetailTitle');
+            const contentDiv = document.getElementById('leadDetailContent');
+
+            titleDiv.textContent = lead.name || `Lead #${leadId}`;
+
+            let html = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div><strong>Phone:</strong> ${lead.phone || 'N/A'}</div>
+                    <div><strong>Email:</strong> ${lead.email || 'N/A'}</div>
+                    <div><strong>Status:</strong> ${lead.status || 'new'}</div>
+                    <div><strong>Created:</strong> ${new Date(lead.created_at).toLocaleString()}</div>
+                </div>
+            `;
+
+            // Show voice calls if any
+            if (lead.extra_data?.voice_calls?.length > 0) {
+                html += '<h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">Voice Calls</h4>';
+                for (const call of lead.extra_data.voice_calls) {
+                    html += `
+                        <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 0.5rem;">
+                            <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.5rem;">${call.call_date || 'Unknown date'}</div>
+                            ${call.caller_name ? `<div><strong>Name Given:</strong> ${call.caller_name}</div>` : ''}
+                            ${call.caller_email ? `<div><strong>Email Given:</strong> ${call.caller_email}</div>` : ''}
+                            ${call.caller_intent ? `<div><strong>Intent:</strong> ${call.caller_intent}</div>` : ''}
+                            ${call.summary ? `<div style="margin-top: 0.5rem;"><strong>Summary:</strong><br>${call.summary}</div>` : ''}
+                        </div>
+                    `;
+                }
+            }
+
+            contentDiv.innerHTML = html;
+            detailDiv.classList.remove('hidden');
         }
 
         async function loadSmsConfig() {

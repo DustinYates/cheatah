@@ -411,3 +411,164 @@ async def _handle_telnyx_delivery_status(
         await db.commit()
 
     logger.info(f"Telnyx status update: message_id={message_id}, status={status}")
+
+
+# =============================================================================
+# Telnyx AI Assistant Call Completion Webhook
+# =============================================================================
+
+
+@router.post("/ai-call-complete")
+async def telnyx_ai_call_complete(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Handle call completion webhook from Telnyx AI Assistant.
+
+    This endpoint receives data when an AI Assistant call ends, including:
+    - Call transcript
+    - Call duration
+    - Caller/callee phone numbers
+    - Call summary (if available)
+
+    The data is stored in the database and can trigger lead creation.
+
+    Args:
+        request: FastAPI request with call data
+        db: Database session
+
+    Returns:
+        JSON response with 200 status
+    """
+    from app.persistence.models.call import Call
+    from app.persistence.models.lead import Lead
+    from app.persistence.models.contact import Contact
+
+    try:
+        body = await request.json()
+
+        logger.info(
+            "Telnyx AI call complete webhook received",
+            extra={"body_keys": list(body.keys()) if isinstance(body, dict) else "not_dict"},
+        )
+
+        # Telnyx AI Assistant webhook structure may vary
+        # Common fields: call_id, from, to, duration, transcript, summary
+        data = body.get("data", body)  # Handle both wrapped and unwrapped formats
+
+        # Extract call details
+        call_id = data.get("call_id") or data.get("call_control_id") or data.get("id")
+        from_number = data.get("from") or data.get("caller_id") or ""
+        to_number = data.get("to") or data.get("called_number") or ""
+        duration = data.get("duration") or data.get("call_duration") or 0
+        transcript = data.get("transcript") or data.get("conversation") or ""
+        summary = data.get("summary") or data.get("call_summary") or ""
+        recording_url = data.get("recording_url") or data.get("recording") or ""
+
+        # Handle nested phone number formats
+        if isinstance(from_number, dict):
+            from_number = from_number.get("phone_number", "")
+        if isinstance(to_number, dict):
+            to_number = to_number.get("phone_number", "")
+
+        # Handle transcript as list of messages
+        if isinstance(transcript, list):
+            transcript = "\n".join(
+                f"{msg.get('role', 'unknown')}: {msg.get('content', msg.get('text', ''))}"
+                for msg in transcript
+            )
+
+        logger.info(
+            f"AI call data extracted",
+            extra={
+                "call_id": call_id,
+                "from": from_number,
+                "to": to_number,
+                "duration": duration,
+                "has_transcript": bool(transcript),
+                "has_summary": bool(summary),
+            },
+        )
+
+        if not to_number:
+            logger.warning("No 'to' number in AI call webhook")
+            return JSONResponse(content={"status": "ok", "message": "no to_number"})
+
+        # Look up tenant by phone number
+        tenant_id = await _get_tenant_from_telnyx_number(to_number, db)
+
+        if not tenant_id:
+            # Try from_number as fallback (for outbound calls)
+            if from_number:
+                tenant_id = await _get_tenant_from_telnyx_number(from_number, db)
+
+        if not tenant_id:
+            logger.warning(f"Could not determine tenant for call: to={to_number}, from={from_number}")
+            return JSONResponse(content={"status": "ok", "message": "tenant_not_found"})
+
+        logger.info(f"Found tenant_id={tenant_id} for AI call")
+
+        # Create Call record
+        call = Call(
+            tenant_id=tenant_id,
+            call_sid=call_id or f"telnyx_ai_{datetime.now(timezone.utc).timestamp()}",
+            from_number=from_number,
+            to_number=to_number,
+            direction="inbound",
+            status="completed",
+            duration=int(duration) if duration else 0,
+            recording_url=recording_url or None,
+            started_at=datetime.now(timezone.utc),
+            ended_at=datetime.now(timezone.utc),
+        )
+        db.add(call)
+        await db.flush()  # Get the call ID
+
+        logger.info(f"Created Call record: id={call.id}")
+
+        # Store transcript and summary in call metadata or separate table
+        # For now, we'll create a lead with the information
+
+        # Create or update Lead from caller
+        if from_number:
+            normalized_from = _normalize_phone(from_number)
+
+            # Check if contact/lead already exists
+            existing_lead = await db.execute(
+                select(Lead).where(
+                    Lead.tenant_id == tenant_id,
+                    Lead.phone == normalized_from,
+                )
+            )
+            lead = existing_lead.scalar_one_or_none()
+
+            if not lead:
+                # Create new lead
+                lead = Lead(
+                    tenant_id=tenant_id,
+                    phone=normalized_from,
+                    source="voice_call",
+                    status="new",
+                    notes=f"AI Voice Call\n\nSummary:\n{summary}\n\nTranscript:\n{transcript[:2000] if transcript else 'No transcript'}",
+                )
+                db.add(lead)
+                logger.info(f"Created new Lead from AI call: phone={normalized_from}")
+            else:
+                # Update existing lead with call info
+                existing_notes = lead.notes or ""
+                call_note = f"\n\n--- AI Voice Call ({datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}) ---\nSummary:\n{summary}\n\nTranscript:\n{transcript[:1000] if transcript else 'No transcript'}"
+                lead.notes = existing_notes + call_note
+                logger.info(f"Updated existing Lead with AI call: phone={normalized_from}")
+
+        await db.commit()
+
+        return JSONResponse(content={
+            "status": "ok",
+            "call_id": call.id,
+            "tenant_id": tenant_id,
+            "lead_created": bool(from_number),
+        })
+
+    except Exception as e:
+        logger.error(f"Error processing Telnyx AI call webhook: {e}", exc_info=True)
+        return JSONResponse(content={"status": "error", "message": str(e)})

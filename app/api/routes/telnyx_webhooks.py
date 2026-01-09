@@ -414,7 +414,7 @@ async def _handle_telnyx_delivery_status(
 
 
 # =============================================================================
-# Telnyx AI Assistant Call Completion Webhook
+# Telnyx AI Assistant Call Completion / Insights Webhook
 # =============================================================================
 
 
@@ -423,13 +423,12 @@ async def telnyx_ai_call_complete(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
-    """Handle call completion webhook from Telnyx AI Assistant.
+    """Handle call completion and insights webhooks from Telnyx AI Assistant.
 
-    This endpoint receives data when an AI Assistant call ends, including:
-    - Call transcript
-    - Call duration
-    - Caller/callee phone numbers
-    - Call summary (if available)
+    This endpoint receives data when:
+    - An AI Assistant call ends (call.conversation.ended)
+    - Conversation insights are generated (call.conversation_insights.generated)
+    - Post-call insights webhook fires from Insight Groups
 
     The data is stored in the database and can trigger lead creation.
 
@@ -442,28 +441,94 @@ async def telnyx_ai_call_complete(
     """
     from app.persistence.models.call import Call
     from app.persistence.models.lead import Lead
-    from app.persistence.models.contact import Contact
+    import json
 
     try:
         body = await request.json()
 
+        # Log full payload for debugging (truncated)
+        body_str = json.dumps(body)[:2000] if isinstance(body, dict) else str(body)[:500]
         logger.info(
-            "Telnyx AI call complete webhook received",
-            extra={"body_keys": list(body.keys()) if isinstance(body, dict) else "not_dict"},
+            "Telnyx AI webhook received",
+            extra={
+                "body_preview": body_str,
+                "body_keys": list(body.keys()) if isinstance(body, dict) else "not_dict",
+            },
         )
 
-        # Telnyx AI Assistant webhook structure may vary
-        # Common fields: call_id, from, to, duration, transcript, summary
-        data = body.get("data", body)  # Handle both wrapped and unwrapped formats
+        # Telnyx webhooks typically have: {data: {event_type: ..., payload: {...}}}
+        data = body.get("data", body)
+        event_type = data.get("event_type", "unknown")
+        payload = data.get("payload", data)
 
-        # Extract call details
-        call_id = data.get("call_id") or data.get("call_control_id") or data.get("id")
-        from_number = data.get("from") or data.get("caller_id") or ""
-        to_number = data.get("to") or data.get("called_number") or ""
-        duration = data.get("duration") or data.get("call_duration") or 0
-        transcript = data.get("transcript") or data.get("conversation") or ""
-        summary = data.get("summary") or data.get("call_summary") or ""
-        recording_url = data.get("recording_url") or data.get("recording") or ""
+        logger.info(f"Telnyx event type: {event_type}")
+
+        # Extract call details - try multiple possible field names
+        call_id = (
+            payload.get("call_control_id")
+            or payload.get("call_id")
+            or payload.get("conversation_id")
+            or data.get("call_control_id")
+            or data.get("id")
+            or ""
+        )
+
+        # Phone numbers can be in various locations
+        from_number = (
+            payload.get("from")
+            or payload.get("caller_id")
+            or payload.get("end_user_target")
+            or data.get("from")
+            or ""
+        )
+        to_number = (
+            payload.get("to")
+            or payload.get("called_number")
+            or payload.get("agent_target")
+            or data.get("to")
+            or ""
+        )
+
+        # Duration
+        duration = payload.get("duration") or payload.get("call_duration") or data.get("duration") or 0
+
+        # Transcript and insights - try multiple formats
+        transcript = ""
+        summary = ""
+
+        # Check for transcript in various locations
+        if "transcript" in payload:
+            transcript = payload["transcript"]
+        elif "conversation" in payload:
+            transcript = payload["conversation"]
+        elif "messages" in payload:
+            # List of message objects
+            msgs = payload["messages"]
+            if isinstance(msgs, list):
+                transcript = "\n".join(
+                    f"{m.get('role', 'unknown')}: {m.get('content', m.get('text', ''))}"
+                    for m in msgs
+                )
+
+        # Check for insights data
+        insights = payload.get("insights", {})
+        if isinstance(insights, dict):
+            summary = insights.get("summary", "")
+            if not transcript and "transcript" in insights:
+                transcript = insights["transcript"]
+        elif isinstance(insights, list):
+            # Multiple insights
+            for insight in insights:
+                if insight.get("name") == "call_summary" or insight.get("type") == "summary":
+                    summary = insight.get("value", insight.get("result", ""))
+                if insight.get("name") == "transcript":
+                    transcript = insight.get("value", insight.get("result", ""))
+
+        # Also check for summary at top level
+        if not summary:
+            summary = payload.get("summary") or payload.get("call_summary") or data.get("summary") or ""
+
+        recording_url = payload.get("recording_url") or payload.get("recording") or ""
 
         # Handle nested phone number formats
         if isinstance(from_number, dict):

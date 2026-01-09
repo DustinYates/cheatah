@@ -86,7 +86,7 @@ export default function Layout() {
             {analyticsOpen && (
               <ul className="nav-submenu">
                 <li>
-                  <NavLink to="/analytics/unknowns">Unknowns</NavLink>
+                  <NavLink to="/analytics/unknowns">Leads</NavLink>
                 </li>
                 <li>
                   <NavLink to="/analytics/plots">Plots</NavLink>

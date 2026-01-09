@@ -635,22 +635,31 @@ async def telnyx_ai_call_complete(
             )
             lead = existing_lead.scalar_one_or_none()
 
+            call_data = {
+                "source": "voice_call",
+                "call_id": call.id,
+                "call_date": now.strftime("%Y-%m-%d %H:%M"),
+                "summary": summary,
+                "transcript": transcript[:2000] if transcript else None,
+            }
+
             if not lead:
                 # Create new lead
                 lead = Lead(
                     tenant_id=tenant_id,
                     phone=normalized_from,
-                    source="voice_call",
                     status="new",
-                    notes=f"AI Voice Call\n\nSummary:\n{summary}\n\nTranscript:\n{transcript[:2000] if transcript else 'No transcript'}",
+                    extra_data={"voice_calls": [call_data]},
                 )
                 db.add(lead)
                 logger.info(f"Created new Lead from AI call: phone={normalized_from}")
             else:
                 # Update existing lead with call info
-                existing_notes = lead.notes or ""
-                call_note = f"\n\n--- AI Voice Call ({now.strftime('%Y-%m-%d %H:%M')}) ---\nSummary:\n{summary}\n\nTranscript:\n{transcript[:1000] if transcript else 'No transcript'}"
-                lead.notes = existing_notes + call_note
+                existing_data = lead.extra_data or {}
+                voice_calls = existing_data.get("voice_calls", [])
+                voice_calls.append(call_data)
+                existing_data["voice_calls"] = voice_calls
+                lead.extra_data = existing_data
                 logger.info(f"Updated existing Lead with AI call: phone={normalized_from}")
 
         await db.commit()

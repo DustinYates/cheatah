@@ -446,22 +446,20 @@ async def telnyx_ai_call_complete(
     try:
         body = await request.json()
 
-        # Log full payload for debugging (truncated)
-        body_str = json.dumps(body)[:2000] if isinstance(body, dict) else str(body)[:500]
-        logger.info(
-            "Telnyx AI webhook received",
-            extra={
-                "body_preview": body_str,
-                "body_keys": list(body.keys()) if isinstance(body, dict) else "not_dict",
-            },
-        )
+        # Log full payload for debugging (in message for Cloud Run visibility)
+        body_str = json.dumps(body)[:3000] if isinstance(body, dict) else str(body)[:500]
+        logger.info(f"Telnyx AI webhook payload: {body_str}")
 
         # Telnyx webhooks typically have: {data: {event_type: ..., payload: {...}}}
+        # But Insights webhooks may have different structure
         data = body.get("data", body)
-        event_type = data.get("event_type", "unknown")
+        event_type = data.get("event_type") or body.get("event_type") or "unknown"
         payload = data.get("payload", data)
 
         logger.info(f"Telnyx event type: {event_type}")
+
+        # For insights webhook, get conversation info
+        conversation = body.get("conversation", {}) or data.get("conversation", {})
 
         # Extract call details - try multiple possible field names
         call_id = (
@@ -469,16 +467,24 @@ async def telnyx_ai_call_complete(
             or payload.get("call_id")
             or payload.get("conversation_id")
             or data.get("call_control_id")
+            or data.get("conversation_id")
+            or body.get("conversation_id")
+            or conversation.get("id")
             or data.get("id")
             or ""
         )
 
         # Phone numbers can be in various locations
+        # Insights webhook may have them in conversation object
         from_number = (
             payload.get("from")
             or payload.get("caller_id")
             or payload.get("end_user_target")
             or data.get("from")
+            or data.get("end_user_target")
+            or body.get("end_user_target")
+            or conversation.get("end_user_target")
+            or conversation.get("from")
             or ""
         )
         to_number = (
@@ -486,6 +492,10 @@ async def telnyx_ai_call_complete(
             or payload.get("called_number")
             or payload.get("agent_target")
             or data.get("to")
+            or data.get("agent_target")
+            or body.get("agent_target")
+            or conversation.get("agent_target")
+            or conversation.get("to")
             or ""
         )
 

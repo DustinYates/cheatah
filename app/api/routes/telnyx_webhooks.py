@@ -440,6 +440,7 @@ async def telnyx_ai_call_complete(
         JSON response with 200 status
     """
     from app.persistence.models.call import Call
+    from app.persistence.models.call_summary import CallSummary
     from app.persistence.models.lead import Lead
     import json
 
@@ -711,6 +712,28 @@ async def telnyx_ai_call_complete(
                 if caller_email and not lead.email:
                     lead.email = caller_email
                 logger.info(f"Updated existing Lead with AI call: phone={normalized_from}, name={caller_name}")
+
+            # Flush to get lead ID
+            await db.flush()
+            lead_id = lead.id if lead else None
+        else:
+            lead_id = None
+
+        # Create CallSummary record for the Calls page
+        call_summary = CallSummary(
+            call_id=call.id,
+            lead_id=lead_id,
+            intent="general_inquiry",  # Default intent - could be classified by AI
+            outcome="lead_created" if lead_id else "info_provided",
+            summary_text=summary or None,
+            extracted_fields={
+                "name": caller_name or None,
+                "email": caller_email or None,
+                "reason": caller_intent or (summary[:200] if summary else None),
+            },
+        )
+        db.add(call_summary)
+        logger.info(f"Created CallSummary for call_id={call.id}")
 
         await db.commit()
 

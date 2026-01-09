@@ -51,7 +51,7 @@ export default function BusinessProfile() {
 
   // Fetch telephony config for SMS phone display
   const fetchTelephonyConfig = useCallback(async () => {
-    if (user?.is_global_admin && !selectedTenantId) return;
+    if (!user?.is_global_admin || !selectedTenantId) return;
     try {
       const data = await api.getTelephonyConfig();
       setTelephonyConfig(data);
@@ -272,7 +272,7 @@ export default function BusinessProfile() {
           />
           <small>
             Your {getActiveSmsPhone(telephonyConfig).provider === 'telnyx' ? 'Telnyx' : 'Twilio'} number for SMS communications.
-            {' '}<a href="/telephony-settings">Configure in Telephony Settings</a>
+            {user?.is_global_admin && <> <a href="/telephony-settings">Configure in Telephony Settings</a></>}
           </small>
         </div>
 

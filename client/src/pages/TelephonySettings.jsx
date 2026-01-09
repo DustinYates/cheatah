@@ -58,7 +58,12 @@ export default function TelephonySettings() {
   const isGlobalAdmin = user?.is_global_admin;
 
   useEffect(() => {
-    if (!isGlobalAdmin || !selectedTenantId) {
+    if (!isGlobalAdmin) {
+      setLoading(false);
+      return;
+    }
+    if (!selectedTenantId) {
+      setLoading(false);
       return;
     }
     fetchConfig();

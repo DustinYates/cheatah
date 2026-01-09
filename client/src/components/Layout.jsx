@@ -116,9 +116,11 @@ export default function Layout() {
                 <li>
                   <NavLink to="/settings/email">Email Setup</NavLink>
                 </li>
-                <li>
-                  <NavLink to="/settings/telephony">Telephony</NavLink>
-                </li>
+                {user?.is_global_admin && (
+                  <li>
+                    <NavLink to="/settings/telephony">Telephony</NavLink>
+                  </li>
+                )}
                 <li>
                   <NavLink to="/settings/profile">Business Profile</NavLink>
                 </li>

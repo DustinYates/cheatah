@@ -149,3 +149,95 @@ Each tenant needs a Telnyx Messaging Profile with correct webhook URLs:
 - **START keyword**: User texts "START" → opted back in
 - **HELP keyword**: User receives help message with options
 - Opt-in status is tracked per phone number per tenant in `sms_opt_ins` table
+
+---
+
+## Voice Setup (Telnyx AI Assistant)
+
+Voice functionality uses Telnyx AI Assistant to handle inbound calls with tenant-specific AI responses.
+
+### Step 1: Database Configuration
+
+Run the voice config setup script to create `TenantVoiceConfig` record:
+
+```bash
+cd /path/to/chattercheetah
+source .venv/bin/activate
+python scripts/setup_voice_configs.py
+```
+
+Or create manually by adding to `TENANT_CONFIGS` in the script:
+```python
+{
+    "tenant_id": <TENANT_ID>,
+    "name": "Tenant Name",
+    "greeting": "Hello! Thank you for calling [Business Name]. I'm an AI assistant here to help you. How can I assist you today?",
+}
+```
+
+This creates:
+- `TenantVoiceConfig` record with `is_enabled=True`
+- Sets `voice_enabled=True` in `TenantSmsConfig`
+
+### Step 2: Create Telnyx AI Assistant
+
+1. Go to **Telnyx Portal** → **AI** → **AI Assistants**
+2. Click **Create AI Assistant**
+3. Name it: `[Tenant Name] Voice`
+4. In the **Instructions/System Prompt** field, paste the tenant's full prompt including:
+   - Business identity
+   - Locations/services
+   - Pricing info (if applicable)
+   - Behavioral instructions
+5. Save the assistant
+
+**Example System Prompt:**
+```
+BUSINESS IDENTITY:
+You are supporting [Business Name].
+
+LOCATIONS:
+1) [Location 1] - [Address]
+2) [Location 2] - [Address]
+
+SERVICES:
+[List of services]
+
+PRICING:
+[Pricing information]
+
+Be warm, friendly, and helpful. Answer questions about locations, services, and scheduling.
+If you don't know something specific, offer to have someone call them back.
+```
+
+### Step 3: Assign Phone Number
+
+1. Go to **AI Assistants** → Click on the assistant
+2. Go to **Calling** tab → **Assigned Phone Numbers**
+3. Add the tenant's phone number (e.g., +1-281-626-0873)
+4. Save
+
+### Step 4: Test Voice
+
+1. Call the assigned phone number
+2. Test questions:
+   - "What locations do you have?"
+   - "What services do you offer?"
+   - "How much does it cost?"
+3. Verify AI responds with tenant-specific information
+
+### Voice Configuration Notes
+
+- **One AI Assistant per tenant**: Each tenant needs their own AI Assistant with their specific prompt
+- **Dynamic variables webhook** (`/api/v1/telnyx/dynamic-variables`): Available but not currently used - prompts are hardcoded in Telnyx portal for reliability
+- **Ring delay**: Configure in Telnyx AI Assistant settings if you want the phone to ring before AI answers
+- **Database records**: `TenantVoiceConfig` stores handoff settings, greetings, escalation rules (for future TeXML integration)
+
+### Voice Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| AI gives generic responses | Check System Prompt in Telnyx portal contains tenant-specific info |
+| Calls not connecting | Verify phone number is assigned to AI Assistant |
+| No voice at all | Check phone number has voice enabled in Telnyx Numbers settings |
+| Want to change AI personality | Edit Instructions field in Telnyx AI Assistant |

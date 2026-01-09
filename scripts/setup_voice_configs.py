@@ -14,7 +14,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Production database URL
-PROD_DATABASE_URL = "postgresql://postgres.ymnklxvfcvwuxqxrbiul:Hudlink222!@aws-1-us-east-2.pooler.supabase.com:5432/postgres"
+PROD_DATABASE_URL = os.environ.get("DATABASE_URL", "")
 os.environ["DATABASE_URL"] = PROD_DATABASE_URL
 
 from sqlalchemy import select

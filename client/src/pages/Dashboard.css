@@ -538,6 +538,12 @@
   border-color: #fed7aa;
 }
 
+.icon-button--danger:hover:not(:disabled) {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
 .icon-button--info:hover:not(:disabled) {
   color: #1d4ed8;
   background: #eff6ff;

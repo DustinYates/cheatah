@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { MessageSquare, Pencil, Trash2, Users, Search } from 'lucide-react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -111,7 +112,7 @@ export default function Contacts() {
     return (
       <div className="contacts-page">
         <EmptyState
-          icon="👥"
+          icon={<Users size={32} strokeWidth={1.5} />}
           title="Select a tenant to view contacts"
           description="Please select a tenant from the dropdown above to view their contacts."
         />
@@ -128,7 +129,7 @@ export default function Contacts() {
       return (
         <div className="contacts-page">
           <EmptyState
-            icon="👥"
+            icon={<Users size={32} strokeWidth={1.5} />}
             title="Select a tenant to view contacts"
             description="Please select a tenant from the dropdown above to view their contacts."
           />
@@ -141,6 +142,7 @@ export default function Contacts() {
           <div className="page-header">
             <h1>Contacts</h1>
             <div className="search-box">
+              <Search size={14} className="search-icon" />
               <input
                 type="text"
                 placeholder="Search contacts..."
@@ -151,8 +153,8 @@ export default function Contacts() {
               />
             </div>
           </div>
-          <EmptyState 
-            icon="👥"
+          <EmptyState
+            icon={<Users size={32} strokeWidth={1.5} />}
             title="No verified contacts yet"
             description="Contacts will appear here once they opt in through the chatbot."
           />
@@ -172,6 +174,7 @@ export default function Contacts() {
         <h1>Contacts</h1>
         <div className="header-actions">
           <div className="search-box">
+            <Search size={14} className="search-icon" />
             <input
               type="text"
               placeholder="Search contacts..."
@@ -208,8 +211,8 @@ export default function Contacts() {
       )}
 
       {contacts.length === 0 ? (
-        <EmptyState 
-          icon="👥"
+        <EmptyState
+          icon={<Users size={32} strokeWidth={1.5} />}
           title="No verified contacts yet"
           description="Contacts will appear here once they opt in through the chatbot."
         />
@@ -226,7 +229,6 @@ export default function Contacts() {
                 <th className="col-name">Name</th>
                 <th className="col-phone">Phone</th>
                 <th className="col-email">Email</th>
-                <th className="col-status">Status</th>
                 <th className="col-added">Added</th>
                 <th className="col-actions">Actions</th>
               </tr>
@@ -264,11 +266,6 @@ export default function Contacts() {
                         {contact.email || '-'}
                       </span>
                     </td>
-                    <td className="col-status">
-                      <span className={`status ${contact.opt_in_status || 'verified'}`}>
-                        {contact.opt_in_status || 'Verified'}
-                      </span>
-                    </td>
                     <td className="col-added">
                       <span className="contact-date">
                         {formatDateTimeParts(contact.created_at).date}
@@ -276,23 +273,23 @@ export default function Contacts() {
                     </td>
                     <td className="col-actions">
                       <div className="action-buttons">
-                        <button 
+                        <button
                           className="btn-action btn-chat"
                           onClick={(e) => handleViewChat(e, contact)}
                           title="View conversation history"
                           aria-label="View conversation history"
                         >
-                          💬
+                          <MessageSquare size={14} />
                         </button>
-                        <button 
+                        <button
                           className="btn-action btn-edit"
                           onClick={(e) => handleEdit(e, contact)}
                           title="Edit contact"
                           aria-label="Edit contact"
                         >
-                          ✏️
+                          <Pencil size={14} />
                         </button>
-                        <button 
+                        <button
                           className="btn-action btn-delete"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -301,7 +298,7 @@ export default function Contacts() {
                           title="Delete contact"
                           aria-label="Delete contact"
                         >
-                          🗑️
+                          <Trash2 size={14} />
                         </button>
                       </div>
                       <details className="action-menu">
@@ -321,7 +318,8 @@ export default function Contacts() {
                               e.currentTarget.closest('details')?.removeAttribute('open');
                             }}
                           >
-                            Message
+                            <MessageSquare size={14} />
+                            <span>Message</span>
                           </button>
                           <button
                             type="button"
@@ -330,7 +328,8 @@ export default function Contacts() {
                               e.currentTarget.closest('details')?.removeAttribute('open');
                             }}
                           >
-                            Edit
+                            <Pencil size={14} />
+                            <span>Edit</span>
                           </button>
                           <button
                             type="button"
@@ -341,7 +340,8 @@ export default function Contacts() {
                               e.currentTarget.closest('details')?.removeAttribute('open');
                             }}
                           >
-                            Delete
+                            <Trash2 size={14} />
+                            <span>Delete</span>
                           </button>
                         </div>
                       </details>
@@ -353,8 +353,8 @@ export default function Contacts() {
           </table>
           
           {filteredContacts.length === 0 && search && (
-            <EmptyState 
-              icon="🔍"
+            <EmptyState
+              icon={<Search size={32} strokeWidth={1.5} />}
               title="No matches found"
               description={`No contacts match "${search}". Try a different search term.`}
             />

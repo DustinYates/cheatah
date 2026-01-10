@@ -9,8 +9,11 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.conversation_service import ConversationService
+from app.domain.services.escalation_service import EscalationService
 from app.domain.services.lead_service import LeadService
 from app.domain.services.contact_service import ContactService
+from app.domain.services.promise_detector import PromiseDetector
+from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
 from app.domain.services.prompt_service import PromptService
 from app.llm.orchestrator import LLMOrchestrator
 from app.persistence.models.conversation import Conversation, Message
@@ -23,7 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ChatResult:
     """Result of a chat request."""
-    
+
     session_id: str
     response: str
     requires_contact_info: bool
@@ -31,6 +34,8 @@ class ChatResult:
     lead_captured: bool
     turn_count: int
     llm_latency_ms: float
+    escalation_requested: bool = False
+    escalation_id: int | None = None
 
 
 class ChatService:
@@ -45,8 +50,11 @@ class ChatService:
         """Initialize chat service."""
         self.session = session
         self.conversation_service = ConversationService(session)
+        self.escalation_service = EscalationService(session)
         self.lead_service = LeadService(session)
         self.contact_service = ContactService(session)
+        self.promise_detector = PromiseDetector()
+        self.promise_fulfillment_service = PromiseFulfillmentService(session)
         self.prompt_service = PromptService(session)
         self.llm_orchestrator = LLMOrchestrator()
         self.tenant_repo = TenantRepository(session)
@@ -105,6 +113,8 @@ class ChatService:
                 lead_captured=False,
                 turn_count=turn_count,
                 llm_latency_ms=0.0,
+                escalation_requested=False,
+                escalation_id=None,
             )
 
         # Check timeout (conversation age)
@@ -120,12 +130,35 @@ class ChatService:
                 lead_captured=False,
                 turn_count=turn_count,
                 llm_latency_ms=0.0,
+                escalation_requested=False,
+                escalation_id=None,
             )
 
         # Add user message
         await self.conversation_service.add_message(
             tenant_id, conversation.id, "user", user_message
         )
+
+        # Check for escalation request (customer asking to speak with human)
+        escalation_requested = False
+        escalation_id = None
+        escalation = await self.escalation_service.check_and_escalate(
+            tenant_id=tenant_id,
+            conversation_id=conversation.id,
+            user_message=user_message,
+            channel="chat",
+            customer_phone=user_phone,
+            customer_email=user_email,
+            customer_name=user_name,
+        )
+        if escalation:
+            escalation_requested = True
+            escalation_id = escalation.id
+            logger.info(
+                f"Escalation detected in chat - tenant_id={tenant_id}, "
+                f"conversation_id={conversation.id}, escalation_id={escalation.id}, "
+                f"reason={escalation.reason}"
+            )
 
         # Handle lead capture
         lead_captured = False
@@ -287,6 +320,46 @@ class ChatService:
             if existing_lead_after:
                 lead_captured = True
 
+        # Check for AI promises to send information (registration links, schedules, etc.)
+        # Get phone number from user input, extracted info, or existing lead
+        customer_phone = (
+            user_phone
+            or extracted_phone
+            or (existing_lead.phone if existing_lead else None)
+        )
+        customer_name = (
+            user_name
+            or extracted_name
+            or (existing_lead.name if existing_lead else None)
+        )
+
+        if customer_phone:
+            promise = self.promise_detector.detect_promise(llm_response)
+            if promise and promise.confidence >= 0.6:
+                logger.info(
+                    f"AI promise detected - tenant_id={tenant_id}, "
+                    f"conversation_id={conversation.id}, asset_type={promise.asset_type}, "
+                    f"confidence={promise.confidence:.2f}"
+                )
+                try:
+                    # Fulfill the promise immediately (send SMS with promised content)
+                    fulfillment_result = await self.promise_fulfillment_service.fulfill_promise(
+                        tenant_id=tenant_id,
+                        conversation_id=conversation.id,
+                        promise=promise,
+                        phone=customer_phone,
+                        name=customer_name,
+                    )
+                    logger.info(
+                        f"Promise fulfillment result - tenant_id={tenant_id}, "
+                        f"status={fulfillment_result.get('status')}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to fulfill promise - tenant_id={tenant_id}, error={e}",
+                        exc_info=True,
+                    )
+
         # No hardcoded contact info nudge - let the LLM handle it naturally through the prompt
         final_response = llm_response
 
@@ -298,6 +371,8 @@ class ChatService:
             lead_captured=lead_captured,
             turn_count=turn_count + 1,
             llm_latency_ms=llm_latency_ms,
+            escalation_requested=escalation_requested,
+            escalation_id=escalation_id,
         )
 
     async def _update_contact_from_lead(

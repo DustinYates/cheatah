@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -78,6 +78,9 @@ export default function Calls() {
   });
 
   const { calls, total, has_more } = data;
+  const sortedCalls = useMemo(() => {
+    return [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }, [calls]);
 
   const needsTenant = user?.is_global_admin && !selectedTenantId;
 
@@ -122,11 +125,9 @@ export default function Calls() {
     <div className="calls-page">
       <div className="page-header">
         <h1>Voice Calls</h1>
-        <div className="calls-stats">
-          <span className="stat-item">
-            <span className="stat-number">{total}</span>
-            <span className="stat-label">Total Calls</span>
-          </span>
+        <div className="calls-kpi">
+          <span className="kpi-value">{total}</span>
+          <span className="kpi-label">calls</span>
         </div>
       </div>
 
@@ -199,70 +200,49 @@ export default function Calls() {
                   <th>Intent</th>
                   <th>Outcome</th>
                   <th>Status</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {calls.map((call) => {
+                {sortedCalls.map((call) => {
                   const { date, time } = formatDateTimeParts(call.created_at);
                   return (
                     <tr key={call.id} onClick={() => setSelectedCall(call)} className="clickable-row">
                       <td className="date-cell">
-                        {date}
+                        <span className="date-main">{date}</span>
                         <span className="time-sub">{time}</span>
                       </td>
-                    <td>{formatPhone(call.from_number)}</td>
-                    <td className="name-cell">{call.summary?.extracted_fields?.name || '-'}</td>
-                    <td>{formatDuration(call.duration)}</td>
-                    <td>
-                      {call.summary?.intent ? (
-                        <span 
-                          className="badge intent-badge"
-                          style={{ backgroundColor: `${INTENT_LABELS[call.summary.intent]?.color}20`, color: INTENT_LABELS[call.summary.intent]?.color }}
-                        >
-                          {INTENT_LABELS[call.summary.intent]?.label || call.summary.intent}
+                      <td className="caller-cell">{formatPhone(call.from_number)}</td>
+                      <td className="name-cell">{call.summary?.extracted_fields?.name || '—'}</td>
+                      <td className="duration-cell">{formatDuration(call.duration)}</td>
+                      <td>
+                        {call.summary?.intent ? (
+                          <span 
+                            className="badge intent-badge"
+                            style={{ backgroundColor: `${INTENT_LABELS[call.summary.intent]?.color}20`, color: INTENT_LABELS[call.summary.intent]?.color }}
+                          >
+                            {INTENT_LABELS[call.summary.intent]?.label || call.summary.intent}
+                          </span>
+                        ) : (
+                          <span className="badge badge-empty">-</span>
+                        )}
+                      </td>
+                      <td>
+                        {call.summary?.outcome ? (
+                          <span 
+                            className="badge outcome-badge"
+                            style={{ backgroundColor: `${OUTCOME_LABELS[call.summary.outcome]?.color}20`, color: OUTCOME_LABELS[call.summary.outcome]?.color }}
+                          >
+                            {OUTCOME_LABELS[call.summary.outcome]?.label || call.summary.outcome}
+                          </span>
+                        ) : (
+                          <span className="badge badge-empty">-</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge status-badge status-${call.status}`}>
+                          {call.status}
                         </span>
-                      ) : (
-                        <span className="badge badge-empty">-</span>
-                      )}
-                    </td>
-                    <td>
-                      {call.summary?.outcome ? (
-                        <span 
-                          className="badge outcome-badge"
-                          style={{ backgroundColor: `${OUTCOME_LABELS[call.summary.outcome]?.color}20`, color: OUTCOME_LABELS[call.summary.outcome]?.color }}
-                        >
-                          {OUTCOME_LABELS[call.summary.outcome]?.label || call.summary.outcome}
-                        </span>
-                      ) : (
-                        <span className="badge badge-empty">-</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className={`badge status-badge status-${call.status}`}>
-                        {call.status}
-                      </span>
-                    </td>
-                    <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
-                      <button 
-                        className="btn-action"
-                        onClick={() => setSelectedCall(call)}
-                        title="View Details"
-                      >
-                        👁️
-                      </button>
-                      {call.recording_url && (
-                        <a 
-                          href={call.recording_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn-action"
-                          title="Listen to Recording"
-                        >
-                          🎧
-                        </a>
-                      )}
-                    </td>
+                      </td>
                     </tr>
                   );
                 })}
@@ -299,7 +279,19 @@ export default function Calls() {
           <div className="call-modal" onClick={(e) => e.stopPropagation()}>
             <div className="call-modal-header">
               <h2>Call Details</h2>
-              <button className="btn-close" onClick={() => setSelectedCall(null)}>×</button>
+              <div className="call-modal-actions">
+                {selectedCall?.recording_url && (
+                  <a
+                    href={selectedCall.recording_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-modal-link"
+                  >
+                    View recording
+                  </a>
+                )}
+                <button className="btn-close" onClick={() => setSelectedCall(null)}>×</button>
+              </div>
             </div>
             <div className="call-modal-body">
               <div className="call-detail-grid">

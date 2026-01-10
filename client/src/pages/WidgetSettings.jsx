@@ -507,15 +507,6 @@ export default function WidgetSettings() {
               />
             </div>
 
-            <div className="embed-instructions">
-              <h3>Installation Instructions</h3>
-              <ol>
-                <li>Copy the code above by clicking the "Copy Code" button</li>
-                <li>In WordPress, go to <strong>Appearance → Theme File Editor</strong></li>
-                <li>Add the code to your theme's <code>footer.php</code> file before the closing <code>&lt;/body&gt;</code> tag</li>
-                <li>Alternatively, use a plugin like <strong>"Insert Headers and Footers"</strong> and paste the code in the Footer section</li>
-              </ol>
-            </div>
           </>
         )}
       </div>

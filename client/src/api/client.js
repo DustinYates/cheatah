@@ -174,8 +174,23 @@ class ApiClient {
     return this.request('/leads/stats');
   }
 
-  async getUsageAnalytics() {
-    return this.request('/analytics/usage');
+  async getUsageAnalytics(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/analytics/usage${query ? `?${query}` : ''}`);
+  }
+
+  async revealTelephonyCredential(field) {
+    return this.request('/admin/telephony/credentials/reveal', {
+      method: 'POST',
+      body: JSON.stringify({ field }),
+    });
+  }
+
+  async auditTelephonyCredentialAction(action, field) {
+    return this.request('/admin/telephony/credentials/audit', {
+      method: 'POST',
+      body: JSON.stringify({ action, field }),
+    });
   }
 
   async updateLeadStatus(leadId, status) {
@@ -276,6 +291,12 @@ class ApiClient {
   async deactivatePromptBundle(bundleId) {
     return this.request(`/prompts/bundles/${bundleId}/deactivate`, {
       method: 'PUT',
+    });
+  }
+
+  async restorePromptBundle(bundleId) {
+    return this.request(`/prompts/bundles/${bundleId}/restore`, {
+      method: 'POST',
     });
   }
 

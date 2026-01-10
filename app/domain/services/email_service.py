@@ -398,13 +398,21 @@ class EmailService:
                 
                 print(f"[EMAIL_SERVICE] Processing inbound email: subject='{message.get('subject', '')}', from='{message.get('from', '')}'", flush=True)
                 logger.info(f"Processing inbound email: subject='{message.get('subject', '')}', from='{message.get('from', '')}'")
+
+                subject = message.get("subject", "")
+                if not self._should_capture_lead_from_subject(
+                    subject=subject,
+                    email_config=email_config,
+                ):
+                    logger.info(f"Skipping email due to subject filter: subject='{subject}'")
+                    continue
                 
                 # Process the inbound email
                 result = await self.process_inbound_email(
                     tenant_id=email_config.tenant_id,
                     from_email=message.get("from", ""),
                     to_email=message.get("to", ""),
-                    subject=message.get("subject", ""),
+                    subject=subject,
                     body=message.get("body", ""),
                     thread_id=message.get("thread_id", ""),
                     message_id=message_id,
@@ -599,27 +607,18 @@ class EmailService:
         Returns:
             True if lead should be captured, False otherwise
         """
-        from app.persistence.models.tenant_email_config import DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
-        
-        # Get configured prefixes, fall back to defaults if not set
+        # Only use tenant-specified prefixes; no defaults.
         prefixes = email_config.lead_capture_subject_prefixes
         print(f"[LEAD_CAPTURE] Prefixes from config: {prefixes}", flush=True)
         logger.debug(f"Lead capture prefixes from config: {prefixes}")
-        
+
         if prefixes is None:
-            prefixes = DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
-            print(f"[LEAD_CAPTURE] Using default prefixes: {prefixes}", flush=True)
-            logger.debug(f"Using default prefixes: {prefixes}")
-        
-        # If explicitly set to empty list, don't capture any leads
-        if prefixes is not None and len(prefixes) == 0:
-            print(f"[LEAD_CAPTURE] Empty prefix list - skipping capture", flush=True)
+            print("[LEAD_CAPTURE] No prefixes configured - skipping capture", flush=True)
             return False
-        
-        # If no prefixes configured at all (shouldn't happen with defaults), capture all
-        if not prefixes:
-            print(f"[LEAD_CAPTURE] No prefixes - capturing all", flush=True)
-            return True
+
+        if len(prefixes) == 0:
+            print("[LEAD_CAPTURE] Empty prefix list - skipping capture", flush=True)
+            return False
         
         # Strip common email prefixes (Fwd:, Re:, etc.) before checking
         subject_lower = (subject or "").lower().strip()

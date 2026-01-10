@@ -353,92 +353,7 @@
   gap: var(--space-4);
 }
 
-.prompts-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.prompt-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  transition: all 0.15s ease;
-  position: relative;
-}
-
-.prompt-item:hover {
-  border-color: #cbd5f5;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
-}
-
-.prompt-item--live::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 10px;
-  bottom: 10px;
-  width: 3px;
-  background: #10b981;
-  border-radius: 999px;
-}
-
-.prompt-item__main {
-  flex: 1;
-  min-width: 0;
-}
-
-.prompt-item__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-.prompt-item__title-group {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.prompt-item__title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.prompt-item__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.prompt-item__meta-item {
-  font-size: 12px;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-}
-
-.prompt-item__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
-}
+/* Note: prompt-item styles removed - replaced by backup-item styles */
 
 /* ========================================
    Status Badge - Modern Pill
@@ -725,18 +640,20 @@
     padding: 0;
   }
 
-  .prompt-item {
+  /* Responsive backup-item styles */
+  .backup-item {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
 
-  .prompt-item__actions {
+  .backup-item__actions {
     width: 100%;
     justify-content: flex-start;
     flex-wrap: wrap;
+    margin-top: var(--space-2);
   }
 
-  .prompt-item__meta {
+  .backup-item__meta {
     align-items: flex-start;
   }
 }
@@ -2057,4 +1974,376 @@
   word-break: break-word;
   color: #334155;
   margin: 0;
+}
+
+/* ========================================
+   Live Prompt Section (Hero)
+   ======================================== */
+.live-prompt-section {
+  margin-bottom: var(--space-4);
+}
+
+.live-prompt-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-card);
+  margin-bottom: var(--space-3);
+  font-size: 13px;
+  color: #1e40af;
+}
+
+.live-prompt-banner__icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.live-prompt-card {
+  background: #ffffff;
+  border: 2px solid #10b981;
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.1),
+              0 2px 4px -1px rgba(16, 185, 129, 0.06);
+}
+
+.live-prompt-card--loading {
+  border-color: #e2e8f0;
+  color: #64748b;
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.live-prompt-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+}
+
+.live-prompt-card__title {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.live-prompt-card__icon {
+  font-size: 24px;
+  color: #10b981;
+  font-weight: bold;
+}
+
+.live-prompt-card__title h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.live-prompt-card__pipeline {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}
+
+.live-prompt-card__actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.live-prompt-card__warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  margin-top: var(--space-4);
+  font-size: 13px;
+  color: #92400e;
+}
+
+/* Status Pill - Live variant */
+.status-pill--live {
+  color: #047857;
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+  font-weight: 600;
+}
+
+/* Status Pill - Backup variant */
+.status-pill--backup {
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+/* ========================================
+   Collapsible Sections
+   ======================================== */
+.prompts-section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-card);
+  margin-bottom: var(--space-4);
+  overflow: hidden;
+}
+
+.prompts-section__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  background: #f8fafc;
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.prompts-section__header:hover {
+  background: #f1f5f9;
+}
+
+.prompts-section__header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.prompts-section__chevron {
+  color: #64748b;
+  font-size: 10px;
+  transition: transform 0.2s ease;
+  width: 16px;
+  text-align: center;
+}
+
+.prompts-section--collapsed .prompts-section__chevron {
+  /* Chevron already shows ▶ when collapsed */
+}
+
+.prompts-section__title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.prompts-section__helper {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.prompts-section__count {
+  background: #e2e8f0;
+  color: #475569;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.prompts-section__content {
+  padding: var(--space-4);
+  border-top: 1px solid #e2e8f0;
+}
+
+.prompts-section--collapsed .prompts-section__content {
+  display: none;
+}
+
+/* ========================================
+   Components Grid
+   ======================================== */
+.components-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+}
+
+@media (max-width: 768px) {
+  .components-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.component-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.component-card--base {
+  border-left: 3px solid #3b82f6;
+}
+
+.component-card--active {
+  border-left: 3px solid #10b981;
+}
+
+.component-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.component-card__title {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.component-card__icon {
+  font-size: 18px;
+}
+
+.component-card__title h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  color: #1e293b;
+}
+
+.component-card__title p {
+  font-size: 12px;
+  color: #64748b;
+  margin: 4px 0 0 0;
+}
+
+.component-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.component-card__meta {
+  font-size: 12px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.component-card__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: auto;
+  flex-wrap: wrap;
+}
+
+/* ========================================
+   Backups Section
+   ======================================== */
+.backups-empty {
+  text-align: center;
+  padding: var(--space-6);
+  color: #64748b;
+}
+
+.backups-empty__hint {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-top: var(--space-2);
+}
+
+.backups-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.backups-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.backup-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+.backup-item:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.backup-item__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.backup-item__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.backup-item__title-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.backup-item__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.backup-item__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.backup-item__meta-item {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.backup-item__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Backup Info Banner (in modal) */
+.backup-info-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: var(--space-4);
+  font-size: 13px;
+  color: #475569;
 }

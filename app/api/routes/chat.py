@@ -32,6 +32,8 @@ class ChatResponse(BaseModel):
     requires_contact_info: bool = False  # True if we need name/email/phone
     conversation_complete: bool = False  # True if max turns reached or timeout
     lead_captured: bool = False  # True if lead was captured in this turn
+    escalation_requested: bool = False  # True if customer requested to speak with human
+    escalation_id: int | None = None  # Escalation record ID if escalation was triggered
 
 
 @router.post("", response_model=ChatResponse)
@@ -83,6 +85,8 @@ async def chat(
             requires_contact_info=result.requires_contact_info,
             conversation_complete=result.conversation_complete,
             lead_captured=result.lead_captured,
+            escalation_requested=result.escalation_requested,
+            escalation_id=result.escalation_id,
         )
         
     except ValueError as e:

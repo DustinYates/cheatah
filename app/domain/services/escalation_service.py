@@ -28,16 +28,24 @@ class EscalationService:
         user_message: str,
         llm_response: str | None = None,
         confidence_score: float | None = None,
+        channel: str = "chat",
+        customer_phone: str | None = None,
+        customer_email: str | None = None,
+        customer_name: str | None = None,
     ) -> Escalation | None:
         """Check if escalation is needed and create escalation record.
-        
+
         Args:
             tenant_id: Tenant ID
             conversation_id: Conversation ID (optional)
             user_message: User message that triggered check
             llm_response: LLM response (for confidence checking)
             confidence_score: Explicit confidence score (if available)
-            
+            channel: Communication channel (chat, sms, voice)
+            customer_phone: Customer's phone number (if known)
+            customer_email: Customer's email (if known)
+            customer_name: Customer's name (if known)
+
         Returns:
             Escalation record if created, None otherwise
         """
@@ -70,8 +78,8 @@ class EscalationService:
         
         if not should_escalate:
             return None
-        
-        # Create escalation record
+
+        # Create escalation record with metadata
         escalation = await self.escalation_repo.create(
             tenant_id,
             conversation_id=conversation_id,
@@ -79,39 +87,83 @@ class EscalationService:
             status="pending",
             confidence_score=str(confidence_score) if confidence_score else None,
             trigger_message=user_message,
+            metadata={
+                "channel": channel,
+                "customer_phone": customer_phone,
+                "customer_email": customer_email,
+                "customer_name": customer_name,
+            },
         )
-        
-        # Notify admins
-        await self._notify_admins(tenant_id, escalation)
-        
+
+        # Notify admins with customer contact info
+        await self._notify_admins(
+            tenant_id,
+            escalation,
+            channel=channel,
+            customer_phone=customer_phone,
+            customer_email=customer_email,
+            customer_name=customer_name,
+        )
+
         return escalation
 
     async def _notify_admins(
         self,
         tenant_id: int,
         escalation: Escalation,
+        channel: str = "chat",
+        customer_phone: str | None = None,
+        customer_email: str | None = None,
+        customer_name: str | None = None,
     ) -> None:
-        """Notify admins of escalation.
-        
+        """Notify admins of escalation with customer contact info.
+
         Args:
             tenant_id: Tenant ID
             escalation: Escalation record
+            channel: Communication channel (chat, sms, voice)
+            customer_phone: Customer's phone number
+            customer_email: Customer's email
+            customer_name: Customer's name
         """
-        subject = f"Escalation Required - Tenant {tenant_id}"
-        message = (
-            f"An escalation has been requested.\n\n"
-            f"Reason: {escalation.reason}\n"
-            f"Conversation ID: {escalation.conversation_id}\n"
-            f"Trigger Message: {escalation.trigger_message}\n"
-            f"Escalation ID: {escalation.id}"
-        )
-        
+        # Build urgent subject
+        subject = f"[URGENT] Customer Requesting Human - {channel.upper()}"
+
+        # Build message with customer contact info
+        message_parts = [
+            "A customer is requesting to speak with a human.\n",
+            f"Channel: {channel.title()}",
+            f"Reason: {escalation.reason.replace('_', ' ').title()}",
+        ]
+
+        # Add customer contact info if available
+        if customer_name:
+            message_parts.append(f"Customer Name: {customer_name}")
+        if customer_phone:
+            message_parts.append(f"Customer Phone: {customer_phone}")
+        if customer_email:
+            message_parts.append(f"Customer Email: {customer_email}")
+
+        message_parts.append(f"\nTheir message:\n\"{escalation.trigger_message}\"")
+        message_parts.append("\nPlease respond promptly.")
+
+        message = "\n".join(message_parts)
+
         notification_result = await self.notification_service.notify_admins(
             tenant_id=tenant_id,
             subject=subject,
             message=message,
-            methods=["email", "sms"],
-            metadata={"escalation_id": escalation.id},
+            methods=["email", "sms", "in_app"],  # All channels for urgency
+            metadata={
+                "escalation_id": escalation.id,
+                "conversation_id": escalation.conversation_id,
+                "channel": channel,
+                "customer_phone": customer_phone,
+                "customer_email": customer_email,
+            },
+            notification_type="escalation",
+            priority="urgent",
+            action_url=f"/conversations/{escalation.conversation_id}" if escalation.conversation_id else None,
         )
         
         # Update escalation with notification status

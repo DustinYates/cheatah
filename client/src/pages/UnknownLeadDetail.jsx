@@ -45,6 +45,18 @@ export default function UnknownLeadDetail() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm('Delete this lead? This action cannot be undone.')) {
+      return;
+    }
+    try {
+      await api.deleteLead(id);
+      navigate('/analytics/unknowns');
+    } catch (err) {
+      console.error('Failed to delete lead:', err);
+    }
+  };
+
   if (leadLoading) {
     return <LoadingState message="Loading lead..." fullPage />;
   }
@@ -101,6 +113,9 @@ export default function UnknownLeadDetail() {
             </button>
             <button className="btn-dismiss" onClick={handleDismiss}>
               ✗ Dismiss
+            </button>
+            <button className="btn-dismiss" onClick={handleDelete}>
+              🗑 Delete
             </button>
           </div>
         </div>

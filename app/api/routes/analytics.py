@@ -1,9 +1,10 @@
 """Analytics API endpoints."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import pytz
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,7 @@ from app.persistence.database import get_db
 from app.persistence.models.call import Call
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.tenant import Tenant
+from app.persistence.models.tenant_sms_config import TenantSmsConfig
 
 router = APIRouter()
 
@@ -32,6 +34,9 @@ class UsageResponse(BaseModel):
     """Usage metrics response."""
 
     onboarded_date: str
+    start_date: str
+    end_date: str
+    timezone: str
     series: list[UsageDay]
 
 
@@ -53,10 +58,36 @@ def _normalize_date(value: date | datetime | str | None) -> date | None:
     return None
 
 
+def _resolve_timezone(value: str | None) -> str:
+    if not value:
+        return "UTC"
+    try:
+        pytz.timezone(value)
+        return value
+    except pytz.UnknownTimeZoneError:
+        return "UTC"
+
+
+def _supports_timezone(db: AsyncSession) -> bool:
+    try:
+        return db.bind and db.bind.dialect.name == "postgresql"
+    except AttributeError:
+        return False
+
+
+def _day_bucket(column, timezone_name: str, use_timezone: bool):
+    if use_timezone and timezone_name != "UTC":
+        return cast(func.timezone(timezone_name, column), Date).label("day")
+    return cast(column, Date).label("day")
+
+
 @router.get("/usage", response_model=UsageResponse)
 async def get_usage(
     db: Annotated[AsyncSession, Depends(get_db)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
+    start_date: Annotated[str | None, Query()] = None,
+    end_date: Annotated[str | None, Query()] = None,
+    timezone: Annotated[str | None, Query()] = None,
 ) -> UsageResponse:
     """Get daily usage metrics for SMS, chatbot, and calls."""
     tenant_result = await db.execute(
@@ -69,13 +100,44 @@ async def get_usage(
             detail="Tenant not found",
         )
 
-    start_date = tenant_created_at.date()
-    today = datetime.utcnow().date()
-    if start_date > today:
-        start_date = today
-    start_datetime = datetime.combine(start_date, datetime.min.time())
+    sms_config_result = await db.execute(
+        select(TenantSmsConfig.timezone).where(TenantSmsConfig.tenant_id == tenant_id)
+    )
+    tenant_timezone = sms_config_result.scalar_one_or_none()
+    requested_timezone = _resolve_timezone(timezone)
+    effective_timezone = _resolve_timezone(tenant_timezone) if tenant_timezone else requested_timezone
+    use_timezone = _supports_timezone(db)
 
-    sms_day = cast(Message.created_at, Date).label("day")
+    tenant_start_date = tenant_created_at.date()
+    today = datetime.utcnow().date()
+    parsed_start = _normalize_date(start_date)
+    parsed_end = _normalize_date(end_date)
+
+    if parsed_start is None and parsed_end is None:
+        parsed_end = today
+        parsed_start = parsed_end - timedelta(days=6)
+    elif parsed_start is None and parsed_end is not None:
+        parsed_start = parsed_end - timedelta(days=6)
+    elif parsed_end is None and parsed_start is not None:
+        parsed_end = today
+
+    range_start = parsed_start or tenant_start_date
+    range_end = parsed_end or today
+
+    if range_start < tenant_start_date:
+        range_start = tenant_start_date
+    if range_end > today:
+        range_end = today
+    if range_start > range_end:
+        range_start = range_end
+
+    tz = pytz.timezone(effective_timezone)
+    start_local = tz.localize(datetime.combine(range_start, time.min))
+    end_local = tz.localize(datetime.combine(range_end, time.max))
+    start_datetime = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
+    end_datetime = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
+
+    sms_day = _day_bucket(Message.created_at, effective_timezone, use_timezone)
     sms_stmt = (
         select(
             sms_day,
@@ -89,6 +151,7 @@ async def get_usage(
             Conversation.channel == "sms",
             Message.role.in_(["user", "assistant"]),
             Message.created_at >= start_datetime,
+            Message.created_at <= end_datetime,
         )
         .group_by(sms_day, Message.role)
     )
@@ -105,7 +168,7 @@ async def get_usage(
         elif row.role == "assistant":
             sms_out[day] = int(row.count or 0)
 
-    chat_day = cast(Message.created_at, Date).label("day")
+    chat_day = _day_bucket(Message.created_at, effective_timezone, use_timezone)
     chat_stmt = (
         select(
             chat_day,
@@ -118,6 +181,7 @@ async def get_usage(
             Conversation.channel == "web",
             Message.role == "user",
             Message.created_at >= start_datetime,
+            Message.created_at <= end_datetime,
         )
         .group_by(chat_day)
     )
@@ -131,7 +195,7 @@ async def get_usage(
         chat_interactions[day] = int(row.count or 0)
 
     call_timestamp = func.coalesce(Call.started_at, Call.created_at)
-    calls_day = cast(call_timestamp, Date).label("day")
+    calls_day = _day_bucket(call_timestamp, effective_timezone, use_timezone)
     duration_seconds = func.coalesce(
         func.nullif(Call.duration, 0),
         func.extract("epoch", Call.ended_at - Call.started_at),
@@ -146,6 +210,7 @@ async def get_usage(
         .where(
             Call.tenant_id == tenant_id,
             call_timestamp >= start_datetime,
+            call_timestamp <= end_datetime,
         )
         .group_by(calls_day)
     )
@@ -162,8 +227,8 @@ async def get_usage(
         call_counts[day] = int(row.call_count or 0)
 
     series = []
-    current = start_date
-    while current <= today:
+    current = range_start
+    while current <= range_end:
         series.append(
             UsageDay(
                 date=current.isoformat(),
@@ -177,6 +242,9 @@ async def get_usage(
         current += timedelta(days=1)
 
     return UsageResponse(
-        onboarded_date=start_date.isoformat(),
+        onboarded_date=tenant_start_date.isoformat(),
+        start_date=range_start.isoformat(),
+        end_date=range_end.isoformat(),
+        timezone=effective_timezone,
         series=series,
     )

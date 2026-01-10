@@ -621,6 +621,21 @@ export default function Dashboard() {
                             </IconButton>
                           </>
                         )}
+                        <IconButton
+                          className="icon-button--soft icon-button--danger"
+                          onClick={() => handleDelete(lead.id, lead.name)}
+                          disabled={actionLoading === lead.id}
+                          title="Delete lead"
+                          ariaLabel="Delete lead"
+                        >
+                          {actionLoading === lead.id ? (
+                            <span className="spinner">⋯</span>
+                          ) : (
+                            <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                              <path d="M7.5 2.5a.75.75 0 00-.75.75V4H4a.75.75 0 000 1.5h.643l.91 10.01A2.25 2.25 0 007.796 17.5h4.408a2.25 2.25 0 002.243-1.99l.91-10.01H16a.75.75 0 000-1.5h-2.75v-.75a.75.75 0 00-.75-.75h-5zM8.25 4V3.25h3.5V4h-3.5zM8 8.25c.414 0 .75.336.75.75v5a.75.75 0 01-1.5 0v-5c0-.414.336-.75.75-.75zm4 0c.414 0 .75.336.75.75v5a.75.75 0 01-1.5 0v-5c0-.414.336-.75.75-.75z" />
+                            </svg>
+                          )}
+                        </IconButton>
                         <div className="action-menu">
                           <IconButton
                             className="icon-button--ghost"

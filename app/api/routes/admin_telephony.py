@@ -116,6 +116,40 @@ class ValidateCredentialsResponse(BaseModel):
     error: str | None = None
 
 
+class CredentialField(str, Enum):
+    """Credential fields that can be revealed or audited."""
+
+    TWILIO_AUTH_TOKEN = "twilio_auth_token"
+    TELNYX_API_KEY = "telnyx_api_key"
+    VOXIE_API_KEY = "voxie_api_key"
+
+
+class CredentialAction(str, Enum):
+    """Audit actions for credential access."""
+
+    REVEAL = "reveal"
+    COPY = "copy"
+
+
+class CredentialRevealRequest(BaseModel):
+    """Request to reveal a credential value."""
+
+    field: CredentialField = Field(..., description="Credential field to reveal")
+
+
+class CredentialRevealResponse(BaseModel):
+    """Response containing revealed credential."""
+
+    value: str
+
+
+class CredentialAuditRequest(BaseModel):
+    """Request to audit credential access."""
+
+    action: CredentialAction = Field(..., description="Action performed on credential")
+    field: str = Field(..., description="Credential field identifier")
+
+
 @router.get("/config", response_model=TelephonyConfigResponse)
 async def get_telephony_config(
     _current_user: Annotated[User, Depends(require_global_admin)],
@@ -422,6 +456,54 @@ async def validate_telephony_credentials(
             valid=False,
             error=f"Validation error: {str(e)}",
         )
+
+
+@router.post("/credentials/reveal", response_model=CredentialRevealResponse)
+async def reveal_telephony_credential(
+    request: CredentialRevealRequest,
+    current_user: Annotated[User, Depends(require_global_admin)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CredentialRevealResponse:
+    """Reveal a sensitive credential value for admins."""
+    stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
+    result = await db.execute(stmt)
+    config = result.scalar_one_or_none()
+
+    if not config:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Telephony config not found")
+
+    field_name = request.field.value
+    value = getattr(config, field_name, None)
+
+    if not value:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credential not configured")
+
+    logger.info(
+        "Telephony credential revealed",
+        extra={"tenant_id": tenant_id, "user_id": current_user.id, "field": field_name},
+    )
+
+    return CredentialRevealResponse(value=value)
+
+
+@router.post("/credentials/audit")
+async def audit_telephony_credential_action(
+    request: CredentialAuditRequest,
+    current_user: Annotated[User, Depends(require_global_admin)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> dict:
+    """Audit credential actions such as reveal or copy."""
+    logger.info(
+        "Telephony credential action",
+        extra={
+            "tenant_id": tenant_id,
+            "user_id": current_user.id,
+            "action": request.action.value,
+            "field": request.field,
+        },
+    )
+    return {"ok": True}
 
 
 def _config_to_response(config: TenantSmsConfig) -> TelephonyConfigResponse:

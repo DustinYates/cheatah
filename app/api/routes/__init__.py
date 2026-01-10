@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, email_webhooks, leads, profile, prompts, prompt_config, prompt_interview, sms_webhooks, telnyx_webhooks, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, voice_webhooks, zapier_webhooks
+from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, email_webhooks, escalation_settings, leads, profile, prompts, prompt_config, prompt_interview, sendable_assets, sms_webhooks, telnyx_webhooks, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, voice_webhooks, zapier_webhooks
 
 api_router = APIRouter()
 
@@ -51,3 +51,9 @@ api_router.include_router(tenant_widget.router, prefix="/widget", tags=["widget"
 api_router.include_router(leads.router, prefix="/leads", tags=["leads"])
 api_router.include_router(contacts.router, prefix="/contacts", tags=["contacts"])
 api_router.include_router(calls.router, prefix="/calls", tags=["calls"])
+
+# Sendable Assets (AI follow-up messaging configuration)
+api_router.include_router(sendable_assets.router, prefix="/sendable-assets", tags=["sendable-assets"])
+
+# Escalation Settings (human handoff alerts)
+api_router.include_router(escalation_settings.router, prefix="/escalation", tags=["escalation"])

@@ -378,43 +378,97 @@ class NotificationService:
         user_id: int,
         message: str,
     ) -> dict[str, Any]:
-        """Send SMS notification to a user.
-        
+        """Send SMS notification to the business owner.
+
+        Uses the tenant's business profile phone number as the destination
+        and Telnyx SMS provider to send the notification.
+
         Args:
             tenant_id: Tenant ID
-            user_id: User ID to notify
+            user_id: User ID to notify (used for logging)
             message: SMS message (will be truncated to 160 chars)
-            
+
         Returns:
-            Result dictionary
+            Result dictionary with status and details
         """
-        # Get tenant SMS config to use for sending
         from app.persistence.models.tenant_sms_config import TenantSmsConfig
-        
+        from app.persistence.models.tenant import TenantBusinessProfile
+        from app.infrastructure.telephony.telnyx_provider import TelnyxSmsProvider
+
+        # Get tenant's business profile to get the destination phone number
+        stmt = select(TenantBusinessProfile).where(TenantBusinessProfile.tenant_id == tenant_id)
+        result = await self.session.execute(stmt)
+        business_profile = result.scalar_one_or_none()
+
+        if not business_profile or not business_profile.phone_number:
+            logger.warning(f"No business profile phone for tenant {tenant_id}, cannot send SMS notification")
+            return {
+                "status": "no_phone",
+                "note": "Business profile phone number not configured",
+            }
+
+        # Get tenant SMS config for Telnyx credentials
         stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
         result = await self.session.execute(stmt)
         sms_config = result.scalar_one_or_none()
-        
-        if not sms_config or not sms_config.twilio_phone_number:
+
+        if not sms_config:
             logger.warning(f"No SMS config for tenant {tenant_id}, cannot send SMS notification")
             return {
                 "status": "not_configured",
                 "note": "Tenant SMS not configured",
             }
-        
-        # In a full implementation, we'd need to store admin phone numbers
-        # For now, log that we would send and return a placeholder
-        logger.info(f"SMS notification would be sent to user {user_id}: {message[:50]}...")
-        
-        # TODO: When admin phone numbers are available, use TwilioSmsClient:
-        # from app.infrastructure.twilio_client import TwilioSmsClient
-        # twilio_client = TwilioSmsClient()
-        # result = twilio_client.send_sms(to=admin_phone, from_=sms_config.twilio_phone_number, body=message)
-        
-        return {
-            "status": "pending",
-            "note": "Admin phone numbers not stored - SMS notification logged",
-        }
+
+        # Determine the sender phone number and API key (prefer Telnyx)
+        from_number = sms_config.telnyx_phone_number
+        api_key = sms_config.telnyx_api_key
+        messaging_profile_id = sms_config.telnyx_messaging_profile_id
+
+        if not from_number or not api_key:
+            logger.warning(f"No Telnyx config for tenant {tenant_id}, cannot send SMS notification")
+            return {
+                "status": "not_configured",
+                "note": "Telnyx SMS not configured for tenant",
+            }
+
+        # Format destination phone number (ensure E.164 format)
+        to_number = business_profile.phone_number
+        if not to_number.startswith("+"):
+            # Assume US number if no country code
+            to_number = f"+1{to_number.replace('-', '').replace(' ', '').replace('(', '').replace(')', '')}"
+
+        # Send SMS via Telnyx
+        try:
+            telnyx_provider = TelnyxSmsProvider(
+                api_key=api_key,
+                messaging_profile_id=messaging_profile_id,
+            )
+
+            sms_result = await telnyx_provider.send_sms(
+                to=to_number,
+                from_=from_number,
+                body=message[:160],  # SMS character limit
+            )
+
+            logger.info(
+                f"SMS notification sent to business owner - tenant_id={tenant_id}, "
+                f"to={to_number}, message_id={sms_result.message_id}, status={sms_result.status}"
+            )
+
+            return {
+                "status": "sent",
+                "message_id": sms_result.message_id,
+                "to": to_number,
+                "provider": "telnyx",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to send SMS notification via Telnyx: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e),
+                "to": to_number,
+            }
 
     async def get_unread_notifications(
         self,

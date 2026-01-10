@@ -1,11 +1,11 @@
 import {
+  addDays,
+  addMonths,
   differenceInCalendarDays,
   endOfDay,
   endOfMonth,
-  endOfWeek,
   startOfDay,
   startOfMonth,
-  startOfWeek,
   startOfYear,
   subDays,
   subMonths,
@@ -148,13 +148,6 @@ export function getBucketBounds(date, granularity, timeZone) {
     };
   }
 
-  if (granularity === 'week') {
-    return {
-      start: fromZonedTime(startOfWeek(zonedDate, { weekStartsOn: 1 }), tz),
-      end: fromZonedTime(endOfWeek(zonedDate, { weekStartsOn: 1 }), tz),
-    };
-  }
-
   return {
     start: fromZonedTime(startOfDay(zonedDate), tz),
     end: fromZonedTime(endOfDay(zonedDate), tz),
@@ -171,7 +164,43 @@ export function getPresetLabel(preset) {
 }
 
 export function getRangeTypeByDays(days) {
-  if (days <= 31) return 'day';
-  if (days <= 183) return 'week';
+  if (days <= 45) return 'day';
   return 'month';
+}
+
+export function buildTimeBuckets(startDate, endDate, granularity, timeZone) {
+  if (!startDate || !endDate) return [];
+  const tz = resolveTimeZone(timeZone);
+  const buckets = [];
+  let cursor = startOfDay(toZonedTime(startDate, tz));
+  const endCursor = startOfDay(toZonedTime(endDate, tz));
+
+  if (granularity === 'month') {
+    cursor = startOfMonth(cursor);
+    const endMonth = startOfMonth(endCursor);
+    while (cursor <= endMonth) {
+      const bucketStart = fromZonedTime(startOfMonth(cursor), tz);
+      const bucketEnd = fromZonedTime(endOfMonth(cursor), tz);
+      buckets.push({
+        key: getBucketKey(bucketStart, tz),
+        bucketStart,
+        bucketEnd,
+      });
+      cursor = addMonths(cursor, 1);
+    }
+    return buckets;
+  }
+
+  while (cursor <= endCursor) {
+    const bucketStart = fromZonedTime(startOfDay(cursor), tz);
+    const bucketEnd = fromZonedTime(endOfDay(cursor), tz);
+    buckets.push({
+      key: getBucketKey(bucketStart, tz),
+      bucketStart,
+      bucketEnd,
+    });
+    cursor = addDays(cursor, 1);
+  }
+
+  return buckets;
 }

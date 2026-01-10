@@ -63,3 +63,18 @@ export function formatDateTimeParts(dateString) {
     return { date: '—', time: '—', tzAbbr: '' };
   }
 }
+
+export function formatLocalDateTime(dateString) {
+  try {
+    if (!dateString) return '—';
+
+    const normalized = normalizeTimestamp(dateString);
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return '—';
+
+    return format(date, 'MMM d, yyyy h:mm a');
+  } catch (error) {
+    console.error('Local date formatting error:', error);
+    return '—';
+  }
+}

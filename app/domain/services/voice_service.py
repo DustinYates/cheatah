@@ -1347,8 +1347,10 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
             data.email = email_matches[0].lower()
         
         # Extract name patterns
+        # Use [a-zA-Z] to match both upper and lowercase (speech-to-text often outputs lowercase)
         name_patterns = [
-            r"(?:I'?m|I am|my name is|this is|im|name's)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            r"(?:I'?m|I am|my name is|this is|im|name's|it's)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)",
+            r"(?:call me|you can call me)\s+([a-zA-Z]+)",
         ]
         for pattern in name_patterns:
             matches = re.findall(pattern, user_text, re.IGNORECASE)
@@ -1356,7 +1358,7 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
                 data.name = matches[0].strip().title()
                 break
         
-        # Try LLM extraction for more complex data
+        # Try LLM extraction for more complex data (including name if regex failed)
         try:
             extraction_prompt = f"""Analyze this phone call transcript and extract information:
 
@@ -1364,32 +1366,36 @@ Transcript:
 {user_text}
 
 Extract:
-1. reason: Why is the caller calling? (one sentence)
-2. urgency: Is this urgent? (high/medium/low)
-3. preferred_callback_time: Did they mention a preferred time to call back?
+1. name: What is the caller's name? (first name, or first and last name if given)
+2. reason: Why is the caller calling? (one sentence)
+3. urgency: Is this urgent? (high/medium/low)
+4. preferred_callback_time: Did they mention a preferred time to call back?
 
 Respond with ONLY JSON:
-{{"reason": null, "urgency": "medium", "preferred_callback_time": null}}"""
+{{"name": null, "reason": null, "urgency": "medium", "preferred_callback_time": null}}"""
 
             response = await self.llm_orchestrator.generate(
                 extraction_prompt,
-                context={"temperature": 0.0, "max_tokens": 150},
+                context={"temperature": 0.0, "max_tokens": 200},
             )
-            
+
             # Parse JSON
             response = response.strip()
             if response.startswith("{"):
                 json_end = response.rfind("}") + 1
                 response = response[:json_end]
                 extracted = json.loads(response)
-                
+
+                # Only use LLM name if regex didn't find one
+                if not data.name and extracted.get("name") and extracted["name"] != "null":
+                    data.name = extracted["name"].strip().title()
                 if extracted.get("reason") and extracted["reason"] != "null":
                     data.reason = extracted["reason"]
                 if extracted.get("urgency") and extracted["urgency"] != "null":
                     data.urgency = extracted["urgency"]
                 if extracted.get("preferred_callback_time") and extracted["preferred_callback_time"] != "null":
                     data.preferred_callback_time = extracted["preferred_callback_time"]
-                    
+
         except Exception as e:
             logger.warning(f"LLM extraction failed: {e}")
         

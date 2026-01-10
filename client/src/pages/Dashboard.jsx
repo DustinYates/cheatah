@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
-import { formatSmartDateTime } from '../utils/dateFormat';
+import { formatLocalDateTime, formatSmartDateTime } from '../utils/dateFormat';
 import './Dashboard.css';
 
 // Robot icon SVG component
@@ -783,7 +783,9 @@ export default function Dashboard() {
                     <div key={idx} className="voice-call-item" style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', marginBottom: '8px' }}>
                       <div className="lead-detail-row">
                         <span className="label">Date:</span>
-                        <span className="value">{call.call_date || 'Unknown'}</span>
+                        <span className="value">
+                          {call.call_date ? formatLocalDateTime(call.call_date) : 'Unknown'}
+                        </span>
                       </div>
                       {call.caller_name && (
                         <div className="lead-detail-row">

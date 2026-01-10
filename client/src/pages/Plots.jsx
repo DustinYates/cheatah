@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { isAfter } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
@@ -9,6 +8,7 @@ import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import {
   DATE_RANGE_PRESETS,
   alignRangeToTimeZone,
+  buildTimeBuckets,
   formatDateInTimeZone,
   formatRangeLabel,
   getBucketBounds,
@@ -31,7 +31,10 @@ const formatMinutes = (value) => {
   return minutes.toFixed(1);
 };
 
-const getLabelInterval = (count) => {
+const getLabelInterval = (count, granularity) => {
+  if (granularity === 'month') {
+    return count > 12 ? 2 : 1;
+  }
   if (count <= 7) return 1;
   if (count <= 14) return 2;
   return Math.ceil(count / 8);
@@ -200,56 +203,37 @@ export default function Plots() {
   const granularity = useMemo(() => getRangeTypeByDays(rangeDays), [rangeDays]);
 
   const bucketedSeries = useMemo(() => {
-    if (!usageSeries.length) return { granularity, buckets: [] };
+    const buckets = buildTimeBuckets(range.startDate, range.endDate, granularity, timeZone);
+    const bucketMap = new Map(
+      buckets.map((bucket) => [
+        bucket.key,
+        {
+          ...bucket,
+          sms_in: 0,
+          sms_out: 0,
+          chatbot_interactions: 0,
+          call_count: 0,
+          call_minutes: 0,
+        },
+      ])
+    );
 
-    if (granularity === 'day') {
-      return {
-        granularity,
-        buckets: usageSeries.map((day) => ({
-          ...day,
-          key: day.date,
-          bucketStart: parseDateInTimeZone(day.date, timeZone) || new Date(day.date),
-          bucketEnd: parseDateInTimeZone(day.date, timeZone) || new Date(day.date),
-        })),
-      };
-    }
-
-    const bucketMap = new Map();
     usageSeries.forEach((day) => {
       const date = parseDateInTimeZone(day.date, timeZone) || new Date(day.date);
       if (!date || Number.isNaN(date.getTime())) return;
       const bounds = getBucketBounds(date, granularity, timeZone);
       const key = getBucketKey(bounds.start, timeZone);
-      const bucket = bucketMap.get(key) || {
-        key,
-        bucketStart: bounds.start,
-        bucketEnd: bounds.end,
-        sms_in: 0,
-        sms_out: 0,
-        chatbot_interactions: 0,
-        call_count: 0,
-        call_minutes: 0,
-      };
+      const bucket = bucketMap.get(key);
+      if (!bucket) return;
       bucket.sms_in += day.sms_in || 0;
       bucket.sms_out += day.sms_out || 0;
       bucket.chatbot_interactions += day.chatbot_interactions || 0;
       bucket.call_count += day.call_count || 0;
       bucket.call_minutes += Number(day.call_minutes || 0);
-      bucketMap.set(key, bucket);
     });
 
-    const buckets = Array.from(bucketMap.values()).sort(
-      (a, b) => a.bucketStart.getTime() - b.bucketStart.getTime()
-    );
-
-    buckets.forEach((bucket) => {
-      if (isAfter(bucket.bucketEnd, range.endDate)) {
-        bucket.bucketEnd = range.endDate;
-      }
-    });
-
-    return { granularity, buckets };
-  }, [granularity, range.endDate, timeZone, usageSeries]);
+    return { granularity, buckets: Array.from(bucketMap.values()) };
+  }, [granularity, range.endDate, range.startDate, timeZone, usageSeries]);
 
   const interactionSeries = useMemo(
     () =>
@@ -269,34 +253,10 @@ export default function Plots() {
     [bucketedSeries.buckets]
   );
 
-  const interactionActiveDays = granularity === 'day'
-    ? interactionSeries.filter((day) => day.text + day.phone + day.chat > 0)
-    : interactionSeries;
-  const interactionSparse =
-    granularity === 'day' &&
-    interactionActiveDays.length > 0 &&
-    interactionActiveDays.length / Math.max(interactionSeries.length, 1) < 0.4;
-  const interactionDisplaySeries =
-    granularity === 'day' && interactionSparse ? interactionActiveDays : interactionSeries;
-  const interactionLabelInterval = getLabelInterval(interactionDisplaySeries.length);
-
-  const callActiveDays = granularity === 'day'
-    ? bucketedSeries.buckets.filter(
-      (day) => Number(day.call_minutes || 0) > 0 || (day.call_count || 0) > 0
-    )
-    : bucketedSeries.buckets;
-  const callSparse =
-    granularity === 'day' &&
-    callActiveDays.length > 0 &&
-    callActiveDays.length / Math.max(bucketedSeries.buckets.length, 1) < 0.25;
-  const callShowSummary =
-    granularity === 'day' &&
-    (callActiveDays.length === 0 || (callSparse && callActiveDays.length !== 1));
-  const callDisplaySeries =
-    granularity === 'day' && callActiveDays.length === 1
-      ? callActiveDays
-      : bucketedSeries.buckets;
-  const callLabelInterval = getLabelInterval(callDisplaySeries.length);
+  const interactionDisplaySeries = interactionSeries;
+  const interactionLabelInterval = getLabelInterval(interactionDisplaySeries.length, granularity);
+  const callDisplaySeries = bucketedSeries.buckets;
+  const callLabelInterval = getLabelInterval(callDisplaySeries.length, granularity);
 
   const interactionMaxValue = Math.max(
     0,
@@ -471,55 +431,38 @@ export default function Plots() {
               <p>{granularityLabel} totals.</p>
             </div>
           </div>
-          {callShowSummary ? (
-            <div className="call-summary">
-              <div>
-                <span className="summary-value">
-                  {formatMinutes(totals.callCount / Math.max(rangeDays, 1))}
-                </span>
-                <span className="summary-label">Avg calls/day</span>
-              </div>
-              <div>
-                <span className="summary-value">
-                  {formatMinutes(totals.callMinutes / Math.max(totals.callCount, 1))}
-                </span>
-                <span className="summary-label">Avg length (min)</span>
-              </div>
+          <div className="usage-chart">
+            <div className="usage-y-axis">
+              <span>{formatMinutes(callMaxValue)}</span>
+              <span>0</span>
             </div>
-          ) : (
-            <div className="usage-chart">
-              <div className="usage-y-axis">
-                <span>{formatMinutes(callMaxValue)}</span>
-                <span>0</span>
-              </div>
-              <div className={`usage-bars ${callDisplaySeries.length === 1 ? 'single-point' : ''}`}>
-                {callDisplaySeries.map((day, index) => {
-                  const minutes = Number(day.call_minutes || 0);
-                  const height = (minutes / callScaleMax) * 100;
-                  const showLabel = index % callLabelInterval === 0 || index === callDisplaySeries.length - 1;
-                  const labelFormat = granularity === 'month' ? 'MMM yyyy' : 'MMM d';
-                  return (
-                    <div className="usage-bar-column" key={day.key}>
-                      <div
-                        className="usage-bar-track"
-                        title={`${formatBucketLabel(day, granularity, timeZone)} - ${formatMinutes(minutes)} minutes`}
-                      >
-                        {minutes > 0 && (
-                          <>
-                            <span className="usage-bar-label">{formatMinutes(minutes)}</span>
-                            <div className="usage-bar calls" style={{ height: `${height}%` }} />
-                          </>
-                        )}
-                      </div>
-                      <span className="usage-x-label">
-                        {showLabel ? formatDateInTimeZone(day.bucketStart, labelFormat, timeZone) : ''}
-                      </span>
+            <div className={`usage-bars ${callDisplaySeries.length === 1 ? 'single-point' : ''}`}>
+              {callDisplaySeries.map((day, index) => {
+                const minutes = Number(day.call_minutes || 0);
+                const height = (minutes / callScaleMax) * 100;
+                const showLabel = index % callLabelInterval === 0 || index === callDisplaySeries.length - 1;
+                const labelFormat = granularity === 'month' ? 'MMM yyyy' : 'MMM d';
+                return (
+                  <div className="usage-bar-column" key={day.key}>
+                    <div
+                      className="usage-bar-track"
+                      title={`${formatBucketLabel(day, granularity, timeZone)} - ${formatMinutes(minutes)} minutes`}
+                    >
+                      {minutes > 0 && (
+                        <>
+                          <span className="usage-bar-label">{formatMinutes(minutes)}</span>
+                          <div className="usage-bar calls" style={{ height: `${height}%` }} />
+                        </>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
+                    <span className="usage-x-label">
+                      {showLabel ? formatDateInTimeZone(day.bucketStart, labelFormat, timeZone) : ''}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          )}
+          </div>
         </section>
       </div>
     </div>

@@ -242,6 +242,8 @@ class ChatService:
         existing_lead = await self.lead_service.get_lead_by_conversation(
             tenant_id, conversation.id
         )
+        if existing_lead:
+            await self.lead_service.bump_lead_activity(tenant_id, existing_lead.id)
         
         # Extract contact info from conversation messages
         extracted_info = await self._extract_contact_info_from_conversation(

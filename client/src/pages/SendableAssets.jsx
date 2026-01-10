@@ -104,6 +104,40 @@ export default function SendableAssets() {
     }
   };
 
+  const testSendAsset = async (assetType) => {
+    const phone = prompt('Enter phone number to send test SMS to:', '');
+    if (!phone) return;
+
+    setSaving((prev) => ({ ...prev, [assetType]: true }));
+    setMessage({ type: '', text: '' });
+
+    try {
+      const response = await fetch(`${API_BASE}/sendable-assets/test-send`, {
+        method: 'POST',
+        headers: {
+          ...getHeaders(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          asset_type: assetType,
+          phone_number: phone,
+          name: 'Test User',
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.status === 'sent') {
+        setMessage({ type: 'success', text: `Test SMS sent successfully to ${data.to}!` });
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to send test SMS' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Network error. Please try again.' });
+    } finally {
+      setSaving((prev) => ({ ...prev, [assetType]: false }));
+    }
+  };
+
   const deleteAsset = async (assetType) => {
     if (!confirm(`Are you sure you want to delete this ${ASSET_TYPES.find(t => t.key === assetType)?.label}?`)) {
       return;
@@ -296,6 +330,13 @@ export default function SendableAssets() {
                   <div className="asset-actions">
                     <button className="btn btn-secondary" onClick={() => startEditing(assetType.key)}>
                       Edit
+                    </button>
+                    <button
+                      className="btn btn-test"
+                      onClick={() => testSendAsset(assetType.key)}
+                      disabled={isSaving || !asset.enabled}
+                    >
+                      {isSaving ? 'Sending...' : 'Test Send'}
                     </button>
                     <button
                       className="btn btn-danger"
@@ -585,6 +626,15 @@ export default function SendableAssets() {
 
         .btn-danger:hover:not(:disabled) {
           background: #f8d7da;
+        }
+
+        .btn-test {
+          background: #e8f5e9;
+          color: #2e7d32;
+        }
+
+        .btn-test:hover:not(:disabled) {
+          background: #c8e6c9;
         }
 
         @media (max-width: 600px) {

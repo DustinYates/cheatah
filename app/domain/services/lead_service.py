@@ -2,6 +2,7 @@
 
 import logging
 import re
+from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -236,6 +237,22 @@ class LeadService:
         if status == 'verified':
             await self._create_contact_from_lead(tenant_id, lead)
         
+        await self.session.commit()
+        await self.session.refresh(lead)
+        return lead
+
+    async def bump_lead_activity(
+        self,
+        tenant_id: int,
+        lead_id: int,
+        occurred_at: datetime | None = None,
+    ) -> Lead | None:
+        """Update lead timestamp so recent activity sorts to the top."""
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            return None
+
+        lead.created_at = occurred_at or datetime.utcnow()
         await self.session.commit()
         await self.session.refresh(lead)
         return lead

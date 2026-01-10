@@ -204,3 +204,54 @@ async def delete_sendable_asset(
         "status": "success",
         "message": f"Sendable asset '{asset_type}' deleted successfully",
     }
+
+
+class TestSendAssetRequest(BaseModel):
+    """Request to test send an asset via SMS."""
+
+    asset_type: str = Field(..., description="Asset type to send: registration_link, schedule, pricing, info")
+    phone_number: str = Field(..., description="Phone number to send to (E.164 or 10-digit)")
+    name: str = Field(default="Test User", description="Name to use in the template")
+
+
+@router.post("/test-send", response_model=dict)
+async def test_send_asset(
+    request: TestSendAssetRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+) -> dict[str, Any]:
+    """Test send an asset via SMS to a specified phone number."""
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    from app.domain.services.promise_detector import DetectedPromise
+    from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
+
+    # Create a mock promise for the asset type
+    promise = DetectedPromise(
+        asset_type=request.asset_type,
+        confidence=1.0,
+        original_text=f"Test send of {request.asset_type}",
+    )
+
+    fulfillment_service = PromiseFulfillmentService(db)
+
+    result = await fulfillment_service.fulfill_promise(
+        tenant_id=tenant_id,
+        conversation_id=0,  # Test - no real conversation
+        promise=promise,
+        phone=request.phone_number,
+        name=request.name,
+    )
+
+    logger.info(f"Test send result for tenant {tenant_id}: {result}")
+
+    return {
+        "status": result.get("status"),
+        "message_id": result.get("message_id"),
+        "to": result.get("to"),
+        "error": result.get("error"),
+    }

@@ -640,6 +640,10 @@ Respond with ONLY valid JSON, no explanation:
                         f"SMS lead updated - tenant_id={tenant_id}, lead_id={existing_lead.id}, "
                         f"name={extracted_name}, email={extracted_email}"
                     )
+
+                from app.domain.services.lead_service import LeadService
+                lead_service = LeadService(self.session)
+                await lead_service.bump_lead_activity(tenant_id, existing_lead.id)
             else:
                 # Create new lead with phone number (always available) + extracted info
                 from app.domain.services.lead_service import LeadService
@@ -663,4 +667,3 @@ Respond with ONLY valid JSON, no explanation:
                 f"conversation_id={conversation.id}, error={e}",
                 exc_info=True
             )
-

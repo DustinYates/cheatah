@@ -855,6 +855,11 @@ async def telnyx_ai_call_complete(
 
                     logger.info(f"No insights from webhook, fetching transcript from Telnyx API for call_control_id={call_id}")
 
+                    # Wait a bit for Telnyx to finish writing the transcript
+                    # Race condition: webhook fires before transcript is fully saved
+                    import asyncio
+                    await asyncio.sleep(2)
+
                     # Find the conversation by call_control_id
                     conversation = await telnyx_ai.find_conversation_by_call_control_id(call_id)
 
@@ -862,13 +867,36 @@ async def telnyx_ai_call_complete(
                         conv_id = conversation.get("id")
                         logger.info(f"Found conversation {conv_id}, fetching messages")
 
-                        # Get messages from the conversation
-                        messages = await telnyx_ai.get_conversation_messages(conv_id)
+                        # Retry logic for race condition - Telnyx may not have messages ready yet
+                        max_retries = 3
+                        retry_delay = 2  # seconds
+                        extracted = None
 
-                        if messages:
-                            # Extract insights using Gemini LLM for better accuracy
-                            extracted = await telnyx_ai.extract_insights_with_llm(messages)
+                        for attempt in range(max_retries):
+                            # Get messages from the conversation
+                            messages = await telnyx_ai.get_conversation_messages(conv_id)
+                            logger.info(f"Attempt {attempt + 1}: Got {len(messages)} messages from Telnyx API")
 
+                            if messages:
+                                # Check if we have user messages (not just assistant greeting)
+                                user_messages = [m for m in messages if m.get("role") == "user" and m.get("text")]
+                                if user_messages:
+                                    # Extract insights using Gemini LLM for better accuracy
+                                    extracted = await telnyx_ai.extract_insights_with_llm(messages)
+
+                                    # If we got a name or email, we're done
+                                    if extracted.get("name") or extracted.get("email"):
+                                        logger.info(f"Successfully extracted data on attempt {attempt + 1}")
+                                        break
+                                    else:
+                                        logger.info(f"Attempt {attempt + 1}: LLM returned no name/email, will retry")
+
+                            # Wait before retry (unless last attempt)
+                            if attempt < max_retries - 1:
+                                logger.info(f"Waiting {retry_delay}s before retry...")
+                                await asyncio.sleep(retry_delay)
+
+                        if extracted:
                             # Use extracted data if we didn't get it from webhook
                             if extracted.get("name") and not caller_name:
                                 caller_name = extracted["name"]
@@ -885,13 +913,91 @@ async def telnyx_ai_call_complete(
                             if extracted.get("transcript") and not transcript:
                                 transcript = extracted["transcript"]
 
-                            logger.info(f"Final extracted data: name={caller_name}, email={caller_email}, intent={caller_intent}")
+                        logger.info(f"Final extracted data: name={caller_name}, email={caller_email}, intent={caller_intent}")
                     else:
                         logger.info(f"Could not find conversation for call_control_id={call_id}")
                 except Exception as e:
                     logger.warning(f"Failed to fetch transcript from Telnyx API: {e}")
             else:
                 logger.info("No TELNYX_API_KEY configured, skipping transcript fetch")
+
+        # FALLBACK: Try to get transcript from our own database
+        # The voice_webhooks.py stores messages in the Conversation table during the call
+        if not caller_name and not caller_email and from_number:
+            try:
+                # Get tenant_id first (we need it for the query)
+                temp_tenant_id = await _get_tenant_from_telnyx_number(to_number, db) if to_number else None
+                if temp_tenant_id:
+                    from app.persistence.models.conversation import Conversation, Message
+                    from datetime import timedelta
+
+                    normalized_phone = _normalize_phone(from_number)
+                    time_window = datetime.utcnow() - timedelta(minutes=10)
+
+                    # Find the most recent voice conversation for this phone
+                    conv_result = await db.execute(
+                        select(Conversation).where(
+                            Conversation.tenant_id == temp_tenant_id,
+                            Conversation.phone_number == normalized_phone,
+                            Conversation.channel == "voice",
+                            Conversation.created_at >= time_window,
+                        ).order_by(Conversation.created_at.desc()).limit(1)
+                    )
+                    voice_conv = conv_result.scalar_one_or_none()
+
+                    if voice_conv:
+                        logger.info(f"Found voice conversation {voice_conv.id} in database for phone {normalized_phone}")
+
+                        # Get messages from this conversation
+                        msg_result = await db.execute(
+                            select(Message).where(
+                                Message.conversation_id == voice_conv.id
+                            ).order_by(Message.sequence_number)
+                        )
+                        messages = msg_result.scalars().all()
+
+                        if messages:
+                            # Build transcript from messages
+                            transcript_lines = []
+                            user_text = ""
+                            for msg in messages:
+                                role = "User" if msg.role == "user" else "Assistant"
+                                transcript_lines.append(f"{role}: {msg.content}")
+                                if msg.role == "user":
+                                    user_text += " " + msg.content
+
+                            if not transcript:
+                                transcript = "\n".join(transcript_lines)
+
+                            logger.info(f"Built transcript from {len(messages)} messages in database")
+
+                            # Extract name from user text using regex patterns
+                            import re
+                            name_patterns = [
+                                r"(?:I'?m|I am|my name is|this is|im|name's|it's)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)",
+                                r"(?:call me|you can call me)\s+([a-zA-Z]+)",
+                            ]
+                            for pattern in name_patterns:
+                                match = re.search(pattern, user_text, re.IGNORECASE)
+                                if match:
+                                    potential_name = match.group(1).strip()
+                                    # Filter out common false positives
+                                    false_positives = ["good", "great", "fine", "okay", "ok", "yes", "no", "well", "here", "there", "sure", "interested", "calling", "looking"]
+                                    if potential_name.lower() not in false_positives and len(potential_name) > 1:
+                                        caller_name = potential_name.title()
+                                        logger.info(f"Extracted caller_name from database transcript: {caller_name}")
+                                        break
+
+                            # Extract email from user text
+                            email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+                            email_match = re.search(email_pattern, user_text)
+                            if email_match and not caller_email:
+                                caller_email = email_match.group(0)
+                                logger.info(f"Extracted caller_email from database transcript: {caller_email}")
+                    else:
+                        logger.info(f"No recent voice conversation found in database for phone {normalized_phone}")
+            except Exception as e:
+                logger.warning(f"Failed to extract from database: {e}")
 
         if not to_number:
             logger.warning("No 'to' number in AI call webhook")
@@ -1060,7 +1166,7 @@ async def telnyx_ai_call_complete(
         else:
             lead_id = None
 
-        # Create CallSummary record for the Calls page
+        # Create or update CallSummary record for the Calls page
         # Determine outcome based on extracted data
         if caller_name and caller_email:
             outcome = "lead_created"
@@ -1077,20 +1183,40 @@ async def telnyx_ai_call_complete(
             "support_request", "wrong_number", "general_inquiry"
         ] else "general_inquiry"
 
-        call_summary = CallSummary(
-            call_id=call.id,
-            lead_id=lead_id,
-            intent=final_intent,
-            outcome=outcome,
-            summary_text=summary or None,
-            extracted_fields={
+        # Check if CallSummary already exists (upsert logic)
+        existing_summary_result = await db.execute(
+            select(CallSummary).where(CallSummary.call_id == call.id)
+        )
+        existing_summary = existing_summary_result.scalar_one_or_none()
+
+        if existing_summary:
+            # Update existing summary
+            existing_summary.lead_id = lead_id
+            existing_summary.intent = final_intent
+            existing_summary.outcome = outcome
+            existing_summary.summary_text = summary or None
+            existing_summary.extracted_fields = {
                 "name": caller_name or None,
                 "email": caller_email or None,
                 "reason": caller_intent or (summary[:200] if summary else None),
-            },
-        )
-        db.add(call_summary)
-        logger.info(f"Created CallSummary for call_id={call.id}, intent={final_intent}, outcome={outcome}, name={caller_name}")
+            }
+            logger.info(f"Updated existing CallSummary for call_id={call.id}, intent={final_intent}, outcome={outcome}, name={caller_name}")
+        else:
+            # Create new summary
+            call_summary = CallSummary(
+                call_id=call.id,
+                lead_id=lead_id,
+                intent=final_intent,
+                outcome=outcome,
+                summary_text=summary or None,
+                extracted_fields={
+                    "name": caller_name or None,
+                    "email": caller_email or None,
+                    "reason": caller_intent or (summary[:200] if summary else None),
+                },
+            )
+            db.add(call_summary)
+            logger.info(f"Created CallSummary for call_id={call.id}, intent={final_intent}, outcome={outcome}, name={caller_name}")
 
         await db.commit()
 

@@ -147,6 +147,7 @@ export default function Contacts() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 disabled
+                aria-label="Search contacts"
               />
             </div>
           </div>
@@ -176,6 +177,7 @@ export default function Contacts() {
               placeholder="Search contacts..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search contacts"
             />
           </div>
         </div>
@@ -221,12 +223,12 @@ export default function Contacts() {
                     Merge
                   </span>
                 </th>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Email</th>
-                <th>Status</th>
-                <th>Added</th>
-                <th>Actions</th>
+                <th className="col-name">Name</th>
+                <th className="col-phone">Phone</th>
+                <th className="col-email">Email</th>
+                <th className="col-status">Status</th>
+                <th className="col-added">Added</th>
+                <th className="col-actions">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -242,28 +244,43 @@ export default function Contacts() {
                         title="Select for merge"
                       />
                     </td>
-                    <td>
+                    <td className="col-name">
                       <div className="contact-name">
                         <div className="avatar">
                           {(contact.name || 'U')[0].toUpperCase()}
                         </div>
-                        {contact.name || 'Unknown'}
+                        <span className="contact-name-text">
+                          {contact.name || 'Unknown'}
+                        </span>
                       </div>
                     </td>
-                    <td>{contact.phone || '-'}</td>
-                    <td>{contact.email || '-'}</td>
-                    <td>
+                    <td className="col-phone">
+                      <span className="contact-text contact-phone" title={contact.phone || '-'}>
+                        {contact.phone || '-'}
+                      </span>
+                    </td>
+                    <td className="col-email">
+                      <span className="contact-text contact-email" title={contact.email || '-'}>
+                        {contact.email || '-'}
+                      </span>
+                    </td>
+                    <td className="col-status">
                       <span className={`status ${contact.opt_in_status || 'verified'}`}>
                         {contact.opt_in_status || 'Verified'}
                       </span>
                     </td>
-                    <td>{formatDateTimeParts(contact.created_at).date}</td>
-                    <td>
+                    <td className="col-added">
+                      <span className="contact-date">
+                        {formatDateTimeParts(contact.created_at).date}
+                      </span>
+                    </td>
+                    <td className="col-actions">
                       <div className="action-buttons">
                         <button 
                           className="btn-action btn-chat"
                           onClick={(e) => handleViewChat(e, contact)}
                           title="View conversation history"
+                          aria-label="View conversation history"
                         >
                           💬
                         </button>
@@ -271,6 +288,7 @@ export default function Contacts() {
                           className="btn-action btn-edit"
                           onClick={(e) => handleEdit(e, contact)}
                           title="Edit contact"
+                          aria-label="Edit contact"
                         >
                           ✏️
                         </button>
@@ -281,10 +299,52 @@ export default function Contacts() {
                             setDeleteConfirm(contact);
                           }}
                           title="Delete contact"
+                          aria-label="Delete contact"
                         >
                           🗑️
                         </button>
                       </div>
+                      <details className="action-menu">
+                        <summary
+                          className="action-menu-trigger"
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label="Open contact actions"
+                          title="Open actions"
+                        >
+                          ...
+                        </summary>
+                        <div className="action-menu-list">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              handleViewChat(e, contact);
+                              e.currentTarget.closest('details')?.removeAttribute('open');
+                            }}
+                          >
+                            Message
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              handleEdit(e, contact);
+                              e.currentTarget.closest('details')?.removeAttribute('open');
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteConfirm(contact);
+                              e.currentTarget.closest('details')?.removeAttribute('open');
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </details>
                     </td>
                   </tr>
                 );

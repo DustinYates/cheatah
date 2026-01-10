@@ -9,7 +9,7 @@
   width: var(--sidebar-width);
   background: var(--color-bg-dark);
   color: var(--color-text-white);
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm);
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -22,14 +22,14 @@
 }
 
 .logo {
-  margin-bottom: var(--spacing-lg);
-  padding-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-sm);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .logo h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--color-primary);
   display: flex;
   align-items: center;
@@ -50,14 +50,14 @@
 }
 
 .nav-links li {
-  margin-bottom: 4px;
+  margin-bottom: var(--spacing-xs);
 }
 
 .nav-links a {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 8px 12px;
+  padding: var(--spacing-sm) var(--spacing-sm);
   color: var(--color-text-light);
   border-radius: var(--radius-md);
   transition: all var(--transition-base);
@@ -70,10 +70,10 @@
 }
 
 .nav-links a.active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--color-text-white);
   font-weight: 500;
-  box-shadow: inset 2px 0 0 var(--color-primary);
+  box-shadow: inset 2px 0 0 rgba(74, 222, 128, 0.6);
 }
 
 /* Nav Section with Submenu */
@@ -86,7 +86,7 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--spacing-sm) var(--spacing-sm);
   background: transparent;
   border: none;
   color: var(--color-text-light);
@@ -125,8 +125,8 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 8px 12px;
-  padding-left: calc(var(--spacing-md) + 12px);
+  padding: var(--spacing-sm) var(--spacing-sm);
+  padding-left: calc(var(--spacing-md) + var(--spacing-sm));
   color: var(--color-text-light);
   border-radius: var(--radius-md);
   transition: all var(--transition-base);
@@ -147,7 +147,7 @@
 
 /* User Info */
 .user-info {
-  padding: var(--spacing-sm) 0;
+  padding: var(--spacing-xs) 0;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin-top: auto;
 }
@@ -177,8 +177,8 @@
 /* Logout Button */
 .logout-btn {
   width: 100%;
-  margin-top: var(--spacing-md);
-  padding: 8px 12px;
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-sm);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: var(--color-text-light);
@@ -199,7 +199,7 @@
   flex: 1;
   margin-left: var(--sidebar-width);
   background: var(--color-bg-light);
-  padding: var(--spacing-xl);
+  padding: var(--spacing-lg);
   min-height: 100vh;
 }
 
@@ -211,12 +211,12 @@
   right: 0;
   background: var(--color-warning-bg);
   color: var(--color-warning);
-  padding: var(--spacing-sm) var(--spacing-lg);
+  padding: var(--spacing-sm) var(--spacing-md);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-md);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
   z-index: 99;
   border-bottom: 1px solid var(--color-warning-border);
 }
@@ -226,7 +226,7 @@
 }
 
 .impersonation-banner .exit-btn {
-  padding: 4px 12px;
+  padding: var(--spacing-xs) var(--spacing-sm);
   background: var(--color-bg-dark);
   color: var(--color-text-white);
   border: none;
@@ -243,8 +243,8 @@
 
 /* Tenant Selector */
 .tenant-selector {
-  margin-bottom: var(--spacing-md);
-  padding-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  padding-bottom: var(--spacing-sm);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -259,7 +259,7 @@
 
 .tenant-selector select {
   width: 100%;
-  padding: 6px 10px;
+  padding: var(--spacing-xs) var(--spacing-sm);
   background: var(--color-bg-dark-hover);
   color: var(--color-text-white);
   border: 1px solid rgba(255, 255, 255, 0.1);

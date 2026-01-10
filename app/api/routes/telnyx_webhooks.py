@@ -866,8 +866,8 @@ async def telnyx_ai_call_complete(
                         messages = await telnyx_ai.get_conversation_messages(conv_id)
 
                         if messages:
-                            # Extract insights from transcript
-                            extracted = telnyx_ai.extract_insights_from_transcript(messages)
+                            # Extract insights using Gemini LLM for better accuracy
+                            extracted = await telnyx_ai.extract_insights_with_llm(messages)
 
                             # Use extracted data if we didn't get it from webhook
                             if extracted.get("name") and not caller_name:

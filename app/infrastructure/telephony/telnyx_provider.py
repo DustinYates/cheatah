@@ -289,11 +289,12 @@ class TelnyxAIService:
                 match = re.search(pattern, user_msg, re.IGNORECASE)
                 if match:
                     potential_name = match.group(1).strip()
-                    # Validate it looks like a name (not common words)
+                    # Validate it looks like a name (not common words or "for me" responses)
                     if potential_name.lower() not in [
                         "yes", "no", "hi", "hello", "hey", "ok", "okay",
                         "thanks", "thank", "sure", "please", "help", "good",
-                        "fine", "great", "alright", "right", "yeah", "yep"
+                        "fine", "great", "alright", "right", "yeah", "yep",
+                        "for me", "for myself", "myself", "me", "to me"
                     ] and len(potential_name) > 1:
                         name = potential_name.title()
                         break
@@ -327,6 +328,105 @@ class TelnyxAIService:
             "summary": summary,
             "transcript": "\n".join(transcript_lines),
         }
+
+    async def extract_insights_with_llm(
+        self, messages: list[dict[str, Any]]
+    ) -> dict[str, str]:
+        """Extract name, email, and intent using Gemini LLM.
+
+        Uses Gemini to intelligently extract caller information from the
+        voice conversation transcript.
+
+        Args:
+            messages: List of message objects from the conversation
+
+        Returns:
+            Dict with extracted 'name', 'email', 'intent', and 'summary'
+        """
+        import json
+
+        # Build transcript
+        transcript_lines = []
+        for msg in messages:
+            role = msg.get("role", "unknown")
+            text = msg.get("text", "")
+            if text:
+                speaker = "Caller" if role == "user" else "Assistant"
+                transcript_lines.append(f"{speaker}: {text}")
+
+        transcript = "\n".join(transcript_lines)
+
+        if not transcript.strip():
+            return {"name": "", "email": "", "intent": "general_inquiry", "summary": ""}
+
+        # Prompt for structured extraction
+        prompt = f"""Analyze this phone call transcript and extract the following information.
+Return ONLY a valid JSON object with these fields - no other text.
+
+Transcript:
+{transcript}
+
+Extract:
+1. "name" - The caller's full name if they explicitly stated it. Empty string if not provided.
+2. "email" - The caller's email if they mentioned it. Empty string if not provided.
+3. "intent" - One of: "pricing_info", "hours_location", "booking_request", "support_request", "wrong_number", "general_inquiry"
+4. "summary" - A 1-2 sentence summary of why the caller called and the outcome.
+
+CRITICAL rules for name extraction:
+- Only extract a name if the caller EXPLICITLY stated their name (e.g., "My name is John Smith", "I'm Sarah", "It's Mike")
+- NEVER extract these as names: "for me", "for myself", "myself", "me", "for my child", "for my son", "for my daughter", "for my wife", "for my husband" - these are responses to "who is this for?" and are NOT names
+- Do not infer or guess names from context
+- If no explicit name was stated, return empty string ""
+
+Return JSON:"""
+
+        try:
+            from app.llm.gemini_client import GeminiClient
+
+            gemini = GeminiClient()
+            response = await gemini.generate(prompt, {"temperature": 0.1, "max_tokens": 1000})
+
+            logger.info(f"Gemini raw response: {response[:500] if response else 'empty'}")
+
+            # Parse JSON from response
+            response_text = response.strip()
+            # Handle markdown code blocks
+            if response_text.startswith("```"):
+                response_text = response_text.split("```")[1]
+                if response_text.startswith("json"):
+                    response_text = response_text[4:]
+                response_text = response_text.strip()
+
+            extracted = json.loads(response_text)
+
+            # Validate intent
+            valid_intents = [
+                "pricing_info", "hours_location", "booking_request",
+                "support_request", "wrong_number", "general_inquiry"
+            ]
+            intent = extracted.get("intent", "general_inquiry")
+            if intent not in valid_intents:
+                intent = "general_inquiry"
+
+            result = {
+                "name": extracted.get("name", "").strip(),
+                "email": extracted.get("email", "").strip(),
+                "intent": intent,
+                "summary": extracted.get("summary", "").strip(),
+                "transcript": transcript,
+            }
+
+            logger.info(f"LLM extraction result: name={result['name']}, email={result['email']}, intent={result['intent']}")
+            return result
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse LLM response as JSON: {e}, response={response[:200] if response else 'empty'}")
+            # Fall back to regex extraction
+            return self.extract_insights_from_transcript(messages)
+        except Exception as e:
+            logger.warning(f"LLM extraction failed: {e}, falling back to regex")
+            # Fall back to regex extraction
+            return self.extract_insights_from_transcript(messages)
 
 
 class TelnyxVoiceProvider(VoiceProviderProtocol):

@@ -7,8 +7,8 @@ import './Dashboard.css';
 // Robot icon SVG component
 const RobotIcon = () => (
   <svg
-    width="20"
-    height="20"
+    width="16"
+    height="16"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -36,8 +36,8 @@ const RobotIcon = () => (
 // Envelope icon SVG component for email source
 const EnvelopeIcon = () => (
   <svg
-    width="20"
-    height="20"
+    width="16"
+    height="16"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -56,8 +56,8 @@ const EnvelopeIcon = () => (
 // Chat icon SVG component
 const ChatIcon = () => (
   <svg
-    width="18"
-    height="18"
+    width="16"
+    height="16"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -92,6 +92,82 @@ const SmsFollowUpIcon = () => (
   </svg>
 );
 
+// Text Bubble icon SVG component for SMS/Text source (iMessage style)
+const TextBubbleIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle' }}
+  >
+    {/* Rectangular message bubble */}
+    <rect x="3" y="4" width="18" height="13" rx="2" />
+    {/* Tail/pointer at bottom */}
+    <path d="M7 17 L7 21 L12 17" fill="none" />
+    {/* Three dots indicating text */}
+    <circle cx="8" cy="10.5" r="1" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="10.5" r="1" fill="currentColor" stroke="none" />
+    <circle cx="16" cy="10.5" r="1" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+// Details icon SVG component (document with info)
+const DetailsIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle' }}
+  >
+    {/* Document */}
+    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+    <polyline points="14,2 14,8 20,8" />
+    {/* Info lines */}
+    <line x1="8" y1="13" x2="16" y2="13" />
+    <line x1="8" y1="17" x2="14" y2="17" />
+  </svg>
+);
+
+const CompactTable = ({ containerClassName, tableClassName, children }) => (
+  <div className={containerClassName}>
+    <table className={tableClassName}>
+      {children}
+    </table>
+  </div>
+);
+
+const IconButton = ({ className = '', title, ariaLabel, children, ...props }) => (
+  <button
+    type="button"
+    className={`icon-button ${className}`.trim()}
+    title={title}
+    aria-label={ariaLabel || title}
+    {...props}
+  >
+    {children}
+  </button>
+);
+
+const StatusBadge = ({ status, label, variant = 'pill' }) => (
+  <span
+    className={`status-badge status-${status || 'new'} status-badge--${variant}`}
+    title={label || status || 'New'}
+    aria-label={label || status || 'New'}
+  >
+    {variant === 'dot' ? null : label || status || 'New'}
+  </span>
+);
+
 export default function Dashboard() {
   const [leads, setLeads] = useState([]);
   const [calls, setCalls] = useState([]);
@@ -102,10 +178,26 @@ export default function Dashboard() {
   const [selectedLead, setSelectedLead] = useState(null);
   const [conversationData, setConversationData] = useState(null);
   const [loadingConversation, setLoadingConversation] = useState(false);
+  const [relatedLeads, setRelatedLeads] = useState([]);
+  const [loadingRelated, setLoadingRelated] = useState(false);
+  const [openActionMenuId, setOpenActionMenuId] = useState(null);
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (openActionMenuId === null) return;
+
+    const handleClick = (event) => {
+      if (!event.target.closest('.action-menu')) {
+        setOpenActionMenuId(null);
+      }
+    };
+
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [openActionMenuId]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -239,20 +331,36 @@ export default function Dashboard() {
   const handleViewDetails = async (lead) => {
     setSelectedLead(lead);
     setLoadingConversation(true);
+    setLoadingRelated(true);
     setConversationData(null);
-    try {
-      const data = await api.getLeadConversation(lead.id);
-      setConversationData(data);
-    } catch (err) {
-      console.error('Failed to load conversation:', err);
-    } finally {
-      setLoadingConversation(false);
+    setRelatedLeads([]);
+
+    // Fetch conversation and related leads in parallel
+    const [convResult, relatedResult] = await Promise.allSettled([
+      api.getLeadConversation(lead.id),
+      api.getRelatedLeads(lead.id),
+    ]);
+
+    if (convResult.status === 'fulfilled') {
+      setConversationData(convResult.value);
+    } else {
+      console.error('Failed to load conversation:', convResult.reason);
     }
+
+    if (relatedResult.status === 'fulfilled') {
+      setRelatedLeads(relatedResult.value.leads || []);
+    } else {
+      console.error('Failed to load related leads:', relatedResult.reason);
+    }
+
+    setLoadingConversation(false);
+    setLoadingRelated(false);
   };
 
   const closeModal = () => {
     setSelectedLead(null);
     setConversationData(null);
+    setRelatedLeads([]);
   };
 
   if (loading) {
@@ -288,7 +396,7 @@ export default function Dashboard() {
         return { icon: '📞', title: 'Phone Call' };
       case 'sms':
       case 'text':
-        return { icon: '💬', title: 'Text Message' };
+        return { icon: <TextBubbleIcon />, title: 'Text Message' };
       case 'email':
         return { icon: <EnvelopeIcon />, title: 'Email' };
       default:
@@ -296,13 +404,48 @@ export default function Dashboard() {
     }
   };
 
-  const getResponseIndicator = (lead) => {
+  const getFollowUpIndicator = (lead) => {
+    // Green: Agent handled successfully - llm_responded AND (verified OR followup sent)
     if (lead.llm_responded === true) {
-      return { className: 'responded', title: 'LLM responded' };
-    } else if (lead.llm_responded === false) {
-      return { className: 'not-responded', title: 'No LLM response' };
+      if (lead.status === 'verified' || lead.extra_data?.followup_sent_at) {
+        return { className: 'handled', title: 'Handled - No follow-up needed' };
+      }
+      // LLM responded but still pending review
+      return { className: 'pending', title: 'Pending review' };
     }
-    return { className: 'no-conversation', title: 'No conversation' };
+
+    // Red: Agent didn't respond - needs human follow-up
+    if (lead.llm_responded === false) {
+      return { className: 'needs-followup', title: 'Needs human follow-up' };
+    }
+
+    // Yellow: Unknown/new status with no conversation data
+    if (lead.status === 'unknown') {
+      return { className: 'pending', title: 'Status unknown' };
+    }
+
+    // Gray fallback: No conversation data
+    return { className: 'no-data', title: 'No conversation data' };
+  };
+
+  const hasFrustrationSignal = (lead) => {
+    const voiceCalls = lead.extra_data?.voice_calls;
+    if (!Array.isArray(voiceCalls)) {
+      return false;
+    }
+
+    return voiceCalls.some((call) => {
+      const summary = `${call?.summary || call?.summary_text || ''}`;
+      return /frustrat/i.test(summary);
+    });
+  };
+
+  const hasFollowUpRequest = (lead) => {
+    if (lead.extra_data?.followup_requested === true || lead.extra_data?.followup_request === true) {
+      return true;
+    }
+
+    return needsFollowUp(lead);
   };
 
   const formatDuration = (seconds) => {
@@ -320,6 +463,11 @@ export default function Dashboard() {
     return phone;
   };
 
+  const formatLeadDate = (dateString) => {
+    const formatted = formatSmartDateTime(dateString);
+    return formatted.replace(/\s[A-Z]{2,4}$/, '');
+  };
+
   // Format name - handle "none", "unknown", null, etc.
   const formatName = (name) => {
     if (!name) return 'None';
@@ -332,11 +480,19 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard">
-      <h1>Dashboard</h1>
+      <div className="dashboard-header">
+        <div className="dashboard-header__title">
+          <h1>Dashboard</h1>
+          <span className="dashboard-header__subtitle">Recent activity</span>
+        </div>
+      </div>
 
       <div className="dashboard-grid">
         <div className="card leads-card leads-card-wide">
-          <h2>Recent Leads</h2>
+          <div className="card-header">
+            <h2>Recent Leads</h2>
+            <a className="card-link" href="/contacts">View all</a>
+          </div>
           {error && <div className="error">{error}</div>}
 
           {leads.length === 0 ? (
@@ -346,147 +502,167 @@ export default function Dashboard() {
               description="Start conversations to generate leads."
             />
           ) : (
-            <div className="leads-table-container">
-              <table className="leads-table">
-                <thead>
-                  <tr>
-                    <th className="col-name">Name</th>
-                    <th className="col-email">Email</th>
-                    <th className="col-phone">Phone</th>
-                    <th className="col-source">Source</th>
-                    <th className="col-date">Date</th>
-                    <th className="col-status">Status</th>
-                    <th className="col-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leads.map((lead) => (
-                    <tr key={lead.id} className={getRowClassName(lead)}>
-                      <td className="col-name">{formatName(lead.name)}</td>
-                      <td className="col-email">{lead.email || '-'}</td>
-                      <td className="col-phone">{lead.phone || '-'}</td>
-                      <td className="col-source">
-                        <span className="source-icon" title={getSourceIcon(lead).title}>
-                          {getSourceIcon(lead).icon}
+            <CompactTable containerClassName="leads-table-container" tableClassName="leads-table">
+              <thead>
+                <tr>
+                  <th className="col-person">Lead</th>
+                  <th className="col-phone">Phone</th>
+                  <th className="col-source">Source</th>
+                  <th className="col-date">Date</th>
+                  <th className="col-details">Details</th>
+                  <th className="col-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map((lead) => (
+                  <tr key={lead.id} className={getRowClassName(lead)}>
+                    <td className="col-person">
+                      <div className="lead-person">
+                        <span className="lead-person__name">{formatName(lead.name)}</span>
+                        <span className="lead-person__email">{lead.email || '—'}</span>
+                      </div>
+                    </td>
+                    <td className="col-phone">
+                      <span className="lead-phone">{formatPhone(lead.phone)}</span>
+                    </td>
+                    <td className="col-source">
+                      <div className="source-badges">
+                        <span className="source-badge" title={getSourceIcon(lead).title}>
+                          <span className="source-icon">
+                            {getSourceIcon(lead).icon}
+                          </span>
                         </span>
                         <span
-                          className={`response-indicator ${getResponseIndicator(lead).className}`}
-                          title={getResponseIndicator(lead).title}
+                          className={`followup-indicator ${getFollowUpIndicator(lead).className}`}
+                          title={getFollowUpIndicator(lead).title}
                         />
-                      </td>
-                      <td className="col-date">{formatSmartDateTime(lead.created_at)}</td>
-                      <td className="col-status">
-                        <span className={`status-badge ${lead.status || 'new'}`}>
-                          {lead.status || 'New'}
-                        </span>
-                        <button
-                          className="btn-chat-icon"
+                        {hasFrustrationSignal(lead) && (
+                          <span
+                            className="followup-alert"
+                            title="Call ended with frustration"
+                            aria-label="Call ended with frustration"
+                          >
+                            !
+                          </span>
+                        )}
+                        {hasFollowUpRequest(lead) && (
+                          <span
+                            className="followup-arrow"
+                            title="Follow-up requested"
+                            aria-label="Follow-up requested"
+                          />
+                        )}
+                      </div>
+                    </td>
+                    <td className="col-date">
+                      <span className="lead-date">{formatLeadDate(lead.created_at)}</span>
+                    </td>
+                    <td className="col-details">
+                      <div className="details-cell">
+                        <StatusBadge status={lead.status || 'new'} variant="dot" />
+                        <IconButton
+                          className="icon-button--ghost"
                           onClick={() => handleViewDetails(lead)}
                           title="View details"
-                          aria-label="View lead details"
+                          ariaLabel="View lead details"
                         >
-                          <ChatIcon />
-                        </button>
-                      </td>
-                      <td className="actions-cell col-actions">
-                        <div className="actions-container">
-                          {/* Follow-up button - shown for leads with red indicator and phone number */}
-                          {needsFollowUp(lead) && (
-                            <button
-                              className="btn-action btn-followup"
-                              onClick={() => handleTriggerFollowUp(lead)}
-                              disabled={actionLoading === `followup-${lead.id}`}
-                              title="Send follow-up SMS"
-                              aria-label="Send follow-up SMS"
-                            >
-                              {actionLoading === `followup-${lead.id}` ? (
-                                <span className="spinner">⋯</span>
-                              ) : (
-                                <SmsFollowUpIcon />
-                              )}
-                            </button>
-                          )}
-                          {(!lead.status || lead.status === 'new') ? (
-                            <>
-                              <button
-                                className="btn-action btn-verify"
-                                onClick={() => handleVerify(lead.id)}
-                                disabled={actionLoading === lead.id}
-                                title="Mark as verified lead"
-                                aria-label="Verify lead"
-                              >
-                                {actionLoading === lead.id ? (
-                                  <span className="spinner">⋯</span>
-                                ) : (
-                                  <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                                  </svg>
-                                )}
-                              </button>
-                              <button
-                                className="btn-action btn-unknown"
-                                onClick={() => handleMarkUnknown(lead.id)}
-                                disabled={actionLoading === lead.id}
-                                title="Mark as unknown/spam"
-                                aria-label="Mark as unknown"
-                              >
-                                {actionLoading === lead.id ? (
-                                  <span className="spinner">⋯</span>
-                                ) : (
-                                  <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                                  </svg>
-                                )}
-                              </button>
-                            </>
-                          ) : lead.status === 'verified' ? (
-                            <button
-                              className="btn-action btn-sync"
+                          <DetailsIcon />
+                        </IconButton>
+                      </div>
+                    </td>
+                    <td className="actions-cell col-actions">
+                      <div className="actions-container">
+                        {needsFollowUp(lead) && (
+                          <IconButton
+                            className="icon-button--soft icon-button--info"
+                            onClick={() => handleTriggerFollowUp(lead)}
+                            disabled={actionLoading === `followup-${lead.id}`}
+                            title="Send follow-up SMS"
+                            ariaLabel="Send follow-up SMS"
+                          >
+                            {actionLoading === `followup-${lead.id}` ? (
+                              <span className="spinner">⋯</span>
+                            ) : (
+                              <SmsFollowUpIcon />
+                            )}
+                          </IconButton>
+                        )}
+                        {(!lead.status || lead.status === 'new') && (
+                          <>
+                            <IconButton
+                              className="icon-button--soft icon-button--success"
                               onClick={() => handleVerify(lead.id)}
                               disabled={actionLoading === lead.id}
-                              title="Re-sync to create contact"
-                              aria-label="Sync contact"
+                              title="Mark as verified lead"
+                              ariaLabel="Verify lead"
                             >
                               {actionLoading === lead.id ? (
                                 <span className="spinner">⋯</span>
                               ) : (
                                 <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                                  <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
                                 </svg>
                               )}
-                            </button>
-                          ) : (
-                            <div className="action-placeholder" aria-hidden="true"></div>
-                          )}
-                          <button
-                            className="btn-action btn-delete"
-                            onClick={() => handleDelete(lead.id, lead.name)}
-                            disabled={actionLoading === lead.id}
-                            title="Permanently delete this lead"
-                            aria-label="Delete lead"
+                            </IconButton>
+                            <IconButton
+                              className="icon-button--soft icon-button--warning"
+                              onClick={() => handleMarkUnknown(lead.id)}
+                              disabled={actionLoading === lead.id}
+                              title="Mark as unknown/spam"
+                              ariaLabel="Mark as unknown"
+                            >
+                              {actionLoading === lead.id ? (
+                                <span className="spinner">⋯</span>
+                              ) : (
+                                <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                            </IconButton>
+                          </>
+                        )}
+                        <div className="action-menu">
+                          <IconButton
+                            className="icon-button--ghost"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenActionMenuId(openActionMenuId === lead.id ? null : lead.id);
+                            }}
+                            title="More actions"
+                            ariaLabel="More actions"
                           >
-                            {actionLoading === lead.id ? (
-                              <span className="spinner">⋯</span>
-                            ) : (
-                              <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                              </svg>
-                            )}
-                          </button>
+                            ⋮
+                          </IconButton>
+                          {openActionMenuId === lead.id && (
+                            <div className="action-menu__popover" role="menu">
+                              <button
+                                type="button"
+                                className="action-menu__item action-menu__item--danger"
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  handleDelete(lead.id, lead.name);
+                                }}
+                                disabled={actionLoading === lead.id}
+                                role="menuitem"
+                              >
+                                Delete lead
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </CompactTable>
           )}
         </div>
 
         <div className="card calls-card">
-          <div className="calls-card-header">
+          <div className="card-header">
             <h2>Recent Calls</h2>
-            <a className="calls-link" href="/calls">View all</a>
+            <a className="card-link" href="/calls">View all</a>
           </div>
 
           {callsLoading ? (
@@ -498,32 +674,28 @@ export default function Dashboard() {
               description="Voice calls will appear here once customers start calling."
             />
           ) : (
-            <div className="calls-table-container">
-              <table className="calls-table">
-                <thead>
-                  <tr>
-                    <th>Date & Time</th>
-                    <th>Caller</th>
-                    <th>Duration</th>
-                    <th>Status</th>
+            <CompactTable containerClassName="calls-table-container" tableClassName="calls-table">
+              <thead>
+                <tr>
+                  <th>Date & Time</th>
+                  <th>Caller</th>
+                  <th>Duration</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calls.map((call) => (
+                  <tr key={call.id}>
+                    <td className="call-date">{formatLeadDate(call.created_at)}</td>
+                    <td className="call-phone">{formatPhone(call.from_number)}</td>
+                    <td className="call-duration">{formatDuration(call.duration)}</td>
+                    <td>
+                      <StatusBadge status={call.status || 'new'} label={call.status || 'New'} />
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {calls.map((call) => (
-                    <tr key={call.id}>
-                      <td>{formatSmartDateTime(call.created_at)}</td>
-                      <td>{formatPhone(call.from_number)}</td>
-                      <td>{formatDuration(call.duration)}</td>
-                      <td>
-                        <span className={`status-badge status-${call.status || 'new'}`}>
-                          {call.status || 'New'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </CompactTable>
           )}
         </div>
       </div>
@@ -561,6 +733,32 @@ export default function Dashboard() {
                   </span>
                 </div>
               </div>
+
+              {/* Related Leads - Other interactions from same person */}
+              {(relatedLeads.length > 0 || loadingRelated) && (
+                <div className="lead-detail-section">
+                  <h4>Related Interactions</h4>
+                  {loadingRelated ? (
+                    <LoadingState message="Loading related leads..." />
+                  ) : (
+                    <div className="related-leads-list">
+                      {relatedLeads.map(related => (
+                        <div key={related.id} className="related-lead-item">
+                          <span className="related-lead-name">{related.name || 'Unknown'}</span>
+                          <span className="related-lead-source">
+                            {related.extra_data?.voice_calls?.length > 0
+                              ? 'Phone Call'
+                              : related.extra_data?.source || 'Chatbot'}
+                          </span>
+                          <span className="related-lead-date">
+                            {formatSmartDateTime(related.created_at)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Voice Call Details */}
               {selectedLead.extra_data?.voice_calls?.length > 0 && (

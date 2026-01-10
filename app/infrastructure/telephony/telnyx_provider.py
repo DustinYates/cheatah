@@ -168,6 +168,167 @@ class TelnyxSmsProvider(SmsProviderProtocol):
             return None
 
 
+class TelnyxAIService:
+    """Service for interacting with Telnyx AI Assistants API."""
+
+    def __init__(self, api_key: str) -> None:
+        """Initialize Telnyx AI service.
+
+        Args:
+            api_key: Telnyx API v2 key
+        """
+        self.api_key = api_key
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Create HTTP client with auth headers."""
+        return httpx.AsyncClient(
+            base_url=TELNYX_API_BASE,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=30.0,
+        )
+
+    async def find_conversation_by_call_control_id(
+        self, call_control_id: str
+    ) -> dict[str, Any] | None:
+        """Find a conversation by call_control_id.
+
+        Args:
+            call_control_id: The Telnyx call control ID
+
+        Returns:
+            Conversation data or None if not found
+        """
+        try:
+            async with self._get_client() as client:
+                # Get recent conversations and filter by metadata
+                response = await client.get("/ai/conversations")
+                response.raise_for_status()
+                data = response.json()
+
+                for conv in data.get("data", []):
+                    metadata = conv.get("metadata", {})
+                    if metadata.get("call_control_id") == call_control_id:
+                        return conv
+                return None
+        except httpx.HTTPError as e:
+            logger.warning(f"Failed to find conversation by call_control_id: {e}")
+            return None
+
+    async def get_conversation_messages(
+        self, conversation_id: str
+    ) -> list[dict[str, Any]]:
+        """Get messages from a conversation.
+
+        Args:
+            conversation_id: The conversation ID
+
+        Returns:
+            List of message objects
+        """
+        try:
+            async with self._get_client() as client:
+                response = await client.get(f"/ai/conversations/{conversation_id}/messages")
+                response.raise_for_status()
+                data = response.json()
+                return data.get("data", [])
+        except httpx.HTTPError as e:
+            logger.warning(f"Failed to get conversation messages: {e}")
+            return []
+
+    def extract_insights_from_transcript(
+        self, messages: list[dict[str, Any]]
+    ) -> dict[str, str]:
+        """Extract name, email, and intent from conversation messages.
+
+        Uses simple pattern matching to extract key information from the transcript.
+
+        Args:
+            messages: List of message objects from the conversation
+
+        Returns:
+            Dict with extracted 'name', 'email', 'intent', and 'summary'
+        """
+        import re
+
+        name = ""
+        email = ""
+        intent = ""
+
+        # Build transcript for summary
+        transcript_lines = []
+        user_messages = []
+
+        for msg in messages:
+            role = msg.get("role", "unknown")
+            text = msg.get("text", "")
+            if text:
+                transcript_lines.append(f"{role}: {text}")
+                if role == "user":
+                    user_messages.append(text)
+
+        # Extract email from any message
+        full_transcript = " ".join(transcript_lines)
+        email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', full_transcript)
+        if email_match:
+            email = email_match.group(0)
+
+        # Extract name from user messages
+        name_patterns = [
+            r"(?:my name is|i'm|i am|this is|name's)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            r"^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)[,.]?\s*$",  # Just a name as response
+            r"(?:it's|its)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+        ]
+
+        for user_msg in user_messages:
+            if name:
+                break
+            for pattern in name_patterns:
+                match = re.search(pattern, user_msg, re.IGNORECASE)
+                if match:
+                    potential_name = match.group(1).strip()
+                    # Validate it looks like a name (not common words)
+                    if potential_name.lower() not in [
+                        "yes", "no", "hi", "hello", "hey", "ok", "okay",
+                        "thanks", "thank", "sure", "please", "help", "good",
+                        "fine", "great", "alright", "right", "yeah", "yep"
+                    ] and len(potential_name) > 1:
+                        name = potential_name.title()
+                        break
+
+        # Determine intent from conversation content
+        content_lower = full_transcript.lower()
+        if any(word in content_lower for word in ["price", "pricing", "cost", "how much", "rate"]):
+            intent = "pricing_info"
+        elif any(word in content_lower for word in ["hour", "open", "close", "location", "address", "where"]):
+            intent = "hours_location"
+        elif any(word in content_lower for word in ["book", "schedule", "appointment", "reserve", "enroll", "sign up", "register"]):
+            intent = "booking_request"
+        elif any(word in content_lower for word in ["help", "support", "problem", "issue", "fix"]):
+            intent = "support_request"
+        elif any(word in content_lower for word in ["wrong number", "wrong person", "not interested"]):
+            intent = "wrong_number"
+        else:
+            intent = "general_inquiry"
+
+        # Create a brief summary from the first few user messages
+        summary = ""
+        if user_messages:
+            summary = " ".join(user_messages[:3])[:500]
+            if len(summary) > 450:
+                summary = summary[:450] + "..."
+
+        return {
+            "name": name,
+            "email": email,
+            "intent": intent,
+            "summary": summary,
+            "transcript": "\n".join(transcript_lines),
+        }
+
+
 class TelnyxVoiceProvider(VoiceProviderProtocol):
     """Telnyx Voice provider implementation using TeXML."""
 

@@ -12,9 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.prompt_service import PromptService
 from app.domain.services.sms_service import SmsService
+from app.domain.services.voice_prompt_transformer import transform_chat_to_voice
 from app.infrastructure.cloud_tasks import CloudTasksClient
 from app.persistence.database import get_db
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
+from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -41,7 +43,7 @@ class TelnyxDynamicVarsRequest(BaseModel):
 
 @router.post("/dynamic-variables")
 async def get_dynamic_variables(
-    request: TelnyxDynamicVarsRequest,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, Any]:
     """Return dynamic variables for Telnyx AI Assistant.
@@ -50,22 +52,63 @@ async def get_dynamic_variables(
     The tenant is identified by the Telnyx phone number being called.
 
     Args:
-        request: Call metadata from Telnyx
+        request: FastAPI request (raw to handle various Telnyx formats)
         db: Database session
 
     Returns:
         Dictionary with dynamic variables, including X (the composed prompt)
     """
-    to_number = request.to
-    from_number = request.from_
+    import json
+
+    # Parse raw body to handle different Telnyx formats
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    # Log raw request for debugging
+    logger.info(f"Telnyx dynamic-variables raw body: {json.dumps(body)[:1500]}")
+
+    # Try multiple possible locations for phone numbers
+    # Telnyx may send: {to, from} or {data: {payload: {to, from}}} or {agent_target, end_user_target}
+    to_number = (
+        body.get("to")
+        or body.get("agent_target")
+        or body.get("telnyx_agent_target")
+        or (body.get("data", {}).get("payload", {}) or {}).get("to")
+        or (body.get("data", {}).get("payload", {}) or {}).get("agent_target")
+        or (body.get("payload", {}) or {}).get("to")
+        or ""
+    )
+    from_number = (
+        body.get("from")
+        or body.get("end_user_target")
+        or body.get("telnyx_end_user_target")
+        or (body.get("data", {}).get("payload", {}) or {}).get("from")
+        or (body.get("data", {}).get("payload", {}) or {}).get("end_user_target")
+        or (body.get("payload", {}) or {}).get("from")
+        or ""
+    )
+    call_control_id = (
+        body.get("call_control_id")
+        or body.get("call_session_id")
+        or body.get("conversation_id")
+        or (body.get("data", {}) or {}).get("call_control_id")
+        or ""
+    )
+
+    # Handle nested phone number objects
+    if isinstance(to_number, dict):
+        to_number = to_number.get("phone_number", "")
+    if isinstance(from_number, dict):
+        from_number = from_number.get("phone_number", "")
 
     logger.info(
         f"Telnyx dynamic variables request",
         extra={
             "to": to_number,
             "from": from_number,
-            "call_control_id": request.call_control_id,
-            "direction": request.direction,
+            "call_control_id": call_control_id,
         },
     )
 
@@ -97,24 +140,44 @@ async def get_dynamic_variables(
 
     tenant_id = config.tenant_id
 
+    # Get tenant's voice config for fallback prompt
+    voice_config_stmt = select(TenantVoiceConfig).where(
+        TenantVoiceConfig.tenant_id == tenant_id
+    )
+    voice_config_result = await db.execute(voice_config_stmt)
+    voice_config = voice_config_result.scalar_one_or_none()
+
     # Compose the voice prompt for this tenant
     prompt_service = PromptService(db)
-    composed_prompt = await prompt_service.compose_prompt_voice(tenant_id)
 
-    if not composed_prompt:
+    # Check if tenant has a dedicated voice prompt bundle
+    has_dedicated_voice = await prompt_service.has_dedicated_voice_prompt(tenant_id)
+
+    voice_prompt = await prompt_service.compose_prompt_voice(tenant_id)
+
+    if not voice_prompt:
         logger.warning(f"No prompt configured for tenant {tenant_id}")
+        # Use tenant-specific fallback if available, otherwise generic
+        if voice_config and voice_config.fallback_voice_prompt:
+            return {"X": voice_config.fallback_voice_prompt}
         return {"X": _get_fallback_prompt()}
+
+    # Only apply transform_chat_to_voice if using chat prompt fallback
+    # Dedicated voice prompts are already voice-safe and shouldn't be wrapped
+    if not has_dedicated_voice:
+        voice_prompt = transform_chat_to_voice(voice_prompt)
 
     logger.info(
         f"Returning dynamic variables for tenant",
         extra={
             "tenant_id": tenant_id,
             "to": to_number,
-            "prompt_length": len(composed_prompt),
+            "prompt_length": len(voice_prompt),
+            "has_dedicated_voice": has_dedicated_voice,
         },
     )
 
-    return {"X": composed_prompt}
+    return {"X": voice_prompt}
 
 
 def _normalize_phone(phone: str) -> str:
@@ -141,14 +204,24 @@ def _normalize_phone(phone: str) -> str:
 
 
 def _get_fallback_prompt() -> str:
-    """Return a generic fallback prompt when tenant cannot be identified."""
-    return (
-        "You are a helpful assistant. "
-        "Greet the caller warmly and ask how you can help them today. "
-        "Be friendly and conversational. "
-        "If you cannot answer a question, offer to take their information "
-        "so someone can follow up with them."
-    )
+    """Return a fallback prompt when tenant cannot be identified or prompt fails."""
+    return """You are a voice assistant for a local business. You communicate through spoken conversation only.
+
+## CRITICAL VOICE RULES
+- Keep responses SHORT (2-3 sentences max)
+- Ask only ONE question per turn
+- NEVER read URLs, email addresses, or special characters aloud
+- For links/websites: "I can text that to you. What's the best number?"
+- Sound warm and helpful, not robotic
+
+## YOUR ROLE
+- Greet callers warmly and ask how you can help
+- Answer basic questions about services, hours, and location
+- If you don't know something, say: "I don't have that specific information, but I can take your details and have someone call you back."
+- Collect their name and best callback number if needed
+
+## REMEMBER
+You are on a PHONE CALL. Keep it conversational, brief, and helpful."""
 
 
 # =============================================================================
@@ -445,7 +518,34 @@ async def telnyx_ai_call_complete(
     import json
 
     try:
-        body = await request.json()
+        # Try JSON first, fall back to form data
+        content_type = request.headers.get("content-type", "")
+        body = {}
+
+        if "application/json" in content_type:
+            try:
+                body = await request.json()
+            except Exception as e:
+                logger.warning(f"Failed to parse JSON body: {e}")
+                raw = await request.body()
+                logger.info(f"Raw body (non-JSON): {raw[:500]}")
+        elif "form" in content_type:
+            form_data = await request.form()
+            body = dict(form_data)
+            logger.info(f"Received form data: {body}")
+        else:
+            # Try JSON anyway
+            try:
+                body = await request.json()
+            except Exception:
+                raw = await request.body()
+                logger.info(f"Raw body (unknown content-type {content_type}): {raw[:500]}")
+                # Try to parse as JSON if it looks like JSON
+                if raw and raw.strip().startswith(b'{'):
+                    try:
+                        body = json.loads(raw)
+                    except Exception:
+                        pass
 
         # Log full payload for debugging (in message for Cloud Run visibility)
         body_str = json.dumps(body)[:3000] if isinstance(body, dict) else str(body)[:500]
@@ -464,13 +564,18 @@ async def telnyx_ai_call_complete(
         conversation = body.get("conversation", {}) or data.get("conversation", {})
 
         # Extract call details - try multiple possible field names
+        # TeXML status callbacks use PascalCase (CallControlId, From, To, etc.)
         call_id = (
-            metadata.get("call_control_id")
+            body.get("CallControlId")  # TeXML PascalCase
+            or body.get("CallSessionId")
+            or body.get("CallSid")
+            or metadata.get("call_control_id")
             or metadata.get("call_session_id")
             or payload.get("conversation_id")
             or payload.get("call_control_id")
             or payload.get("call_id")
             or data.get("call_control_id")
+            or data.get("CallControlId")
             or data.get("conversation_id")
             or body.get("conversation_id")
             or conversation.get("id")
@@ -478,14 +583,18 @@ async def telnyx_ai_call_complete(
             or ""
         )
 
-        # Phone numbers - for Insights webhook they're in metadata
+        # Phone numbers - TeXML uses PascalCase: From, To
         from_number = (
-            metadata.get("from")
+            body.get("From")  # TeXML PascalCase
+            or body.get("Caller")
+            or metadata.get("from")
             or metadata.get("telnyx_end_user_target")
             or payload.get("from")
+            or payload.get("From")
             or payload.get("caller_id")
             or payload.get("end_user_target")
             or data.get("from")
+            or data.get("From")
             or data.get("end_user_target")
             or body.get("end_user_target")
             or conversation.get("end_user_target")
@@ -493,12 +602,16 @@ async def telnyx_ai_call_complete(
             or ""
         )
         to_number = (
-            metadata.get("to")
+            body.get("To")  # TeXML PascalCase
+            or body.get("Called")
+            or metadata.get("to")
             or metadata.get("telnyx_agent_target")
             or payload.get("to")
+            or payload.get("To")
             or payload.get("called_number")
             or payload.get("agent_target")
             or data.get("to")
+            or data.get("To")
             or data.get("agent_target")
             or body.get("agent_target")
             or conversation.get("agent_target")
@@ -506,8 +619,71 @@ async def telnyx_ai_call_complete(
             or ""
         )
 
-        # Duration
-        duration = payload.get("duration") or payload.get("call_duration") or data.get("duration") or 0
+        # Duration - log available fields to help debug missing duration
+        logger.info(f"Telnyx duration debug - payload keys: {list(payload.keys()) if isinstance(payload, dict) else 'not dict'}")
+        logger.info(f"Telnyx duration debug - data keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}")
+        logger.info(f"Telnyx duration debug - metadata keys: {list(metadata.keys()) if isinstance(metadata, dict) else 'not dict'}")
+        logger.info(f"Telnyx duration debug - conversation keys: {list(conversation.keys()) if isinstance(conversation, dict) else 'not dict'}")
+        logger.info(f"Telnyx duration debug - full body: {json.dumps(body)[:2000] if isinstance(body, dict) else str(body)[:500]}")
+
+        # Try multiple possible field names for duration (in seconds)
+        # TeXML uses PascalCase: CallDuration
+        duration = (
+            body.get("CallDuration")  # TeXML PascalCase - this is the main one!
+            or body.get("Duration")
+            or payload.get("CallDuration")
+            or payload.get("duration")
+            or payload.get("call_duration")
+            or payload.get("call_length")
+            or payload.get("duration_seconds")
+            or payload.get("total_duration")
+            or payload.get("duration_secs")
+            or data.get("CallDuration")
+            or data.get("duration")
+            or data.get("call_duration")
+            or data.get("duration_seconds")
+            or metadata.get("duration")
+            or metadata.get("call_duration")
+            or conversation.get("duration")
+            or conversation.get("duration_seconds")
+            or 0
+        )
+
+        # If no direct duration, try to calculate from timestamps
+        call_start_time = None
+        call_end_time = None
+        if not duration:
+            # Check body first for PascalCase TeXML fields
+            call_start_time = body.get("AnsweredTime") or body.get("StartTime")
+            call_end_time = body.get("EndTime") or body.get("Timestamp")
+
+            # Look for start/end timestamps in various locations
+            for source in [payload, data, metadata, conversation]:
+                if isinstance(source, dict):
+                    if not call_start_time:
+                        call_start_time = (
+                            source.get("AnsweredTime") or source.get("StartTime") or
+                            source.get("start_time") or source.get("started_at") or
+                            source.get("call_start_time") or source.get("begin_time")
+                        )
+                    if not call_end_time:
+                        call_end_time = (
+                            source.get("EndTime") or source.get("Timestamp") or
+                            source.get("end_time") or source.get("ended_at") or
+                            source.get("call_end_time") or source.get("hangup_time")
+                        )
+
+            if call_start_time and call_end_time:
+                try:
+                    from dateutil import parser as date_parser
+                    start_dt = date_parser.parse(str(call_start_time))
+                    end_dt = date_parser.parse(str(call_end_time))
+                    duration = int((end_dt - start_dt).total_seconds())
+                    logger.info(f"Telnyx duration calculated from timestamps: {duration}s (start={call_start_time}, end={call_end_time})")
+                except Exception as e:
+                    logger.warning(f"Failed to parse timestamps for duration: {e}")
+
+        logger.info(f"Telnyx duration extracted: {duration}")
 
         # Transcript and insights - try multiple formats
         transcript = ""
@@ -535,10 +711,55 @@ async def telnyx_ai_call_complete(
         caller_intent = ""
         import re
 
+        # Log raw results for debugging name extraction issues
+        logger.info(f"Telnyx insights results: {json.dumps(results)[:1500] if results else 'empty'}")
+
         if isinstance(results, list) and results:
             for result_item in results:
                 if isinstance(result_item, dict):
-                    result_text = result_item.get("result", "") or result_item.get("value", "")
+                    # Check if result has a "name" field that identifies the insight type
+                    insight_name = (
+                        result_item.get("name", "")
+                        or result_item.get("insight_name", "")
+                        or result_item.get("type", "")
+                        or result_item.get("insight_type", "")
+                        or ""
+                    ).lower()
+                    result_text = (
+                        result_item.get("result", "")
+                        or result_item.get("value", "")
+                        or result_item.get("text", "")
+                        or ""
+                    )
+
+                    logger.info(f"Telnyx insight item: name='{insight_name}', result='{result_text[:100] if result_text else ''}'")
+
+                    # If insight has an identifying name, use it directly
+                    if insight_name:
+                        result_clean = result_text.strip() if result_text else ""
+                        result_lower = result_clean.lower()
+
+                        # Check for name-related insights
+                        if ("name" in insight_name and "email" not in insight_name) or insight_name in ["caller_name", "customer_name", "contact_name"]:
+                            if result_clean and result_lower not in ["unknown", "none", "not provided", "n/a", ""]:
+                                caller_name = result_clean
+                                logger.info(f"Extracted caller_name from labeled insight '{insight_name}': {caller_name}")
+                        # Check for email-related insights
+                        elif "email" in insight_name:
+                            if result_text and "@" in result_text:
+                                email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', result_text)
+                                if email_match:
+                                    caller_email = email_match.group(0)
+                                    logger.info(f"Extracted caller_email from labeled insight: {caller_email}")
+                        # Check for summary/intent insights
+                        elif "summary" in insight_name or "intent" in insight_name:
+                            if result_clean:
+                                if not summary:
+                                    summary = result_clean
+                                elif not caller_intent:
+                                    caller_intent = result_clean
+                        continue  # Skip heuristic detection for labeled insights
+
                 elif isinstance(result_item, str):
                     result_text = result_item
                 else:
@@ -549,10 +770,9 @@ async def telnyx_ai_call_complete(
 
                 result_lower = result_text.lower().strip()
 
-                # Identify result type by content
+                # Fallback: Identify result type by content (heuristics for unlabeled results)
                 # Email detection (contains @ and looks like email)
                 if "@" in result_text and not caller_email:
-                    # Extract email from text
                     email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', result_text)
                     if email_match:
                         caller_email = email_match.group(0)
@@ -564,6 +784,7 @@ async def telnyx_ai_call_complete(
                         # Check if it looks like a name (not a full sentence)
                         if not any(word in result_lower for word in ["the caller", "they", "was", "were", "is", "are"]):
                             caller_name = result_text.strip()
+                            logger.info(f"Extracted caller_name via heuristics: {caller_name}")
                 # Intent/Summary detection (longer text)
                 elif len(result_text) > 50:
                     if not summary:
@@ -623,6 +844,55 @@ async def telnyx_ai_call_complete(
             f"AI call data extracted: name={caller_name}, email={caller_email}, intent={caller_intent[:50] if caller_intent else 'none'}"
         )
 
+        # WORKAROUND: Telnyx Insights webhooks not firing for voice calls
+        # If we have no insights data, try to fetch transcript from Telnyx API directly
+        if not caller_name and not caller_email and call_id:
+            from app.settings import settings
+            if settings.telnyx_api_key:
+                try:
+                    from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+                    telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
+
+                    logger.info(f"No insights from webhook, fetching transcript from Telnyx API for call_control_id={call_id}")
+
+                    # Find the conversation by call_control_id
+                    conversation = await telnyx_ai.find_conversation_by_call_control_id(call_id)
+
+                    if conversation:
+                        conv_id = conversation.get("id")
+                        logger.info(f"Found conversation {conv_id}, fetching messages")
+
+                        # Get messages from the conversation
+                        messages = await telnyx_ai.get_conversation_messages(conv_id)
+
+                        if messages:
+                            # Extract insights from transcript
+                            extracted = telnyx_ai.extract_insights_from_transcript(messages)
+
+                            # Use extracted data if we didn't get it from webhook
+                            if extracted.get("name") and not caller_name:
+                                caller_name = extracted["name"]
+                                logger.info(f"Extracted caller_name from transcript: {caller_name}")
+                            if extracted.get("email") and not caller_email:
+                                caller_email = extracted["email"]
+                                logger.info(f"Extracted caller_email from transcript: {caller_email}")
+                            if extracted.get("intent") and not caller_intent:
+                                caller_intent = extracted["intent"]
+                                logger.info(f"Extracted caller_intent from transcript: {caller_intent}")
+                            if extracted.get("summary") and not summary:
+                                summary = extracted["summary"]
+                                logger.info(f"Extracted summary from transcript (first 100 chars): {summary[:100]}")
+                            if extracted.get("transcript") and not transcript:
+                                transcript = extracted["transcript"]
+
+                            logger.info(f"Final extracted data: name={caller_name}, email={caller_email}, intent={caller_intent}")
+                    else:
+                        logger.info(f"Could not find conversation for call_control_id={call_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch transcript from Telnyx API: {e}")
+            else:
+                logger.info("No TELNYX_API_KEY configured, skipping transcript fetch")
+
         if not to_number:
             logger.warning("No 'to' number in AI call webhook")
             return JSONResponse(content={"status": "ok", "message": "no to_number"})
@@ -641,24 +911,80 @@ async def telnyx_ai_call_complete(
 
         logger.info(f"Found tenant_id={tenant_id} for AI call")
 
-        # Create Call record (use naive datetime for DB compatibility)
+        # Create or update Call record (use naive datetime for DB compatibility)
         now = datetime.utcnow()
-        call = Call(
-            tenant_id=tenant_id,
-            call_sid=call_id or f"telnyx_ai_{now.timestamp()}",
-            from_number=from_number,
-            to_number=to_number,
-            direction="inbound",
-            status="completed",
-            duration=int(duration) if duration else 0,
-            recording_url=recording_url or None,
-            started_at=now,
-            ended_at=now,
-        )
-        db.add(call)
-        await db.flush()  # Get the call ID
 
-        logger.info(f"Created Call record: id={call.id}")
+        # Use actual timestamps from webhook if available, otherwise use now
+        actual_start = now
+        actual_end = now
+        if call_start_time:
+            try:
+                from dateutil import parser as date_parser
+                actual_start = date_parser.parse(str(call_start_time)).replace(tzinfo=None)
+            except Exception:
+                pass
+        if call_end_time:
+            try:
+                from dateutil import parser as date_parser
+                actual_end = date_parser.parse(str(call_end_time)).replace(tzinfo=None)
+            except Exception:
+                pass
+
+        # First, check if a Call record already exists with this call_id
+        # This handles the case where TeXML status callback arrives before insights webhook
+        call_sid_to_use = call_id or f"telnyx_ai_{now.timestamp()}"
+        existing_call_result = await db.execute(
+            select(Call).where(Call.call_sid == call_sid_to_use)
+        )
+        call = existing_call_result.scalar_one_or_none()
+
+        # If not found by call_sid, try to find by phone number within last 10 minutes
+        # This helps match insights webhooks to TeXML callbacks which use different IDs
+        if not call and from_number:
+            from datetime import timedelta
+            time_window = now - timedelta(minutes=10)
+            normalized_from = _normalize_phone(from_number)
+            recent_call_result = await db.execute(
+                select(Call).where(
+                    Call.tenant_id == tenant_id,
+                    Call.from_number == normalized_from,
+                    Call.created_at >= time_window,
+                ).order_by(Call.created_at.desc()).limit(1)
+            )
+            call = recent_call_result.scalar_one_or_none()
+            if call:
+                logger.info(f"Found existing Call by phone number match: id={call.id}, call_sid={call.call_sid}")
+
+        if call:
+            # Update existing call with any new data
+            logger.info(f"Found existing Call record: id={call.id}, updating with insights data")
+            # Only update fields if we have new non-empty values
+            if duration and int(duration) > 0 and (not call.duration or call.duration == 0):
+                call.duration = int(duration)
+            if recording_url and not call.recording_url:
+                call.recording_url = recording_url
+            # Update timestamps if they're more accurate
+            if actual_start != now and (not call.started_at or call.started_at == call.ended_at):
+                call.started_at = actual_start
+            if actual_end != now and (not call.ended_at or call.ended_at == call.started_at):
+                call.ended_at = actual_end
+        else:
+            # Create new Call record
+            call = Call(
+                tenant_id=tenant_id,
+                call_sid=call_sid_to_use,
+                from_number=from_number,
+                to_number=to_number,
+                direction="inbound",
+                status="completed",
+                duration=int(duration) if duration else 0,
+                recording_url=recording_url or None,
+                started_at=actual_start,
+                ended_at=actual_end,
+            )
+            db.add(call)
+            await db.flush()  # Get the call ID
+            logger.info(f"Created new Call record: id={call.id}")
 
         # Store transcript and summary in call metadata or separate table
         # For now, we'll create a lead with the information
@@ -711,11 +1037,19 @@ async def telnyx_ai_call_complete(
                 lead.extra_data = existing_data
                 flag_modified(lead, "extra_data")
                 logger.info(f"Lead extra_data AFTER update: {lead.extra_data}")
-                # Update name/email if we got new info and lead doesn't have it
-                if caller_name and not lead.name:
-                    lead.name = caller_name
-                if caller_email and not lead.email:
-                    lead.email = caller_email
+                # Stack names/emails if we got new info that's different
+                if caller_name:
+                    if not lead.name:
+                        lead.name = caller_name
+                    elif caller_name.lower() not in lead.name.lower():
+                        # Append new name if different from existing
+                        lead.name = f"{lead.name}, {caller_name}"
+                if caller_email:
+                    if not lead.email:
+                        lead.email = caller_email
+                    elif caller_email.lower() not in lead.email.lower():
+                        # Append new email if different from existing
+                        lead.email = f"{lead.email}, {caller_email}"
                 # Update created_at to now so lead appears at top of dashboard
                 lead.created_at = now
                 logger.info(f"Updated existing Lead id={lead.id} with AI call: phone={normalized_from}, name={caller_name}")
@@ -727,11 +1061,27 @@ async def telnyx_ai_call_complete(
             lead_id = None
 
         # Create CallSummary record for the Calls page
+        # Determine outcome based on extracted data
+        if caller_name and caller_email:
+            outcome = "lead_created"
+        elif caller_name or caller_email:
+            outcome = "lead_created"
+        elif lead_id:
+            outcome = "info_provided"
+        else:
+            outcome = "incomplete"
+
+        # Use extracted intent or default to general_inquiry
+        final_intent = caller_intent if caller_intent in [
+            "pricing_info", "hours_location", "booking_request",
+            "support_request", "wrong_number", "general_inquiry"
+        ] else "general_inquiry"
+
         call_summary = CallSummary(
             call_id=call.id,
             lead_id=lead_id,
-            intent="general_inquiry",  # Default intent - could be classified by AI
-            outcome="lead_created" if lead_id else "info_provided",
+            intent=final_intent,
+            outcome=outcome,
             summary_text=summary or None,
             extracted_fields={
                 "name": caller_name or None,
@@ -740,7 +1090,7 @@ async def telnyx_ai_call_complete(
             },
         )
         db.add(call_summary)
-        logger.info(f"Created CallSummary for call_id={call.id}")
+        logger.info(f"Created CallSummary for call_id={call.id}, intent={final_intent}, outcome={outcome}, name={caller_name}")
 
         await db.commit()
 
@@ -753,6 +1103,102 @@ async def telnyx_ai_call_complete(
 
     except Exception as e:
         logger.error(f"Error processing Telnyx AI call webhook: {e}", exc_info=True)
+        return JSONResponse(content={"status": "error", "message": str(e)})
+
+
+# =============================================================================
+# Telnyx Call Progress Events
+# =============================================================================
+
+
+@router.post("/call-progress")
+async def telnyx_call_progress(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Handle call progress events from Telnyx.
+
+    This endpoint receives TeXML call progress events during call lifecycle:
+    - call.initiated, call.answered, call.hangup, etc.
+
+    Args:
+        request: FastAPI request with call event data
+        db: Database session
+
+    Returns:
+        JSON response with 200 status
+    """
+    from app.persistence.models.call import Call
+    import json
+
+    try:
+        # Handle different content types (JSON or form data)
+        content_type = request.headers.get("content-type", "")
+        body = {}
+
+        if "application/json" in content_type:
+            try:
+                body = await request.json()
+            except Exception:
+                raw = await request.body()
+                logger.info(f"call-progress: Failed to parse JSON, raw body: {raw[:500]}")
+        elif "form" in content_type:
+            form_data = await request.form()
+            body = dict(form_data)
+        else:
+            # Try JSON anyway
+            try:
+                body = await request.json()
+            except Exception:
+                raw = await request.body()
+                if raw:
+                    logger.info(f"call-progress: Unknown content-type, raw body: {raw[:500]}")
+
+        logger.info(f"Telnyx call-progress webhook: {json.dumps(body)[:2000] if body else 'empty'}")
+
+        # Extract event data - Telnyx format: {data: {event_type, payload}}
+        data = body.get("data", body)
+        event_type = data.get("event_type", "unknown")
+        payload = data.get("payload", data)
+
+        logger.info(f"Telnyx call-progress event_type: {event_type}")
+
+        # Extract call identifiers
+        call_control_id = (
+            payload.get("call_control_id")
+            or payload.get("call_session_id")
+            or data.get("call_control_id")
+            or ""
+        )
+
+        # Handle call.hangup event - update duration
+        if event_type == "call.hangup":
+            # Try to find existing call record
+            if call_control_id:
+                stmt = select(Call).where(Call.call_sid == call_control_id)
+                result = await db.execute(stmt)
+                call = result.scalar_one_or_none()
+
+                if call:
+                    # Update ended_at and calculate duration
+                    call.ended_at = datetime.utcnow()
+                    call.status = "completed"
+
+                    # Get duration from payload if available
+                    duration_secs = payload.get("duration_seconds") or payload.get("duration") or 0
+                    if duration_secs:
+                        call.duration = int(duration_secs)
+                    elif call.started_at:
+                        # Calculate from timestamps
+                        call.duration = int((call.ended_at - call.started_at).total_seconds())
+
+                    await db.commit()
+                    logger.info(f"Updated call {call.id} on hangup: duration={call.duration}s")
+
+        return JSONResponse(content={"status": "ok", "event_type": event_type})
+
+    except Exception as e:
+        logger.error(f"Error processing call-progress webhook: {e}", exc_info=True)
         return JSONResponse(content={"status": "error", "message": str(e)})
 
 

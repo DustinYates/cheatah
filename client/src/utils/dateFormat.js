@@ -41,3 +41,25 @@ export function formatSmartDateTime(dateString) {
     return '—';
   }
 }
+
+export function formatDateTimeParts(dateString) {
+  try {
+    if (!dateString) return { date: '—', time: '—', tzAbbr: '' };
+
+    const normalized = normalizeTimestamp(dateString);
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return { date: '—', time: '—', tzAbbr: '' };
+
+    const centralDate = toZonedTime(date, CENTRAL_TZ);
+    const tzAbbr = formatTz(centralDate, 'zzz', { timeZone: CENTRAL_TZ });
+
+    return {
+      date: format(centralDate, 'MMM d, yyyy'),
+      time: format(centralDate, 'h:mm a'),
+      tzAbbr,
+    };
+  } catch (error) {
+    console.error('Date formatting error:', error);
+    return { date: '—', time: '—', tzAbbr: '' };
+  }
+}

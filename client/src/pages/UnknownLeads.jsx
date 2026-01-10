@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
+import { formatDateTimeParts } from '../utils/dateFormat';
 import './UnknownLeads.css';
 
 export default function UnknownLeads() {
@@ -151,7 +152,7 @@ export default function UnknownLeads() {
                   <td>{lead.name || 'Unknown'}</td>
                   <td>{lead.email || '-'}</td>
                   <td>{lead.phone || '-'}</td>
-                  <td>{new Date(lead.created_at).toLocaleDateString()}</td>
+                  <td>{formatDateTimeParts(lead.created_at).date}</td>
                   <td className="actions">
                     <button
                       className="btn-view"

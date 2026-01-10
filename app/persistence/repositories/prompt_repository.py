@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.persistence.models.prompt import PromptBundle, PromptSection, PromptStatus
+from app.persistence.models.prompt import PromptBundle, PromptChannel, PromptSection, PromptStatus
 from app.persistence.repositories.base import BaseRepository
 
 
@@ -15,39 +15,63 @@ class PromptRepository(BaseRepository[PromptBundle]):
         """Initialize prompt repository."""
         super().__init__(PromptBundle, session)
 
-    async def get_active_bundle(self, tenant_id: int | None) -> PromptBundle | None:
+    async def get_active_bundle(
+        self, tenant_id: int | None, channel: str = PromptChannel.CHAT.value
+    ) -> PromptBundle | None:
         """Get the active prompt bundle for a tenant (or global if tenant_id is None)."""
         stmt = select(PromptBundle).where(
             PromptBundle.tenant_id == tenant_id,
+            PromptBundle.channel == channel,
             PromptBundle.is_active == True
         ).order_by(PromptBundle.created_at.desc())
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_production_bundle(self, tenant_id: int | None) -> PromptBundle | None:
+    async def get_production_bundle(
+        self, tenant_id: int | None, channel: str = PromptChannel.CHAT.value
+    ) -> PromptBundle | None:
         """Get the production prompt bundle for a tenant."""
         stmt = select(PromptBundle).where(
             PromptBundle.tenant_id == tenant_id,
+            PromptBundle.channel == channel,
             PromptBundle.status == PromptStatus.PRODUCTION.value
         ).order_by(PromptBundle.published_at.desc())
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_draft_bundle(self, tenant_id: int | None) -> PromptBundle | None:
+    async def get_draft_bundle(
+        self, tenant_id: int | None, channel: str = PromptChannel.CHAT.value
+    ) -> PromptBundle | None:
         """Get the draft prompt bundle for a tenant."""
         stmt = select(PromptBundle).where(
             PromptBundle.tenant_id == tenant_id,
+            PromptBundle.channel == channel,
             PromptBundle.status == PromptStatus.DRAFT.value
         ).order_by(PromptBundle.updated_at.desc())
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_global_base_bundle(self) -> PromptBundle | None:
+    async def get_global_base_bundle(self, channel: str = PromptChannel.CHAT.value) -> PromptBundle | None:
         """Get the global base prompt bundle (tenant_id is NULL)."""
-        bundle = await self.get_production_bundle(None)
+        bundle = await self.get_production_bundle(None, channel)
         if bundle:
             return bundle
-        return await self.get_active_bundle(None)
+        return await self.get_active_bundle(None, channel)
+
+    async def get_voice_bundle(self, tenant_id: int | None) -> PromptBundle | None:
+        """Get the voice-specific prompt bundle for a tenant.
+
+        Falls back to chat bundle if no voice bundle exists.
+        """
+        # First try to get voice-specific bundle
+        bundle = await self.get_production_bundle(tenant_id, PromptChannel.VOICE.value)
+        if bundle:
+            return bundle
+        bundle = await self.get_active_bundle(tenant_id, PromptChannel.VOICE.value)
+        if bundle:
+            return bundle
+        # Fall back to chat bundle if no voice bundle
+        return None
 
     async def get_sections(self, bundle_id: int) -> list[PromptSection]:
         """Get all sections for a prompt bundle, ordered by order field."""
@@ -59,12 +83,15 @@ class PromptRepository(BaseRepository[PromptBundle]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def deactivate_all_bundles(self, tenant_id: int | None) -> None:
-        """Deactivate all bundles for a tenant (or global)."""
+    async def deactivate_all_bundles(
+        self, tenant_id: int | None, channel: str = PromptChannel.CHAT.value
+    ) -> None:
+        """Deactivate all bundles for a tenant (or global) in a specific channel."""
         stmt = (
             select(PromptBundle)
             .where(
                 PromptBundle.tenant_id == tenant_id,
+                PromptBundle.channel == channel,
                 PromptBundle.is_active == True
             )
         )
@@ -89,11 +116,12 @@ class PromptRepository(BaseRepository[PromptBundle]):
         if not bundle:
             return None
 
-        # Use the bundle's actual tenant_id to find/demote the old production bundle
-        # This ensures we demote the correct tenant's old production prompt,
+        # Use the bundle's actual tenant_id and channel to find/demote the old production bundle
+        # This ensures we demote the correct tenant's old production prompt for the same channel,
         # not a global one when a global admin is operating
         actual_tenant_id = bundle.tenant_id
-        old_prod = await self.get_production_bundle(actual_tenant_id)
+        actual_channel = bundle.channel
+        old_prod = await self.get_production_bundle(actual_tenant_id, actual_channel)
         if old_prod and old_prod.id != bundle_id:
             old_prod.status = PromptStatus.DRAFT.value
             old_prod.is_active = False

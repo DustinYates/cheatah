@@ -7,7 +7,7 @@ from enum import Enum
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.deps import require_tenant_admin
+from app.api.deps import require_global_admin, require_tenant_admin
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 from app.persistence.models.prompt import PromptBundle, PromptSection, PromptStatus
@@ -16,7 +16,7 @@ from app.persistence.repositories.prompt_repository import PromptRepository
 from app.llm.gemini_client import GeminiClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_global_admin)])
 
 
 class InterviewSuggestionsResponse(BaseModel):

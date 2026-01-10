@@ -166,8 +166,16 @@ class ApiClient {
     return this.request(`/leads/${leadId}/conversation`);
   }
 
+  async getRelatedLeads(leadId) {
+    return this.request(`/leads/${leadId}/related`);
+  }
+
   async getLeadsStats() {
     return this.request('/leads/stats');
+  }
+
+  async getUsageAnalytics() {
+    return this.request('/analytics/usage');
   }
 
   async updateLeadStatus(leadId, status) {
@@ -316,6 +324,80 @@ class ApiClient {
 
   async getComposedPrompt(useDraft = false) {
     return this.request(`/prompts/compose${useDraft ? '?use_draft=true' : ''}`);
+  }
+
+  async getVoicePrompt(bundleId) {
+    return this.request(`/prompts/bundles/${bundleId}/voice`);
+  }
+
+  // V2 Prompt Config methods (JSON-based system)
+  async getPromptConfig() {
+    return this.request('/prompt-config/config');
+  }
+
+  async upsertPromptConfig(config, schemaVersion = 'bss_chatbot_prompt_v1', businessType = 'bss') {
+    return this.request('/prompt-config/config', {
+      method: 'POST',
+      body: JSON.stringify({
+        config,
+        schema_version: schemaVersion,
+        business_type: businessType,
+      }),
+    });
+  }
+
+  async deletePromptConfig() {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const selectedTenant = this.getSelectedTenant();
+    const userInfo = this.getUserInfo();
+    if (userInfo?.is_global_admin && selectedTenant) {
+      headers['X-Tenant-Id'] = selectedTenant.toString();
+    }
+
+    const response = await fetch(`${API_BASE}/prompt-config/config`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (response.status === 204) {
+      return true;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Delete failed' }));
+      throw new Error(error.detail || 'Delete failed');
+    }
+
+    return true;
+  }
+
+  async previewPromptConfig(channel = 'chat', context = null) {
+    return this.request('/prompt-config/preview', {
+      method: 'POST',
+      body: JSON.stringify({ channel, context }),
+    });
+  }
+
+  async validatePromptConfig(config, schemaVersion = 'bss_chatbot_prompt_v1', businessType = 'bss') {
+    return this.request('/prompt-config/validate', {
+      method: 'POST',
+      body: JSON.stringify({
+        config,
+        schema_version: schemaVersion,
+        business_type: businessType,
+      }),
+    });
+  }
+
+  async getBaseConfig(businessType = 'bss') {
+    return this.request(`/prompt-config/base-config?business_type=${businessType}`);
   }
 
   async getContacts(params = {}) {

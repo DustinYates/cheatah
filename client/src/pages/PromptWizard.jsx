@@ -1,11 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { EmptyState } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import './PromptWizard.css';
 
 export default function PromptWizard() {
   const navigate = useNavigate();
   const lastMessageRef = useRef(null);
+  const { user, selectedTenantId } = useAuth();
+  const isGlobalAdmin = user?.is_global_admin;
+  const needsTenant = isGlobalAdmin && !selectedTenantId;
 
   const [messages, setMessages] = useState([]);
   const [currentStep, setCurrentStep] = useState(null);
@@ -28,9 +33,36 @@ export default function PromptWizard() {
 
   // Start the interview and fetch suggestions on mount
   useEffect(() => {
+    if (!isGlobalAdmin || needsTenant) {
+      return;
+    }
     startInterview();
     fetchSuggestions();
-  }, []);
+  }, [isGlobalAdmin, needsTenant]);
+
+  if (user && !isGlobalAdmin) {
+    return (
+      <div className="page-container">
+        <EmptyState
+          icon="🔒"
+          title="Admin access required"
+          description="Prompt configuration is only accessible to global admins."
+        />
+      </div>
+    );
+  }
+
+  if (needsTenant) {
+    return (
+      <div className="page-container">
+        <EmptyState
+          icon="🧭"
+          title="Select a tenant to manage prompts"
+          description="Please select a tenant from the dropdown above to manage prompt configuration."
+        />
+      </div>
+    );
+  }
 
   const fetchSuggestions = async () => {
     try {

@@ -37,9 +37,9 @@ class ChatService:
     """Service for processing chat requests from web widget."""
 
     # Guardrails
-    MAX_TURNS = 20
-    TIMEOUT_SECONDS = 300  # 5 minutes
-    FOLLOW_UP_NUDGE_TURN = 3  # After 3 turns, suggest providing contact info
+    MAX_TURNS = settings.chat_max_turns
+    TIMEOUT_SECONDS = settings.chat_timeout_seconds
+    FOLLOW_UP_NUDGE_TURN = settings.chat_follow_up_nudge_turn
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize chat service."""

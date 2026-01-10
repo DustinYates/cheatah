@@ -17,6 +17,7 @@ from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 from app.persistence.models.tenant_widget_config import TenantWidgetConfig
 from app.persistence.models.tenant_customer_service_config import TenantCustomerServiceConfig
+from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 from app.persistence.models.zapier_request import ZapierRequest
 from app.persistence.models.jackrabbit_customer import JackrabbitCustomer
 
@@ -45,6 +46,7 @@ __all__ = [
     "NotificationType",
     "NotificationPriority",
     "TenantCustomerServiceConfig",
+    "TenantPromptConfig",
     "ZapierRequest",
     "JackrabbitCustomer",
 ]

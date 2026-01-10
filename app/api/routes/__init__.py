@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, email_webhooks, leads, profile, prompts, prompt_interview, sms_webhooks, telnyx_webhooks, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, voice_webhooks, zapier_webhooks
+from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, email_webhooks, leads, profile, prompts, prompt_config, prompt_interview, sms_webhooks, telnyx_webhooks, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, voice_webhooks, zapier_webhooks
 
 api_router = APIRouter()
 
@@ -26,12 +26,14 @@ api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
 api_router.include_router(prompts.router, prefix="/prompts", tags=["prompts"])
 api_router.include_router(prompt_interview.router, prefix="/prompts", tags=["prompts"])
+api_router.include_router(prompt_config.router, prefix="/prompt-config", tags=["prompt-config"])
 api_router.include_router(profile.router, prefix="/tenant", tags=["profile"])
 api_router.include_router(tenant_setup.router, prefix="/tenant-setup", tags=["tenant-setup"])
 api_router.include_router(admin_sms.router, prefix="/admin/sms", tags=["admin-sms"])
 api_router.include_router(admin_voice.router, prefix="/admin/voice", tags=["admin-voice"])
 api_router.include_router(admin_customer_service.router, prefix="/admin/customer-service", tags=["admin-customer-service"])
 api_router.include_router(admin_telephony.router, prefix="/admin/telephony", tags=["admin-telephony"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 
 # Tenant SMS settings (no Twilio creds exposed)
 api_router.include_router(tenant_sms.router, prefix="/sms", tags=["sms"])

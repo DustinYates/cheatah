@@ -494,3 +494,62 @@ async def trigger_followup(
             success=False,
             message=error_message or "Failed to schedule follow-up. Check SMS configuration.",
         )
+
+
+class RelatedLeadsResponse(BaseModel):
+    """Related leads response."""
+
+    leads: list[LeadResponse]
+
+
+@router.get("/{lead_id}/related", response_model=RelatedLeadsResponse)
+async def get_related_leads(
+    lead_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> RelatedLeadsResponse:
+    """Get leads with the same email or phone as this lead.
+
+    Useful for finding related interactions from the same person
+    across different channels (chatbot, voice, SMS, email).
+    """
+    from app.persistence.repositories.lead_repository import LeadRepository
+
+    lead_service = LeadService(db)
+    lead = await lead_service.get_lead(tenant_id, lead_id)
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found",
+        )
+
+    # Find related leads by email or phone
+    repo = LeadRepository(db)
+    related = await repo.find_leads_with_conversation_by_email_or_phone(
+        tenant_id, email=lead.email, phone=lead.phone
+    )
+
+    # Exclude the current lead and build response
+    lead_responses = []
+    for rel_lead in related:
+        if rel_lead.id == lead_id:
+            continue
+        llm_responded = await _check_llm_responded(db, rel_lead.conversation_id)
+        lead_responses.append(
+            LeadResponse(
+                id=rel_lead.id,
+                tenant_id=rel_lead.tenant_id,
+                conversation_id=rel_lead.conversation_id,
+                name=rel_lead.name,
+                email=rel_lead.email,
+                phone=rel_lead.phone,
+                status=rel_lead.status if hasattr(rel_lead, 'status') else None,
+                extra_data=rel_lead.extra_data,
+                created_at=_isoformat_utc(rel_lead.created_at),
+                llm_responded=llm_responded,
+            )
+        )
+
+    return RelatedLeadsResponse(leads=lead_responses)

@@ -64,6 +64,9 @@ class TenantVoiceConfig(Base):
         "Thank you for calling. We're currently outside our business hours. "
         "Please leave a message after the tone, and we'll get back to you as soon as possible."
     ))
+
+    # Fallback voice prompt - used if dynamic prompt fails
+    fallback_voice_prompt = Column(Text, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

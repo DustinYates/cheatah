@@ -2,6 +2,25 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { LoadingState, ErrorState, EmptyState } from '../components/ui';
+import './TelephonySettings.css';
+
+// Collapsible Section Component
+function CollapsibleSection({ title, badge, defaultOpen = true, children }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <div className={`telephony-section ${isOpen ? '' : 'collapsed'}`}>
+      <div className="telephony-section-header" onClick={() => setIsOpen(!isOpen)}>
+        <div className="telephony-section-header-left">
+          <span className="chevron">{isOpen ? '▼' : '▶'}</span>
+          <span className="telephony-section-title">{title}</span>
+        </div>
+        {badge}
+      </div>
+      <div className="telephony-section-content">{children}</div>
+    </div>
+  );
+}
 
 export default function TelephonySettings() {
   const { user, selectedTenantId } = useAuth();
@@ -28,7 +47,6 @@ export default function TelephonySettings() {
     voice_phone_number: '',
   });
 
-  // Form state for editable fields (separate from display config)
   const [formData, setFormData] = useState({
     provider: 'twilio',
     sms_enabled: false,
@@ -55,6 +73,7 @@ export default function TelephonySettings() {
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [copiedUrl, setCopiedUrl] = useState(null);
   const isGlobalAdmin = user?.is_global_admin;
 
   useEffect(() => {
@@ -75,7 +94,6 @@ export default function TelephonySettings() {
     try {
       const data = await api.getTelephonyConfig();
       setConfig(data);
-      // Populate form with existing values (but not secrets)
       setFormData(prev => ({
         ...prev,
         provider: data.provider || 'twilio',
@@ -92,7 +110,6 @@ export default function TelephonySettings() {
       }));
     } catch (err) {
       console.error('Error fetching telephony config:', err);
-      // 404 means no config yet - use defaults
       if (!err.message?.includes('404')) {
         setError(err.message || 'Failed to load telephony config');
       }
@@ -108,8 +125,7 @@ export default function TelephonySettings() {
     try {
       const data = await api.updateTelephonyConfig(formData);
       setConfig(data);
-      setMessage({ type: 'success', text: 'Telephony configuration saved successfully!' });
-      // Clear secret fields after save
+      setMessage({ type: 'success', text: 'Configuration saved successfully!' });
       setFormData(prev => ({
         ...prev,
         twilio_auth_token: '',
@@ -127,9 +143,7 @@ export default function TelephonySettings() {
     setValidating(true);
     setMessage({ type: '', text: '' });
 
-    const payload = {
-      provider: formData.provider,
-    };
+    const payload = { provider: formData.provider };
 
     if (formData.provider === 'twilio') {
       payload.twilio_account_sid = formData.twilio_account_sid;
@@ -143,7 +157,6 @@ export default function TelephonySettings() {
 
     try {
       const data = await api.validateTelephonyCredentials(payload);
-
       if (data.valid) {
         setMessage({ type: 'success', text: data.message || 'Credentials are valid!' });
       } else {
@@ -169,7 +182,7 @@ export default function TelephonySettings() {
       return {
         smsInbound: `${baseUrl}/api/v1/voxie/sms/inbound`,
         smsStatus: `${baseUrl}/api/v1/voxie/sms/status`,
-        voiceInbound: null, // Voxie doesn't support voice
+        voiceInbound: null,
         voiceStatus: null,
       };
     }
@@ -181,14 +194,35 @@ export default function TelephonySettings() {
     };
   };
 
-  // Check if global admin without tenant selected
+  const copyToClipboard = async (text, key) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedUrl(key);
+      setTimeout(() => setCopiedUrl(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  // Status badge helper
+  const getCredentialStatus = () => {
+    if (formData.provider === 'twilio') {
+      return config.has_twilio_auth_token ? 'configured' : null;
+    } else if (formData.provider === 'telnyx') {
+      return config.telnyx_api_key_prefix ? 'configured' : null;
+    } else if (formData.provider === 'voxie') {
+      return config.voxie_api_key_prefix ? 'configured' : null;
+    }
+    return null;
+  };
+
   const needsTenant = isGlobalAdmin && !selectedTenantId;
 
   if (user && !isGlobalAdmin) {
     return (
       <div className="page-container">
         <EmptyState
-          icon="🔒"
+          icon="lock"
           title="Admin access required"
           description="Telephony credentials are only accessible to global admins."
         />
@@ -200,7 +234,7 @@ export default function TelephonySettings() {
     return (
       <div className="page-container">
         <EmptyState
-          icon="📞"
+          icon="phone"
           title="Select a tenant to manage telephony settings"
           description="Please select a tenant from the dropdown above to manage their telephony configuration."
         />
@@ -221,7 +255,7 @@ export default function TelephonySettings() {
       return (
         <div className="page-container">
           <EmptyState
-            icon="📞"
+            icon="phone"
             title="Select a tenant to manage telephony settings"
             description="Please select a tenant from the dropdown above to manage their telephony configuration."
           />
@@ -236,527 +270,326 @@ export default function TelephonySettings() {
   }
 
   const webhookUrls = getWebhookUrls();
+  const credentialStatus = getCredentialStatus();
 
   return (
-    <div className="page-container">
+    <div className="telephony-container">
       <h1>Telephony Settings</h1>
       <p className="subtitle">Configure SMS and Voice provider for this tenant</p>
 
       {message.text && (
-        <div className={`alert ${message.type === 'error' ? 'alert-error' : 'alert-success'}`}>
-          {message.text}
-        </div>
+        <div className={`telephony-alert ${message.type}`}>{message.text}</div>
       )}
 
-      {/* Provider Selection */}
-      <div className="card">
-        <h2>Telephony Provider</h2>
-        <p className="help-text">Choose which provider handles SMS and Voice calls for this tenant.</p>
-
-        <div className="provider-options">
-          <label className={`provider-option ${formData.provider === 'twilio' ? 'selected' : ''}`}>
-            <input
-              type="radio"
-              name="provider"
-              value="twilio"
-              checked={formData.provider === 'twilio'}
-              onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-            />
-            <div className="provider-info">
-              <strong>Twilio</strong>
-              <span>Industry standard, reliable SMS & Voice</span>
-            </div>
+      {/* Provider & Features Section */}
+      <CollapsibleSection title="Provider & Features" defaultOpen={true}>
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ fontSize: '0.85rem', fontWeight: 500, color: '#666', marginBottom: '8px', display: 'block' }}>
+            Select Provider
           </label>
+          <div className="provider-radio-row">
+            <label className="provider-radio-option">
+              <input
+                type="radio"
+                name="provider"
+                value="twilio"
+                checked={formData.provider === 'twilio'}
+                onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+              />
+              <span className="provider-name">Twilio</span>
+              <span className="provider-desc">- SMS & Voice</span>
+            </label>
+            <label className="provider-radio-option">
+              <input
+                type="radio"
+                name="provider"
+                value="telnyx"
+                checked={formData.provider === 'telnyx'}
+                onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+              />
+              <span className="provider-name">Telnyx</span>
+              <span className="provider-desc">- SMS & Voice</span>
+            </label>
+            <label className="provider-radio-option">
+              <input
+                type="radio"
+                name="provider"
+                value="voxie"
+                checked={formData.provider === 'voxie'}
+                onChange={(e) => setFormData({ ...formData, provider: e.target.value, voice_enabled: false })}
+              />
+              <span className="provider-name">Voxie</span>
+              <span className="provider-desc">- SMS only</span>
+            </label>
+          </div>
+        </div>
 
-          <label className={`provider-option ${formData.provider === 'telnyx' ? 'selected' : ''}`}>
-            <input
-              type="radio"
-              name="provider"
-              value="telnyx"
-              checked={formData.provider === 'telnyx'}
-              onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-            />
-            <div className="provider-info">
-              <strong>Telnyx</strong>
-              <span>Cost-effective alternative with TeXML support</span>
-            </div>
+        <div>
+          <label style={{ fontSize: '0.85rem', fontWeight: 500, color: '#666', marginBottom: '8px', display: 'block' }}>
+            Enabled Features
           </label>
+          <div className="feature-toggles">
+            <label className="toggle-item">
+              <input
+                type="checkbox"
+                checked={formData.sms_enabled}
+                onChange={(e) => setFormData({ ...formData, sms_enabled: e.target.checked })}
+              />
+              <span className="toggle-label">SMS</span>
+            </label>
+            <label className={`toggle-item ${formData.provider === 'voxie' ? 'disabled' : ''}`}>
+              <input
+                type="checkbox"
+                checked={formData.voice_enabled}
+                onChange={(e) => setFormData({ ...formData, voice_enabled: e.target.checked })}
+                disabled={formData.provider === 'voxie'}
+              />
+              <span className="toggle-label">Voice</span>
+              {formData.provider === 'voxie' && <span className="toggle-badge">N/A</span>}
+            </label>
+          </div>
+        </div>
+      </CollapsibleSection>
 
-          <label className={`provider-option ${formData.provider === 'voxie' ? 'selected' : ''}`}>
-            <input
-              type="radio"
-              name="provider"
-              value="voxie"
-              checked={formData.provider === 'voxie'}
-              onChange={(e) => setFormData({ ...formData, provider: e.target.value, voice_enabled: false })}
-            />
-            <div className="provider-info">
-              <strong>Voxie</strong>
-              <span>SMS-only provider with automation features</span>
+      {/* Credentials Section */}
+      <CollapsibleSection
+        title="Credentials"
+        defaultOpen={false}
+        badge={credentialStatus && <span className="status-badge configured">Configured</span>}
+      >
+        {formData.provider === 'twilio' && (
+          <div className="credentials-inline">
+            <div className="credentials-row">
+              <div className="form-group">
+                <label>Account SID</label>
+                <input
+                  type="text"
+                  value={formData.twilio_account_sid}
+                  onChange={(e) => setFormData({ ...formData, twilio_account_sid: e.target.value })}
+                  placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                />
+              </div>
+              <div className="form-group">
+                <label>
+                  Auth Token
+                  {config.has_twilio_auth_token && <span className="saved-indicator">(saved)</span>}
+                </label>
+                <input
+                  type="password"
+                  value={formData.twilio_auth_token}
+                  onChange={(e) => setFormData({ ...formData, twilio_auth_token: e.target.value })}
+                  placeholder={config.has_twilio_auth_token ? 'Leave empty to keep existing' : 'Enter auth token'}
+                />
+              </div>
             </div>
-          </label>
-        </div>
-      </div>
-
-      {/* Feature Toggles */}
-      <div className="card">
-        <h2>Features</h2>
-        <label className="toggle-row">
-          <span>Enable SMS</span>
-          <input
-            type="checkbox"
-            checked={formData.sms_enabled}
-            onChange={(e) => setFormData({ ...formData, sms_enabled: e.target.checked })}
-          />
-        </label>
-        <label className={`toggle-row ${formData.provider === 'voxie' ? 'disabled' : ''}`}>
-          <span>Enable Voice {formData.provider === 'voxie' && <span className="badge">Not available with Voxie</span>}</span>
-          <input
-            type="checkbox"
-            checked={formData.voice_enabled}
-            onChange={(e) => setFormData({ ...formData, voice_enabled: e.target.checked })}
-            disabled={formData.provider === 'voxie'}
-          />
-        </label>
-      </div>
-
-      {/* Provider-specific Credentials */}
-      {formData.provider === 'twilio' && (
-        <div className="card">
-          <h2>Twilio Credentials</h2>
-
-          <div className="form-group">
-            <label>Account SID</label>
-            <input
-              type="text"
-              value={formData.twilio_account_sid}
-              onChange={(e) => setFormData({ ...formData, twilio_account_sid: e.target.value })}
-              placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-            />
+            <div className="form-group">
+              <label>SMS Phone Number</label>
+              <input
+                type="tel"
+                value={formData.twilio_phone_number}
+                onChange={(e) => setFormData({ ...formData, twilio_phone_number: e.target.value })}
+                placeholder="+15551234567"
+              />
+            </div>
+            <div className="btn-row">
+              <button
+                className="btn btn-secondary"
+                onClick={validateCredentials}
+                disabled={validating || !formData.twilio_account_sid || !formData.twilio_auth_token}
+              >
+                {validating ? 'Testing...' : 'Test Credentials'}
+              </button>
+            </div>
           </div>
+        )}
 
-          <div className="form-group">
-            <label>Auth Token {config.has_twilio_auth_token && <span className="saved-indicator">(saved)</span>}</label>
-            <input
-              type="password"
-              value={formData.twilio_auth_token}
-              onChange={(e) => setFormData({ ...formData, twilio_auth_token: e.target.value })}
-              placeholder={config.has_twilio_auth_token ? '••••••••••••' : 'Enter auth token'}
-            />
-            {config.has_twilio_auth_token && (
-              <p className="help-text">Leave empty to keep existing token</p>
-            )}
+        {formData.provider === 'telnyx' && (
+          <div className="credentials-inline">
+            <div className="credentials-row">
+              <div className="form-group">
+                <label>
+                  API Key
+                  {config.telnyx_api_key_prefix && <span className="saved-indicator">(saved: {config.telnyx_api_key_prefix})</span>}
+                </label>
+                <input
+                  type="password"
+                  value={formData.telnyx_api_key}
+                  onChange={(e) => setFormData({ ...formData, telnyx_api_key: e.target.value })}
+                  placeholder={config.telnyx_api_key_prefix ? 'Leave empty to keep existing' : 'Enter Telnyx API v2 key'}
+                />
+              </div>
+              <div className="form-group">
+                <label>Messaging Profile ID</label>
+                <input
+                  type="text"
+                  value={formData.telnyx_messaging_profile_id}
+                  onChange={(e) => setFormData({ ...formData, telnyx_messaging_profile_id: e.target.value })}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                />
+              </div>
+            </div>
+            <div className="credentials-row">
+              <div className="form-group">
+                <label>Connection ID (Voice)</label>
+                <input
+                  type="text"
+                  value={formData.telnyx_connection_id}
+                  onChange={(e) => setFormData({ ...formData, telnyx_connection_id: e.target.value })}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                />
+              </div>
+              <div className="form-group">
+                <label>SMS Phone Number</label>
+                <input
+                  type="tel"
+                  value={formData.telnyx_phone_number}
+                  onChange={(e) => setFormData({ ...formData, telnyx_phone_number: e.target.value })}
+                  placeholder="+15551234567"
+                />
+              </div>
+            </div>
+            <div className="btn-row">
+              <button
+                className="btn btn-secondary"
+                onClick={validateCredentials}
+                disabled={validating || !formData.telnyx_api_key}
+              >
+                {validating ? 'Testing...' : 'Test Credentials'}
+              </button>
+            </div>
           </div>
+        )}
 
-          <div className="form-group">
-            <label>SMS Phone Number</label>
-            <input
-              type="tel"
-              value={formData.twilio_phone_number}
-              onChange={(e) => setFormData({ ...formData, twilio_phone_number: e.target.value })}
-              placeholder="+15551234567"
-            />
+        {formData.provider === 'voxie' && (
+          <div className="credentials-inline">
+            <div className="credentials-row">
+              <div className="form-group">
+                <label>
+                  API Key
+                  {config.voxie_api_key_prefix && <span className="saved-indicator">(saved: {config.voxie_api_key_prefix})</span>}
+                </label>
+                <input
+                  type="password"
+                  value={formData.voxie_api_key}
+                  onChange={(e) => setFormData({ ...formData, voxie_api_key: e.target.value })}
+                  placeholder={config.voxie_api_key_prefix ? 'Leave empty to keep existing' : 'Enter Voxie API key'}
+                />
+              </div>
+              <div className="form-group">
+                <label>Team ID</label>
+                <input
+                  type="text"
+                  value={formData.voxie_team_id}
+                  onChange={(e) => setFormData({ ...formData, voxie_team_id: e.target.value })}
+                  placeholder="123456"
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>SMS Phone Number</label>
+              <input
+                type="tel"
+                value={formData.voxie_phone_number}
+                onChange={(e) => setFormData({ ...formData, voxie_phone_number: e.target.value })}
+                placeholder="+15551234567"
+              />
+            </div>
+            <div className="btn-row">
+              <button
+                className="btn btn-secondary"
+                onClick={validateCredentials}
+                disabled={validating || !formData.voxie_api_key || !formData.voxie_team_id}
+              >
+                {validating ? 'Testing...' : 'Test Credentials'}
+              </button>
+            </div>
           </div>
+        )}
+      </CollapsibleSection>
 
-          <button
-            className="btn btn-secondary"
-            onClick={validateCredentials}
-            disabled={validating || !formData.twilio_account_sid || !formData.twilio_auth_token}
-          >
-            {validating ? 'Validating...' : 'Test Credentials'}
-          </button>
-        </div>
-      )}
-
-      {formData.provider === 'telnyx' && (
-        <div className="card">
-          <h2>Telnyx Credentials</h2>
-
-          <div className="form-group">
-            <label>API Key {config.telnyx_api_key_prefix && <span className="saved-indicator">(saved: {config.telnyx_api_key_prefix})</span>}</label>
-            <input
-              type="password"
-              value={formData.telnyx_api_key}
-              onChange={(e) => setFormData({ ...formData, telnyx_api_key: e.target.value })}
-              placeholder={config.telnyx_api_key_prefix ? '••••••••••••' : 'Enter Telnyx API v2 key'}
-            />
-            {config.telnyx_api_key_prefix && (
-              <p className="help-text">Leave empty to keep existing key</p>
-            )}
-          </div>
-
-          <div className="form-group">
-            <label>Messaging Profile ID</label>
-            <input
-              type="text"
-              value={formData.telnyx_messaging_profile_id}
-              onChange={(e) => setFormData({ ...formData, telnyx_messaging_profile_id: e.target.value })}
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-            />
-            <p className="help-text">Required for SMS - find this in Telnyx Mission Control</p>
-          </div>
-
-          <div className="form-group">
-            <label>Connection ID (for Voice)</label>
-            <input
-              type="text"
-              value={formData.telnyx_connection_id}
-              onChange={(e) => setFormData({ ...formData, telnyx_connection_id: e.target.value })}
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-            />
-            <p className="help-text">Required for Voice - the TeXML Application connection</p>
-          </div>
-
-          <div className="form-group">
-            <label>SMS Phone Number</label>
-            <input
-              type="tel"
-              value={formData.telnyx_phone_number}
-              onChange={(e) => setFormData({ ...formData, telnyx_phone_number: e.target.value })}
-              placeholder="+15551234567"
-            />
-          </div>
-
-          <button
-            className="btn btn-secondary"
-            onClick={validateCredentials}
-            disabled={validating || !formData.telnyx_api_key}
-          >
-            {validating ? 'Validating...' : 'Test Credentials'}
-          </button>
-        </div>
-      )}
-
-      {formData.provider === 'voxie' && (
-        <div className="card">
-          <h2>Voxie Credentials</h2>
-          <p className="help-text">Voxie is an SMS-only provider. Voice calls are not supported.</p>
-
-          <div className="form-group">
-            <label>API Key {config.voxie_api_key_prefix && <span className="saved-indicator">(saved: {config.voxie_api_key_prefix})</span>}</label>
-            <input
-              type="password"
-              value={formData.voxie_api_key}
-              onChange={(e) => setFormData({ ...formData, voxie_api_key: e.target.value })}
-              placeholder={config.voxie_api_key_prefix ? '••••••••••••' : 'Enter Voxie API key'}
-            />
-            {config.voxie_api_key_prefix && (
-              <p className="help-text">Leave empty to keep existing key</p>
-            )}
-          </div>
-
-          <div className="form-group">
-            <label>Team ID</label>
-            <input
-              type="text"
-              value={formData.voxie_team_id}
-              onChange={(e) => setFormData({ ...formData, voxie_team_id: e.target.value })}
-              placeholder="123456"
-            />
-            <p className="help-text">Your Voxie Team ID - find this in Voxie dashboard</p>
-          </div>
-
-          <div className="form-group">
-            <label>SMS Phone Number</label>
-            <input
-              type="tel"
-              value={formData.voxie_phone_number}
-              onChange={(e) => setFormData({ ...formData, voxie_phone_number: e.target.value })}
-              placeholder="+15551234567"
-            />
-          </div>
-
-          <button
-            className="btn btn-secondary"
-            onClick={validateCredentials}
-            disabled={validating || !formData.voxie_api_key || !formData.voxie_team_id}
-          >
-            {validating ? 'Validating...' : 'Test Credentials'}
-          </button>
-        </div>
-      )}
-
-      {/* Voice Phone Number */}
+      {/* Voice Phone Number (if different from SMS) */}
       {formData.voice_enabled && (
-        <div className="card">
-          <h2>Voice Phone Number</h2>
-          <p className="help-text">Optional - use a different number for voice calls</p>
+        <CollapsibleSection title="Voice Settings" defaultOpen={false}>
           <div className="form-group">
+            <label>Voice Phone Number (optional)</label>
             <input
               type="tel"
               value={formData.voice_phone_number}
               onChange={(e) => setFormData({ ...formData, voice_phone_number: e.target.value })}
-              placeholder="+15551234567 (leave empty to use SMS number)"
+              placeholder="Leave empty to use SMS number"
             />
+            <p className="help-text">Use a different number for voice calls</p>
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
-      {/* Webhook URLs */}
-      <div className="card">
-        <h2>Webhook URLs</h2>
-        <p className="help-text">Configure these URLs in your {formData.provider === 'voxie' ? 'Voxie' : formData.provider === 'telnyx' ? 'Telnyx' : 'Twilio'} dashboard</p>
-
-        <div className="webhook-list">
+      {/* Webhooks Section */}
+      <CollapsibleSection title="Webhook URLs" defaultOpen={false}>
+        <p className="help-text" style={{ marginTop: 0, marginBottom: '12px' }}>
+          Configure these URLs in your {formData.provider === 'voxie' ? 'Voxie' : formData.provider === 'telnyx' ? 'Telnyx' : 'Twilio'} dashboard
+        </p>
+        <div className="webhook-grid">
           <div className="webhook-item">
             <label>SMS Inbound</label>
-            <code>{webhookUrls.smsInbound}</code>
+            <div className="webhook-url-container">
+              <code>{webhookUrls.smsInbound}</code>
+              <button
+                className={`copy-btn ${copiedUrl === 'smsInbound' ? 'copied' : ''}`}
+                onClick={() => copyToClipboard(webhookUrls.smsInbound, 'smsInbound')}
+              >
+                {copiedUrl === 'smsInbound' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
           </div>
           <div className="webhook-item">
-            <label>SMS Status Callback</label>
-            <code>{webhookUrls.smsStatus}</code>
+            <label>SMS Status</label>
+            <div className="webhook-url-container">
+              <code>{webhookUrls.smsStatus}</code>
+              <button
+                className={`copy-btn ${copiedUrl === 'smsStatus' ? 'copied' : ''}`}
+                onClick={() => copyToClipboard(webhookUrls.smsStatus, 'smsStatus')}
+              >
+                {copiedUrl === 'smsStatus' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
           </div>
           {formData.voice_enabled && webhookUrls.voiceInbound && (
             <>
               <div className="webhook-item">
                 <label>Voice Inbound</label>
-                <code>{webhookUrls.voiceInbound}</code>
+                <div className="webhook-url-container">
+                  <code>{webhookUrls.voiceInbound}</code>
+                  <button
+                    className={`copy-btn ${copiedUrl === 'voiceInbound' ? 'copied' : ''}`}
+                    onClick={() => copyToClipboard(webhookUrls.voiceInbound, 'voiceInbound')}
+                  >
+                    {copiedUrl === 'voiceInbound' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
               </div>
               <div className="webhook-item">
-                <label>Voice Status Callback</label>
-                <code>{webhookUrls.voiceStatus}</code>
+                <label>Voice Status</label>
+                <div className="webhook-url-container">
+                  <code>{webhookUrls.voiceStatus}</code>
+                  <button
+                    className={`copy-btn ${copiedUrl === 'voiceStatus' ? 'copied' : ''}`}
+                    onClick={() => copyToClipboard(webhookUrls.voiceStatus, 'voiceStatus')}
+                  >
+                    {copiedUrl === 'voiceStatus' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
               </div>
             </>
           )}
         </div>
+      </CollapsibleSection>
+
+      {/* Save Button */}
+      <div className="action-row" style={{ borderTop: 'none', marginTop: '16px', paddingTop: 0 }}>
+        <button className="btn btn-primary" onClick={saveConfig} disabled={saving}>
+          {saving ? 'Saving...' : 'Save Configuration'}
+        </button>
       </div>
-
-      <button className="btn btn-primary" onClick={saveConfig} disabled={saving}>
-        {saving ? 'Saving...' : 'Save Configuration'}
-      </button>
-
-      <style>{`
-        .page-container {
-          max-width: 800px;
-          margin: 0 auto;
-          padding: 2rem;
-        }
-
-        h1 {
-          margin-bottom: 0.5rem;
-          color: #1a1a1a;
-        }
-
-        .subtitle {
-          color: #666;
-          margin-bottom: 1.5rem;
-        }
-
-        .card {
-          background: #fff;
-          border-radius: 8px;
-          padding: 1.5rem;
-          margin-bottom: 1.5rem;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        }
-
-        .card h2 {
-          font-size: 1.1rem;
-          margin-bottom: 1rem;
-          color: #333;
-        }
-
-        .provider-options {
-          display: flex;
-          gap: 1rem;
-          flex-wrap: wrap;
-        }
-
-        .provider-option {
-          display: flex;
-          align-items: flex-start;
-          gap: 0.75rem;
-          padding: 1rem;
-          border: 2px solid #ddd;
-          border-radius: 8px;
-          cursor: pointer;
-          flex: 1;
-          min-width: 200px;
-          transition: border-color 0.2s, background-color 0.2s;
-        }
-
-        .provider-option:hover {
-          border-color: #4285f4;
-        }
-
-        .provider-option.selected {
-          border-color: #4285f4;
-          background: #f0f7ff;
-        }
-
-        .provider-option input[type="radio"] {
-          margin-top: 2px;
-        }
-
-        .provider-info {
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-        }
-
-        .provider-info strong {
-          color: #333;
-        }
-
-        .provider-info span {
-          font-size: 0.85rem;
-          color: #666;
-        }
-
-        .toggle-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 0.75rem 0;
-          cursor: pointer;
-          border-bottom: 1px solid #eee;
-        }
-
-        .toggle-row:last-child {
-          border-bottom: none;
-        }
-
-        .toggle-row input[type="checkbox"] {
-          width: 20px;
-          height: 20px;
-          cursor: pointer;
-        }
-
-        .toggle-row.disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .toggle-row.disabled input[type="checkbox"] {
-          cursor: not-allowed;
-        }
-
-        .badge {
-          font-size: 0.75rem;
-          background: #f5f5f5;
-          color: #666;
-          padding: 0.2rem 0.5rem;
-          border-radius: 4px;
-          margin-left: 0.5rem;
-          font-weight: normal;
-        }
-
-        .form-group {
-          margin: 1rem 0;
-        }
-
-        .form-group label {
-          display: block;
-          margin-bottom: 0.5rem;
-          font-weight: 500;
-          color: #333;
-        }
-
-        .saved-indicator {
-          font-weight: normal;
-          color: #34a853;
-          font-size: 0.85rem;
-        }
-
-        input[type="text"],
-        input[type="tel"],
-        input[type="password"] {
-          width: 100%;
-          padding: 0.75rem;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 1rem;
-          font-family: inherit;
-        }
-
-        input:focus {
-          outline: none;
-          border-color: #4285f4;
-          box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
-        }
-
-        .help-text {
-          font-size: 0.875rem;
-          color: #666;
-          margin: 0.5rem 0 0;
-        }
-
-        .webhook-list {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-
-        .webhook-item {
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-        }
-
-        .webhook-item label {
-          font-size: 0.85rem;
-          font-weight: 500;
-          color: #666;
-        }
-
-        .webhook-item code {
-          background: #f5f5f5;
-          padding: 0.5rem 0.75rem;
-          border-radius: 4px;
-          font-size: 0.85rem;
-          word-break: break-all;
-        }
-
-        .btn {
-          padding: 0.75rem 1.5rem;
-          border: none;
-          border-radius: 6px;
-          font-size: 1rem;
-          font-weight: 500;
-          cursor: pointer;
-          transition: background-color 0.2s;
-        }
-
-        .btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .btn-primary {
-          background: #4285f4;
-          color: white;
-        }
-
-        .btn-primary:hover:not(:disabled) {
-          background: #3367d6;
-        }
-
-        .btn-secondary {
-          background: #f5f5f5;
-          color: #333;
-          border: 1px solid #ddd;
-        }
-
-        .btn-secondary:hover:not(:disabled) {
-          background: #e8e8e8;
-        }
-
-        .alert {
-          padding: 1rem;
-          border-radius: 6px;
-          margin-bottom: 1.5rem;
-        }
-
-        .alert-success {
-          background: #e6f4ea;
-          color: #1e7e34;
-        }
-
-        .alert-error {
-          background: #fce8e6;
-          color: #c5221f;
-        }
-      `}</style>
     </div>
   );
 }

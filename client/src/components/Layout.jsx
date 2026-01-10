@@ -89,7 +89,7 @@ export default function Layout() {
                   <NavLink to="/analytics/unknowns">Leads</NavLink>
                 </li>
                 <li>
-                  <NavLink to="/analytics/plots">Plots</NavLink>
+                  <NavLink to="/analytics/usage">Usage</NavLink>
                 </li>
               </ul>
             )}
@@ -104,9 +104,11 @@ export default function Layout() {
             </button>
             {settingsOpen && (
               <ul className="nav-submenu">
-                <li>
-                  <NavLink to="/settings/prompts">Prompts Setup</NavLink>
-                </li>
+                {user?.is_global_admin && (
+                  <li>
+                    <NavLink to="/settings/prompts">Prompts Setup</NavLink>
+                  </li>
+                )}
                 <li>
                   <NavLink to="/settings/widget">Website Widget</NavLink>
                 </li>

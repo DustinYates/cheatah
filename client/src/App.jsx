@@ -46,7 +46,8 @@ function App() {
             <Route path="calls" element={<Calls />} />
             <Route path="analytics/unknowns" element={<UnknownLeads />} />
             <Route path="analytics/unknowns/:id" element={<UnknownLeadDetail />} />
-            <Route path="analytics/plots" element={<Plots />} />
+            <Route path="analytics/usage" element={<Plots />} />
+            <Route path="analytics/plots" element={<Navigate to="/analytics/usage" replace />} />
 
             {/* Settings routes */}
             <Route path="settings" element={<Navigate to="/settings/prompts" replace />} />

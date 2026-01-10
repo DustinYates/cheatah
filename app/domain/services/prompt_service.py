@@ -1,12 +1,20 @@
 """Prompt service for managing prompt bundles and composition."""
 
+import logging
 import time
 from typing import ClassVar
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.persistence.models.prompt import PromptBundle, PromptSection, PromptStatus
+from app.domain.prompts.assembler import PromptAssembler
+from app.domain.prompts.schemas.v1.bss_schema import BSSTenantConfig
+from app.persistence.models.prompt import PromptBundle, PromptChannel, PromptSection, PromptStatus
 from app.persistence.repositories.prompt_repository import PromptRepository
+from app.persistence.repositories.tenant_prompt_config_repository import TenantPromptConfigRepository
+
+
+logger = logging.getLogger(__name__)
 
 
 class PromptCache:
@@ -51,6 +59,7 @@ class PromptService:
         """Initialize prompt service."""
         self.session = session
         self.prompt_repo = PromptRepository(session)
+        self.prompt_config_repo = TenantPromptConfigRepository(session)
 
     async def get_active_bundle(self, tenant_id: int | None) -> PromptBundle | None:
         """Get the active prompt bundle for a tenant."""
@@ -64,8 +73,21 @@ class PromptService:
         """Get the draft prompt bundle for a tenant."""
         return await self.prompt_repo.get_draft_bundle(tenant_id)
 
+    async def has_dedicated_voice_prompt(self, tenant_id: int | None) -> bool:
+        """Check if tenant has a dedicated voice prompt bundle.
+
+        Returns True if there's a voice-channel prompt bundle, which means
+        we should NOT apply transform_chat_to_voice wrapping.
+        """
+        voice_bundle = await self.prompt_repo.get_voice_bundle(tenant_id)
+        return voice_bundle is not None
+
     async def compose_prompt(
-        self, tenant_id: int | None, context: dict | None = None, use_draft: bool = False
+        self,
+        tenant_id: int | None,
+        context: dict | None = None,
+        use_draft: bool = False,
+        channel: str = PromptChannel.CHAT.value,
     ) -> str | None:
         """Compose final prompt from global base + tenant overrides.
 
@@ -73,22 +95,23 @@ class PromptService:
             tenant_id: Tenant ID (None for global)
             context: Optional context for prompt composition
             use_draft: If True, use draft bundle for testing
+            channel: Channel type (chat, voice, sms, email)
 
         Returns:
             Composed prompt string, or None if no prompt is configured
         """
-        global_bundle = await self.prompt_repo.get_global_base_bundle()
-        
+        global_bundle = await self.prompt_repo.get_global_base_bundle(channel)
+
         tenant_bundle = None
         if tenant_id is not None:
             if use_draft:
-                tenant_bundle = await self.prompt_repo.get_draft_bundle(tenant_id)
+                tenant_bundle = await self.prompt_repo.get_draft_bundle(tenant_id, channel)
                 if not tenant_bundle:
-                    tenant_bundle = await self.prompt_repo.get_production_bundle(tenant_id)
+                    tenant_bundle = await self.prompt_repo.get_production_bundle(tenant_id, channel)
             else:
-                tenant_bundle = await self.prompt_repo.get_production_bundle(tenant_id)
+                tenant_bundle = await self.prompt_repo.get_production_bundle(tenant_id, channel)
                 if not tenant_bundle:
-                    tenant_bundle = await self.prompt_repo.get_active_bundle(tenant_id)
+                    tenant_bundle = await self.prompt_repo.get_active_bundle(tenant_id, channel)
 
         all_sections = []
         
@@ -173,15 +196,26 @@ class PromptService:
         self, tenant_id: int | None, context: dict | None = None
     ) -> str | None:
         """Compose SMS-specific prompt with constraints.
-        
+
+        Uses v2 JSON-based prompts if available, falls back to v1.
+
         Returns:
             Composed prompt string with SMS constraints, or None if no prompt is configured
         """
+        # Try v2 first if tenant_id is provided
+        if tenant_id is not None:
+            v2_prompt = await self.compose_prompt_v2_sms(tenant_id, context)
+            if v2_prompt is not None:
+                logger.debug(f"Using v2 SMS prompt for tenant {tenant_id}")
+                return v2_prompt
+            logger.debug(f"No v2 config for tenant {tenant_id}, falling back to v1")
+
+        # Fall back to v1
         base_prompt = await self.compose_prompt(tenant_id, context)
-        
+
         if base_prompt is None:
             return None
-        
+
         sms_instructions = (
             "\n\nIMPORTANT SMS CONSTRAINTS:\n"
             "- Keep responses SHORT (under 160 characters when possible)\n"
@@ -192,22 +226,27 @@ class PromptService:
             "- Use abbreviations sparingly and only when clear\n"
             "- DO NOT ask for their phone number - you already have it since they texted you"
         )
-        
+
         return base_prompt + sms_instructions
 
     async def compose_prompt_voice(
         self, tenant_id: int | None, context: dict | None = None
     ) -> str | None:
         """Compose voice-specific prompt with constraints for phone calls.
-        
+
+        Voice prompts are composed in this priority:
+        1. Try v2 JSON-based prompt (if tenant has config)
+        2. If tenant has a dedicated voice prompt bundle, use it directly (no extra wrapping)
+        3. Otherwise, fall back to chat prompt + voice instructions
+
         Voice prompts are optimized for:
         - Natural, warm spoken language
         - Complete, helpful answers (2-4 sentences)
         - Conversational flow
         - Guardrails against sensitive content
-        
+
         Uses caching to reduce database queries for frequently accessed prompts.
-        
+
         Returns:
             Composed prompt string with voice constraints, or None if no prompt is configured
         """
@@ -216,12 +255,32 @@ class PromptService:
         cached_prompt = PromptCache.get(cache_key)
         if cached_prompt:
             return cached_prompt
-        
+
+        # Try v2 first if tenant_id is provided
+        if tenant_id is not None:
+            v2_prompt = await self.compose_prompt_v2_voice(tenant_id, context)
+            if v2_prompt is not None:
+                logger.debug(f"Using v2 voice prompt for tenant {tenant_id}")
+                PromptCache.set(cache_key, v2_prompt)
+                return v2_prompt
+            logger.debug(f"No v2 config for tenant {tenant_id}, falling back to v1")
+
+        # First, try to get a dedicated voice prompt bundle
+        voice_prompt = await self.compose_prompt(
+            tenant_id, context, channel=PromptChannel.VOICE.value
+        )
+
+        if voice_prompt:
+            # Tenant has a dedicated voice prompt - use it directly (already voice-safe)
+            PromptCache.set(cache_key, voice_prompt)
+            return voice_prompt
+
+        # Fall back to chat prompt + voice instructions
         base_prompt = await self.compose_prompt(tenant_id, context)
-        
+
         if base_prompt is None:
             return None
-        
+
         voice_instructions = """
 
 VOICE CALL COMMUNICATION STYLE:
@@ -264,25 +323,27 @@ Lead Capture:
 Call Ending:
 - When caller says goodbye, thank them warmly
 - Confirm any next steps or follow-up actions"""
-        
+
         composed_prompt = base_prompt + voice_instructions
-        
+
         # Cache the composed prompt
         PromptCache.set(cache_key, composed_prompt)
-        
+
         return composed_prompt
 
     async def compose_prompt_chat(
         self, tenant_id: int | None, context: dict | None = None
     ) -> str | None:
         """Compose chat-specific prompt with contact collection context.
-        
+
         Chat prompts are optimized for:
         - Natural, conversational web chat interactions
         - Context-aware contact information collection
         - Progressive, non-pushy lead capture
         - One-question-at-a-time approach
-        
+
+        Uses v2 JSON-based prompts if available, falls back to v1.
+
         Args:
             tenant_id: Tenant ID (None for global)
             context: Optional context dict that may include:
@@ -290,10 +351,19 @@ Call Ending:
                 - collected_email: bool - Whether user's email has been collected
                 - collected_phone: bool - Whether user's phone has been collected
                 - turn_count: int - Number of turns in conversation
-                
+
         Returns:
             Composed prompt string with chat-specific instructions, or None if no prompt is configured
         """
+        # Try v2 first if tenant_id is provided
+        if tenant_id is not None:
+            v2_prompt = await self.compose_prompt_v2_chat(tenant_id, context)
+            if v2_prompt is not None:
+                logger.info(f"[PROMPT] Using v2 chat prompt for tenant {tenant_id}")
+                return v2_prompt
+            logger.info(f"[PROMPT] No v2 config for tenant {tenant_id}, falling back to v1")
+
+        # Fall back to v1
         base_prompt = await self.compose_prompt(tenant_id, context)
 
         if base_prompt is None:
@@ -518,3 +588,125 @@ EXAMPLES OF GOOD MESSAGES:
 Generate ONLY the SMS message text, nothing else. No quotes, no explanation, just the message."""
 
         return base_prompt + followup_instructions
+
+    async def compose_prompt_v2(
+        self,
+        tenant_id: int,
+        channel: str = "chat",
+        context: dict | None = None,
+    ) -> str | None:
+        """Compose prompt using the new JSON-based architecture (v2).
+
+        This method uses the new tenant_prompt_configs table which stores
+        JSON configurations that are combined with hardcoded base rules.
+
+        Args:
+            tenant_id: Tenant ID (required for v2)
+            channel: Channel type ("chat", "voice", "sms")
+            context: Runtime context (collected contact info, turn count, etc.)
+
+        Returns:
+            Assembled system prompt string, or None if no v2 config exists
+        """
+        # Get tenant's JSON config from database
+        config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
+
+        if not config_record:
+            logger.debug(f"No v2 prompt config found for tenant {tenant_id}")
+            return None
+
+        try:
+            # Validate JSON against schema
+            tenant_config = BSSTenantConfig.model_validate(config_record.config_json)
+        except ValidationError as e:
+            logger.error(f"Invalid tenant config for tenant {tenant_id}: {e}")
+            return None
+
+        # Assemble the prompt
+        business_type = config_record.business_type or "bss"
+        assembler = PromptAssembler(business_type=business_type)
+
+        prompt = assembler.assemble(
+            tenant_config=tenant_config,
+            channel=channel,
+            context=context,
+        )
+
+        return prompt
+
+    async def compose_prompt_v2_chat(
+        self,
+        tenant_id: int,
+        context: dict | None = None,
+    ) -> str | None:
+        """Compose chat-specific prompt using v2 architecture.
+
+        Args:
+            tenant_id: Tenant ID
+            context: Runtime context
+
+        Returns:
+            Assembled chat prompt, or None if no v2 config exists
+        """
+        base_prompt = await self.compose_prompt_v2(tenant_id, channel="chat", context=context)
+        if base_prompt is None:
+            return None
+        return await self.compose_prompt_chat_from_base(base_prompt, context)
+
+    async def compose_prompt_v2_voice(
+        self,
+        tenant_id: int,
+        context: dict | None = None,
+    ) -> str | None:
+        """Compose voice-specific prompt using v2 architecture.
+
+        Args:
+            tenant_id: Tenant ID
+            context: Runtime context
+
+        Returns:
+            Assembled voice prompt, or None if no v2 config exists
+        """
+        return await self.compose_prompt_v2(tenant_id, channel="voice", context=context)
+
+    async def compose_prompt_v2_sms(
+        self,
+        tenant_id: int,
+        context: dict | None = None,
+    ) -> str | None:
+        """Compose SMS-specific prompt using v2 architecture.
+
+        Args:
+            tenant_id: Tenant ID
+            context: Runtime context
+
+        Returns:
+            Assembled SMS prompt, or None if no v2 config exists
+        """
+        return await self.compose_prompt_v2(tenant_id, channel="sms", context=context)
+
+    async def get_prompt_v2_config(self, tenant_id: int) -> dict | None:
+        """Get the raw v2 config JSON for a tenant.
+
+        Args:
+            tenant_id: Tenant ID
+
+        Returns:
+            Config JSON dict, or None if not found
+        """
+        config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
+        if not config_record:
+            return None
+        return config_record.config_json
+
+    async def has_v2_config(self, tenant_id: int) -> bool:
+        """Check if tenant has a v2 prompt config.
+
+        Args:
+            tenant_id: Tenant ID
+
+        Returns:
+            True if tenant has a v2 config
+        """
+        config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
+        return config_record is not None

@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import EditContactModal from '../components/EditContactModal';
+import { formatDateTimeParts } from '../utils/dateFormat';
 import './ContactDetail.css';
 
 // Format duration as mm:ss
@@ -115,6 +116,8 @@ export default function ContactDetail() {
       setLoadingHistory(false);
     }
   };
+
+  const selectedCallDate = selectedCall ? formatDateTimeParts(selectedCall.created_at) : null;
 
   const handleAddAlias = async () => {
     if (!newAlias.value.trim()) return;
@@ -228,7 +231,7 @@ export default function ContactDetail() {
             </div>
             <div className="detail-row">
               <span className="label">Added:</span>
-              <span className="value">{new Date(contact.created_at).toLocaleDateString()}</span>
+              <span className="value">{formatDateTimeParts(contact.created_at).date}</span>
             </div>
           </div>
         </div>
@@ -391,7 +394,7 @@ export default function ContactDetail() {
                 <div key={entry.id} className="merge-entry">
                   <div className="merge-entry-header">
                     <span className="merge-date">
-                      {entry.merged_at ? new Date(entry.merged_at).toLocaleDateString() : 'Unknown date'}
+                      {entry.merged_at ? formatDateTimeParts(entry.merged_at).date : 'Unknown date'}
                     </span>
                     {entry.merged_by && (
                       <span className="merge-by">by {entry.merged_by}</span>
@@ -430,8 +433,8 @@ export default function ContactDetail() {
                   <div className="email-item-footer">
                     <span className="email-date">
                       {email.last_response_at 
-                        ? `Last response: ${new Date(email.last_response_at).toLocaleDateString()}`
-                        : `Created: ${new Date(email.created_at).toLocaleDateString()}`
+                        ? `Last response: ${formatDateTimeParts(email.last_response_at).date}`
+                        : `Created: ${formatDateTimeParts(email.created_at).date}`
                       }
                     </span>
                   </div>
@@ -454,24 +457,18 @@ export default function ContactDetail() {
             <LoadingState message="Loading calls..." />
           ) : calls.length > 0 ? (
             <div className="calls-list">
-              {calls.map((call) => (
-                <div 
-                  key={call.id} 
-                  className="call-item"
-                  onClick={() => setSelectedCall(call)}
-                >
-                  <div className="call-item-header">
-                    <span className="call-date">
-                      {new Date(call.created_at).toLocaleDateString(undefined, {
-                        month: 'short', day: 'numeric', year: 'numeric'
-                      })}
-                    </span>
-                    <span className="call-time">
-                      {new Date(call.created_at).toLocaleTimeString(undefined, {
-                        hour: '2-digit', minute: '2-digit'
-                      })}
-                    </span>
-                  </div>
+              {calls.map((call) => {
+                const { date, time } = formatDateTimeParts(call.created_at);
+                return (
+                  <div 
+                    key={call.id} 
+                    className="call-item"
+                    onClick={() => setSelectedCall(call)}
+                  >
+                    <div className="call-item-header">
+                      <span className="call-date">{date}</span>
+                      <span className="call-time">{time}</span>
+                    </div>
                   <div className="call-item-body">
                     <span className="call-duration">{formatDuration(call.duration)}</span>
                     {call.intent && (
@@ -481,8 +478,9 @@ export default function ContactDetail() {
                   {call.summary_preview && (
                     <div className="call-summary-preview">{call.summary_preview}</div>
                   )}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <EmptyState 
@@ -500,15 +498,16 @@ export default function ContactDetail() {
             <LoadingState message="Loading conversation..." />
           ) : conversation && conversation.messages?.length > 0 ? (
             <div className="messages-list">
-              {conversation.messages.map((msg, idx) => (
-                <div key={idx} className={`message ${msg.role}`}>
-                  <div className="message-role">{msg.role === 'user' ? '👤 User' : '🤖 Bot'}</div>
-                  <div className="message-content">{msg.content}</div>
-                  <div className="message-time">
-                    {new Date(msg.created_at).toLocaleString()}
+              {conversation.messages.map((msg, idx) => {
+                const { date, time, tzAbbr } = formatDateTimeParts(msg.created_at);
+                return (
+                  <div key={idx} className={`message ${msg.role}`}>
+                    <div className="message-role">{msg.role === 'user' ? '👤 User' : '🤖 Bot'}</div>
+                    <div className="message-content">{msg.content}</div>
+                    <div className="message-time">{`${date} ${time} ${tzAbbr}`.trim()}</div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <EmptyState 
@@ -531,7 +530,11 @@ export default function ContactDetail() {
             <div className="call-detail-modal-body">
               <div className="call-detail-row">
                 <span className="label">Date:</span>
-                <span className="value">{new Date(selectedCall.created_at).toLocaleString()}</span>
+                <span className="value">
+                  {selectedCallDate
+                    ? `${selectedCallDate.date} ${selectedCallDate.time} ${selectedCallDate.tzAbbr}`.trim()
+                    : '—'}
+                </span>
               </div>
               <div className="call-detail-row">
                 <span className="label">Duration:</span>

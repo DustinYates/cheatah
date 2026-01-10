@@ -285,7 +285,7 @@
       // Apply icon shape
       const shapeMap = {
         'circle': '50%',
-        'rounded-square': '20%',
+        'rounded-square': '16px',
         'pill': '50px',
         'square': '0',
         'custom': iconSettings.customBorderRadius || '50%'
@@ -794,7 +794,10 @@
             <button id="cc-send-button" aria-label="Send">Send</button>
           </div>
           <div class="cc-widget-contact-form" id="cc-contact-form" style="display: none;">
-            <p>To help you better, please provide your contact information:</p>
+            <div class="cc-contact-form-header">
+              <p>To help you better, please provide your contact information:</p>
+              <button class="cc-contact-close" id="cc-contact-close" type="button" aria-label="Close contact form">Not now</button>
+            </div>
             <input type="text" id="cc-name-input" placeholder="Name" />
             <input type="email" id="cc-email-input" placeholder="Email" />
             <input type="tel" id="cc-phone-input" placeholder="Phone" />
@@ -851,11 +854,12 @@
           border-radius: 50%;
           background: var(--cc-primary);
           color: var(--cc-button-text);
-          border: none;
+          border: 1px solid rgba(255,255,255,0.25);
           font-size: 24px;
+          font-weight: 600;
           cursor: pointer;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-          transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
+          transition: transform 0.2s, box-shadow 0.2s, background 0.2s, border-color 0.2s;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -881,6 +885,8 @@
           justify-content: center;
           width: 100%;
           height: 100%;
+          font-size: 24px;
+          line-height: 1;
         }
         .cc-icon-image {
           max-width: 70%;
@@ -890,11 +896,13 @@
         .cc-icon-label {
           position: absolute;
           white-space: nowrap;
-          padding: 4px 8px;
-          border-radius: 4px;
+          padding: 6px 12px;
+          border-radius: 999px;
           font-size: 12px;
-          font-weight: 500;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          font-weight: 600;
+          line-height: 1.1;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.18);
           pointer-events: none;
         }
         .cc-unread-dot {
@@ -990,6 +998,7 @@
           background: var(--cc-background);
           border-radius: var(--cc-border-radius);
           box-shadow: var(--cc-box-shadow);
+          border: 1px solid var(--cc-border-color);
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -1009,10 +1018,12 @@
         .cc-widget-header {
           background: var(--cc-primary);
           color: var(--cc-button-text);
-          padding: 15px;
+          padding: 12px 16px;
           display: flex;
           justify-content: space-between;
           align-items: center;
+          gap: 8px;
+          border-bottom: 1px solid rgba(255,255,255,0.18);
         }
         .cc-widget-header-info {
           display: flex;
@@ -1026,6 +1037,11 @@
           background: rgba(255,255,255,0.2);
           overflow: hidden;
           flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 600;
+          font-size: 14px;
         }
         .cc-widget-avatar img {
           width: 100%;
@@ -1066,55 +1082,60 @@
           flex: 1;
           overflow-y: auto;
           padding: 15px;
-          background: #f5f5f5;
+          background: #f8fafc;
         }
         .cc-message {
           margin-bottom: 10px;
-          padding: 10px;
-          border-radius: 8px;
+          padding: 12px 14px;
+          border-radius: 16px;
           max-width: 80%;
           word-wrap: break-word;
           white-space: pre-wrap;
           overflow-wrap: break-word;
           font-size: var(--cc-font-size);
           line-height: var(--cc-line-height);
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
         }
         .cc-message.user {
-          background: var(--cc-primary);
+          background: var(--cc-secondary);
           color: var(--cc-button-text);
           margin-left: auto;
           text-align: right;
+          border-top-right-radius: 6px;
+          box-shadow: 0 10px 18px rgba(15, 23, 42, 0.16);
         }
         .cc-message.assistant {
-          background: var(--cc-background);
+          background: rgba(15, 23, 42, 0.08);
           color: var(--cc-text);
-          border: 1px solid var(--cc-border-color);
+          border-top-left-radius: 6px;
         }
         .cc-widget-input-container {
-          padding: 15px;
-          border-top: 1px solid var(--cc-border-color);
+          padding: 12px 14px;
+          border-top: 1px solid rgba(148, 163, 184, 0.25);
           display: flex;
-          gap: 10px;
+          gap: 8px;
         }
         #cc-message-input {
           flex: 1;
-          padding: 10px;
+          padding: 10px 14px;
           border: 1px solid var(--cc-border-color);
-          border-radius: 5px;
+          border-radius: 999px;
           font-size: var(--cc-font-size);
           font-family: var(--cc-font-family);
+          background: #ffffff;
         }
         #cc-send-button {
-          padding: 10px 20px;
+          padding: 8px 16px;
           background: var(--cc-primary);
           color: var(--cc-button-text);
           border: none;
-          border-radius: 5px;
+          border-radius: 999px;
           cursor: pointer;
           font-weight: 600;
           font-family: var(--cc-font-family);
           position: relative;
           overflow: hidden;
+          box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
         }
         #cc-send-button:hover {
           opacity: 0.9;
@@ -1127,6 +1148,33 @@
           padding: 15px;
           border-top: 1px solid var(--cc-border-color);
           background: #fff3cd;
+        }
+        .cc-contact-form-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+        .cc-contact-form-header p {
+          margin: 0;
+          font-weight: 600;
+        }
+        .cc-contact-close {
+          background: transparent;
+          border: none;
+          color: #6b7280;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          padding: 4px 8px;
+          border-radius: 8px;
+          transition: background 0.2s ease, color 0.2s ease;
+          white-space: nowrap;
+        }
+        .cc-contact-close:hover {
+          background: rgba(0,0,0,0.06);
+          color: #374151;
         }
         .cc-widget-contact-form input {
           width: 100%;
@@ -1318,6 +1366,7 @@
       const sendButton = document.getElementById('cc-send-button');
       const messageInput = document.getElementById('cc-message-input');
       const submitContact = document.getElementById('cc-submit-contact');
+      const closeContact = document.getElementById('cc-contact-close');
 
       toggle.addEventListener('click', (event) => {
         this.markInteracted();
@@ -1335,6 +1384,9 @@
         this.sendMessage();
       });
       submitContact.addEventListener('click', () => this.submitContactInfo());
+      if (closeContact) {
+        closeContact.addEventListener('click', () => this.hideContactForm());
+      }
 
       messageInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
@@ -1406,7 +1458,19 @@
       message.textContent = text;
       messagesContainer.appendChild(message);
       if (scroll) {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        this.scrollMessageIntoView(messagesContainer, message, role);
+      }
+    },
+
+    scrollMessageIntoView: function(container, message, role) {
+      if (!container || !message) return;
+      const padding = 8;
+      if (role === 'assistant') {
+        // Scroll to the start of the assistant response
+        container.scrollTop = Math.max(message.offsetTop - padding, 0);
+      } else {
+        // Keep user messages pinned to bottom
+        container.scrollTop = container.scrollHeight;
       }
     },
 

@@ -5,14 +5,15 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_current_tenant, get_current_user
+from app.api.deps import get_current_tenant, get_current_user, require_global_admin
 from app.domain.services.prompt_service import PromptService
+from app.domain.services.voice_prompt_transformer import transform_chat_to_voice
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 from app.persistence.models.prompt import PromptStatus, SectionScope
 from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_global_admin)])
 
 
 class PromptSectionCreate(BaseModel):
@@ -101,6 +102,14 @@ class PromptTestResponse(BaseModel):
 
     composed_prompt: str
     response: str
+
+
+class VoicePromptResponse(BaseModel):
+    """Voice-transformed prompt response."""
+
+    voice_prompt: str
+    bundle_id: int
+    bundle_name: str
 
 
 @router.post("/bundles", response_model=PromptBundleResponse)
@@ -220,6 +229,57 @@ async def get_prompt_bundle(
             )
             for s in sections
         ],
+    )
+
+
+@router.get("/bundles/{bundle_id}/voice", response_model=VoicePromptResponse)
+async def get_voice_prompt(
+    bundle_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> VoicePromptResponse:
+    """Get auto-generated voice version of a prompt bundle.
+
+    Transforms the composed prompt using voice_prompt_transformer
+    to create a voice-safe version optimized for phone calls.
+    """
+    from app.persistence.repositories.prompt_repository import PromptRepository
+
+    prompt_repo = PromptRepository(db)
+    bundle = await prompt_repo.get_by_id(tenant_id, bundle_id)
+
+    if not bundle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prompt bundle not found",
+        )
+
+    # Get sections from this bundle
+    sections = await prompt_repo.get_sections(bundle_id)
+
+    # Get global base bundle sections
+    global_bundle = await prompt_repo.get_global_base_bundle()
+    all_sections = []
+    if global_bundle:
+        global_sections = await prompt_repo.get_sections(global_bundle.id)
+        all_sections.extend(global_sections)
+    all_sections.extend(sections)
+
+    # Compose prompt from sections (tenant sections override global)
+    section_map: dict[str, tuple[str, int]] = {}
+    for section in all_sections:
+        section_map[section.section_key] = (section.content, section.order)
+    sorted_sections = sorted(section_map.items(), key=lambda x: (x[1][1], x[0]))
+    composed_prompt = "\n\n".join([content for _, (content, _) in sorted_sections])
+
+    # Transform to voice-safe version
+    voice_prompt = transform_chat_to_voice(composed_prompt)
+
+    return VoicePromptResponse(
+        voice_prompt=voice_prompt,
+        bundle_id=bundle.id,
+        bundle_name=bundle.name,
     )
 
 

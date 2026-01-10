@@ -3,12 +3,14 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_tenant, get_current_user
 from app.api.schemas.tenant import EmbedCodeResponse, TenantResponse, TenantUpdate
 from app.persistence.database import get_db
 from app.persistence.models.tenant import Tenant, User
+from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 from app.persistence.repositories.prompt_repository import PromptRepository
 from app.persistence.repositories.tenant_repository import TenantRepository
 from app.settings import settings
@@ -155,10 +157,21 @@ async def get_tenant_embed_code(
             detail="Tenant not found",
         )
 
-    # Check if tenant has a published prompt bundle
+    # Check if tenant has a published prompt bundle (v1) or active tenant config (v2)
     prompt_repo = PromptRepository(db)
     production_bundle = await prompt_repo.get_production_bundle(tenant_id)
-    has_published_prompt = production_bundle is not None
+    has_v1_prompt = production_bundle is not None
+
+    # Check for v2 Tenant Config
+    v2_config_result = await db.execute(
+        select(TenantPromptConfig).where(
+            TenantPromptConfig.tenant_id == tenant_id,
+            TenantPromptConfig.is_active == True
+        )
+    )
+    has_v2_config = v2_config_result.scalar_one_or_none() is not None
+
+    has_published_prompt = has_v1_prompt or has_v2_config
 
     # Get API base URL from settings or use default
     api_base_url = settings.api_base_url or DEFAULT_API_BASE_URL
@@ -166,13 +179,13 @@ async def get_tenant_embed_code(
     # Generate embed code
     embed_code = _generate_embed_code(api_base_url, tenant_id)
 
-    # Prepare warning if no published prompt
+    # Prepare warning if no published prompt or active config
     warning = None
     if not has_published_prompt:
         warning = (
-            "Your chatbot is not live yet. Please publish a prompt in the Prompts page "
+            "Your chatbot is not live yet. Please configure and activate a prompt in the Prompts page "
             "before adding this code to your website. The widget will not respond to "
-            "visitors until a prompt is published."
+            "visitors until a prompt configuration is active."
         )
 
     return EmbedCodeResponse(

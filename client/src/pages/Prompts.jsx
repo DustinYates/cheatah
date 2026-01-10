@@ -3,7 +3,385 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { ToastContainer } from '../components/ui/Toast';
+import { formatDateTimeParts } from '../utils/dateFormat';
+import { useAuth } from '../context/AuthContext';
 import './Prompts.css';
+
+function RevealField({ label, value }) {
+  const [revealed, setRevealed] = useState(false);
+  const safeValue = value === null || value === undefined ? '' : String(value);
+
+  return (
+    <span className="reveal-field">
+      <span className="reveal-field__label">{label}:</span>
+      <span className="reveal-field__value">{revealed ? safeValue : '******'}</span>
+      <button
+        type="button"
+        className="reveal-field__toggle"
+        onClick={() => setRevealed((prev) => !prev)}
+        aria-pressed={revealed}
+        aria-label={`${revealed ? 'Hide' : 'Reveal'} ${label}`}
+      >
+        {revealed ? 'Hide' : 'Reveal'}
+      </button>
+    </span>
+  );
+}
+
+// V2 JSON Config Component
+function V2ConfigSection({ onToast, showIds }) {
+  const [baseConfig, setBaseConfig] = useState(null);
+  const [config, setConfig] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [showBaseModal, setShowBaseModal] = useState(false);
+  const [jsonInput, setJsonInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState(null);
+  const [previewPrompt, setPreviewPrompt] = useState(null);
+  const [previewChannel, setPreviewChannel] = useState('chat');
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    fetchAll();
+  }, []);
+
+  const fetchAll = async () => {
+    setLoading(true);
+    try {
+      const [baseData, tenantData] = await Promise.all([
+        api.getBaseConfig().catch(() => null),
+        api.getPromptConfig().catch(() => null),
+      ]);
+      setBaseConfig(baseData);
+      setConfig(tenantData);
+      if (tenantData?.config) {
+        setJsonInput(JSON.stringify(tenantData.config, null, 2));
+      }
+    } catch (err) {
+      setConfig(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleValidate = async () => {
+    setValidating(true);
+    setValidationResult(null);
+    try {
+      const parsed = JSON.parse(jsonInput);
+      const result = await api.validatePromptConfig(parsed);
+      setValidationResult(result);
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        setValidationResult({ valid: false, message: 'Invalid JSON syntax', errors: [{ message: err.message }] });
+      } else {
+        setValidationResult({ valid: false, message: err.message });
+      }
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const parsed = JSON.parse(jsonInput);
+      const result = await api.upsertPromptConfig(parsed);
+      setConfig(result);
+      setShowModal(false);
+      onToast('Prompt config saved successfully!', 'success');
+      setValidationResult(null);
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        onToast('Invalid JSON syntax: ' + err.message, 'error');
+      } else {
+        onToast('Failed to save: ' + err.message, 'error');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm('Delete the v2 prompt config? The chatbot will fall back to v1 prompts.')) return;
+    try {
+      await api.deletePromptConfig();
+      setConfig(null);
+      setJsonInput('');
+      onToast('Prompt config deleted', 'success');
+    } catch (err) {
+      onToast('Failed to delete: ' + err.message, 'error');
+    }
+  };
+
+  const handlePreview = async () => {
+    setPreviewLoading(true);
+    try {
+      const result = await api.previewPromptConfig(previewChannel);
+      setPreviewPrompt(result.prompt);
+      setShowPreview(true);
+    } catch (err) {
+      onToast('Failed to preview: ' + err.message, 'error');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="v2-config-section">
+        <div className="v2-config-card v2-config-card--loading">
+          <span>Loading prompt configuration...</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="v2-config-section">
+      <div className="v2-config-header-row">
+        <h3 className="v2-section-title">Prompt Configuration (v2)</h3>
+        <p className="v2-section-subtitle">Base rules + tenant-specific data combine into the final prompt</p>
+      </div>
+
+      <div className="v2-config-grid">
+        {/* Base Config Card (Read-only) */}
+        <div className="v2-config-card v2-config-card--base">
+          <div className="v2-config-header">
+            <div className="v2-config-title">
+              <span className="v2-config-icon">⚙️</span>
+              <div>
+                <h3>Base Config</h3>
+                <p className="v2-config-subtitle">Hardcoded conversation rules</p>
+              </div>
+            </div>
+            <span className="status-pill status-pill--system">
+              <span className="status-pill__icon">🔒</span>
+              <span className="status-pill__label">System</span>
+            </span>
+          </div>
+
+          {baseConfig && (
+            <div className="v2-config-sections-list">
+              {Object.keys(baseConfig.sections || {}).slice(0, 4).map((key) => (
+                <span key={key} className="v2-section-chip">{key}</span>
+              ))}
+              {Object.keys(baseConfig.sections || {}).length > 4 && (
+                <span className="v2-section-chip v2-section-chip--more">+{Object.keys(baseConfig.sections).length - 4} more</span>
+              )}
+            </div>
+          )}
+
+          <div className="v2-config-actions">
+            <button className="btn btn--ghost btn--sm" onClick={() => setShowBaseModal(true)}>
+              View Base Rules
+            </button>
+          </div>
+        </div>
+
+        {/* Tenant Config Card (Editable) */}
+        <div className={`v2-config-card ${config ? 'v2-config-card--active' : ''}`}>
+          <div className="v2-config-header">
+            <div className="v2-config-title">
+              <span className="v2-config-icon">📋</span>
+              <div>
+                <h3>Tenant Config</h3>
+                <p className="v2-config-subtitle">
+                  {config ? 'Locations, levels, tuition, policies' : 'Not configured yet'}
+                </p>
+              </div>
+            </div>
+            {config ? (
+              <span className="status-pill status-pill--active">
+                <span className="status-pill__icon">●</span>
+                <span className="status-pill__label">Active</span>
+              </span>
+            ) : (
+              <span className="status-pill status-pill--muted">
+                <span className="status-pill__icon">○</span>
+                <span className="status-pill__label">Not Set</span>
+              </span>
+            )}
+          </div>
+
+          {config && (
+            <div className="v2-config-meta">
+              <span>Updated: {formatDateTimeParts(config.updated_at).date}</span>
+              {showIds && config.id !== undefined && config.id !== null && (
+                <RevealField label="Config ID" value={config.id} />
+              )}
+            </div>
+          )}
+
+          <div className="v2-config-actions">
+            <button className="btn btn--primary btn--sm" onClick={() => setShowModal(true)}>
+              {config ? 'Edit Config' : 'Upload Config'}
+            </button>
+            {config && (
+              <>
+                <button className="btn btn--ghost btn--sm" onClick={handlePreview} disabled={previewLoading}>
+                  {previewLoading ? 'Loading...' : 'Preview Combined'}
+                </button>
+                <button className="btn btn--ghost btn--sm btn--danger" onClick={handleDelete}>
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Base Config Modal */}
+      {showBaseModal && baseConfig && (
+        <div className="modal-overlay" onClick={() => setShowBaseModal(false)}>
+          <div className="modal large-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Base Configuration (Read-only)</h2>
+              <button className="modal-close" onClick={() => setShowBaseModal(false)}>×</button>
+            </div>
+
+            <p className="v2-base-hint">
+              These are the hardcoded conversation rules that apply to all tenants. They cannot be edited through the UI.
+            </p>
+
+            <div className="v2-base-sections">
+              {Object.entries(baseConfig.sections || {}).map(([key, content]) => (
+                <details key={key} className="v2-base-section">
+                  <summary className="v2-base-section-header">
+                    <span className="v2-base-section-key">{key}</span>
+                    <span className="v2-base-section-preview">{content.substring(0, 60)}...</span>
+                  </summary>
+                  <pre className="v2-base-section-content">{content}</pre>
+                </details>
+              ))}
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn btn--ghost" onClick={() => setShowBaseModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal large-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{config ? 'Edit JSON Config' : 'Upload JSON Config'}</h2>
+              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
+            </div>
+
+            <div className="v2-config-editor">
+              <p className="v2-config-editor-hint">
+                Paste the JSON configuration from Google Forms below. The config will be validated before saving.
+              </p>
+              <textarea
+                className="v2-config-textarea"
+                value={jsonInput}
+                onChange={(e) => {
+                  setJsonInput(e.target.value);
+                  setValidationResult(null);
+                }}
+                placeholder='{"schema_version": "bss_chatbot_prompt_v1", "tenant_id": "...", ...}'
+                rows={20}
+              />
+
+              {validationResult && (
+                <div className={`v2-validation-result ${validationResult.valid ? 'v2-validation-result--success' : 'v2-validation-result--error'}`}>
+                  <strong>{validationResult.valid ? '✓ Valid' : '✗ Invalid'}</strong>
+                  <span>{validationResult.message}</span>
+                  {validationResult.errors && (
+                    <ul>
+                      {validationResult.errors.map((err, i) => (
+                        <li key={i}>{err.location ? `${err.location}: ` : ''}{err.message}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {validationResult.valid && validationResult.sections_count && (
+                    <div className="v2-validation-counts">
+                      <span>Locations: {validationResult.sections_count.locations}</span>
+                      <span>Levels: {validationResult.sections_count.levels}</span>
+                      <span>Tuition: {validationResult.sections_count.tuition}</span>
+                      <span>Policies: {validationResult.sections_count.policies}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn btn--ghost" onClick={() => setShowModal(false)}>Cancel</button>
+              <button className="btn btn--secondary" onClick={handleValidate} disabled={validating || !jsonInput.trim()}>
+                {validating ? 'Validating...' : 'Validate'}
+              </button>
+              <button className="btn btn--primary" onClick={handleSave} disabled={saving || !jsonInput.trim()}>
+                {saving ? 'Saving...' : 'Save Config'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPreview && (
+        <div className="modal-overlay" onClick={() => setShowPreview(false)}>
+          <div className="modal large-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Prompt Preview</h2>
+              <button className="modal-close" onClick={() => setShowPreview(false)}>×</button>
+            </div>
+
+            <div className="v2-preview-tabs">
+              {['chat', 'voice', 'sms'].map((ch) => (
+                <button
+                  key={ch}
+                  className={`v2-preview-tab ${previewChannel === ch ? 'v2-preview-tab--active' : ''}`}
+                  onClick={() => {
+                    setPreviewChannel(ch);
+                    setPreviewLoading(true);
+                    api.previewPromptConfig(ch).then((result) => {
+                      setPreviewPrompt(result.prompt);
+                      setPreviewLoading(false);
+                    }).catch(() => setPreviewLoading(false));
+                  }}
+                >
+                  {ch.charAt(0).toUpperCase() + ch.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            <div className="v2-preview-content">
+              {previewLoading ? (
+                <LoadingState message="Loading preview..." />
+              ) : (
+                <pre className="v2-preview-text">{previewPrompt}</pre>
+              )}
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn btn--ghost" onClick={() => setShowPreview(false)}>Close</button>
+              <button
+                className="btn btn--primary"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(previewPrompt);
+                    onToast('Copied to clipboard!', 'success');
+                  } catch (err) {
+                    onToast('Failed to copy', 'error');
+                  }
+                }}
+              >
+                Copy to Clipboard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Base scopes - read-only, system-managed
 const BASE_SCOPES = ['system', 'base'];
@@ -26,6 +404,9 @@ const ALL_SCOPES = [
 export default function Prompts() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { user, selectedTenantId } = useAuth();
+  const isGlobalAdmin = user?.is_global_admin;
+  const needsTenant = isGlobalAdmin && !selectedTenantId;
   
   const [bundles, setBundles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +428,12 @@ export default function Prompts() {
   const [sortBy, setSortBy] = useState('updated');
   const [toasts, setToasts] = useState([]);
 
+  // Voice prompt state
+  const [activeTab, setActiveTab] = useState('sections');
+  const [voicePrompt, setVoicePrompt] = useState(null);
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceCopied, setVoiceCopied] = useState(false);
+
   // Handle test parameter from URL (when redirecting from wizard)
   useEffect(() => {
     const testBundleId = searchParams.get('test');
@@ -61,8 +448,36 @@ export default function Prompts() {
   }, [bundles, searchParams, setSearchParams]);
 
   useEffect(() => {
+    if (!isGlobalAdmin || needsTenant) {
+      setLoading(false);
+      return;
+    }
     fetchBundles();
-  }, []);
+  }, [isGlobalAdmin, needsTenant]);
+
+  if (user && !isGlobalAdmin) {
+    return (
+      <div className="page-container">
+        <EmptyState
+          icon="🔒"
+          title="Admin access required"
+          description="Prompt configuration is only accessible to global admins."
+        />
+      </div>
+    );
+  }
+
+  if (needsTenant) {
+    return (
+      <div className="page-container">
+        <EmptyState
+          icon="🧭"
+          title="Select a tenant to manage prompts"
+          description="Please select a tenant from the dropdown above to manage prompt configuration."
+        />
+      </div>
+    );
+  }
 
   // Scroll to the start of the last message so users can read from the top
   useEffect(() => {
@@ -255,6 +670,27 @@ export default function Prompts() {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
+  // Load voice prompt for a bundle
+  const loadVoicePrompt = async (bundleId) => {
+    if (voicePrompt?.bundle_id === bundleId) return; // Already loaded
+    setVoiceLoading(true);
+    try {
+      const data = await api.getVoicePrompt(bundleId);
+      setVoicePrompt(data);
+    } catch (err) {
+      addToast('Failed to generate voice prompt: ' + err.message, 'error');
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
+  // Reset voice tab state when modal closes
+  const resetVoiceState = () => {
+    setActiveTab('sections');
+    setVoicePrompt(null);
+    setVoiceCopied(false);
+  };
+
   // Filter and sort bundles
   const filteredAndSortedBundles = useMemo(() => {
     let filtered = bundles;
@@ -324,7 +760,7 @@ export default function Prompts() {
         </div>
         <div className="prompts-header__actions">
           <button
-            className="btn btn--ai"
+            className="btn btn--ai btn--lg"
             onClick={() => navigate('/settings/prompts/wizard')}
           >
             <span className="btn__icon">✨</span>
@@ -349,28 +785,32 @@ export default function Prompts() {
           />
         </div>
 
-        <div className="toolbar__filters">
-          <div className="toolbar__tabs">
-            {[
-              { value: 'all', label: 'All' },
-              { value: 'production', label: 'Live' },
-              { value: 'draft', label: 'Draft' },
-              { value: 'testing', label: 'Testing' },
-            ].map(tab => (
-              <button
-                key={tab.value}
-                className={`toolbar__tab ${statusFilter === tab.value ? 'toolbar__tab--active' : ''}`}
-                onClick={() => setStatusFilter(tab.value)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <div className="toolbar__tabs" role="tablist" aria-label="Filter prompts by status">
+          {[
+            { value: 'all', label: 'All' },
+            { value: 'production', label: 'Live' },
+            { value: 'draft', label: 'Draft' },
+            { value: 'testing', label: 'Testing' },
+          ].map(tab => (
+            <button
+              key={tab.value}
+              className={`toolbar__tab ${statusFilter === tab.value ? 'toolbar__tab--active' : ''}`}
+              onClick={() => setStatusFilter(tab.value)}
+              role="tab"
+              aria-selected={statusFilter === tab.value}
+              type="button"
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
+        <div className="toolbar__sort-wrapper">
           <select
             className="toolbar__sort"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
+            aria-label="Sort prompts"
           >
             <option value="updated">Last updated</option>
             <option value="created">Recently created</option>
@@ -379,13 +819,14 @@ export default function Prompts() {
         </div>
       </div>
 
-
+      {/* V2 JSON Config Section */}
+      <V2ConfigSection onToast={addToast} showIds={isGlobalAdmin} />
 
       {/* Edit Bundle Modal */}
       {editBundle && (
-        <div className="modal-overlay" onClick={() => setEditBundle(null)}>
-          <div 
-            className="modal large-modal" 
+        <div className="modal-overlay" onClick={() => { setEditBundle(null); resetVoiceState(); }}>
+          <div
+            className="modal large-modal"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
@@ -393,7 +834,7 @@ export default function Prompts() {
                 <h2>{editBundle.status === 'production' ? 'View Prompt' : 'Edit Prompt'}: {editBundle.name}</h2>
                 {getStatusBadge(editBundle.status)}
               </div>
-              <button className="modal-close" onClick={() => setEditBundle(null)}>×</button>
+              <button className="modal-close" onClick={() => { setEditBundle(null); resetVoiceState(); }}>×</button>
             </div>
 
             {editBundle.status === 'production' ? (
@@ -402,7 +843,29 @@ export default function Prompts() {
                   <span className="warning-icon">⚠️</span>
                   <span>This prompt is currently live. To make changes, deactivate it first or create a new draft.</span>
                 </div>
-                <div className="readonly-sections" tabIndex={0}>
+
+                {/* Tab Navigation */}
+                <div className="modal-tabs">
+                  <button
+                    className={`modal-tab ${activeTab === 'sections' ? 'modal-tab--active' : ''}`}
+                    onClick={() => setActiveTab('sections')}
+                  >
+                    Prompt Sections
+                  </button>
+                  <button
+                    className={`modal-tab ${activeTab === 'voice' ? 'modal-tab--active' : ''}`}
+                    onClick={() => {
+                      setActiveTab('voice');
+                      loadVoicePrompt(editBundle.id);
+                    }}
+                  >
+                    Voice Version
+                  </button>
+                </div>
+
+                {/* Sections Tab Content */}
+                {activeTab === 'sections' && (
+                  <div className="readonly-sections" tabIndex={0}>
                     {editBundle.sections?.map((section, idx) => {
                       const scopeInfo = getScopeInfo(section.scope);
                       const isBase = isBaseScope(section.scope);
@@ -419,16 +882,64 @@ export default function Prompts() {
                       );
                     })}
                   </div>
+                )}
+
+                {/* Voice Tab Content */}
+                {activeTab === 'voice' && (
+                  <div className="voice-prompt-container">
+                    <div className="voice-prompt-header">
+                      <h3>Auto-Generated Voice Prompt</h3>
+                      <p className="voice-prompt-description">
+                        This voice-optimized version is automatically generated from your chat prompt.
+                        Copy it to use in Telnyx or other voice platforms.
+                      </p>
+                    </div>
+
+                    {voiceLoading ? (
+                      <div className="voice-prompt-loading">
+                        <LoadingState message="Generating voice prompt..." />
+                      </div>
+                    ) : voicePrompt ? (
+                      <>
+                        <div className="voice-prompt-content">
+                          <pre className="voice-prompt-text">{voicePrompt.voice_prompt}</pre>
+                        </div>
+                        <div className="voice-prompt-actions">
+                          <button
+                            className={`btn btn--primary ${voiceCopied ? 'btn--success' : ''}`}
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(voicePrompt.voice_prompt);
+                                setVoiceCopied(true);
+                                addToast('Voice prompt copied to clipboard!', 'success');
+                                setTimeout(() => setVoiceCopied(false), 2000);
+                              } catch (err) {
+                                addToast('Failed to copy: ' + err.message, 'error');
+                              }
+                            }}
+                          >
+                            {voiceCopied ? 'Copied!' : 'Copy to Clipboard'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="voice-prompt-error">
+                        Unable to generate voice prompt.
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="modal-actions">
                   <button
                     type="button"
                     className="btn-warning"
-                    onClick={() => { setEditBundle(null); handleDeactivate(editBundle); }}
+                    onClick={() => { setEditBundle(null); resetVoiceState(); handleDeactivate(editBundle); }}
                     disabled={deactivating === editBundle.id}
                   >
                     {deactivating === editBundle.id ? 'Deactivating...' : 'Deactivate Prompt'}
                   </button>
-                  <button type="button" className="btn-secondary" onClick={() => setEditBundle(null)}>
+                  <button type="button" className="btn-secondary" onClick={() => { setEditBundle(null); resetVoiceState(); }}>
                     Close
                   </button>
                 </div>
@@ -663,25 +1174,26 @@ export default function Prompts() {
                   className={`prompt-item ${isLive ? 'prompt-item--live' : ''}`}
                 >
                   <div className="prompt-item__main">
-                    <div className="prompt-item__header">
-                      <h3 className="prompt-item__title">{bundle.name}</h3>
-                      {getStatusBadge(bundle.status)}
-                    </div>
-                    
-                    <div className="prompt-item__meta">
-                      <span className="prompt-item__meta-item">
-                        {bundle.sections?.length || 0} sections
-                      </span>
-                      {updatedAt && (
-                        <span className="prompt-item__meta-item">
-                          Updated {new Date(updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </span>
-                      )}
-                      {bundle.published_at && (
-                        <span className="prompt-item__meta-item">
-                          Published {new Date(bundle.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </span>
-                      )}
+                    <div className="prompt-item__row">
+                      <div className="prompt-item__title-group">
+                        <h3 className="prompt-item__title">{bundle.name}</h3>
+                        {getStatusBadge(bundle.status)}
+                      </div>
+                      <div className="prompt-item__meta">
+                        {updatedAt && (
+                          <span className="prompt-item__meta-item">
+                            Updated {formatDateTimeParts(updatedAt).date}
+                          </span>
+                        )}
+                        {bundle.published_at && (
+                          <span className="prompt-item__meta-item">
+                            Published {formatDateTimeParts(bundle.published_at).date}
+                          </span>
+                        )}
+                        {isGlobalAdmin && bundle.id !== undefined && bundle.id !== null && (
+                          <RevealField label="ID" value={bundle.id} />
+                        )}
+                      </div>
                     </div>
                   </div>
 

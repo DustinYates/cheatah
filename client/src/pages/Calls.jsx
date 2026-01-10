@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
+import { formatDateTimeParts } from '../utils/dateFormat';
 import './Calls.css';
 
 // Format duration as mm:ss
@@ -91,6 +92,7 @@ export default function Calls() {
   };
 
   const hasActiveFilters = filters.intent || filters.outcome || filters.status;
+  const selectedCallDate = selectedCall ? formatDateTimeParts(selectedCall.created_at) : null;
 
   if (needsTenant) {
     return (
@@ -192,6 +194,7 @@ export default function Calls() {
                 <tr>
                   <th>Date & Time</th>
                   <th>Caller</th>
+                  <th>Name</th>
                   <th>Duration</th>
                   <th>Intent</th>
                   <th>Outcome</th>
@@ -200,22 +203,16 @@ export default function Calls() {
                 </tr>
               </thead>
               <tbody>
-                {calls.map((call) => (
-                  <tr key={call.id} onClick={() => setSelectedCall(call)} className="clickable-row">
-                    <td className="date-cell">
-                      {new Date(call.created_at).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                      <span className="time-sub">
-                        {new Date(call.created_at).toLocaleTimeString(undefined, {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                    </td>
+                {calls.map((call) => {
+                  const { date, time } = formatDateTimeParts(call.created_at);
+                  return (
+                    <tr key={call.id} onClick={() => setSelectedCall(call)} className="clickable-row">
+                      <td className="date-cell">
+                        {date}
+                        <span className="time-sub">{time}</span>
+                      </td>
                     <td>{formatPhone(call.from_number)}</td>
+                    <td className="name-cell">{call.summary?.extracted_fields?.name || '-'}</td>
                     <td>{formatDuration(call.duration)}</td>
                     <td>
                       {call.summary?.intent ? (
@@ -266,8 +263,9 @@ export default function Calls() {
                         </a>
                       )}
                     </td>
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -311,7 +309,11 @@ export default function Calls() {
                 </div>
                 <div className="detail-item">
                   <label>Date & Time</label>
-                  <span>{new Date(selectedCall.created_at).toLocaleString()}</span>
+                  <span>
+                    {selectedCallDate
+                      ? `${selectedCallDate.date} ${selectedCallDate.time} ${selectedCallDate.tzAbbr}`.trim()
+                      : '—'}
+                  </span>
                 </div>
                 <div className="detail-item">
                   <label>Duration</label>
@@ -414,4 +416,3 @@ export default function Calls() {
     </div>
   );
 }
-

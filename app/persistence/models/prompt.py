@@ -20,6 +20,14 @@ class PromptStatus(str, enum.Enum):
     PRODUCTION = "production"
 
 
+class PromptChannel(str, enum.Enum):
+    """Channel type for a prompt bundle."""
+    CHAT = "chat"  # Web chat (default)
+    VOICE = "voice"  # Phone calls
+    SMS = "sms"  # Text messages
+    EMAIL = "email"  # Email responses
+
+
 class PromptBundle(Base):
     """Prompt bundle model representing a collection of prompt sections."""
 
@@ -29,6 +37,7 @@ class PromptBundle(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)  # NULL for global/base
     name = Column(String(255), nullable=False)
     version = Column(String(50), nullable=False, default="1.0.0")
+    channel = Column(String(20), default=PromptChannel.CHAT.value, nullable=False, index=True)  # chat, voice, sms, email
     status = Column(String(20), default=PromptStatus.DRAFT.value, nullable=False)
     is_active = Column(Boolean, default=False, nullable=False)  # Kept for backward compatibility
     published_at = Column(DateTime, nullable=True)
@@ -45,10 +54,10 @@ class PromptBundle(Base):
 
     # Constraints for tenant data isolation
     __table_args__ = (
-        # Each tenant can only have one bundle with a given name and version
-        UniqueConstraint('tenant_id', 'name', 'version', name='uq_prompt_bundles_tenant_name_version'),
-        # Each tenant can only have one PRODUCTION bundle at a time (partial unique index)
-        Index('uq_prompt_bundles_tenant_production', 'tenant_id', 'status',
+        # Each tenant can only have one bundle with a given name, version, and channel
+        UniqueConstraint('tenant_id', 'name', 'version', 'channel', name='uq_prompt_bundles_tenant_name_version_channel'),
+        # Each tenant can only have one PRODUCTION bundle per channel at a time (partial unique index)
+        Index('uq_prompt_bundles_tenant_channel_production', 'tenant_id', 'channel', 'status',
               unique=True, postgresql_where=Column('status') == PromptStatus.PRODUCTION.value),
     )
 

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
+import { formatDateTimeParts } from '../utils/dateFormat';
 import './ContactDetail.css';
 
 export default function UnknownLeadDetail() {
@@ -91,7 +92,7 @@ export default function UnknownLeadDetail() {
             </div>
             <div className="detail-row">
               <span className="label">Created:</span>
-              <span className="value">{new Date(lead.created_at).toLocaleDateString()}</span>
+              <span className="value">{formatDateTimeParts(lead.created_at).date}</span>
             </div>
           </div>
           <div className="action-buttons">
@@ -110,15 +111,16 @@ export default function UnknownLeadDetail() {
             <LoadingState message="Loading conversation..." />
           ) : conversation && conversation.messages?.length > 0 ? (
             <div className="messages-list">
-              {conversation.messages.map((msg, idx) => (
-                <div key={idx} className={`message ${msg.role}`}>
-                  <div className="message-role">{msg.role === 'user' ? '👤 User' : '🤖 Bot'}</div>
-                  <div className="message-content">{msg.content}</div>
-                  <div className="message-time">
-                    {new Date(msg.created_at).toLocaleString()}
+              {conversation.messages.map((msg, idx) => {
+                const { date, time, tzAbbr } = formatDateTimeParts(msg.created_at);
+                return (
+                  <div key={idx} className={`message ${msg.role}`}>
+                    <div className="message-role">{msg.role === 'user' ? '👤 User' : '🤖 Bot'}</div>
+                    <div className="message-content">{msg.content}</div>
+                    <div className="message-time">{`${date} ${time} ${tzAbbr}`.trim()}</div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <EmptyState 

@@ -1,17 +1,204 @@
 .plots-page {
-  max-width: 1200px;
+  max-width: var(--content-max-width);
 }
 
-.plots-page h1 {
-  margin: 0 0 var(--spacing-lg) 0;
-  font-size: var(--font-size-2xl);
+.plots-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.plots-subtitle {
+  margin-top: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.plots-summary {
+  display: flex;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+  background: var(--color-bg-white);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.plots-summary div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.summary-value {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
   color: var(--color-text-primary);
 }
 
-.plots-empty {
+.summary-label {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.usage-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.usage-card {
   background: var(--color-bg-white);
   border-radius: var(--radius-lg);
-  padding: var(--spacing-2xl);
-  text-align: center;
-  color: var(--color-text-secondary);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.usage-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.usage-card-header h2 {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-lg);
+}
+
+.usage-card-header p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.usage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.usage-chart {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.usage-y-axis {
+  min-width: 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  padding-bottom: 32px;
+}
+
+.usage-bars {
+  --chart-height: 160px;
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  gap: var(--spacing-sm);
+  overflow-x: auto;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.usage-bar-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex: 1;
+  min-width: 22px;
+  max-width: 60px;
+}
+
+.usage-bar-track {
+  width: 14px;
+  height: var(--chart-height);
+  background: var(--color-border-light);
+  border-radius: var(--radius-full);
+  display: flex;
+  flex-direction: column-reverse;
+  overflow: hidden;
+}
+
+.usage-bar {
+  width: 100%;
+  transition: height var(--transition-base);
+}
+
+.usage-bar.text,
+.legend-swatch.text {
+  background: #f59e0b;
+}
+
+.usage-bar.phone,
+.legend-swatch.phone {
+  background: #3b82f6;
+}
+
+.usage-bar.chatbot,
+.legend-swatch.chatbot {
+  background: var(--color-primary);
+}
+
+.usage-bar.calls,
+.legend-swatch.calls {
+  background: #3b82f6;
+}
+
+.usage-x-label {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  height: 32px;
+  display: flex;
+  align-items: flex-start;
+  transform: rotate(-45deg);
+  transform-origin: top left;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .plots-summary {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 640px) {
+  .plots-summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .usage-card-header {
+    flex-direction: column;
+  }
+
+  .usage-y-axis {
+    min-width: 28px;
+  }
 }

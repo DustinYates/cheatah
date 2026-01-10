@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     
     # Chat guardrails
     chat_max_turns: int = 20
-    chat_timeout_seconds: int = 300
+    chat_timeout_seconds: int = 900
     chat_follow_up_nudge_turn: int = 3
     chat_max_tokens: int = 8000  # Max tokens for LLM chat responses
 
@@ -74,6 +74,9 @@ class Settings(BaseSettings):
 
     # Idempotency
     idempotency_ttl_seconds: int = 3600
+
+    # Telnyx (Voice AI)
+    telnyx_api_key: str | None = None  # Global Telnyx API key for AI conversation fetching
 
     # Twilio (SMS)
     twilio_account_sid: str | None = None

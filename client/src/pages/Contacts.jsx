@@ -7,6 +7,7 @@ import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import ChatModal from '../components/ChatModal';
 import EditContactModal from '../components/EditContactModal';
 import MergeContactsModal from '../components/MergeContactsModal';
+import { formatDateTimeParts } from '../utils/dateFormat';
 import './Contacts.css';
 
 export default function Contacts() {
@@ -256,7 +257,7 @@ export default function Contacts() {
                         {contact.opt_in_status || 'Verified'}
                       </span>
                     </td>
-                    <td>{new Date(contact.created_at).toLocaleDateString()}</td>
+                    <td>{formatDateTimeParts(contact.created_at).date}</td>
                     <td>
                       <div className="action-buttons">
                         <button 

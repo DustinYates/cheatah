@@ -1,0 +1,417 @@
+/* TelephonySettings.css - Compact Layout */
+
+.telephony-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+}
+
+.telephony-container h1 {
+  margin-bottom: 0.25rem;
+  color: #1a1a1a;
+  font-size: 1.5rem;
+}
+
+.telephony-container .subtitle {
+  color: #666;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+/* Alert messages */
+.telephony-alert {
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.telephony-alert.success {
+  background: #e6f4ea;
+  color: #1e7e34;
+}
+
+.telephony-alert.error {
+  background: #fce8e6;
+  color: #c5221f;
+}
+
+/* Collapsible Sections */
+.telephony-section {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.telephony-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  background: #fafafa;
+  user-select: none;
+  transition: background-color 0.15s;
+}
+
+.telephony-section-header:hover {
+  background: #f0f0f0;
+}
+
+.telephony-section-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.telephony-section-header-left .chevron {
+  color: #666;
+  font-size: 0.75rem;
+  transition: transform 0.2s;
+}
+
+.telephony-section.collapsed .chevron {
+  transform: rotate(-90deg);
+}
+
+.telephony-section-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.telephony-section-content {
+  padding: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.telephony-section.collapsed .telephony-section-content {
+  display: none;
+}
+
+/* Status Badges */
+.status-badge {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.status-badge.configured {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge.locked {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-badge.admin-only {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Compact Provider Selection - Radio Row */
+.provider-radio-row {
+  display: flex;
+  gap: 24px;
+  padding: 4px 0;
+}
+
+.provider-radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: background-color 0.15s;
+}
+
+.provider-radio-option:hover {
+  background: #f5f5f5;
+}
+
+.provider-radio-option input[type="radio"] {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.provider-radio-option .provider-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.provider-radio-option .provider-desc {
+  font-size: 0.8rem;
+  color: #666;
+  margin-left: 4px;
+}
+
+/* Feature Toggles - Compact */
+.feature-toggles {
+  display: flex;
+  gap: 24px;
+  padding: 4px 0;
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.toggle-item.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.toggle-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.toggle-item.disabled input[type="checkbox"] {
+  cursor: not-allowed;
+}
+
+.toggle-label {
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.toggle-badge {
+  font-size: 0.7rem;
+  background: #f5f5f5;
+  color: #666;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Form Groups - Compact */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.form-row.single {
+  grid-template-columns: 1fr;
+}
+
+.form-group {
+  margin-bottom: 12px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: #333;
+}
+
+.saved-indicator {
+  font-weight: normal;
+  color: #34a853;
+  font-size: 0.8rem;
+  margin-left: 4px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="tel"],
+.form-group input[type="password"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+}
+
+.form-group .help-text {
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* Masked Fields */
+.masked-field {
+  font-family: monospace;
+  letter-spacing: 2px;
+  color: #6b7280;
+  padding: 8px 10px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+/* Webhook URLs - Compact */
+.webhook-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.webhook-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.webhook-item label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #666;
+}
+
+.webhook-url-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.webhook-item code {
+  flex: 1;
+  background: #f5f5f5;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  word-break: break-all;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+.copy-btn {
+  padding: 6px 8px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: #666;
+  transition: background-color 0.15s;
+}
+
+.copy-btn:hover {
+  background: #e8e8e8;
+}
+
+.copy-btn.copied {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
+/* Buttons */
+.btn-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #4285f4;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #3367d6;
+}
+
+.btn-secondary {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #e8e8e8;
+}
+
+/* Credentials Section - Inline Layout */
+.credentials-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.credentials-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+/* Action Row */
+.action-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  margin-top: 12px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 640px) {
+  .telephony-container {
+    padding: 1rem;
+  }
+
+  .provider-radio-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .feature-toggles {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .webhook-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .credentials-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
+import { formatDateTimeParts } from '../utils/dateFormat';
 import './ManageTenants.css';
 
 export default function ManageTenants() {
@@ -155,6 +156,7 @@ export default function ManageTenants() {
 
   // Single Tenant View Mode
   if (viewMode === 'single' && editingTenant) {
+    const editingTenantDate = formatDateTimeParts(editingTenant.created_at);
     return (
       <div className="manage-tenants-page">
         <div className="single-view-header">
@@ -256,7 +258,7 @@ export default function ManageTenants() {
             <div className="detail-field">
               <label>Created</label>
               <div className="readonly-value">
-                {new Date(editingTenant.created_at).toLocaleString()}
+                {`${editingTenantDate.date} ${editingTenantDate.time} ${editingTenantDate.tzAbbr}`.trim()}
               </div>
             </div>
           </div>
@@ -349,7 +351,7 @@ export default function ManageTenants() {
                       {tenant.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td>{new Date(tenant.created_at).toLocaleDateString()}</td>
+                  <td>{formatDateTimeParts(tenant.created_at).date}</td>
                   <td>
                     <input
                       className="tenant-input"

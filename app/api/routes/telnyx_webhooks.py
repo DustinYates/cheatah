@@ -1220,6 +1220,59 @@ async def telnyx_ai_call_complete(
 
         await db.commit()
 
+        # =============================================================
+        # Auto-send registration SMS if user requested registration info
+        # =============================================================
+        # Check if summary/intent mentions registration requests
+        # This handles both voice calls AND SMS chat via Telnyx AI Assistant
+        combined_text = f"{summary or ''} {caller_intent or ''}".lower()
+        registration_keywords = [
+            "registration", "register", "sign up", "signup", "enroll",
+            "enrollment", "registration link", "registration info",
+        ]
+
+        is_registration_request = any(kw in combined_text for kw in registration_keywords)
+
+        if is_registration_request and from_number:
+            logger.info(
+                f"Registration request detected from Telnyx AI - "
+                f"tenant_id={tenant_id}, phone={from_number}, summary={summary[:100] if summary else 'none'}"
+            )
+            try:
+                from app.domain.services.promise_detector import DetectedPromise
+                from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
+
+                # Create promise object for registration
+                promise = DetectedPromise(
+                    asset_type="registration_link",
+                    confidence=0.9,  # High confidence since Telnyx AI identified the request
+                    original_text=summary or "User requested registration information",
+                )
+
+                # Use conversation_id from Telnyx if available, otherwise use call.id
+                conversation_id = (
+                    payload.get("conversation_id") or
+                    metadata.get("telnyx_conversation_id") or
+                    call.id
+                )
+
+                # Fulfill the promise (send SMS with registration info)
+                fulfillment_service = PromiseFulfillmentService(db)
+                result = await fulfillment_service.fulfill_promise(
+                    tenant_id=tenant_id,
+                    conversation_id=int(conversation_id) if str(conversation_id).isdigit() else call.id,
+                    promise=promise,
+                    phone=from_number,
+                    name=caller_name,
+                )
+
+                logger.info(
+                    f"Registration SMS fulfillment result - tenant_id={tenant_id}, "
+                    f"status={result.get('status')}, phone={from_number}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to auto-send registration SMS: {e}", exc_info=True)
+
         return JSONResponse(content={
             "status": "ok",
             "call_id": call.id,

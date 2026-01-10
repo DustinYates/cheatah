@@ -28,6 +28,11 @@ class PromiseDetector:
         # Implicit promise patterns
         r"(?:you'll receive|you will receive)\s+(?:a|the|an)",
         r"(?:expect|expecting)\s+(?:a|an|the)\s+(?:text|message|sms)",
+        # Registration-specific promise patterns
+        r"(?:i'll|i will|let me)\s+(?:text|sms|send|get)\s+(?:you|that|over)\s+(?:the\s+)?registration",
+        r"(?:sending|send)\s+(?:you|over)\s+(?:the\s+)?registration",
+        r"(?:i'll|i will)\s+(?:text|send)\s+(?:you|over)\s+(?:the\s+)?(?:registration|signup|sign\s*up)\s+(?:link|info)",
+        r"(?:texting|sending)\s+(?:you|over)\s+(?:the\s+)?(?:registration|signup)\s+(?:link|info)",
     ]
 
     # Keywords that identify what type of asset is being promised

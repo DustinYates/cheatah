@@ -252,6 +252,16 @@ class SmsService:
             user_message=message_body,
         )
 
+        # Check for user request to receive registration info (or other assets)
+        await self._check_and_fulfill_request(
+            tenant_id=tenant_id,
+            conversation_id=conversation.id,
+            user_message=message_body,
+            ai_response=llm_response,
+            phone=phone_number,
+            name=lead.name if lead else None,
+        )
+
         # Format response for SMS (short, no markdown)
         formatted_response = self._format_sms_response(llm_response)
         logger.info(f"SMS LLM response received - tenant_id={tenant_id}, latency_ms={llm_latency_ms}, response_length={len(formatted_response)}")
@@ -665,5 +675,86 @@ Respond with ONLY valid JSON, no explanation:
             logger.error(
                 f"Failed to capture SMS lead - tenant_id={tenant_id}, "
                 f"conversation_id={conversation.id}, error={e}",
+                exc_info=True
+            )
+
+    async def _check_and_fulfill_request(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        user_message: str,
+        ai_response: str,
+        phone: str,
+        name: str | None = None,
+    ) -> None:
+        """Check for user request or AI promise to send info and fulfill it.
+
+        Args:
+            tenant_id: Tenant ID
+            conversation_id: Conversation ID
+            user_message: User's SMS message
+            ai_response: AI's response
+            phone: User's phone number
+            name: User's name (optional)
+        """
+        try:
+            from app.domain.services.user_request_detector import UserRequestDetector
+            from app.domain.services.promise_detector import PromiseDetector, DetectedPromise
+            from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
+
+            fulfillment_service = PromiseFulfillmentService(self.session)
+
+            # Check user message for request
+            user_detector = UserRequestDetector()
+            user_request = user_detector.detect_request(user_message)
+
+            if user_request and user_request.confidence >= 0.6:
+                logger.info(
+                    f"User request detected in SMS - tenant_id={tenant_id}, "
+                    f"asset_type={user_request.asset_type}, confidence={user_request.confidence:.2f}"
+                )
+                promise = DetectedPromise(
+                    asset_type=user_request.asset_type,
+                    confidence=user_request.confidence,
+                    original_text=user_request.original_text,
+                )
+                result = await fulfillment_service.fulfill_promise(
+                    tenant_id=tenant_id,
+                    conversation_id=conversation_id,
+                    promise=promise,
+                    phone=phone,
+                    name=name,
+                )
+                logger.info(
+                    f"User request fulfillment result - tenant_id={tenant_id}, "
+                    f"status={result.get('status')}, asset_type={user_request.asset_type}"
+                )
+                return  # Don't double-send if user request detected
+
+            # Check AI response for promise
+            ai_detector = PromiseDetector()
+            ai_promise = ai_detector.detect_promise(ai_response)
+
+            if ai_promise and ai_promise.confidence >= 0.6:
+                logger.info(
+                    f"AI promise detected in SMS - tenant_id={tenant_id}, "
+                    f"asset_type={ai_promise.asset_type}, confidence={ai_promise.confidence:.2f}"
+                )
+                result = await fulfillment_service.fulfill_promise(
+                    tenant_id=tenant_id,
+                    conversation_id=conversation_id,
+                    promise=ai_promise,
+                    phone=phone,
+                    name=name,
+                )
+                logger.info(
+                    f"AI promise fulfillment result - tenant_id={tenant_id}, "
+                    f"status={result.get('status')}, asset_type={ai_promise.asset_type}"
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Error in SMS request/promise fulfillment - tenant_id={tenant_id}, "
+                f"conversation_id={conversation_id}, error={e}",
                 exc_info=True
             )

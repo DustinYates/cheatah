@@ -13,8 +13,12 @@ from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 from app.persistence.models.lead import Lead
 from app.infrastructure.telephony.telnyx_provider import TelnyxSmsProvider
+from app.infrastructure.redis import redis_client
 
 logger = logging.getLogger(__name__)
+
+# Deduplication TTL in seconds (1 hour)
+DEDUP_TTL_SECONDS = 3600
 
 
 class PromiseFulfillmentService:
@@ -48,6 +52,17 @@ class PromiseFulfillmentService:
             f"Fulfilling promise - tenant_id={tenant_id}, conversation_id={conversation_id}, "
             f"asset_type={promise.asset_type}, phone={phone}"
         )
+
+        # Check for duplicate sends (deduplication)
+        dedup_key = f"promise_sent:{tenant_id}:{conversation_id}:{promise.asset_type}"
+        if await redis_client.exists(dedup_key):
+            logger.info(
+                f"Skipping duplicate promise fulfillment - key={dedup_key}"
+            )
+            return {
+                "status": "skipped",
+                "reason": "already_sent_recently",
+            }
 
         # Get sendable assets config from tenant prompt config
         sendable_assets = await self._get_sendable_assets(tenant_id)
@@ -91,6 +106,11 @@ class PromiseFulfillmentService:
 
         # Send SMS
         result = await self._send_sms(tenant_id, phone, message)
+
+        # Mark as sent for deduplication (only if successful)
+        if result.get("status") == "sent":
+            await redis_client.set(dedup_key, "1", ttl=DEDUP_TTL_SECONDS)
+            logger.info(f"Set dedup key with TTL {DEDUP_TTL_SECONDS}s: {dedup_key}")
 
         # Track fulfillment in lead metadata if lead exists
         await self._track_fulfillment(tenant_id, conversation_id, promise, result)

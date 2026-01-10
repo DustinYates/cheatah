@@ -12,8 +12,9 @@ from app.domain.services.conversation_service import ConversationService
 from app.domain.services.escalation_service import EscalationService
 from app.domain.services.lead_service import LeadService
 from app.domain.services.contact_service import ContactService
-from app.domain.services.promise_detector import PromiseDetector
+from app.domain.services.promise_detector import PromiseDetector, DetectedPromise
 from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
+from app.domain.services.user_request_detector import UserRequestDetector
 from app.domain.services.prompt_service import PromptService
 from app.llm.orchestrator import LLMOrchestrator
 from app.persistence.models.conversation import Conversation, Message
@@ -54,6 +55,7 @@ class ChatService:
         self.lead_service = LeadService(session)
         self.contact_service = ContactService(session)
         self.promise_detector = PromiseDetector()
+        self.user_request_detector = UserRequestDetector()
         self.promise_fulfillment_service = PromiseFulfillmentService(session)
         self.prompt_service = PromptService(session)
         self.llm_orchestrator = LLMOrchestrator()
@@ -322,7 +324,7 @@ class ChatService:
             if existing_lead_after:
                 lead_captured = True
 
-        # Check for AI promises to send information (registration links, schedules, etc.)
+        # Check for user requests and AI promises to send information (registration links, schedules, etc.)
         # Get phone number from user input, extracted info, or existing lead
         customer_phone = (
             user_phone
@@ -336,15 +338,21 @@ class ChatService:
         )
 
         if customer_phone:
-            promise = self.promise_detector.detect_promise(llm_response)
-            if promise and promise.confidence >= 0.6:
+            # First check if user requested registration info
+            user_request = self.user_request_detector.detect_request(user_message)
+            if user_request and user_request.confidence >= 0.6:
                 logger.info(
-                    f"AI promise detected - tenant_id={tenant_id}, "
-                    f"conversation_id={conversation.id}, asset_type={promise.asset_type}, "
-                    f"confidence={promise.confidence:.2f}"
+                    f"User request detected - tenant_id={tenant_id}, "
+                    f"conversation_id={conversation.id}, asset_type={user_request.asset_type}, "
+                    f"confidence={user_request.confidence:.2f}"
                 )
                 try:
-                    # Fulfill the promise immediately (send SMS with promised content)
+                    # Convert user request to promise format for fulfillment
+                    promise = DetectedPromise(
+                        asset_type=user_request.asset_type,
+                        confidence=user_request.confidence,
+                        original_text=user_request.original_text,
+                    )
                     fulfillment_result = await self.promise_fulfillment_service.fulfill_promise(
                         tenant_id=tenant_id,
                         conversation_id=conversation.id,
@@ -353,14 +361,41 @@ class ChatService:
                         name=customer_name,
                     )
                     logger.info(
-                        f"Promise fulfillment result - tenant_id={tenant_id}, "
+                        f"User request fulfillment result - tenant_id={tenant_id}, "
                         f"status={fulfillment_result.get('status')}"
                     )
                 except Exception as e:
                     logger.error(
-                        f"Failed to fulfill promise - tenant_id={tenant_id}, error={e}",
+                        f"Failed to fulfill user request - tenant_id={tenant_id}, error={e}",
                         exc_info=True,
                     )
+            else:
+                # Check for AI promises to send information
+                promise = self.promise_detector.detect_promise(llm_response)
+                if promise and promise.confidence >= 0.6:
+                    logger.info(
+                        f"AI promise detected - tenant_id={tenant_id}, "
+                        f"conversation_id={conversation.id}, asset_type={promise.asset_type}, "
+                        f"confidence={promise.confidence:.2f}"
+                    )
+                    try:
+                        # Fulfill the promise immediately (send SMS with promised content)
+                        fulfillment_result = await self.promise_fulfillment_service.fulfill_promise(
+                            tenant_id=tenant_id,
+                            conversation_id=conversation.id,
+                            promise=promise,
+                            phone=customer_phone,
+                            name=customer_name,
+                        )
+                        logger.info(
+                            f"Promise fulfillment result - tenant_id={tenant_id}, "
+                            f"status={fulfillment_result.get('status')}"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to fulfill promise - tenant_id={tenant_id}, error={e}",
+                            exc_info=True,
+                        )
 
         # No hardcoded contact info nudge - let the LLM handle it naturally through the prompt
         final_response = llm_response

@@ -334,6 +334,16 @@ async def gather_webhook(
 
         ai_response = voice_result.response_text
 
+        # Check for user request to send information (registration link, schedule, etc.)
+        # Run in background to avoid blocking voice response
+        asyncio.create_task(_check_and_fulfill_user_request(
+            db=db,
+            tenant_id=parsed_tenant_id,
+            conversation_id=parsed_conversation_id,
+            call_sid=CallSid,
+            user_message=SpeechResult,
+        ))
+
         # Check for AI promises to send information (registration link, schedule, etc.)
         # Run in background to avoid blocking voice response
         asyncio.create_task(_check_and_fulfill_promise(
@@ -1137,6 +1147,76 @@ async def _check_and_fulfill_promise(
 
     except Exception as e:
         logger.error(f"Error in promise fulfillment: {e}", exc_info=True)
+
+
+async def _check_and_fulfill_user_request(
+    db: AsyncSession,
+    tenant_id: int,
+    conversation_id: int | None,
+    call_sid: str,
+    user_message: str,
+) -> None:
+    """Check if user message contains a request for info and fulfill it.
+
+    This runs in the background to avoid blocking voice response.
+
+    Args:
+        db: Database session
+        tenant_id: Tenant ID
+        conversation_id: Conversation ID
+        call_sid: Twilio call SID
+        user_message: The user's transcribed speech
+    """
+    try:
+        from app.domain.services.user_request_detector import UserRequestDetector
+        from app.domain.services.promise_detector import DetectedPromise
+        from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
+
+        # Detect if user requested information
+        detector = UserRequestDetector()
+        request = detector.detect_request(user_message)
+
+        if not request or request.confidence < 0.6:
+            return
+
+        logger.info(
+            f"User request detected in voice call - call_sid={call_sid}, "
+            f"asset_type={request.asset_type}, confidence={request.confidence:.2f}"
+        )
+
+        # Get caller phone and name
+        call = await _get_call_by_sid(call_sid, db)
+        if not call:
+            logger.warning(f"Could not find call for user request fulfillment: {call_sid}")
+            return
+
+        caller_phone = call.from_number
+        caller_name = await _extract_caller_name_from_conversation(db, conversation_id)
+
+        # Create a DetectedPromise to use the same fulfillment service
+        promise = DetectedPromise(
+            asset_type=request.asset_type,
+            confidence=request.confidence,
+            original_text=request.original_text,
+        )
+
+        # Fulfill the request
+        fulfillment_service = PromiseFulfillmentService(db)
+        result = await fulfillment_service.fulfill_promise(
+            tenant_id=tenant_id,
+            conversation_id=conversation_id or 0,
+            promise=promise,
+            phone=caller_phone,
+            name=caller_name,
+        )
+
+        logger.info(
+            f"User request fulfillment result - call_sid={call_sid}, "
+            f"status={result.get('status')}, asset_type={request.asset_type}"
+        )
+
+    except Exception as e:
+        logger.error(f"Error in user request fulfillment: {e}", exc_info=True)
 
 
 def _get_webhook_base_url() -> str:

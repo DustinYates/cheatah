@@ -331,9 +331,19 @@ async def gather_webhook(
             conversation_id=parsed_conversation_id,
             transcribed_text=SpeechResult,
         )
-        
+
         ai_response = voice_result.response_text
-        
+
+        # Check for AI promises to send information (registration link, schedule, etc.)
+        # Run in background to avoid blocking voice response
+        asyncio.create_task(_check_and_fulfill_promise(
+            db=db,
+            tenant_id=parsed_tenant_id,
+            conversation_id=parsed_conversation_id,
+            call_sid=CallSid,
+            ai_response=ai_response,
+        ))
+
         # Check for handoff/escalation
         if parsed_tenant_id and voice_result.requires_escalation:
             handoff_service = HandoffService(db)
@@ -599,10 +609,19 @@ async def gather_streaming_webhook(
 
         # Generate unique chunk_id for this response
         chunk_id = str(uuid.uuid4())[:8]
-        
+
         # Full response for logging/storage
         full_response = first_chunk + (" " + " ".join(remaining_chunks) if remaining_chunks else "")
-        
+
+        # Check for AI promises to send information (background, don't block TTFA)
+        asyncio.create_task(_check_and_fulfill_promise(
+            db=db,
+            tenant_id=parsed_tenant_id,
+            conversation_id=parsed_conversation_id,
+            call_sid=CallSid,
+            ai_response=full_response,
+        ))
+
         # Defer DB writes to background task (don't block TTFA)
         asyncio.create_task(_store_messages_background(
             db=db,
@@ -1056,6 +1075,68 @@ async def _extract_caller_name_from_conversation(
     except Exception as e:
         logger.warning(f"Failed to extract caller name: {e}")
         return None
+
+
+async def _check_and_fulfill_promise(
+    db: AsyncSession,
+    tenant_id: int,
+    conversation_id: int | None,
+    call_sid: str,
+    ai_response: str,
+) -> None:
+    """Check if AI response contains a promise to send info and fulfill it.
+
+    This runs in the background to avoid blocking voice response.
+
+    Args:
+        db: Database session
+        tenant_id: Tenant ID
+        conversation_id: Conversation ID
+        call_sid: Twilio call SID
+        ai_response: The AI's response text
+    """
+    try:
+        from app.domain.services.promise_detector import PromiseDetector
+        from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
+
+        # Detect if AI made a promise
+        detector = PromiseDetector()
+        promise = detector.detect_promise(ai_response)
+
+        if not promise:
+            return
+
+        logger.info(
+            f"Promise detected in voice response - call_sid={call_sid}, "
+            f"asset_type={promise.asset_type}, confidence={promise.confidence:.2f}"
+        )
+
+        # Get caller phone and name
+        call = await _get_call_by_sid(call_sid, db)
+        if not call:
+            logger.warning(f"Could not find call for promise fulfillment: {call_sid}")
+            return
+
+        caller_phone = call.from_number
+        caller_name = await _extract_caller_name_from_conversation(db, conversation_id)
+
+        # Fulfill the promise
+        fulfillment_service = PromiseFulfillmentService(db)
+        result = await fulfillment_service.fulfill_promise(
+            tenant_id=tenant_id,
+            conversation_id=conversation_id or 0,
+            promise=promise,
+            phone=caller_phone,
+            name=caller_name,
+        )
+
+        logger.info(
+            f"Promise fulfillment result - call_sid={call_sid}, "
+            f"status={result.get('status')}, asset_type={promise.asset_type}"
+        )
+
+    except Exception as e:
+        logger.error(f"Error in promise fulfillment: {e}", exc_info=True)
 
 
 def _get_webhook_base_url() -> str:

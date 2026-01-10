@@ -7,7 +7,8 @@
  * <script>
  *   ChatterCheetah.init({
  *     apiUrl: 'https://your-api-domain.com/api/v1',
- *     tenantId: 1
+ *     tenantId: 1,
+ *     scrollBehavior: 'top'
  *   });
  * </script>
  */
@@ -55,7 +56,7 @@
     },
 
     init: function(config) {
-      this.config = config;
+      this.config = Object.assign({ scrollBehavior: 'bottom' }, config);
       this.createWidget();
       this.attachEventListeners();
       this.fetchSettings();
@@ -706,7 +707,9 @@
       indicator.className = 'cc-typing-indicator';
       indicator.innerHTML = '<span></span><span></span><span></span>';
       messagesContainer.appendChild(indicator);
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      if (this.getScrollBehavior() === 'bottom') {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
 
       clearTimeout(this.typingTimeout);
       this.typingTimeout = setTimeout(() => {
@@ -1429,9 +1432,12 @@
             this.setSessionFlag('auto_open_message', true);
           }
         }
-        // Scroll to bottom after restoring messages
+        // Scroll to preferred position after restoring messages
         const messagesContainer = document.getElementById('cc-messages');
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        if (messagesContainer) {
+          messagesContainer.scrollTop =
+            this.getScrollBehavior() === 'top' ? 0 : messagesContainer.scrollHeight;
+        }
       }
     },
 
@@ -1465,6 +1471,10 @@
     scrollMessageIntoView: function(container, message, role) {
       if (!container || !message) return;
       const padding = 8;
+      if (this.getScrollBehavior() === 'top') {
+        container.scrollTop = Math.max(message.offsetTop - padding, 0);
+        return;
+      }
       if (role === 'assistant') {
         // Scroll to the start of the assistant response
         container.scrollTop = Math.max(message.offsetTop - padding, 0);
@@ -1472,6 +1482,10 @@
         // Keep user messages pinned to bottom
         container.scrollTop = container.scrollHeight;
       }
+    },
+
+    getScrollBehavior: function() {
+      return this.config?.scrollBehavior === 'top' ? 'top' : 'bottom';
     },
 
     // Add message to UI and save to storage

@@ -182,6 +182,26 @@ export default function EscalationSettings() {
     }));
   };
 
+  const toggleQuietDay = (day) => {
+    setSettings((prev) => {
+      const days = prev.quiet_hours.days || [];
+      const newDays = days.includes(day)
+        ? days.filter((d) => d !== day)
+        : [...days, day];
+      return {
+        ...prev,
+        quiet_hours: { ...prev.quiet_hours, days: newDays },
+      };
+    });
+  };
+
+  const updateQuietHours = (field, value) => {
+    setSettings((prev) => ({
+      ...prev,
+      quiet_hours: { ...prev.quiet_hours, [field]: value },
+    }));
+  };
+
   const needsTenant = user?.is_global_admin && !selectedTenantId;
 
   if (needsTenant) {
@@ -295,6 +315,86 @@ export default function EscalationSettings() {
               In-App Notification
             </label>
           </div>
+        </div>
+
+        <div className="section-divider"></div>
+
+        <div className="section">
+          <div className="section-title">Quiet Hours</div>
+          <p className="help-text" style={{ marginBottom: '0.5rem' }}>
+            Suppress alerts during specific hours. Escalations will still be logged but notifications won't be sent.
+          </p>
+
+          <div className="form-row">
+            <label className="form-label" htmlFor="quiet-hours-enabled">
+              Enable quiet hours
+            </label>
+            <div className="form-control">
+              <input
+                id="quiet-hours-enabled"
+                type="checkbox"
+                checked={settings.quiet_hours.enabled}
+                onChange={(e) => updateQuietHours('enabled', e.target.checked)}
+              />
+            </div>
+          </div>
+
+          {settings.quiet_hours.enabled && (
+            <div className="quiet-hours-config">
+              <div className="time-range">
+                <div className="time-input-group">
+                  <label htmlFor="quiet-start">From</label>
+                  <input
+                    id="quiet-start"
+                    type="time"
+                    value={settings.quiet_hours.start_time}
+                    onChange={(e) => updateQuietHours('start_time', e.target.value)}
+                  />
+                </div>
+                <span className="time-separator">to</span>
+                <div className="time-input-group">
+                  <label htmlFor="quiet-end">Until</label>
+                  <input
+                    id="quiet-end"
+                    type="time"
+                    value={settings.quiet_hours.end_time}
+                    onChange={(e) => updateQuietHours('end_time', e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="days-selector">
+                <span className="days-label">Active on:</span>
+                <div className="days-buttons">
+                  {DAYS_OF_WEEK.map((day) => (
+                    <button
+                      key={day.key}
+                      type="button"
+                      className={`day-btn ${settings.quiet_hours.days.includes(day.key) ? 'active' : ''}`}
+                      onClick={() => toggleQuietDay(day.key)}
+                    >
+                      {day.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="timezone-select">
+                <label htmlFor="quiet-timezone">Timezone</label>
+                <select
+                  id="quiet-timezone"
+                  value={settings.quiet_hours.timezone}
+                  onChange={(e) => updateQuietHours('timezone', e.target.value)}
+                >
+                  {TIMEZONES.map((tz) => (
+                    <option key={tz.value} value={tz.value}>
+                      {tz.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="section-divider"></div>
@@ -564,6 +664,113 @@ export default function EscalationSettings() {
           background: #fef7e0;
           padding: 0.5rem 0.75rem;
           border-radius: 6px;
+        }
+
+        .quiet-hours-config {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          margin-top: 0.5rem;
+          padding: 0.75rem;
+          background: #f8f9fa;
+          border-radius: 6px;
+        }
+
+        .time-range {
+          display: flex;
+          align-items: flex-end;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+        }
+
+        .time-input-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+
+        .time-input-group label {
+          font-size: 0.75rem;
+          color: #666;
+        }
+
+        .time-input-group input[type="time"] {
+          padding: 0.4rem 0.5rem;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          font-size: 0.9rem;
+          color: #333;
+        }
+
+        .time-separator {
+          font-size: 0.85rem;
+          color: #666;
+          padding-bottom: 0.4rem;
+        }
+
+        .days-selector {
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+        }
+
+        .days-label {
+          font-size: 0.75rem;
+          color: #666;
+        }
+
+        .days-buttons {
+          display: flex;
+          gap: 0.25rem;
+          flex-wrap: wrap;
+        }
+
+        .day-btn {
+          padding: 0.35rem 0.5rem;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          background: #fff;
+          font-size: 0.8rem;
+          cursor: pointer;
+          transition: all 0.15s;
+          min-width: 40px;
+        }
+
+        .day-btn:hover {
+          border-color: #4285f4;
+        }
+
+        .day-btn.active {
+          background: #4285f4;
+          border-color: #4285f4;
+          color: white;
+        }
+
+        .timezone-select {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+
+        .timezone-select label {
+          font-size: 0.75rem;
+          color: #666;
+        }
+
+        .timezone-select select {
+          padding: 0.4rem 0.5rem;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          font-size: 0.85rem;
+          color: #333;
+          background: #fff;
+          max-width: 250px;
+        }
+
+        .timezone-select select:focus {
+          outline: none;
+          border-color: #4285f4;
+          box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.16);
         }
 
         .keywords-section {

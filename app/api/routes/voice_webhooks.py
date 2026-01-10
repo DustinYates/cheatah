@@ -361,10 +361,12 @@ async def gather_webhook(
                     tenant_id=parsed_tenant_id,
                 )
                 
-                # Send handoff notification
+                # Send handoff notification with caller info
                 notification_service = NotificationService(db)
                 call = await _get_call_by_sid(CallSid, db)
                 if call:
+                    # Extract caller name from conversation
+                    caller_name = await _extract_caller_name_from_conversation(db, parsed_conversation_id)
                     await notification_service.notify_handoff(
                         tenant_id=parsed_tenant_id,
                         call_id=call.id,
@@ -372,10 +374,11 @@ async def gather_webhook(
                         caller_phone=call.from_number,
                         handoff_mode=handoff_decision.handoff_mode or "take_message",
                         transfer_number=handoff_decision.transfer_number,
+                        caller_name=caller_name,
                     )
-                
+
                 return Response(content=twiml, media_type="application/xml")
-        
+
         # Store assistant message
         if parsed_conversation_id:
             assistant_message = Message(
@@ -575,10 +578,13 @@ async def gather_streaming_webhook(
                     decision=handoff_decision,
                     tenant_id=parsed_tenant_id,
                 )
-                
+
+                # Send handoff notification with caller info
                 notification_service = NotificationService(db)
                 call = await _get_call_by_sid(CallSid, db)
                 if call:
+                    # Extract caller name from conversation
+                    caller_name = await _extract_caller_name_from_conversation(db, parsed_conversation_id)
                     await notification_service.notify_handoff(
                         tenant_id=parsed_tenant_id,
                         call_id=call.id,
@@ -586,10 +592,11 @@ async def gather_streaming_webhook(
                         caller_phone=call.from_number,
                         handoff_mode=handoff_decision.handoff_mode or "take_message",
                         transfer_number=handoff_decision.transfer_number,
+                        caller_name=caller_name,
                     )
-                
+
                 return Response(content=twiml, media_type="application/xml")
-        
+
         # Generate unique chunk_id for this response
         chunk_id = str(uuid.uuid4())[:8]
         
@@ -1000,6 +1007,55 @@ async def _get_call_by_sid(
     stmt = select(Call).where(Call.call_sid == call_sid)
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
+
+import re
+
+
+async def _extract_caller_name_from_conversation(
+    db: AsyncSession,
+    conversation_id: int | None,
+) -> str | None:
+    """Extract caller name from conversation history.
+
+    Args:
+        db: Database session
+        conversation_id: Conversation ID
+
+    Returns:
+        Caller name if found, None otherwise
+    """
+    if not conversation_id:
+        return None
+
+    try:
+        stmt = select(Message).where(
+            Message.conversation_id == conversation_id,
+            Message.role == "user"
+        ).order_by(Message.created_at)
+        result = await db.execute(stmt)
+        messages = result.scalars().all()
+
+        # Combine all user messages
+        user_text = " ".join([m.content for m in messages])
+
+        # Try to extract name using patterns
+        # Note: Use [a-zA-Z] instead of [A-Z][a-z] because speech-to-text often outputs lowercase
+        name_patterns = [
+            r"(?:I'?m|I am|my name is|this is|im|name's|it's)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)",
+            r"(?:call me|you can call me)\s+([a-zA-Z]+)",
+        ]
+
+        for pattern in name_patterns:
+            matches = re.findall(pattern, user_text, re.IGNORECASE)
+            if matches:
+                # Return the first match, title-cased
+                return matches[0].strip().title()
+
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to extract caller name: {e}")
+        return None
 
 
 def _get_webhook_base_url() -> str:

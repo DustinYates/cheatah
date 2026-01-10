@@ -11,7 +11,8 @@ Use tenant ID 1 which exists in production
       try {
         ChatterCheetah.init({
           apiUrl: 'https://chattercheatah-iyv6z6wp7a-uc.a.run.app/api/v1',
-          tenantId: 1  // Using tenant ID 1 (exists in production)
+          tenantId: 1,  // Using tenant ID 1 (exists in production)
+          scrollBehavior: 'top'
         });
         console.log('Chat widget initialized successfully');
       } catch (error) {
@@ -29,4 +30,3 @@ Use tenant ID 1 which exists in production
   }
 })();
 </script>
-

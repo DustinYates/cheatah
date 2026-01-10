@@ -107,7 +107,8 @@ Add this to your WordPress footer or use a plugin like "Insert Headers and Foote
       try {{
         ChatterCheetah.init({{
           apiUrl: '{api_base_url}/api/v1',
-          tenantId: {tenant_id}
+          tenantId: {tenant_id},
+          scrollBehavior: 'top'
         }});
         console.log('Chatter Cheetah widget initialized successfully');
       }} catch (error) {{
@@ -195,4 +196,3 @@ async def get_tenant_embed_code(
         has_published_prompt=has_published_prompt,
         warning=warning,
     )
-

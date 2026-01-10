@@ -208,10 +208,12 @@ class NotificationService:
         caller_phone: str,
         handoff_mode: str,
         transfer_number: str | None = None,
+        caller_name: str | None = None,
+        caller_email: str | None = None,
         methods: list[str] | None = None,
     ) -> dict[str, Any]:
         """Send notification for a call handoff.
-        
+
         Args:
             tenant_id: Tenant ID
             call_id: Call ID
@@ -219,23 +221,38 @@ class NotificationService:
             caller_phone: Caller's phone number
             handoff_mode: Type of handoff (live_transfer, take_message, etc.)
             transfer_number: Number transferred to (if applicable)
+            caller_name: Caller's name (if known)
+            caller_email: Caller's email (if known)
             methods: Notification methods
-            
+
         Returns:
             Notification result
         """
-        subject = f"Call Handoff - {reason.replace('_', ' ').title()}"
-        
-        message = f"A call from {caller_phone} was handed off.\n\n"
+        subject = f"[URGENT] Call Handoff - {reason.replace('_', ' ').title()}"
+
+        # Build caller info string
+        if caller_name:
+            caller_info = f"{caller_name} ({caller_phone})"
+        else:
+            caller_info = caller_phone
+
+        message = f"A caller is requesting human assistance.\n\n"
+        message += f"Caller: {caller_info}\n"
+        if caller_email:
+            message += f"Email: {caller_email}\n"
+        message += f"Phone: {caller_phone}\n"
         message += f"Reason: {reason.replace('_', ' ').title()}\n"
         message += f"Handoff Mode: {handoff_mode.replace('_', ' ').title()}\n"
         if transfer_number:
             message += f"Transferred to: {transfer_number}\n"
-        
+        message += "\nPlease respond promptly."
+
         metadata = {
             "call_id": call_id,
             "reason": reason,
             "caller_phone": caller_phone,
+            "caller_name": caller_name,
+            "caller_email": caller_email,
             "handoff_mode": handoff_mode,
             "transfer_number": transfer_number,
         }

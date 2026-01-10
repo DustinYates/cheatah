@@ -605,6 +605,7 @@ export default function SmsSettings() {
         .config-grid {
           display: grid;
           gap: 0.75rem;
+          align-items: start;
         }
 
         .config-left {
@@ -617,6 +618,9 @@ export default function SmsSettings() {
           display: flex;
           flex-direction: column;
           gap: 0.25rem;
+          align-self: start;
+          margin-top: 0;
+          padding-top: 0;
         }
 
         .field-title {

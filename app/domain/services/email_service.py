@@ -176,6 +176,7 @@ class EmailService:
             email_config=email_config,
             subject=subject,
             body=processed_body,
+            sender_email=sender_email,
         )
         
         if escalation:
@@ -565,13 +566,14 @@ class EmailService:
         email_config: TenantEmailConfig,
         subject: str,
         body: str,
+        sender_email: str | None = None,
     ):
         """Check for escalation triggers."""
         escalation_rules = email_config.escalation_rules or {}
         keywords = escalation_rules.get("keywords", [])
-        
+
         combined_text = f"{subject} {body}".lower()
-        
+
         for keyword in keywords:
             if keyword.lower() in combined_text:
                 return await self.escalation_service.check_and_escalate(
@@ -579,8 +581,10 @@ class EmailService:
                     conversation_id=conversation_id,
                     user_message=body,
                     confidence_score=0.9,
+                    channel="email",
+                    customer_email=sender_email,
                 )
-        
+
         # Check for handoff intent
         intent_result = self.intent_detector.detect_intent(body)
         if intent_result.intent == "human_handoff":
@@ -589,8 +593,10 @@ class EmailService:
                 conversation_id=conversation_id,
                 user_message=body,
                 confidence_score=intent_result.confidence,
+                channel="email",
+                customer_email=sender_email,
             )
-        
+
         return None
 
     def _should_capture_lead_from_subject(

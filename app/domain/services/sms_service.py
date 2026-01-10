@@ -187,12 +187,18 @@ class SmsService:
         # Detect intent
         intent_result = self.intent_detector.detect_intent(message_body)
 
-        # Check for escalation
+        # Check for escalation - include customer data from phone and lead
+        customer_name = lead.name if lead else None
+        customer_email = lead.email if lead else None
         escalation = await self.escalation_service.check_and_escalate(
             tenant_id=tenant_id,
             conversation_id=conversation.id,
             user_message=message_body,
             confidence_score=intent_result.confidence if intent_result.intent == "human_handoff" else None,
+            channel="sms",
+            customer_phone=phone_number,
+            customer_email=customer_email,
+            customer_name=customer_name,
         )
 
         # If escalation created, return escalation message

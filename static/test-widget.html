@@ -16,7 +16,8 @@
         if (typeof ChatterCheetah !== 'undefined') {
             ChatterCheetah.init({
                 apiUrl: 'https://chattercheatah-iyv6z6wp7a-uc.a.run.app/api/v1',
-                tenantId: 4  // The Best Chatbot tenant
+                tenantId: 4,  // The Best Chatbot tenant
+                scrollBehavior: 'top'
             });
             console.log('Chat widget initialized successfully');
         } else {
@@ -25,4 +26,3 @@
     </script>
 </body>
 </html>
-

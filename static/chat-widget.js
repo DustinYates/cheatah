@@ -1457,12 +1457,30 @@
       this.isMinimized = !this.isMinimized;
     },
 
+    // Convert URLs in text to clickable links
+    linkifyText: function(text) {
+      // Regular expression to match URLs
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+
+      // Escape HTML to prevent XSS
+      const escapeHtml = (str) => {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      };
+
+      // Replace URLs with clickable links
+      return escapeHtml(text).replace(urlRegex, (url) => {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: underline;">${url}</a>`;
+      });
+    },
+
     // Render message to DOM (without saving - used for restoration)
     renderMessage: function(text, role, scroll = true) {
       const messagesContainer = document.getElementById('cc-messages');
       const message = document.createElement('div');
       message.className = `cc-message ${role}`;
-      message.textContent = text;
+      message.innerHTML = this.linkifyText(text);
       messagesContainer.appendChild(message);
       if (scroll) {
         this.scrollMessageIntoView(messagesContainer, message, role);

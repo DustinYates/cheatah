@@ -447,8 +447,12 @@
 .status-badge--dot {
   width: 8px;
   height: 8px;
+  min-width: 8px;
+  min-height: 8px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
 }
 
 .status-badge--dot.status-new,

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
-import { formatLocalDateTime, formatSmartDateTime } from '../utils/dateFormat';
+import { formatSmartDateTime } from '../utils/dateFormat';
+import LeadDetailsModal from '../components/LeadDetailsModal';
 import './Dashboard.css';
 
 // Robot icon SVG component
@@ -176,10 +177,6 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(null);
   const [selectedLead, setSelectedLead] = useState(null);
-  const [conversationData, setConversationData] = useState(null);
-  const [loadingConversation, setLoadingConversation] = useState(false);
-  const [relatedLeads, setRelatedLeads] = useState([]);
-  const [loadingRelated, setLoadingRelated] = useState(false);
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
 
   useEffect(() => {
@@ -328,39 +325,12 @@ export default function Dashboard() {
            !lead.extra_data?.followup_scheduled;
   };
 
-  const handleViewDetails = async (lead) => {
+  const handleViewDetails = (lead) => {
     setSelectedLead(lead);
-    setLoadingConversation(true);
-    setLoadingRelated(true);
-    setConversationData(null);
-    setRelatedLeads([]);
-
-    // Fetch conversation and related leads in parallel
-    const [convResult, relatedResult] = await Promise.allSettled([
-      api.getLeadConversation(lead.id),
-      api.getRelatedLeads(lead.id),
-    ]);
-
-    if (convResult.status === 'fulfilled') {
-      setConversationData(convResult.value);
-    } else {
-      console.error('Failed to load conversation:', convResult.reason);
-    }
-
-    if (relatedResult.status === 'fulfilled') {
-      setRelatedLeads(relatedResult.value.leads || []);
-    } else {
-      console.error('Failed to load related leads:', relatedResult.reason);
-    }
-
-    setLoadingConversation(false);
-    setLoadingRelated(false);
   };
 
   const closeModal = () => {
     setSelectedLead(null);
-    setConversationData(null);
-    setRelatedLeads([]);
   };
 
   if (loading) {
@@ -717,145 +687,10 @@ export default function Dashboard() {
 
       {/* Lead Details Modal */}
       {selectedLead && (
-        <div className="lead-detail-modal-overlay" onClick={closeModal}>
-          <div className="lead-detail-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="lead-detail-modal-header">
-              <h3>Lead Details</h3>
-              <button className="btn-close" onClick={closeModal}>×</button>
-            </div>
-            <div className="lead-detail-modal-body">
-              {/* Lead Info Section */}
-              <div className="lead-detail-section">
-                <h4>Contact Information</h4>
-                <div className="lead-detail-row">
-                  <span className="label">Name:</span>
-                  <span className="value">{selectedLead.name || 'Unknown'}</span>
-                </div>
-                <div className="lead-detail-row">
-                  <span className="label">Email:</span>
-                  <span className="value">{selectedLead.email || '-'}</span>
-                </div>
-                <div className="lead-detail-row">
-                  <span className="label">Phone:</span>
-                  <span className="value">{selectedLead.phone || '-'}</span>
-                </div>
-                <div className="lead-detail-row">
-                  <span className="label">Source:</span>
-                  <span className="value">
-                    {selectedLead.extra_data?.voice_calls?.length > 0
-                      ? 'Phone Call'
-                      : selectedLead.extra_data?.source || 'Chatbot'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Related Leads - Other interactions from same person */}
-              {(relatedLeads.length > 0 || loadingRelated) && (
-                <div className="lead-detail-section">
-                  <h4>Related Interactions</h4>
-                  {loadingRelated ? (
-                    <LoadingState message="Loading related leads..." />
-                  ) : (
-                    <div className="related-leads-list">
-                      {relatedLeads.map(related => (
-                        <div key={related.id} className="related-lead-item">
-                          <span className="related-lead-name">{related.name || 'Unknown'}</span>
-                          <span className="related-lead-source">
-                            {related.extra_data?.voice_calls?.length > 0
-                              ? 'Phone Call'
-                              : related.extra_data?.source || 'Chatbot'}
-                          </span>
-                          <span className="related-lead-date">
-                            {formatSmartDateTime(related.created_at)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Voice Call Details */}
-              {selectedLead.extra_data?.voice_calls?.length > 0 && (
-                <div className="lead-detail-section">
-                  <h4>Voice Calls</h4>
-                  {selectedLead.extra_data.voice_calls.map((call, idx) => (
-                    <div key={idx} className="voice-call-item" style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', marginBottom: '8px' }}>
-                      <div className="lead-detail-row">
-                        <span className="label">Date:</span>
-                        <span className="value">
-                          {call.call_date ? formatLocalDateTime(call.call_date) : 'Unknown'}
-                        </span>
-                      </div>
-                      {call.caller_name && (
-                        <div className="lead-detail-row">
-                          <span className="label">Name Given:</span>
-                          <span className="value">{call.caller_name}</span>
-                        </div>
-                      )}
-                      {call.caller_email && (
-                        <div className="lead-detail-row">
-                          <span className="label">Email Given:</span>
-                          <span className="value">{call.caller_email}</span>
-                        </div>
-                      )}
-                      {call.caller_intent && (
-                        <div className="lead-detail-row">
-                          <span className="label">Intent:</span>
-                          <span className="value">{call.caller_intent}</span>
-                        </div>
-                      )}
-                      {call.summary && (
-                        <div className="lead-detail-row" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-                          <span className="label">Summary:</span>
-                          <span className="value" style={{ marginTop: '4px' }}>{call.summary}</span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Form Submission Data */}
-              {selectedLead.extra_data && Object.keys(selectedLead.extra_data).filter(k => !['source', 'parsing_metadata', 'voice_calls', 'followup_sent_at', 'followup_scheduled'].includes(k)).length > 0 && (
-                <div className="lead-detail-section">
-                  <h4>Form Submission Details</h4>
-                  <p className="form-note">This person completed a form for more information.</p>
-                  <div className="form-fields">
-                    {Object.entries(selectedLead.extra_data)
-                      .filter(([key]) => !['source', 'parsing_metadata', 'voice_calls', 'followup_sent_at', 'followup_scheduled'].includes(key))
-                      .map(([key, value]) => (
-                        <div className="lead-detail-row" key={key}>
-                          <span className="label">{key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}:</span>
-                          <span className="value">{String(value)}</span>
-                        </div>
-                      ))
-                    }
-                  </div>
-                </div>
-              )}
-
-              {/* Conversation History */}
-              <div className="lead-detail-section">
-                <h4>Conversation History</h4>
-                {loadingConversation ? (
-                  <LoadingState message="Loading conversation..." />
-                ) : conversationData && conversationData.messages?.length > 0 ? (
-                  <div className="messages-list">
-                    {conversationData.messages.map((msg, idx) => (
-                      <div key={idx} className={`message ${msg.role}`}>
-                        <div className="message-role">{msg.role === 'user' ? 'User' : 'Bot'}</div>
-                        <div className="message-content">{msg.content}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="no-conversation">No conversation history available.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <LeadDetailsModal
+          lead={selectedLead}
+          onClose={closeModal}
+        />
       )}
     </div>
   );

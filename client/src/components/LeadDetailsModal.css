@@ -130,6 +130,9 @@
 .summary-label {
   color: var(--color-text-muted, #64748b);
   font-weight: 500;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   flex-shrink: 0;
 }
 

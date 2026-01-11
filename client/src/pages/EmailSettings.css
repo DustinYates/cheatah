@@ -414,3 +414,75 @@
   white-space: nowrap;
 }
 
+/* Email Processing Toggle (scoped to avoid CSS collisions across pages) */
+.email-processing-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  width: 100%;
+  cursor: pointer;
+  user-select: none;
+}
+
+.email-processing-toggle__text {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+}
+
+.email-processing-toggle__control {
+  display: flex;
+  align-items: center;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.email-processing-toggle__input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+
+.email-processing-toggle__switch {
+  position: relative;
+  width: 48px;
+  height: 24px;
+  background: var(--color-border);
+  border-radius: 12px;
+  transition: background 0.3s ease, opacity 0.2s ease;
+}
+
+.email-processing-toggle__switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.3s ease, background 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.email-processing-toggle__input:checked + .email-processing-toggle__switch {
+  background: var(--color-success);
+}
+
+.email-processing-toggle__input:checked + .email-processing-toggle__switch::after {
+  transform: translateX(24px);
+}
+
+.email-processing-toggle__input:focus + .email-processing-toggle__switch {
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.15);
+}
+
+.email-processing-toggle:hover .email-processing-toggle__switch {
+  opacity: 0.9;
+}

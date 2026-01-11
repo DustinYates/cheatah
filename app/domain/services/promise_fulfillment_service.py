@@ -53,8 +53,10 @@ class PromiseFulfillmentService:
             f"asset_type={promise.asset_type}, phone={phone}"
         )
 
-        # Check for duplicate sends (deduplication)
-        dedup_key = f"promise_sent:{tenant_id}:{conversation_id}:{promise.asset_type}"
+        # Check for duplicate sends (deduplication by phone number, not conversation)
+        # Normalize phone for dedup key
+        phone_normalized = "".join(c for c in phone if c.isdigit())[-10:]
+        dedup_key = f"promise_sent:{tenant_id}:{phone_normalized}:{promise.asset_type}"
         if await redis_client.exists(dedup_key):
             logger.info(
                 f"Skipping duplicate promise fulfillment - key={dedup_key}"

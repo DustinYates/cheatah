@@ -56,7 +56,8 @@
     },
 
     init: function(config) {
-      this.config = Object.assign({ scrollBehavior: 'bottom' }, config);
+      // Default to top so new messages keep the start of responses visible
+      this.config = Object.assign({ scrollBehavior: 'top' }, config);
       this.createWidget();
       this.attachEventListeners();
       this.fetchSettings();

@@ -224,6 +224,9 @@ export default function SmsSettings() {
     { key: 'saturday', label: 'Saturday' },
     { key: 'sunday', label: 'Sunday' },
   ];
+  const smsEnabled = settings.is_enabled && !!settings.phone_number;
+  const messagingDisabled = !smsEnabled;
+  const afterHoursDisabled = messagingDisabled || !settings.business_hours_enabled;
 
   return (
     <div className="page-container sms-settings">
@@ -239,11 +242,16 @@ export default function SmsSettings() {
 
       <div className="card primary-card">
         <div className="section">
-          <div className="section-title">SMS Configuration</div>
-          <div className="config-grid">
-            <div className="config-left">
+          <div className="section-header">
+            <div>
+              <div className="section-title">SMS Status</div>
+              <p className="section-subtitle">Confirm your assigned number and master SMS switch.</p>
+            </div>
+          </div>
+          <div className="section-body">
+            <div className="form-grid">
               <div className="form-row">
-                <span className="form-label">Phone</span>
+                <span className="form-label">Assigned number</span>
                 <div className="form-control">
                   {settings.phone_number ? (
                     <div className="inline-status active">
@@ -254,7 +262,7 @@ export default function SmsSettings() {
                   ) : (
                     <div className="inline-status inactive">
                       <span className="status-dot" aria-hidden="true"></span>
-                      <span className="status-label">Unassigned</span>
+                      <span className="status-label">Not Assigned</span>
                     </div>
                   )}
                 </div>
@@ -265,7 +273,7 @@ export default function SmsSettings() {
 
               <div className="form-row">
                 <label className="form-label" htmlFor="sms-enabled">
-                  SMS enabled
+                  SMS Enabled
                 </label>
                 <div className="form-control">
                   <input
@@ -286,257 +294,302 @@ export default function SmsSettings() {
                 <div className="help-text tight">Assign a phone number to enable SMS.</div>
               )}
             </div>
-
-            <div className="config-right">
-              <div className="field-title">Initial message</div>
-              <p className="help-text tight">
-                Sent when you manually initiate contact. AI continues on reply.
-              </p>
-              <textarea
-                className="textarea-compact"
-                value={settings.initial_outreach_message || ''}
-                onChange={(e) => setSettings({ ...settings, initial_outreach_message: e.target.value })}
-                placeholder="Hi! Thanks for reaching out..."
-                rows={3}
-              />
-            </div>
           </div>
         </div>
 
         <div className="section-divider"></div>
 
-        <div className="section">
-          <div className="section-title">Business Hours & Auto-Reply</div>
-          <div className="form-grid">
-            <div className="form-row">
-              <label className="form-label" htmlFor="business-hours-enabled">
-                Business hours
-              </label>
-              <div className="form-control">
-                <input
-                  id="business-hours-enabled"
-                  type="checkbox"
-                  checked={settings.business_hours_enabled}
-                  onChange={(e) => setSettings({ ...settings, business_hours_enabled: e.target.checked })}
-                  title="Enforce responses during the hours below."
-                />
-              </div>
+        <div className={`section ${messagingDisabled ? 'section-disabled' : ''}`}>
+          <div className="section-header">
+            <div>
+              <div className="section-title">Messaging Behavior</div>
+              <p className="section-subtitle">Define when the system responds automatically.</p>
             </div>
-            <div className="help-text tight">Set hours below even if disabled; enable to enforce them.</div>
-
-            <div className="form-row">
-              <label className="form-label" htmlFor="sms-timezone">
-                Timezone
-              </label>
-              <div className="form-control">
-                <select
-                  id="sms-timezone"
-                  value={settings.timezone}
-                  onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
-                >
-                  <option value="America/New_York">Eastern Time</option>
-                  <option value="America/Chicago">Central Time</option>
-                  <option value="America/Denver">Mountain Time</option>
-                  <option value="America/Los_Angeles">Pacific Time</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="form-row form-row-top">
-              <span className="form-label">Hours</span>
-              <div className="form-control">
-                <div className="hours-grid">
-                  {dayLabels.map((day) => {
-                    const range = settings.business_hours?.[day.key] || { start: '', end: '' };
-                    return (
-                      <div key={day.key} className="hours-row">
-                        <div className="hours-day">{day.label}</div>
-                        <div className="hours-time">
-                          <input
-                            type="time"
-                            value={range.start || ''}
-                            onChange={(e) => updateBusinessHours(day.key, 'start', e.target.value)}
-                            aria-label={`${day.label} start time`}
-                          />
-                          <span className="hours-sep">to</span>
-                          <input
-                            type="time"
-                            value={range.end || ''}
-                            onChange={(e) => updateBusinessHours(day.key, 'end', e.target.value)}
-                            aria-label={`${day.label} end time`}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
+            {messagingDisabled && <span className="section-status">SMS Off</span>}
+          </div>
+          <fieldset className="section-body" disabled={messagingDisabled}>
+            <div className="subsection">
+              <div className="subsection-title">Business Hours</div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label className="form-label" htmlFor="business-hours-enabled">
+                    Respect business hours
+                  </label>
+                  <div className="form-control">
+                    <input
+                      id="business-hours-enabled"
+                      type="checkbox"
+                      checked={settings.business_hours_enabled}
+                      onChange={(e) => setSettings({ ...settings, business_hours_enabled: e.target.checked })}
+                      title="Enforce responses during the hours below."
+                    />
+                  </div>
                 </div>
-                <div className="help-text tight">Leave a day blank to mark it as closed.</div>
+
+                {settings.business_hours_enabled && (
+                  <>
+                    <div className="inline-note">
+                      Messages outside business hours will use the after-hours behavior below.
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label" htmlFor="sms-timezone">
+                        Timezone
+                      </label>
+                      <div className="form-control">
+                        <select
+                          id="sms-timezone"
+                          value={settings.timezone}
+                          onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
+                        >
+                          <option value="America/New_York">Eastern Time</option>
+                          <option value="America/Chicago">Central Time</option>
+                          <option value="America/Denver">Mountain Time</option>
+                          <option value="America/Los_Angeles">Pacific Time</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="form-row form-row-top">
+                      <span className="form-label">Hours</span>
+                      <div className="form-control">
+                        <div className="hours-grid">
+                          {dayLabels.map((day) => {
+                            const range = settings.business_hours?.[day.key] || { start: '', end: '' };
+                            return (
+                              <div key={day.key} className="hours-row">
+                                <div className="hours-day">{day.label}</div>
+                                <div className="hours-time">
+                                  <input
+                                    type="time"
+                                    value={range.start || ''}
+                                    onChange={(e) => updateBusinessHours(day.key, 'start', e.target.value)}
+                                    aria-label={`${day.label} start time`}
+                                  />
+                                  <span className="hours-sep">to</span>
+                                  <input
+                                    type="time"
+                                    value={range.end || ''}
+                                    onChange={(e) => updateBusinessHours(day.key, 'end', e.target.value)}
+                                    aria-label={`${day.label} end time`}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="help-text tight">Leave a day blank to mark it as closed.</div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
-            <div className="form-row">
-              <label className="form-label" htmlFor="auto-reply-enabled">
-                Auto-reply
-              </label>
-              <div className="form-control">
-                <input
-                  id="auto-reply-enabled"
-                  type="checkbox"
-                  checked={settings.auto_reply_enabled}
-                  onChange={(e) => setSettings({ ...settings, auto_reply_enabled: e.target.checked })}
-                  title="Send a reply when messages arrive outside business hours."
-                />
-              </div>
-            </div>
+            <div className="subsection-divider"></div>
 
-            {settings.auto_reply_enabled && (
+            <div className={`subsection ${afterHoursDisabled ? 'subsection-disabled' : ''}`}>
+              <div className="subsection-title">After-Hours Message</div>
+              {!settings.business_hours_enabled && !messagingDisabled && (
+                <div className="inline-note">Enable Business Hours to send after-hours messages.</div>
+              )}
+              <fieldset className="subsection-body" disabled={afterHoursDisabled}>
+                <div className="form-grid">
+                  <div className="form-row">
+                    <label className="form-label" htmlFor="after-hours-enabled">
+                      Send after-hours SMS
+                    </label>
+                    <div className="form-control">
+                      <input
+                        id="after-hours-enabled"
+                        type="checkbox"
+                        checked={settings.auto_reply_enabled}
+                        onChange={(e) => setSettings({ ...settings, auto_reply_enabled: e.target.checked })}
+                        title="Send a reply when messages arrive outside business hours."
+                      />
+                    </div>
+                  </div>
+
+                  {settings.auto_reply_enabled && !afterHoursDisabled && (
+                    <div className="form-row form-row-top">
+                      <label className="form-label" htmlFor="after-hours-message">
+                        After-Hours Message
+                      </label>
+                      <div className="form-control">
+                        <textarea
+                          id="after-hours-message"
+                          className="textarea-compact textarea-short"
+                          value={settings.auto_reply_message || ''}
+                          onChange={(e) => setSettings({ ...settings, auto_reply_message: e.target.value })}
+                          placeholder="We're currently outside business hours. We'll respond when we're back."
+                          rows={2}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </fieldset>
+            </div>
+          </fieldset>
+        </div>
+
+        <div className="section-divider"></div>
+
+        <div className={`section ${messagingDisabled ? 'section-disabled' : ''}`}>
+          <div className="section-header">
+            <div>
+              <div className="section-title">Follow-Up Automation</div>
+              <p className="section-subtitle">Send a follow-up if someone does not reply.</p>
+            </div>
+            {messagingDisabled && <span className="section-status">SMS Off</span>}
+          </div>
+          <fieldset className="section-body" disabled={messagingDisabled}>
+            <div className="form-grid">
+              <div className="form-row">
+                <label className="form-label" htmlFor="followup-enabled">
+                  Send follow-up SMS
+                </label>
+                <div className="form-control">
+                  <input
+                    id="followup-enabled"
+                    type="checkbox"
+                    checked={settings.followup_enabled}
+                    onChange={(e) => setSettings({ ...settings, followup_enabled: e.target.checked })}
+                    title="Send a follow-up text for new leads."
+                  />
+                </div>
+              </div>
+
+              {settings.followup_enabled && !messagingDisabled && (
+                <>
+                  <div className="inline-note">
+                    Sent if the lead does not reply within the delay window.
+                  </div>
+                  <div className="form-row">
+                    <label className="form-label" htmlFor="followup-delay">
+                      Follow-Up Delay (minutes)
+                    </label>
+                    <div className="form-control">
+                      <input
+                        id="followup-delay"
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={settings.followup_delay_minutes}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            followup_delay_minutes: parseInt(e.target.value) || 5,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row form-row-top">
+                    <span className="form-label">Lead sources</span>
+                    <div className="form-control">
+                      <div className="checkbox-grid">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={settings.followup_sources?.includes('email')}
+                            onChange={(e) => {
+                              const sources = settings.followup_sources || [];
+                              if (e.target.checked) {
+                                setSettings({ ...settings, followup_sources: [...sources, 'email'] });
+                              } else {
+                                setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'email') });
+                              }
+                            }}
+                          />
+                          Email
+                        </label>
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={settings.followup_sources?.includes('voice_call')}
+                            onChange={(e) => {
+                              const sources = settings.followup_sources || [];
+                              if (e.target.checked) {
+                                setSettings({ ...settings, followup_sources: [...sources, 'voice_call'] });
+                              } else {
+                                setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'voice_call') });
+                              }
+                            }}
+                          />
+                          Calls
+                        </label>
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={settings.followup_sources?.includes('sms')}
+                            onChange={(e) => {
+                              const sources = settings.followup_sources || [];
+                              if (e.target.checked) {
+                                setSettings({ ...settings, followup_sources: [...sources, 'sms'] });
+                              } else {
+                                setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'sms') });
+                              }
+                            }}
+                          />
+                          SMS
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-row form-row-top">
+                    <label className="form-label" htmlFor="followup-message">
+                      Follow-Up SMS Content
+                    </label>
+                    <div className="form-control">
+                      <textarea
+                        id="followup-message"
+                        className="textarea-compact textarea-short"
+                        value={settings.followup_initial_message || ''}
+                        onChange={(e) => setSettings({ ...settings, followup_initial_message: e.target.value })}
+                        placeholder="Leave empty for AI-generated follow-up. Use {name} or {first_name}."
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </fieldset>
+        </div>
+
+        <div className="section-divider"></div>
+
+        <div className={`section ${messagingDisabled ? 'section-disabled' : ''}`}>
+          <div className="section-header">
+            <div>
+              <div className="section-title">Settings / Tests</div>
+              <p className="section-subtitle">
+                Used only when you manually initiate a conversation. Not used for inbound messages or automation.
+              </p>
+            </div>
+            {messagingDisabled && <span className="section-status">SMS Off</span>}
+          </div>
+          <fieldset className="section-body" disabled={messagingDisabled}>
+            <div className="form-grid">
               <div className="form-row form-row-top">
-                <label className="form-label" htmlFor="auto-reply-message">
-                  Auto-reply message
+                <label className="form-label" htmlFor="initial-message">
+                  Initial message
                 </label>
                 <div className="form-control">
                   <textarea
-                    id="auto-reply-message"
+                    id="initial-message"
                     className="textarea-compact textarea-short"
-                    value={settings.auto_reply_message || ''}
-                    onChange={(e) => setSettings({ ...settings, auto_reply_message: e.target.value })}
-                    placeholder="We're currently outside business hours. We'll respond as soon as we're back!"
+                    value={settings.initial_outreach_message || ''}
+                    onChange={(e) => setSettings({ ...settings, initial_outreach_message: e.target.value })}
+                    placeholder="Hi! Thanks for reaching out..."
                     rows={2}
                   />
                 </div>
               </div>
-            )}
-          </div>
-        </div>
-
-        <div className="section-divider"></div>
-
-        <div className="section">
-          <div className="section-title">Auto Follow-up</div>
-          <div className="form-grid">
-            <div className="form-row">
-              <label className="form-label" htmlFor="followup-enabled">
-                Enable follow-up
-              </label>
-              <div className="form-control">
-                <input
-                  id="followup-enabled"
-                  type="checkbox"
-                  checked={settings.followup_enabled}
-                  onChange={(e) => setSettings({ ...settings, followup_enabled: e.target.checked })}
-                  disabled={!settings.phone_number}
-                  title={
-                    settings.phone_number
-                      ? 'Send a follow-up text for new leads.'
-                      : 'Assign a phone number to enable auto follow-up.'
-                  }
-                />
-              </div>
             </div>
-            {!settings.phone_number && (
-              <div className="help-text tight">Assign a phone number to enable auto follow-up.</div>
-            )}
-
-            {settings.followup_enabled && (
-              <>
-                <div className="form-row">
-                  <label className="form-label" htmlFor="followup-delay">
-                    Delay (min)
-                  </label>
-                  <div className="form-control">
-                    <input
-                      id="followup-delay"
-                      type="number"
-                      min="1"
-                      max="60"
-                      value={settings.followup_delay_minutes}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          followup_delay_minutes: parseInt(e.target.value) || 5,
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-                <div className="help-text tight">
-                  Wait time after capturing a lead before sending the text.
-                </div>
-
-                <div className="form-row form-row-top">
-                  <span className="form-label">Lead sources</span>
-                  <div className="form-control">
-                    <div className="checkbox-grid">
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={settings.followup_sources?.includes('email')}
-                          onChange={(e) => {
-                            const sources = settings.followup_sources || [];
-                            if (e.target.checked) {
-                              setSettings({ ...settings, followup_sources: [...sources, 'email'] });
-                            } else {
-                              setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'email') });
-                            }
-                          }}
-                        />
-                        Email form submissions
-                      </label>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={settings.followup_sources?.includes('voice_call')}
-                          onChange={(e) => {
-                            const sources = settings.followup_sources || [];
-                            if (e.target.checked) {
-                              setSettings({ ...settings, followup_sources: [...sources, 'voice_call'] });
-                            } else {
-                              setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'voice_call') });
-                            }
-                          }}
-                        />
-                        Voice calls
-                      </label>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={settings.followup_sources?.includes('sms')}
-                          onChange={(e) => {
-                            const sources = settings.followup_sources || [];
-                            if (e.target.checked) {
-                              setSettings({ ...settings, followup_sources: [...sources, 'sms'] });
-                            } else {
-                              setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'sms') });
-                            }
-                          }}
-                        />
-                        SMS inquiries
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-row form-row-top">
-                  <label className="form-label" htmlFor="followup-message">
-                    Follow-up message
-                  </label>
-                  <div className="form-control">
-                    <textarea
-                      id="followup-message"
-                      className="textarea-compact textarea-tall"
-                      value={settings.followup_initial_message || ''}
-                      onChange={(e) => setSettings({ ...settings, followup_initial_message: e.target.value })}
-                      placeholder="Leave empty for AI-generated messages. Use {name} or {first_name} for personalization."
-                      rows={3}
-                    />
-                  </div>
-                </div>
-                <div className="help-text tight">
-                  Leave empty for AI-generated messages. Use {'{name}'} or {'{first_name}'}.
-                </div>
-              </>
-            )}
-          </div>
+          </fieldset>
         </div>
       </div>
 
@@ -571,68 +624,107 @@ export default function SmsSettings() {
         .card {
           background: #fff;
           border-radius: 8px;
-          padding: 0.75rem;
-          margin-bottom: 0.75rem;
+          padding: 0.7rem;
+          margin-bottom: 0.65rem;
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
         }
 
         .primary-card {
           display: flex;
           flex-direction: column;
-          gap: 0.75rem;
+          gap: 0.7rem;
         }
 
         .section {
           display: flex;
           flex-direction: column;
-          gap: 0.5rem;
+          gap: 0.45rem;
+        }
+
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 0.75rem;
         }
 
         .section-title {
-          font-size: 0.78rem;
+          font-size: 0.88rem;
           font-weight: 600;
-          color: #444;
+          color: #2c2c2c;
           margin: 0;
+        }
+
+        .section-subtitle {
+          margin: 0.15rem 0 0;
+          font-size: 0.82rem;
+          color: #666;
+        }
+
+        .section-status {
+          font-size: 0.7rem;
+          font-weight: 600;
+          letter-spacing: 0.04em;
           text-transform: uppercase;
+          color: #666;
+          background: #f2f2f2;
+          padding: 0.2rem 0.45rem;
+          border-radius: 999px;
+          align-self: flex-start;
+        }
+
+        .section-body,
+        .subsection-body {
+          border: none;
+          padding: 0;
+          margin: 0;
+          min-width: 0;
+        }
+
+        .section-body {
+          display: flex;
+          flex-direction: column;
+          gap: 0.55rem;
+        }
+
+        .section-disabled {
+          opacity: 0.6;
         }
 
         .section-divider {
           height: 1px;
           background: #eee;
-          margin: 0.25rem 0;
+          margin: 0.3rem 0;
         }
 
-        .config-grid {
-          display: grid;
-          gap: 0.75rem;
-          align-items: start;
-        }
-
-        .config-left {
+        .subsection {
           display: flex;
           flex-direction: column;
-          gap: 0.35rem;
+          gap: 0.45rem;
         }
 
-        .config-right {
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-          align-self: start;
-          margin-top: 0;
-          padding-top: 0;
+        .subsection-title {
+          font-size: 0.82rem;
+          font-weight: 600;
+          color: #4a4a4a;
+          text-transform: uppercase;
+          letter-spacing: 0.02em;
         }
 
-        .field-title {
-          font-size: 0.85rem;
-          font-weight: 500;
-          color: #444;
+        .subsection-divider {
+          height: 1px;
+          background: #efefef;
+          margin: 0.2rem 0;
+        }
+
+        .subsection-disabled {
+          opacity: 0.7;
         }
 
         .form-grid {
           display: flex;
           flex-direction: column;
-          gap: 0.5rem;
+          gap: 0.45rem;
         }
 
         .form-row {
@@ -690,6 +782,12 @@ export default function SmsSettings() {
         .status-label {
           color: #666;
           font-size: 0.85rem;
+        }
+
+        .inline-note {
+          font-size: 0.8rem;
+          color: #555;
+          margin: 0.1rem 0 0;
         }
 
         .hours-grid {
@@ -781,15 +879,11 @@ export default function SmsSettings() {
         }
 
         .textarea-compact {
-          height: 84px;
+          height: 72px;
         }
 
         .textarea-short {
-          height: 68px;
-        }
-
-        .textarea-tall {
-          height: 96px;
+          height: 64px;
         }
 
         input:focus,
@@ -856,13 +950,6 @@ export default function SmsSettings() {
 
         .btn-primary:hover:not(:disabled) {
           background: #3367d6;
-        }
-
-        @media (min-width: 900px) {
-          .config-grid {
-            grid-template-columns: 1fr 1fr;
-            align-items: start;
-          }
         }
 
         @media (max-width: 720px) {

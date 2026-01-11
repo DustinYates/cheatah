@@ -19,8 +19,12 @@ from app.persistence.database import AsyncSessionLocal
 from app.persistence.repositories.tenant_repository import TenantRepository
 from app.persistence.repositories.user_repository import UserRepository
 from app.persistence.repositories.business_profile_repository import BusinessProfileRepository
+from app.persistence.repositories.tenant_prompt_config_repository import (
+    TenantPromptConfigRepository,
+)
 from app.persistence.models.tenant import User
 from app.core.password import hash_password
+from app.domain.prompts.schemas.v1.bss_schema import BSSTenantConfig
 
 
 def validate_subdomain(subdomain: str) -> bool:
@@ -37,6 +41,50 @@ def validate_email(email: str) -> bool:
     import re
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return bool(re.match(pattern, email))
+
+
+def build_default_prompt_config(
+    tenant_id: int,
+    tenant_name: str,
+    support_email: str | None,
+    support_phone: str | None,
+) -> dict:
+    """Return a minimal valid prompt config for BSS schema."""
+    return {
+        "schema_version": "bss_chatbot_prompt_v1",
+        "prompt_type": "text_chatbot",
+        "tenant_id": str(tenant_id),
+        "display_name": tenant_name,
+        "contact": {
+            "support_phone": support_phone or "",
+            "support_email": support_email or "",
+            "sms_enabled": True,
+            "email_enabled": True,
+        },
+        "locations": [],
+        "program_basics": {},
+        "levels": {
+            "standard_levels": [],
+            "specialty_programs": [],
+            "custom_level_aliases": {},
+        },
+        "level_placement_rules": {"adult": [], "teen": [], "child": [], "infant": []},
+        "tuition": {"billing_summary": "", "pricing_rules": [], "examples": []},
+        "fees": {"registration_fee": "", "other_fees": []},
+        "discounts": [],
+        "policies": {
+            "payment": [],
+            "refunds": [],
+            "withdrawal_cancellation": [],
+            "makeup_reschedule": [],
+            "trial_classes": [],
+        },
+        "registration": {
+            "link_policy": "do_not_show_unless_requested",
+            "delivery_methods": ["text", "email"],
+            "registration_link_template": "",
+        },
+    }
 
 
 async def add_tenant(
@@ -88,6 +136,7 @@ async def add_tenant(
             tenant_repo = TenantRepository(db)
             user_repo = UserRepository(db)
             profile_repo = BusinessProfileRepository(db)
+            prompt_config_repo = TenantPromptConfigRepository(db)
             
             # Check if subdomain already exists
             existing_tenant = await tenant_repo.get_by_subdomain(subdomain)
@@ -138,6 +187,25 @@ async def add_tenant(
                     twilio_phone=None,
                 )
                 print(f"✓ Created business profile")
+
+            # Seed default prompt config (v2 JSON) so the tenant has a live combined prompt
+            try:
+                default_prompt_config = build_default_prompt_config(
+                    tenant_id=tenant.id,
+                    tenant_name=name,
+                    support_email=business_email or email,
+                    support_phone=phone_number,
+                )
+                BSSTenantConfig.model_validate(default_prompt_config)
+                await prompt_config_repo.upsert(
+                    tenant_id=tenant.id,
+                    config_json=default_prompt_config,
+                    schema_version="bss_chatbot_prompt_v1",
+                    business_type="bss",
+                )
+                print("✓ Seeded default prompt config (v2 JSON) for tenant")
+            except Exception as prompt_err:
+                print(f"⚠️  Failed to seed prompt config: {prompt_err}")
             
             # Summary
             print()
@@ -224,4 +292,3 @@ Examples:
 
 if __name__ == "__main__":
     main()
-

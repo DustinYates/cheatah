@@ -50,8 +50,9 @@ function generateMessageSummary(msg) {
  */
 export function buildUnifiedTimeline(lead, conversationData) {
   const timeline = [];
+  const seenCallIds = new Set();
 
-  // 1. Transform voice calls from lead.extra_data
+  // 1. Transform voice calls from lead.extra_data - with deduplication
   if (lead.extra_data?.voice_calls?.length > 0) {
     lead.extra_data.voice_calls.forEach((call, idx) => {
       // Handle various date formats
@@ -59,6 +60,14 @@ export function buildUnifiedTimeline(lead, conversationData) {
       if (!callDate) {
         console.warn('Voice call missing call_date:', call);
         return; // Skip calls without dates
+      }
+
+      // Deduplicate by call_id if available
+      if (call.call_id) {
+        if (seenCallIds.has(call.call_id)) {
+          return; // Skip duplicate
+        }
+        seenCallIds.add(call.call_id);
       }
 
       // If call_date is just a date string like "2026-01-10 14:30", add timezone

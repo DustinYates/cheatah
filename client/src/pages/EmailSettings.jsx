@@ -17,6 +17,7 @@ export default function EmailSettings() {
   const [refreshingWatch, setRefreshingWatch] = useState(false);
 
   const [formData, setFormData] = useState({
+    is_enabled: true,
     lead_capture_subject_prefixes: [],
   });
   const [newPrefix, setNewPrefix] = useState('');
@@ -44,6 +45,7 @@ export default function EmailSettings() {
   useEffect(() => {
     if (settings) {
       setFormData({
+        is_enabled: settings.is_enabled ?? true,
         lead_capture_subject_prefixes: settings.lead_capture_subject_prefixes || [],
       });
     }
@@ -257,6 +259,32 @@ export default function EmailSettings() {
       {/* Settings Form - Only show if connected */}
       {settings?.is_connected && (
         <form onSubmit={handleSubmit} className="settings-form">
+          {/* Enable/Disable Email Processing */}
+          <section className="settings-section">
+            <h2>Email Processing</h2>
+            <div className="form-group">
+              <label className="email-processing-toggle">
+                <span className="email-processing-toggle__text">
+                  {formData.is_enabled ? 'Email processing enabled' : 'Email processing disabled'}
+                </span>
+                <span className="email-processing-toggle__control">
+                  <input
+                    id="email-processing-toggle"
+                    type="checkbox"
+                    checked={formData.is_enabled}
+                    onChange={(e) => setFormData(prev => ({ ...prev, is_enabled: e.target.checked }))}
+                    className="email-processing-toggle__input"
+                    aria-describedby="email-processing-help"
+                  />
+                  <span className="email-processing-toggle__switch" aria-hidden="true"></span>
+                </span>
+              </label>
+              <small id="email-processing-help">
+                When enabled, incoming emails will be monitored and leads will be created based on the configured subject prefixes below.
+              </small>
+            </div>
+          </section>
+
           <section className="settings-section">
             <h2>Lead Capture</h2>
             <p className="section-description">

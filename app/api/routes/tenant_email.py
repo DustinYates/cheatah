@@ -453,16 +453,16 @@ async def refresh_gmail_watch(
             access_token=config.gmail_access_token,
             token_expires_at=config.gmail_token_expires_at,
         )
-        
+
         watch_result = gmail_client.watch_mailbox(topic)
-        
+
         # Update config
         await config_repo.create_or_update(
             tenant_id=tenant_id,
             watch_expiration=watch_result.get("expiration"),
             last_history_id=watch_result.get("history_id"),
         )
-        
+
         # Update tokens if refreshed
         token_info = gmail_client.get_token_info()
         await config_repo.update_tokens(
@@ -470,14 +470,24 @@ async def refresh_gmail_watch(
             access_token=token_info["access_token"],
             token_expires_at=token_info["token_expires_at"],
         )
-        
+
         return {"status": "ok", "message": "Gmail watch refreshed"}
-        
+
     except Exception as e:
         logger.error(f"Failed to refresh Gmail watch: {e}")
+        error_str = str(e)
+
+        # Provide helpful error message for token expiration
+        # Use 400 instead of 401 to avoid frontend interpreting as auth failure and logging user out
+        if "invalid_grant" in error_str or "Token has been expired or revoked" in error_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Gmail authorization has expired or been revoked. Please disconnect and reconnect your Gmail account.",
+            )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to refresh watch: {str(e)}",
+            detail=f"Failed to refresh watch: {error_str}",
         )
 
 

@@ -855,10 +855,11 @@ async def telnyx_ai_call_complete(
 
                     logger.info(f"No insights from webhook, fetching transcript from Telnyx API for call_control_id={call_id}")
 
-                    # Wait a bit for Telnyx to finish writing the transcript
+                    # Wait for Telnyx to finish writing the transcript
                     # Race condition: webhook fires before transcript is fully saved
+                    # Increased from 2s to 5s based on production observation
                     import asyncio
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(5)
 
                     # Find the conversation by call_control_id
                     conversation = await telnyx_ai.find_conversation_by_call_control_id(call_id)
@@ -868,8 +869,9 @@ async def telnyx_ai_call_complete(
                         logger.info(f"Found conversation {conv_id}, fetching messages")
 
                         # Retry logic for race condition - Telnyx may not have messages ready yet
-                        max_retries = 3
-                        retry_delay = 2  # seconds
+                        # Increased retries and delay based on production observation
+                        max_retries = 5
+                        retry_delay = 3  # seconds
                         extracted = None
 
                         for attempt in range(max_retries):
@@ -880,7 +882,13 @@ async def telnyx_ai_call_complete(
                             if messages:
                                 # Check if we have user messages (not just assistant greeting)
                                 user_messages = [m for m in messages if m.get("role") == "user" and m.get("text")]
+                                logger.info(f"Attempt {attempt + 1}: Found {len(user_messages)} user messages")
+
                                 if user_messages:
+                                    # Log the user messages for debugging
+                                    for i, um in enumerate(user_messages[:3]):  # Log first 3
+                                        logger.info(f"User message {i+1}: {um.get('text', '')[:100]}")
+
                                     # Extract insights using Gemini LLM for better accuracy
                                     extracted = await telnyx_ai.extract_insights_with_llm(messages)
 
@@ -890,6 +898,8 @@ async def telnyx_ai_call_complete(
                                         break
                                     else:
                                         logger.info(f"Attempt {attempt + 1}: LLM returned no name/email, will retry")
+                                else:
+                                    logger.info(f"Attempt {attempt + 1}: No user messages yet, Telnyx still writing transcript")
 
                             # Wait before retry (unless last attempt)
                             if attempt < max_retries - 1:

@@ -45,6 +45,40 @@ class TestEmailBodyParser:
         assert result["email"] == "jane@example.com"
         assert result["phone"] == "+19724646277"
 
+    def test_parse_first_last_name_fields(self):
+        """Test parsing when first/last name fields are separate."""
+        body = """
+        First Name: John
+        Last Name: Doe
+        Email: john.doe@example.com
+        Phone: (972) 464-6277
+        """
+
+        result = self.parser.parse(body)
+
+        assert result["name"] == "John Doe"
+        assert result["email"] == "john.doe@example.com"
+        assert result["phone"] == "+19724646277"
+
+    def test_table_format_first_last_name(self):
+        """Test parsing table format with first/last name fields."""
+        body = """
+First Name
+Jane
+Last Name
+Smith
+Email
+jane@example.com
+Phone
+(972) 464-6277
+        """
+
+        result = self.parser.parse(body)
+
+        assert result["name"] == "Jane Smith"
+        assert result["email"] == "jane@example.com"
+        assert result["phone"] == "+19724646277"
+
     def test_parse_dash_separator(self):
         """Test parsing with dash separator."""
         body = """
@@ -424,3 +458,75 @@ Phone:212-212-1111"""
         assert result["email"] == "abc@aol.com"
         assert result["phone"] == "+12122121111"
 
+    def test_get_in_touch_form_submission_format(self):
+        """Test the exact format from 'Get In Touch Form Submission' emails."""
+        # This is the exact format that was failing in production
+        # HTML table where label and value are on separate lines with tab before value
+        body = """---------- Forwarded message ---------
+From: no-reply@britishswimschool.com <no-reply@britishswimschool.com>
+Date: Fri, Jan 2, 2026 at 7:02 PM
+Subject: Get In Touch Form Submission
+To: <goswimcypressspring@britishswimschool.com>
+
+Name
+ \tAshtest Yates
+Email
+ \tyatesfam83@gmail.com
+Phone
+ \t(281) 627-8851
+Type of Lessons
+ \tOver 3
+Address
+ \t77433
+Marketing Opt-in
+ \t By checking this box...
+Location Email
+ \tgoswimcypressspring@britishswimschool.com
+Franchise Code
+ \t545911
+HubSpot Cookie
+ \t6cde82f73a9527c5119bfaa0b1ad3acd
+"""
+
+        result = self.parser.parse(body)
+
+        # The critical assertion: name MUST be extracted
+        assert result["name"] == "Ashtest Yates", f"Expected 'Ashtest Yates', got {result['name']}"
+        assert result["email"] == "yatesfam83@gmail.com"
+        assert result["phone"] == "+12816278851"
+        assert result["additional_fields"]["type of lessons"] == "Over 3"
+        assert result["additional_fields"]["address"] == "77433"
+        assert result["additional_fields"]["franchise code"] == "545911"
+
+    def test_table_format_with_html_entities(self):
+        """Test table format with HTML entities like &nbsp; before values."""
+        # Simulate what happens when HTML table cells have non-breaking spaces
+        body = """Name
+&nbsp;&nbsp;&nbsp;&nbsp;Jane Smith
+Email
+&nbsp;&nbsp;&nbsp;&nbsp;jane@example.com
+Phone
+&nbsp;&nbsp;&nbsp;&nbsp;(972) 464-6277
+"""
+
+        result = self.parser.parse(body)
+
+        assert result["name"] == "Jane Smith"
+        assert result["email"] == "jane@example.com"
+        assert result["phone"] == "+19724646277"
+
+    def test_table_format_with_mixed_whitespace(self):
+        """Test table format with various combinations of spaces and tabs."""
+        body = """Name
+  \t  John Doe
+Email
+\t\tjohn@example.com
+Phone
+\t (555) 123-4567
+"""
+
+        result = self.parser.parse(body)
+
+        assert result["name"] == "John Doe"
+        assert result["email"] == "john@example.com"
+        assert result["phone"] == "+15551234567"

@@ -24,6 +24,27 @@ class EmailBodyParser:
         r"^student\s*name$",
         r"^full\s*name$",
         r"^contact\s*name$",
+        r"^parent\s*name$",
+        r"^guardian\s*name$",
+        r"^parent\s*/\s*guardian\s*name$",
+    ]
+
+    FIRST_NAME_LABELS = [
+        r"^first\s*name$",
+        r"^student\s*first\s*name$",
+        r"^child\s*first\s*name$",
+        r"^parent\s*first\s*name$",
+        r"^guardian\s*first\s*name$",
+    ]
+
+    LAST_NAME_LABELS = [
+        r"^last\s*name$",
+        r"^student\s*last\s*name$",
+        r"^child\s*last\s*name$",
+        r"^parent\s*last\s*name$",
+        r"^guardian\s*last\s*name$",
+        r"^surname$",
+        r"^family\s*name$",
     ]
     
     EMAIL_LABELS = [
@@ -201,6 +222,11 @@ class EmailBodyParser:
             'class id', 'location code', 'class code', 'utm source',
             'utm medium', 'utm campaign', 'hubspot cookie', 'location',
             'how did you hear about us?', 'how did you hear about us',
+            'first name', 'last name', 'surname', 'family name',
+            'student first name', 'student last name', 'child first name',
+            'child last name', 'parent first name', 'parent last name',
+            'guardian first name', 'guardian last name', 'parent name',
+            'guardian name', 'parent/guardian name',
         }
         
         i = 0
@@ -331,17 +357,28 @@ class EmailBodyParser:
             # Check for table format: label on one line, value on the next
             # This handles HTML tables that become "Label\nValue" after stripping
             line_lower = line.lower()
-            if line_lower in known_labels:
+            # Also check aggressively cleaned version (tabs -> spaces, collapsed whitespace)
+            line_cleaned = line.replace('\t', ' ')
+            line_cleaned = ' '.join(line_cleaned.split())
+            line_cleaned_lower = line_cleaned.lower()
+
+            if line_lower in known_labels or line_cleaned_lower in known_labels:
+                label_to_use = line_lower if line_lower in known_labels else line_cleaned_lower
                 if i + 1 < len(lines):
                     next_line = lines[i + 1].strip()
+                    # Clean tabs and multiple spaces from value too
+                    next_line_cleaned = next_line.replace('\t', ' ')
+                    next_line_cleaned = ' '.join(next_line_cleaned.split())
+
                     # Next line should be a value (not empty and not another known label)
                     if next_line and next_line.lower() not in known_labels:
                         # Make sure it's not a key:value pair
                         if ':' not in next_line or not any(lbl in next_line.lower() for lbl in known_labels):
-                            value = re.sub(r'<[^>]+>', '', next_line).strip()
+                            value = re.sub(r'<[^>]+>', '', next_line_cleaned).strip()
                             if value:
-                                parsed[line_lower] = value
+                                parsed[label_to_use] = value
                                 logger.debug(f"Table format: found '{line}' = '{value}'")
+                                logger.debug(f"Table format details: raw_next_line={repr(lines[i+1])}, stripped={repr(next_line)}, cleaned={repr(next_line_cleaned)}")
                                 i += 2
                                 continue
             
@@ -351,14 +388,24 @@ class EmailBodyParser:
 
     def _extract_name(self, parsed_data: dict[str, str], email_body: str) -> str | None:
         """Extract and clean name from parsed data.
-        
+
         Args:
             parsed_data: Dictionary of parsed key-value pairs
             email_body: Original email body for fallback extraction
-            
+
         Returns:
             Cleaned name or None
         """
+        logger.debug(f"_extract_name called with parsed_data keys: {list(parsed_data.keys())}")
+        if 'name' in parsed_data:
+            logger.debug(f"_extract_name: parsed_data['name'] = {repr(parsed_data['name'])}")
+        else:
+            logger.debug(f"_extract_name: 'name' key not found in parsed_data")
+            # Check for similar keys
+            similar_keys = [k for k in parsed_data.keys() if 'name' in k.lower()]
+            if similar_keys:
+                logger.debug(f"_extract_name: found similar keys: {similar_keys}")
+
         # Try to find name in parsed data using label patterns
         for label_pattern in self.NAME_LABELS:
             for key, value in parsed_data.items():
@@ -373,6 +420,16 @@ class EmailBodyParser:
             name = self._clean_name(parsed_data['name'])
             if name:
                 logger.debug(f"Found name using 'name' key: {name}")
+                return name
+
+        # Try to build name from separate first/last name fields
+        first_name = self._extract_name_part(parsed_data, self.FIRST_NAME_LABELS)
+        last_name = self._extract_name_part(parsed_data, self.LAST_NAME_LABELS)
+        if first_name or last_name:
+            combined = " ".join(part for part in [first_name, last_name] if part)
+            name = self._clean_name(combined)
+            if name:
+                logger.debug(f"Found name using first/last fields: {name}")
                 return name
         
         # Additional fallback: search entire body for "Name:" pattern if not found in parsed data
@@ -419,8 +476,45 @@ class EmailBodyParser:
                 if name:
                     logger.debug(f"Found name using aggressive pattern {pattern}: {name}")
                     return name
-        
+
+        # Ultimate fallback: Look for "Name" followed by newline and a value (table format)
+        # This handles cases where _parse_key_value_pairs failed but structure is intact
+        table_name_patterns = [
+            # Match "Name" at line start, newline, then value (stop at next label)
+            r'(?:^|\n)\s*Name\s*\n\s*([^\n]+?)(?=\n\s*(?:Email|Phone|Address|Type|Location|From|Date|Subject|$))',
+            # Handle various whitespace (spaces, tabs, etc.) between Name and value
+            r'(?:^|\n)\s*Name\s*[\n\r]+\s*([A-Za-z][A-Za-z\s\'-]+?)(?=\s*[\n\r]+\s*(?:[A-Z][a-z]+|$))',
+            # Simpler: Name, newline, capture until next capital letter line
+            r'Name\s*[\n\r]+\s*([A-Za-z][^\n\r]{1,50}?)(?=[\n\r]+[A-Z])',
+        ]
+
+        for pattern in table_name_patterns:
+            match = re.search(pattern, email_body, re.IGNORECASE | re.MULTILINE)
+            if match:
+                potential_name = match.group(1).strip()
+                # Clean tabs and whitespace
+                potential_name = potential_name.replace('\t', ' ')
+                potential_name = ' '.join(potential_name.split())
+                # Remove HTML remnants
+                potential_name = re.sub(r'<[^>]+>', '', potential_name)
+                potential_name = re.sub(r'[&|>]+', '', potential_name)
+
+                name = self._clean_name(potential_name)
+                if name:
+                    logger.debug(f"Found name using table format body search: {name}")
+                    return name
+
         logger.debug("No name found in email body")
+        return None
+
+    def _extract_name_part(self, parsed_data: dict[str, str], label_patterns: list[str]) -> str | None:
+        """Extract a name part (first/last) from parsed data."""
+        for label_pattern in label_patterns:
+            for key, value in parsed_data.items():
+                if re.search(label_pattern, key, re.IGNORECASE):
+                    cleaned = self._clean_name(value)
+                    if cleaned:
+                        return cleaned
         return None
 
     def _clean_name(self, name: str) -> str | None:
@@ -447,6 +541,7 @@ class EmailBodyParser:
         if '@' in name:
             # Check if it's actually an email address
             if self.EMAIL_PATTERN.search(name):
+                logger.debug(f"_clean_name: rejected '{name}' - contains email pattern")
                 return None
             # If it's not a full email, just remove the @ symbol and continue
             name = name.replace('@', '')
@@ -457,22 +552,27 @@ class EmailBodyParser:
         if phone_match and len(phone_match.group(0)) >= 10:
             # If the name is mostly a phone number, reject it
             if len(phone_match.group(0)) >= len(name) * 0.7:
+                logger.debug(f"_clean_name: rejected '{name}' - mostly phone number")
                 return None
         
         # Basic validation: should have at least 2 characters and not be all numbers
         if len(name) < 2:
+            logger.debug(f"_clean_name: rejected '{name}' - too short")
             return None
         
         # Don't reject if it's all numbers - some names might have numbers (e.g., "John 2nd")
         # But reject if it's clearly just a number sequence
         if name.replace(' ', '').isdigit() and len(name.replace(' ', '')) > 3:
+            logger.debug(f"_clean_name: rejected '{name}' - all digits")
             return None
         
         # Reject common non-name values
         name_lower = name.lower()
         if name_lower in ['n/a', 'none', 'null', 'unknown', 'name', 'email', 'phone']:
+            logger.debug(f"_clean_name: rejected '{name}' - common non-name value")
             return None
-        
+
+        logger.debug(f"_clean_name: accepted '{name}'")
         return name.strip()
 
     def _extract_email(self, parsed_data: dict[str, str], email_body: str) -> str | None:
@@ -657,4 +757,3 @@ class EmailBodyParser:
             return f"+{digits}" if not phone.startswith('+') else phone
         
         return None
-

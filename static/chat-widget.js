@@ -1573,10 +1573,10 @@
         // Add assistant response
         this.addMessage(data.response, 'assistant');
 
-        // Show contact form if needed
-        if (data.requires_contact_info) {
-          this.showContactForm();
-        }
+        // Contact form popup disabled
+        // if (data.requires_contact_info) {
+        //   this.showContactForm();
+        // }
 
         // Handle conversation complete
         if (data.conversation_complete) {

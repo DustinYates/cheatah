@@ -52,7 +52,45 @@ TENANT_3_CONFIG = {
     },
     "tuition": {
         "billing_summary": "Tuition is billed monthly and depends on class frequency and number of swimmers.",
-        "tuition_details": "Tuition Details\nTuition is billed monthly based on the number of classes per week. It's calculated per lesson, with discounts for multiple classes or siblings. Months with 5 weeks include an extra charge.\n\nFirst Swimmer:\n1x/week: $35/lesson ($140/month in a 4-week month)\nEach additional weekly lesson: $31.50/lesson ($126/month in a 4-week month) – 10% multi-class discount\n\n\nEach Additional Swimmer (Sibling):\n1x/week: $31.50/lesson ($126/month in a 4-week month)\nEach additional weekly lesson: $28.35/lesson ($113.40/month in a 4-week month) – 10% sibling + 10% multi-class discount\n\n\nExamples:\n\n2x/week for 1 student: $266/month (4 weeks)\n3x/week for 1 student: $392/month (4 weeks)\n2x/week for 2 students: $505.40/month (4 weeks)\n3x/week for 2 students: $744.80/month (4 weeks)\n\n\n\nBilling occurs automatically on the 20th of each month for the next month's lessons, based on exact class count. First month is prorated if starting mid-month. If starting after the 20th, the bill includes prorated current month + full next month.\nRegistration Fee\n\n$60 for 1 swimmer or $90 max per family\nOne-time fee, due at registration",
+        "tuition_details": """Tuition Details
+Tuition is billed monthly based on the number of classes per week. It's calculated per lesson, with discounts for multiple classes or siblings. Months with 5 weeks include an extra charge.
+
+IMPORTANT PRICING RULES:
+- The sibling discount ONLY applies to the 2nd swimmer and beyond. The first swimmer ALWAYS pays full price.
+- When quoting weekly costs, divide monthly total by 4 weeks. Do NOT divide by number of classes.
+  Example: 2x/week at $266/month = $66.50 per WEEK (not per class). Per class would be $33.25.
+
+First Swimmer (ALWAYS full price):
+1x/week: $35/lesson ($140/month in a 4-week month)
+Each additional weekly lesson: $31.50/lesson ($126/month in a 4-week month) – 10% multi-class discount
+
+Each Additional Swimmer (Sibling) - 2nd kid and beyond ONLY:
+1x/week: $31.50/lesson ($126/month in a 4-week month) – 10% sibling discount
+Each additional weekly lesson: $28.35/lesson ($113.40/month in a 4-week month) – 10% sibling + 10% multi-class discount
+
+Examples (4-week month):
+
+1 swimmer, 1x/week: $140/month ($35/week)
+  - One lesson per week: $35 × 4 = $140
+
+1 swimmer, 2x/week: $266/month ($66.50/week, NOT $66.50/class)
+  - First lesson: $35 × 4 = $140
+  - Second lesson: $31.50 × 4 = $126
+  - Total: $266
+
+2 swimmers, 2x/week each: $505.40/month ($126.35/week total, NOT $66.50/class)
+  - First swimmer: $266/month = $66.50/week (full price, NO sibling discount)
+  - Second swimmer: $239.40/month = $59.85/week (sibling discount applied)
+  - Total: $505.40/month = $126.35/week
+  - Per class: $505.40 ÷ 16 classes = $31.59/class
+
+3x/week for 1 student: $392/month
+3x/week for 2 students: $744.80/month
+
+Billing occurs automatically on the 20th of each month for the next month's lessons, based on exact class count. First month is prorated if starting mid-month. If starting after the 20th, the bill includes prorated current month + full next month.
+
+Registration Fee:
+$60 for 1 swimmer or $90 max per family (one-time fee, due at registration)""",
         "pricing_rules": [
             "Billing runs automatically on the twentieth of each month for the following month",
             "First month is prorated if starting mid month",

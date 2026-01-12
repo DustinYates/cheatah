@@ -253,6 +253,7 @@ class SmsService:
         )
 
         # Check for user request to receive registration info (or other assets)
+        # Pass messages for qualification validation before sending registration links
         await self._check_and_fulfill_request(
             tenant_id=tenant_id,
             conversation_id=conversation.id,
@@ -260,6 +261,7 @@ class SmsService:
             ai_response=llm_response,
             phone=phone_number,
             name=lead.name if lead else None,
+            messages=messages,
         )
 
         # Format response for SMS (short, no markdown)
@@ -696,8 +698,12 @@ Respond with ONLY valid JSON, no explanation:
         ai_response: str,
         phone: str,
         name: str | None = None,
+        messages: list[Message] | None = None,
     ) -> None:
         """Check for user request or AI promise to send info and fulfill it.
+
+        For registration links, validates that qualification questions (age, experience,
+        level recommendation) have been answered before sending the link.
 
         Args:
             tenant_id: Tenant ID
@@ -706,13 +712,18 @@ Respond with ONLY valid JSON, no explanation:
             ai_response: AI's response
             phone: User's phone number
             name: User's name (optional)
+            messages: Conversation history (for qualification check)
         """
         try:
             from app.domain.services.user_request_detector import UserRequestDetector
             from app.domain.services.promise_detector import PromiseDetector, DetectedPromise
             from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
+            from app.domain.services.registration_qualification_validator import (
+                RegistrationQualificationValidator,
+            )
 
             fulfillment_service = PromiseFulfillmentService(self.session)
+            qualification_validator = RegistrationQualificationValidator(self.session)
 
             # Check user message for request
             user_detector = UserRequestDetector()
@@ -723,6 +734,22 @@ Respond with ONLY valid JSON, no explanation:
                     f"User request detected in SMS - tenant_id={tenant_id}, "
                     f"asset_type={user_request.asset_type}, confidence={user_request.confidence:.2f}"
                 )
+
+                # For registration links, validate qualification first
+                if user_request.asset_type == "registration_link" and messages:
+                    qualification_status = await qualification_validator.check_qualification(
+                        tenant_id=tenant_id,
+                        conversation_id=conversation_id,
+                        messages=messages,
+                    )
+                    if not qualification_status.is_qualified:
+                        logger.info(
+                            f"Registration link request blocked - not qualified. "
+                            f"tenant_id={tenant_id}, missing={qualification_status.missing_requirements}"
+                        )
+                        # Don't fulfill - let the LLM continue asking qualification questions
+                        return
+
                 promise = DetectedPromise(
                     asset_type=user_request.asset_type,
                     confidence=user_request.confidence,
@@ -750,6 +777,22 @@ Respond with ONLY valid JSON, no explanation:
                     f"AI promise detected in SMS - tenant_id={tenant_id}, "
                     f"asset_type={ai_promise.asset_type}, confidence={ai_promise.confidence:.2f}"
                 )
+
+                # For registration links, validate qualification first
+                if ai_promise.asset_type == "registration_link" and messages:
+                    qualification_status = await qualification_validator.check_qualification(
+                        tenant_id=tenant_id,
+                        conversation_id=conversation_id,
+                        messages=messages,
+                    )
+                    if not qualification_status.is_qualified:
+                        logger.info(
+                            f"Registration link promise blocked - not qualified. "
+                            f"tenant_id={tenant_id}, missing={qualification_status.missing_requirements}"
+                        )
+                        # Don't fulfill - the AI shouldn't have promised without qualification
+                        return
+
                 result = await fulfillment_service.fulfill_promise(
                     tenant_id=tenant_id,
                     conversation_id=conversation_id,

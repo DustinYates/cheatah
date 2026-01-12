@@ -341,6 +341,12 @@ class ChatService:
         )
 
         if customer_phone:
+            # Import qualification validator for registration link validation
+            from app.domain.services.registration_qualification_validator import (
+                RegistrationQualificationValidator,
+            )
+            qualification_validator = RegistrationQualificationValidator(self.session)
+
             # First check if user requested registration info
             user_request = self.user_request_detector.detect_request(user_message)
             if user_request and user_request.confidence >= 0.6:
@@ -349,29 +355,46 @@ class ChatService:
                     f"conversation_id={conversation.id}, asset_type={user_request.asset_type}, "
                     f"confidence={user_request.confidence:.2f}"
                 )
-                try:
-                    # Convert user request to promise format for fulfillment
-                    promise = DetectedPromise(
-                        asset_type=user_request.asset_type,
-                        confidence=user_request.confidence,
-                        original_text=user_request.original_text,
-                    )
-                    fulfillment_result = await self.promise_fulfillment_service.fulfill_promise(
+
+                # For registration links, validate qualification first
+                should_fulfill = True
+                if user_request.asset_type == "registration_link":
+                    qualification_status = await qualification_validator.check_qualification(
                         tenant_id=tenant_id,
                         conversation_id=conversation.id,
-                        promise=promise,
-                        phone=customer_phone,
-                        name=customer_name,
+                        messages=messages,
                     )
-                    logger.info(
-                        f"User request fulfillment result - tenant_id={tenant_id}, "
-                        f"status={fulfillment_result.get('status')}"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to fulfill user request - tenant_id={tenant_id}, error={e}",
-                        exc_info=True,
-                    )
+                    if not qualification_status.is_qualified:
+                        logger.info(
+                            f"Registration link request blocked - not qualified. "
+                            f"tenant_id={tenant_id}, missing={qualification_status.missing_requirements}"
+                        )
+                        should_fulfill = False
+
+                if should_fulfill:
+                    try:
+                        # Convert user request to promise format for fulfillment
+                        promise = DetectedPromise(
+                            asset_type=user_request.asset_type,
+                            confidence=user_request.confidence,
+                            original_text=user_request.original_text,
+                        )
+                        fulfillment_result = await self.promise_fulfillment_service.fulfill_promise(
+                            tenant_id=tenant_id,
+                            conversation_id=conversation.id,
+                            promise=promise,
+                            phone=customer_phone,
+                            name=customer_name,
+                        )
+                        logger.info(
+                            f"User request fulfillment result - tenant_id={tenant_id}, "
+                            f"status={fulfillment_result.get('status')}"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to fulfill user request - tenant_id={tenant_id}, error={e}",
+                            exc_info=True,
+                        )
             else:
                 # Check for AI promises to send information
                 promise = self.promise_detector.detect_promise(llm_response)
@@ -381,24 +404,41 @@ class ChatService:
                         f"conversation_id={conversation.id}, asset_type={promise.asset_type}, "
                         f"confidence={promise.confidence:.2f}"
                     )
-                    try:
-                        # Fulfill the promise immediately (send SMS with promised content)
-                        fulfillment_result = await self.promise_fulfillment_service.fulfill_promise(
+
+                    # For registration links, validate qualification first
+                    should_fulfill = True
+                    if promise.asset_type == "registration_link":
+                        qualification_status = await qualification_validator.check_qualification(
                             tenant_id=tenant_id,
                             conversation_id=conversation.id,
-                            promise=promise,
-                            phone=customer_phone,
-                            name=customer_name,
+                            messages=messages,
                         )
-                        logger.info(
-                            f"Promise fulfillment result - tenant_id={tenant_id}, "
-                            f"status={fulfillment_result.get('status')}"
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to fulfill promise - tenant_id={tenant_id}, error={e}",
-                            exc_info=True,
-                        )
+                        if not qualification_status.is_qualified:
+                            logger.info(
+                                f"Registration link promise blocked - not qualified. "
+                                f"tenant_id={tenant_id}, missing={qualification_status.missing_requirements}"
+                            )
+                            should_fulfill = False
+
+                    if should_fulfill:
+                        try:
+                            # Fulfill the promise immediately (send SMS with promised content)
+                            fulfillment_result = await self.promise_fulfillment_service.fulfill_promise(
+                                tenant_id=tenant_id,
+                                conversation_id=conversation.id,
+                                promise=promise,
+                                phone=customer_phone,
+                                name=customer_name,
+                            )
+                            logger.info(
+                                f"Promise fulfillment result - tenant_id={tenant_id}, "
+                                f"status={fulfillment_result.get('status')}"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to fulfill promise - tenant_id={tenant_id}, error={e}",
+                                exc_info=True,
+                            )
 
         # No hardcoded contact info nudge - let the LLM handle it naturally through the prompt
         final_response = llm_response

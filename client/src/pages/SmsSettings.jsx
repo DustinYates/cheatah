@@ -566,7 +566,7 @@ export default function SmsSettings() {
             <div>
               <div className="section-title">Settings / Tests</div>
               <p className="section-subtitle">
-                Used only when you manually initiate a conversation. Not used for inbound messages or automation.
+                Used when you initiate a conversation from the dashboard button. Not used for inbound messages or automation.
               </p>
             </div>
             {messagingDisabled && <span className="section-status">SMS Off</span>}
@@ -575,7 +575,7 @@ export default function SmsSettings() {
             <div className="form-grid">
               <div className="form-row form-row-top">
                 <label className="form-label" htmlFor="initial-message">
-                  Initial message
+                  Initiate message (dashboard button)
                 </label>
                 <div className="form-control">
                   <textarea

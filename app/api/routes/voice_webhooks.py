@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.business_hours_service import is_within_business_hours
+from app.domain.services.escalation_service import EscalationService
 from app.infrastructure.redis import redis_client
 from app.persistence.database import get_db
 from app.persistence.models.call import Call
@@ -356,10 +357,31 @@ async def gather_webhook(
 
         # Check for handoff/escalation
         if parsed_tenant_id and voice_result.requires_escalation:
-            handoff_service = HandoffService(db)
-            
-            # Build call context for handoff decision
+            # First, create escalation record via EscalationService
+            # This ensures consistent notification handling across all channels
+            escalation_service = EscalationService(db)
+
+            # Get call to extract caller info
+            call = await _get_call_by_sid(CallSid, db)
+            caller_name = await _extract_caller_name_from_conversation(db, parsed_conversation_id)
+
             confidence_float = float(Confidence) if Confidence else None
+
+            escalation = await escalation_service.check_and_escalate(
+                tenant_id=parsed_tenant_id,
+                conversation_id=parsed_conversation_id,
+                user_message=SpeechResult,
+                llm_response=ai_response,
+                confidence_score=confidence_float,
+                channel="voice",
+                customer_phone=call.from_number if call else None,
+                customer_email=None,  # Not available in voice
+                customer_name=caller_name,
+            )
+
+            # Then, execute handoff via HandoffService
+            handoff_service = HandoffService(db)
+
             call_context = CallContext(
                 call_sid=CallSid,
                 tenant_id=parsed_tenant_id,
@@ -369,10 +391,10 @@ async def gather_webhook(
                 intent=voice_result.intent,
                 confidence=confidence_float,
             )
-            
+
             # Evaluate if we should handoff
             handoff_decision = await handoff_service.evaluate_handoff(call_context)
-            
+
             if handoff_decision.should_handoff:
                 # Execute handoff and return appropriate TwiML
                 twiml = await handoff_service.execute_handoff(
@@ -380,22 +402,9 @@ async def gather_webhook(
                     decision=handoff_decision,
                     tenant_id=parsed_tenant_id,
                 )
-                
-                # Send handoff notification with caller info
-                notification_service = NotificationService(db)
-                call = await _get_call_by_sid(CallSid, db)
-                if call:
-                    # Extract caller name from conversation
-                    caller_name = await _extract_caller_name_from_conversation(db, parsed_conversation_id)
-                    await notification_service.notify_handoff(
-                        tenant_id=parsed_tenant_id,
-                        call_id=call.id,
-                        reason=handoff_decision.reason or "escalation_requested",
-                        caller_phone=call.from_number,
-                        handoff_mode=handoff_decision.handoff_mode or "take_message",
-                        transfer_number=handoff_decision.transfer_number,
-                        caller_name=caller_name,
-                    )
+
+                # Note: We no longer call notify_handoff here because
+                # EscalationService.check_and_escalate already sent notifications
 
                 return Response(content=twiml, media_type="application/xml")
 
@@ -574,12 +583,31 @@ async def gather_streaming_webhook(
         
         # Handle escalation (this takes priority and bypasses TTFA optimization)
         if parsed_tenant_id and requires_escalation:
-            from app.domain.services.handoff_service import HandoffService, CallContext
-            from app.infrastructure.notifications import NotificationService
-            
-            handoff_service = HandoffService(db)
-            
+            # Create escalation record for consistent notification handling
+            escalation_service = EscalationService(db)
+
+            call = await _get_call_by_sid(CallSid, db)
+            caller_name = await _extract_caller_name_from_conversation(db, parsed_conversation_id)
+
             confidence_float = float(Confidence) if Confidence else None
+
+            escalation = await escalation_service.check_and_escalate(
+                tenant_id=parsed_tenant_id,
+                conversation_id=parsed_conversation_id,
+                user_message=SpeechResult,
+                llm_response=first_chunk,  # Use first chunk as response
+                confidence_score=confidence_float,
+                channel="voice",
+                customer_phone=call.from_number if call else None,
+                customer_email=None,
+                customer_name=caller_name,
+            )
+
+            # Execute handoff
+            from app.domain.services.handoff_service import HandoffService, CallContext
+
+            handoff_service = HandoffService(db)
+
             call_context = CallContext(
                 call_sid=CallSid,
                 tenant_id=parsed_tenant_id,
@@ -589,9 +617,9 @@ async def gather_streaming_webhook(
                 intent=final_intent,
                 confidence=confidence_float,
             )
-            
+
             handoff_decision = await handoff_service.evaluate_handoff(call_context)
-            
+
             if handoff_decision.should_handoff:
                 twiml = await handoff_service.execute_handoff(
                     call_sid=CallSid,
@@ -599,22 +627,7 @@ async def gather_streaming_webhook(
                     tenant_id=parsed_tenant_id,
                 )
 
-                # Send handoff notification with caller info
-                notification_service = NotificationService(db)
-                call = await _get_call_by_sid(CallSid, db)
-                if call:
-                    # Extract caller name from conversation
-                    caller_name = await _extract_caller_name_from_conversation(db, parsed_conversation_id)
-                    await notification_service.notify_handoff(
-                        tenant_id=parsed_tenant_id,
-                        call_id=call.id,
-                        reason=handoff_decision.reason or "escalation_requested",
-                        caller_phone=call.from_number,
-                        handoff_mode=handoff_decision.handoff_mode or "take_message",
-                        transfer_number=handoff_decision.transfer_number,
-                        caller_name=caller_name,
-                    )
-
+                # Notifications already sent via EscalationService
                 return Response(content=twiml, media_type="application/xml")
 
         # Generate unique chunk_id for this response

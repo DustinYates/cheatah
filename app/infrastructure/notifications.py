@@ -51,15 +51,33 @@ class NotificationService:
         """
         if methods is None:
             methods = ["email", "in_app"]
-        
+
+        # Load escalation settings to check if enabled and respect quiet_hours
+        escalation_settings = await self._get_escalation_settings(tenant_id)
+
+        # If escalation notifications are disabled, skip
+        if notification_type in (NotificationType.ESCALATION, NotificationType.HANDOFF):
+            if not escalation_settings.get("enabled", True):
+                logger.info(f"Escalation notifications disabled for tenant {tenant_id}")
+                return {"status": "disabled", "notifications": []}
+
+            # Override methods with escalation-configured methods
+            methods = escalation_settings.get("notification_methods", methods)
+
+        # Check quiet hours for escalation notifications
+        if notification_type in (NotificationType.ESCALATION, NotificationType.HANDOFF):
+            if await self._is_quiet_hours(escalation_settings):
+                logger.info(f"Quiet hours active for tenant {tenant_id}, skipping escalation notifications")
+                return {"status": "quiet_hours", "notifications": []}
+
         # Get tenant admins
         users = await self.user_repo.list(tenant_id, skip=0, limit=100)
         admins = [u for u in users if u.role in ("admin", "tenant_admin")]
-        
+
         if not admins:
             logger.warning(f"No admins found for tenant {tenant_id}")
             return {"status": "no_admins", "notifications": []}
-        
+
         notification_results = []
         
         for admin in admins:
@@ -448,8 +466,18 @@ class NotificationService:
                 "note": "Telnyx SMS not configured for tenant",
             }
 
+        # Check for alert_phone_override in escalation settings
+        escalation_settings = await self._get_escalation_settings(tenant_id)
+        to_number = escalation_settings.get("alert_phone_override") or business_profile.phone_number
+
+        if not to_number:
+            logger.warning(f"No phone number for tenant {tenant_id} SMS notification")
+            return {
+                "status": "no_phone",
+                "note": "No phone number configured (business profile or override)",
+            }
+
         # Format destination phone number (ensure E.164 format)
-        to_number = business_profile.phone_number
         if not to_number.startswith("+"):
             # Assume US number if no country code
             to_number = f"+1{to_number.replace('-', '').replace(' ', '').replace('(', '').replace(')', '')}"
@@ -637,3 +665,84 @@ class NotificationService:
         )
         result = await self.session.execute(stmt)
         return result.scalar() or 0
+
+    async def _get_escalation_settings(self, tenant_id: int) -> dict:
+        """Get escalation settings for tenant.
+
+        Args:
+            tenant_id: Tenant ID
+
+        Returns:
+            Dict with escalation settings (enabled, notification_methods, quiet_hours, etc.)
+        """
+        from sqlalchemy import select
+        from app.persistence.models.tenant import TenantPromptConfig
+
+        stmt = select(TenantPromptConfig).where(TenantPromptConfig.tenant_id == tenant_id)
+        result = await self.session.execute(stmt)
+        prompt_config = result.scalar_one_or_none()
+
+        if not prompt_config or not prompt_config.config_json:
+            # Return defaults
+            return {
+                "enabled": True,
+                "notification_methods": ["email", "sms", "in_app"],
+                "quiet_hours": {"enabled": False},
+                "alert_phone_override": None,
+            }
+
+        config = prompt_config.config_json
+        if isinstance(config, str):
+            import json
+            config = json.loads(config)
+
+        return config.get("escalation_settings", {
+            "enabled": True,
+            "notification_methods": ["email", "sms", "in_app"],
+            "quiet_hours": {"enabled": False},
+            "alert_phone_override": None,
+        })
+
+    async def _is_quiet_hours(self, escalation_settings: dict) -> bool:
+        """Check if current time is within quiet hours.
+
+        Args:
+            escalation_settings: Escalation settings dict
+
+        Returns:
+            True if currently in quiet hours
+        """
+        quiet_hours = escalation_settings.get("quiet_hours", {})
+
+        if not quiet_hours.get("enabled", False):
+            return False
+
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        timezone_str = quiet_hours.get("timezone", "America/Chicago")
+        try:
+            tz = ZoneInfo(timezone_str)
+        except Exception:
+            logger.warning(f"Invalid timezone: {timezone_str}, using UTC")
+            tz = ZoneInfo("UTC")
+
+        now = datetime.now(tz)
+        current_day = now.strftime("%A").lower()
+
+        # Check if today is in quiet_hours days
+        quiet_days = quiet_hours.get("days", [])
+        if current_day not in [d.lower() for d in quiet_days]:
+            return False
+
+        # Parse time strings
+        start_time = quiet_hours.get("start_time", "22:00")
+        end_time = quiet_hours.get("end_time", "07:00")
+
+        current_time = now.strftime("%H:%M")
+
+        # Handle overnight ranges (e.g., 22:00 to 07:00)
+        if start_time > end_time:
+            return current_time >= start_time or current_time < end_time
+        else:
+            return start_time <= current_time < end_time

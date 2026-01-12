@@ -102,16 +102,28 @@ class LeadService:
         )
 
         # Schedule SMS follow-up if conditions are met
+        print(f"[FOLLOWUP_CHECK] lead_id={lead.id}, phone={normalized_phone}, metadata={metadata}", flush=True)
+        logger.info(f"[FOLLOWUP_CHECK] lead_id={lead.id}, phone={normalized_phone}, metadata={metadata}")
         if normalized_phone and metadata and metadata.get("source") in ["voice_call", "sms", "email"]:
+            print(f"[FOLLOWUP_CHECK] Conditions met, attempting to schedule follow-up for lead {lead.id}", flush=True)
+            logger.info(f"[FOLLOWUP_CHECK] Conditions met, attempting to schedule follow-up for lead {lead.id}")
             try:
                 from app.domain.services.followup_service import FollowUpService
                 followup_service = FollowUpService(self.session)
                 task_name = await followup_service.schedule_followup(tenant_id, lead.id)
                 if task_name:
+                    print(f"[FOLLOWUP_CHECK] Scheduled follow-up for lead {lead.id}: {task_name}", flush=True)
                     logger.info(f"Scheduled follow-up for lead {lead.id}: {task_name}")
+                else:
+                    print(f"[FOLLOWUP_CHECK] schedule_followup returned None for lead {lead.id}", flush=True)
+                    logger.info(f"[FOLLOWUP_CHECK] schedule_followup returned None for lead {lead.id}")
             except Exception as e:
                 # Don't fail lead creation if follow-up scheduling fails
-                logger.error(f"Failed to schedule follow-up for lead {lead.id}: {e}")
+                print(f"[FOLLOWUP_CHECK] ERROR: Failed to schedule follow-up for lead {lead.id}: {e}", flush=True)
+                logger.error(f"Failed to schedule follow-up for lead {lead.id}: {e}", exc_info=True)
+        else:
+            print(f"[FOLLOWUP_CHECK] Conditions NOT met - phone={bool(normalized_phone)}, has_metadata={bool(metadata)}, source={metadata.get('source') if metadata else None}", flush=True)
+            logger.info(f"[FOLLOWUP_CHECK] Conditions NOT met - phone={bool(normalized_phone)}, has_metadata={bool(metadata)}, source={metadata.get('source') if metadata else None}")
 
         return lead
 

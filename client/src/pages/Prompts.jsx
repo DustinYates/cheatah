@@ -304,6 +304,17 @@ export default function Prompts() {
     fetchAllData();
   }, [isGlobalAdmin, needsTenant, selectedTenantId]);
 
+  useEffect(() => {
+    if (!showConfigModal) {
+      return undefined;
+    }
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [showConfigModal]);
+
   const fetchAllData = async () => {
     await Promise.all([fetchConfig(), fetchBundles()]);
   };
@@ -957,7 +968,7 @@ export default function Prompts() {
       {/* Tenant Config Editor Modal */}
       {showConfigModal && (
         <div className="modal-overlay" onClick={() => setShowConfigModal(false)}>
-          <div className="modal large-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal large-modal v2-config-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{config ? 'Edit JSON Config' : 'Upload JSON Config'}</h2>
               <button className="modal-close" onClick={() => setShowConfigModal(false)}>×</button>
@@ -975,6 +986,7 @@ export default function Prompts() {
                   setValidationResult(null);
                 }}
                 placeholder='{"schema_version": "bss_chatbot_prompt_v1", "tenant_id": "...", ...}'
+                spellCheck={false}
                 rows={20}
               />
 

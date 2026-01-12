@@ -208,6 +208,8 @@ gcloud run deploy chattercheatah --source . --region us-central1 --project chatb
 
 - `DEVELOPMENT.md` — sync workflow between local and GCP Vertex AI Workbench
 - `DEPLOYMENT.md` — Cloud Run deployment, secrets, and troubleshooting
+- `docs/NEW_TENANT_SETUP.md` — Complete tenant onboarding checklist
+- `docs/TELNYX_WEBHOOK_SETUP.md` — Telnyx webhook configuration reference (CRITICAL for SMS)
 - `docs/EMAIL_RESPONDER_SETUP.md` — Gmail email responder configuration
 - `docs/VOICE_ASSISTANT_ROADMAP.md` — Voice assistant implementation plan
 - `docs/tenant_onboarding.md` — tenant onboarding runbook (repeatable process + examples)

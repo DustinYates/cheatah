@@ -16,13 +16,13 @@ const DEFAULT_KEYWORDS = [
 ];
 
 const DAYS_OF_WEEK = [
-  { key: 'sunday', label: 'Sun' },
-  { key: 'monday', label: 'Mon' },
-  { key: 'tuesday', label: 'Tue' },
-  { key: 'wednesday', label: 'Wed' },
-  { key: 'thursday', label: 'Thu' },
-  { key: 'friday', label: 'Fri' },
-  { key: 'saturday', label: 'Sat' },
+  { key: 'sunday', label: 'Sun', full: 'Sunday' },
+  { key: 'monday', label: 'Mon', full: 'Monday' },
+  { key: 'tuesday', label: 'Tue', full: 'Tuesday' },
+  { key: 'wednesday', label: 'Wed', full: 'Wednesday' },
+  { key: 'thursday', label: 'Thu', full: 'Thursday' },
+  { key: 'friday', label: 'Fri', full: 'Friday' },
+  { key: 'saturday', label: 'Sat', full: 'Saturday' },
 ];
 
 const TIMEZONES = [
@@ -202,7 +202,53 @@ export default function EscalationSettings() {
     }));
   };
 
+  const formatTime = (value) => {
+    if (!value) return '';
+    const [rawHour, rawMinute] = value.split(':');
+    const hour = Number.parseInt(rawHour, 10);
+    const minute = Number.parseInt(rawMinute ?? '0', 10);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return value;
+    const period = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = ((hour + 11) % 12) + 1;
+    const minuteStr = minute.toString().padStart(2, '0');
+    return `${hour12}:${minuteStr} ${period}`;
+  };
+
+  const getMinutes = (value) => {
+    if (!value) return null;
+    const [rawHour, rawMinute] = value.split(':');
+    const hour = Number.parseInt(rawHour, 10);
+    const minute = Number.parseInt(rawMinute ?? '0', 10);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+    return hour * 60 + minute;
+  };
+
+  const getQuietHoursSummary = () => {
+    const { quiet_hours: quietHours } = settings;
+    const startLabel = formatTime(quietHours.start_time);
+    const endLabel = formatTime(quietHours.end_time);
+    const startMinutes = getMinutes(quietHours.start_time);
+    const endMinutes = getMinutes(quietHours.end_time);
+    const overnight = startMinutes !== null && endMinutes !== null && startMinutes > endMinutes;
+    const selectedDays = quietHours.days || [];
+    const dayLabels = DAYS_OF_WEEK
+      .filter((day) => selectedDays.includes(day.key))
+      .map((day) => day.full || day.label);
+    const daysText = dayLabels.length ? dayLabels.join(', ') : 'no days selected';
+    const timezoneLabel = TIMEZONES.find((tz) => tz.value === quietHours.timezone)?.label || quietHours.timezone;
+    const overnightNote = overnight ? ' (overnight)' : '';
+
+    return {
+      summary: `Quiet hours run from ${startLabel} to ${endLabel}${overnightNote} on ${daysText} in ${timezoneLabel}.`,
+      overnight,
+      startLabel,
+      endLabel,
+      timezoneLabel,
+    };
+  };
+
   const needsTenant = user?.is_global_admin && !selectedTenantId;
+  const quietHoursSummary = getQuietHoursSummary();
 
   if (needsTenant) {
     return (
@@ -341,6 +387,12 @@ export default function EscalationSettings() {
 
           {settings.quiet_hours.enabled && (
             <div className="quiet-hours-config">
+              <p className="quiet-hours-summary">{quietHoursSummary.summary}</p>
+              {quietHoursSummary.overnight && (
+                <p className="quiet-hours-note">
+                  Overnight means it starts on the selected day at {quietHoursSummary.startLabel} and ends the next day at {quietHoursSummary.endLabel}.
+                </p>
+              )}
               <div className="time-range">
                 <div className="time-input-group">
                   <label htmlFor="quiet-start">From</label>
@@ -364,7 +416,9 @@ export default function EscalationSettings() {
               </div>
 
               <div className="days-selector">
-                <span className="days-label">Active on:</span>
+                <span className="days-label">
+                  Active on ({quietHoursSummary.startLabel}–{quietHoursSummary.endLabel} {quietHoursSummary.timezoneLabel})
+                </span>
                 <div className="days-buttons">
                   {DAYS_OF_WEEK.map((day) => (
                     <button
@@ -674,6 +728,18 @@ export default function EscalationSettings() {
           padding: 0.75rem;
           background: #f8f9fa;
           border-radius: 6px;
+        }
+
+        .quiet-hours-summary {
+          margin: 0;
+          font-size: 0.85rem;
+          color: #4b5563;
+        }
+
+        .quiet-hours-note {
+          margin: -0.35rem 0 0;
+          font-size: 0.8rem;
+          color: #6b7280;
         }
 
         .time-range {

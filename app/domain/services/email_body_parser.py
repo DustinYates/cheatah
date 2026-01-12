@@ -226,7 +226,7 @@ class EmailBodyParser:
             'student first name', 'student last name', 'child first name',
             'child last name', 'parent first name', 'parent last name',
             'guardian first name', 'guardian last name', 'parent name',
-            'guardian name', 'parent/guardian name',
+            'guardian name', 'parent/guardian name', 'parent / guardian name',
         }
         
         i = 0
@@ -364,8 +364,13 @@ class EmailBodyParser:
 
             if line_lower in known_labels or line_cleaned_lower in known_labels:
                 label_to_use = line_lower if line_lower in known_labels else line_cleaned_lower
-                if i + 1 < len(lines):
-                    next_line = lines[i + 1].strip()
+                # Look for value on next non-empty line (skip blank lines between label and value)
+                value_line_idx = i + 1
+                while value_line_idx < len(lines) and not lines[value_line_idx].strip():
+                    value_line_idx += 1
+
+                if value_line_idx < len(lines):
+                    next_line = lines[value_line_idx].strip()
                     # Clean tabs and multiple spaces from value too
                     next_line_cleaned = next_line.replace('\t', ' ')
                     next_line_cleaned = ' '.join(next_line_cleaned.split())
@@ -378,8 +383,8 @@ class EmailBodyParser:
                             if value:
                                 parsed[label_to_use] = value
                                 logger.debug(f"Table format: found '{line}' = '{value}'")
-                                logger.debug(f"Table format details: raw_next_line={repr(lines[i+1])}, stripped={repr(next_line)}, cleaned={repr(next_line_cleaned)}")
-                                i += 2
+                                logger.debug(f"Table format details: raw_next_line={repr(lines[value_line_idx])}, stripped={repr(next_line)}, cleaned={repr(next_line_cleaned)}")
+                                i = value_line_idx + 1
                                 continue
             
             i += 1

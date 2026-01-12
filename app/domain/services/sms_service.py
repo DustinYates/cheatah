@@ -422,11 +422,21 @@ class SmsService:
         response = re.sub(r'\*\*(.+?)\*\*', r'\1', response)
         # Remove *italic*
         response = re.sub(r'\*(.+?)\*', r'\1', response)
+        # Remove markdown headings (e.g., ### Title)
+        response = re.sub(r'(?m)^\s{0,3}#{1,6}\s*', '', response)
+        # Remove markdown list markers (-, *, +, or numbered lists)
+        response = re.sub(r'(?m)^\s*[-*+]\s+', '', response)
+        response = re.sub(r'(?m)^\s*\d+\.\s+', '', response)
         # Remove links [text](url) -> text
         response = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', response)
         # Remove markdown links
         response = re.sub(r'https?://[^\s]+', '', response)
         
+        # Remove remaining inline markdown characters
+        response = response.replace("*", "")
+        response = response.replace("_", "")
+        response = response.replace("`", "")
+
         # Trim whitespace
         response = response.strip()
         

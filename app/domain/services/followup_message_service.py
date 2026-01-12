@@ -156,11 +156,17 @@ class FollowUpMessageService:
         response = re.sub(r"\*\*(.+?)\*\*", r"\1", response)
         response = re.sub(r"\*(.+?)\*", r"\1", response)
         response = re.sub(r"\[(.+?)\]\(.+?\)", r"\1", response)
+        response = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", response)
+        response = re.sub(r"(?m)^\s*[-*+]\s+", "", response)
+        response = re.sub(r"(?m)^\s*\d+\.\s+", "", response)
 
         # Remove any quotes that might wrap the message
         response = response.strip().strip('"').strip("'")
 
         # Clean up whitespace
+        response = response.replace("*", "")
+        response = response.replace("_", "")
+        response = response.replace("`", "")
         response = " ".join(response.split())
 
         # Truncate if too long

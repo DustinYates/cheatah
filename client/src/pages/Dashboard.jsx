@@ -529,7 +529,6 @@ export default function Dashboard() {
                     </td>
                     <td className="col-details">
                       <div className="details-cell">
-                        <StatusBadge status={lead.status || 'new'} variant="dot" />
                         <IconButton
                           className="icon-button--ghost"
                           onClick={() => handleViewDetails(lead)}

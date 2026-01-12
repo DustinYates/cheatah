@@ -35,7 +35,13 @@ export default function Layout() {
       )}
       <nav className="sidebar">
         <div className="logo">
-          <h2>🐆 Chatter Cheetah</h2>
+          <img
+            className="logo-mark"
+            src="/brand/chattercheetah-mark-square.svg"
+            alt=""
+            aria-hidden="true"
+          />
+          <h2>Chatter Cheetah</h2>
         </div>
         
         {user?.is_global_admin && (

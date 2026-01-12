@@ -45,19 +45,27 @@ class FollowUpService:
         Returns:
             True if follow-up should be scheduled
         """
+        print(f"[FOLLOWUP_SHOULD] Checking lead {lead.id}, phone={lead.phone}", flush=True)
+
         # Check if lead has phone number
         if not lead.phone:
+            print(f"[FOLLOWUP_SHOULD] Lead {lead.id} has no phone number, skipping", flush=True)
             logger.debug(f"Lead {lead.id} has no phone number, skipping follow-up")
             return False
 
         # Get tenant SMS config
         config = await self._get_sms_config(tenant_id)
+        print(f"[FOLLOWUP_SHOULD] SMS config: enabled={config.is_enabled if config else None}, provider={config.provider if config else None}", flush=True)
         if not config or not config.is_enabled:
+            print(f"[FOLLOWUP_SHOULD] SMS not enabled for tenant {tenant_id}", flush=True)
             logger.debug(f"SMS not enabled for tenant {tenant_id}")
             return False
 
         # Verify phone number is configured for the selected provider
-        if not self._has_sms_phone_number(config):
+        has_phone = self._has_sms_phone_number(config)
+        print(f"[FOLLOWUP_SHOULD] Has SMS phone configured: {has_phone}", flush=True)
+        if not has_phone:
+            print(f"[FOLLOWUP_SHOULD] No SMS phone number configured for tenant {tenant_id} (provider: {config.provider})", flush=True)
             logger.debug(f"No SMS phone number configured for tenant {tenant_id} (provider: {config.provider})")
             return False
 
@@ -65,7 +73,9 @@ class FollowUpService:
         followup_enabled = False
         if config.settings:
             followup_enabled = config.settings.get("followup_enabled", False)
+        print(f"[FOLLOWUP_SHOULD] Follow-up enabled in settings: {followup_enabled}", flush=True)
         if not followup_enabled:
+            print(f"[FOLLOWUP_SHOULD] Follow-up not enabled for tenant {tenant_id}", flush=True)
             logger.debug(f"Follow-up not enabled for tenant {tenant_id}")
             return False
 
@@ -74,13 +84,19 @@ class FollowUpService:
         allowed_sources = self.DEFAULT_FOLLOWUP_SOURCES
         if config.settings:
             allowed_sources = config.settings.get("followup_sources", self.DEFAULT_FOLLOWUP_SOURCES)
+        print(f"[FOLLOWUP_SHOULD] Source: {source}, allowed: {allowed_sources}", flush=True)
         if source and source not in allowed_sources:
+            print(f"[FOLLOWUP_SHOULD] Source {source} not in allowed sources", flush=True)
             logger.debug(f"Source {source} not in allowed sources for follow-up")
             return False
 
         # Check if follow-up already scheduled or sent
         if lead.extra_data:
-            if lead.extra_data.get("followup_scheduled") or lead.extra_data.get("followup_sent_at"):
+            already_scheduled = lead.extra_data.get("followup_scheduled")
+            already_sent = lead.extra_data.get("followup_sent_at")
+            print(f"[FOLLOWUP_SHOULD] Already scheduled: {already_scheduled}, sent: {already_sent}", flush=True)
+            if already_scheduled or already_sent:
+                print(f"[FOLLOWUP_SHOULD] Follow-up already scheduled/sent for lead {lead.id}", flush=True)
                 logger.debug(f"Follow-up already scheduled/sent for lead {lead.id}")
                 return False
 
@@ -88,12 +104,16 @@ class FollowUpService:
         existing_conv = await self.conversation_repo.get_by_phone_number(
             tenant_id, lead.phone, channel="sms"
         )
+        print(f"[FOLLOWUP_SHOULD] Existing SMS conversation: {existing_conv is not None}", flush=True)
         if existing_conv and existing_conv.updated_at:
             hours_since_update = (datetime.utcnow() - existing_conv.updated_at).total_seconds() / 3600
+            print(f"[FOLLOWUP_SHOULD] Hours since last SMS conversation: {hours_since_update:.2f}", flush=True)
             if hours_since_update < 24:
+                print(f"[FOLLOWUP_SHOULD] Lead {lead.id} has recent SMS conversation, skipping", flush=True)
                 logger.debug(f"Lead {lead.id} has recent SMS conversation, skipping follow-up")
                 return False
 
+        print(f"[FOLLOWUP_SHOULD] All checks passed! Scheduling follow-up for lead {lead.id}", flush=True)
         return True
 
     async def schedule_followup(

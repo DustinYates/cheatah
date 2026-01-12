@@ -367,6 +367,7 @@ async def telnyx_inbound_sms_webhook(
 
 
 @router.post("/sms/status")
+@router.post("/status")  # Alternate path for backwards compatibility
 async def telnyx_sms_status_webhook(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],

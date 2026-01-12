@@ -33,6 +33,7 @@
     autoOpenTimeout: null,
     exitIntentBound: false,
     scrollHandler: null,
+    pendingEscalationMessage: null, // Store message while waiting for contact info
 
     // Storage keys (tenant-specific to avoid conflicts)
     getStorageKey: function(suffix) {
@@ -799,12 +800,13 @@
           </div>
           <div class="cc-widget-contact-form" id="cc-contact-form" style="display: none;">
             <div class="cc-contact-form-header">
-              <p>To help you better, please provide your contact information:</p>
+              <p>Before we connect you with our team, please provide your contact information (phone or email):</p>
               <button class="cc-contact-close" id="cc-contact-close" type="button" aria-label="Close contact form">Not now</button>
             </div>
-            <input type="text" id="cc-name-input" placeholder="Name" />
-            <input type="email" id="cc-email-input" placeholder="Email" />
-            <input type="tel" id="cc-phone-input" placeholder="Phone" />
+            <input type="text" id="cc-name-input" placeholder="Name (optional)" />
+            <input type="email" id="cc-email-input" placeholder="Email *" />
+            <input type="tel" id="cc-phone-input" placeholder="Phone *" />
+            <p style="margin: 5px 0; font-size: 11px; color: #6b7280;">* At least one contact method required</p>
             <button id="cc-submit-contact">Submit</button>
           </div>
           <div class="cc-widget-loading" id="cc-loading" style="display: none;">
@@ -1457,7 +1459,7 @@
       this.isMinimized = !this.isMinimized;
     },
 
-    // Convert URLs in text to clickable links
+    // Convert URLs and markdown in text to HTML
     linkifyText: function(text) {
       // Regular expression to match URLs
       const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -1469,10 +1471,21 @@
         return div.innerHTML;
       };
 
+      // First escape HTML
+      let processed = escapeHtml(text);
+
+      // Process markdown bold (**text**) - use non-greedy matching
+      processed = processed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+      // Process markdown italic (*text*) - use non-greedy matching
+      processed = processed.replace(/(?<!\*)\*(?!\*)(.+?)\*(?!\*)/g, '<em>$1</em>');
+
       // Replace URLs with clickable links
-      return escapeHtml(text).replace(urlRegex, (url) => {
-        return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: underline;">${url}</a>`;
+      processed = processed.replace(urlRegex, (url) => {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--cc-link-color); text-decoration: underline;">${url}</a>`;
       });
+
+      return processed;
     },
 
     // Render message to DOM (without saving - used for restoration)
@@ -1485,6 +1498,18 @@
       if (scroll) {
         this.scrollMessageIntoView(messagesContainer, message, role);
       }
+    },
+
+    // Detect if message contains escalation keywords
+    detectEscalationIntent: function(message) {
+      const escalationKeywords = [
+        'speak to human', 'talk to person', 'real person', 'agent',
+        'representative', 'manager', 'supervisor', 'escalate',
+        'speak with human', 'talk with person', 'human support',
+        'speak to a human', 'talk to a person', 'real human'
+      ];
+      const lowerMessage = message.toLowerCase();
+      return escalationKeywords.some(keyword => lowerMessage.includes(keyword));
     },
 
     scrollMessageIntoView: function(container, message, role) {
@@ -1526,36 +1551,91 @@
     },
 
     submitContactInfo: function() {
-      const name = document.getElementById('cc-name-input').value.trim();
-      const email = document.getElementById('cc-email-input').value.trim();
-      const phone = document.getElementById('cc-phone-input').value.trim();
+      const nameInput = document.getElementById('cc-name-input');
+      const emailInput = document.getElementById('cc-email-input');
+      const phoneInput = document.getElementById('cc-phone-input');
 
-      if (!name && !email && !phone) {
-        alert('Please provide at least one contact method.');
+      const name = nameInput.value.trim();
+      const email = emailInput.value.trim();
+      const phone = phoneInput.value.trim();
+
+      // Require phone OR email (at least one)
+      const hasPhone = phone !== '';
+      const hasEmail = email !== '';
+
+      if (!hasPhone && !hasEmail) {
+        alert('Please provide at least a phone number or email address so we can reach you.');
         return;
       }
 
-      // Send message with contact info
-      this.sendMessage(name, email, phone);
+      // Basic email format validation if email provided
+      if (hasEmail && !email.includes('@')) {
+        alert('Please enter a valid email address.');
+        return;
+      }
+
+      // Store contact info in sessionStorage for this session
+      sessionStorage.setItem(this.getStorageKey('user_name'), name);
+      sessionStorage.setItem(this.getStorageKey('user_email'), email);
+      sessionStorage.setItem(this.getStorageKey('user_phone'), phone);
+
       this.hideContactForm();
+
+      // Send the pending escalation message if one exists
+      if (this.pendingEscalationMessage) {
+        const pendingMsg = this.pendingEscalationMessage;
+        this.pendingEscalationMessage = null;
+
+        // Add user message to UI first
+        this.addMessage(pendingMsg, 'user');
+
+        // Send to backend with contact info
+        this.sendMessageToBackend(pendingMsg, name, email, phone);
+      }
     },
 
-    sendMessage: async function(name, email, phone) {
+    sendMessage: function() {
+      const messageInput = document.getElementById('cc-message-input');
+      const message = messageInput ? messageInput.value.trim() : '';
+
+      if (!message) {
+        return;
+      }
+
+      // Check if this is an escalation request
+      const isEscalation = this.detectEscalationIntent(message);
+
+      if (isEscalation) {
+        // Check if we already have contact info in sessionStorage
+        const storedEmail = sessionStorage.getItem(this.getStorageKey('user_email')) || '';
+        const storedPhone = sessionStorage.getItem(this.getStorageKey('user_phone')) || '';
+        const hasContactInfo = storedEmail.trim() !== '' || storedPhone.trim() !== '';
+
+        if (!hasContactInfo) {
+          // Store the message and show contact form
+          this.pendingEscalationMessage = message;
+          messageInput.value = '';
+          this.showContactForm();
+          return;
+        }
+      }
+
+      // Proceed with sending the message
+      const storedName = sessionStorage.getItem(this.getStorageKey('user_name')) || '';
+      const storedEmail = sessionStorage.getItem(this.getStorageKey('user_email')) || '';
+      const storedPhone = sessionStorage.getItem(this.getStorageKey('user_phone')) || '';
+
+      this.addMessage(message, 'user');
+      messageInput.value = '';
+      this.sendMessageToBackend(message, storedName, storedEmail, storedPhone);
+    },
+
+    sendMessageToBackend: async function(message, name, email, phone) {
       const messageInput = document.getElementById('cc-message-input');
       const sendButton = document.getElementById('cc-send-button');
       const loading = document.getElementById('cc-loading');
-      const message = messageInput ? messageInput.value.trim() : '';
 
-      if (!message && !name && !email && !phone) {
-        return;
-      }
       this.markInteracted();
-
-      // Add user message to UI
-      if (message) {
-        this.addMessage(message, 'user');
-        messageInput.value = '';
-      }
 
       // Disable input
       if (messageInput) messageInput.disabled = true;
@@ -1590,11 +1670,6 @@
 
         // Add assistant response
         this.addMessage(data.response, 'assistant');
-
-        // Contact form popup disabled
-        // if (data.requires_contact_info) {
-        //   this.showContactForm();
-        // }
 
         // Handle conversation complete
         if (data.conversation_complete) {

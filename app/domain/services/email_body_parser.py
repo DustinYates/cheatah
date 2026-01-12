@@ -59,6 +59,7 @@ class EmailBodyParser:
         r"^telephone$",
         r"^mobile$",
         r"^cell$",
+        r"^number$",  # Some forms use just "Number:" for phone
     ]
 
     # Email validation regex
@@ -122,13 +123,13 @@ class EmailBodyParser:
         # Get additional fields (everything except name, email, phone)
         additional_fields = {
             k: v for k, v in parsed_data.items()
-            if k.lower() not in ['name', 'email', 'phone', 'phone number', 'telephone', 'mobile', 'cell']
+            if k.lower() not in ['name', 'email', 'phone', 'phone number', 'telephone', 'mobile', 'cell', 'number']
         }
         
         # Build metadata
         metadata = {
             "parsed_fields": list(parsed_data.keys()),
-            "original_phone": parsed_data.get('phone') or parsed_data.get('phone number') or parsed_data.get('telephone') or parsed_data.get('mobile') or parsed_data.get('cell'),
+            "original_phone": parsed_data.get('phone') or parsed_data.get('phone number') or parsed_data.get('telephone') or parsed_data.get('mobile') or parsed_data.get('cell') or parsed_data.get('number'),
         }
         
         return {

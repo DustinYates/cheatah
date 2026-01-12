@@ -122,9 +122,12 @@ Each tenant needs a Telnyx Messaging Profile with correct webhook URLs:
 1. Go to **Telnyx Portal** → **Messaging** → **Messaging Profiles**
 2. Create a new profile (e.g., "Tenant Name")
 3. Configure **Inbound** tab:
-   - **Webhook URL**: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/inbound`
-4. Configure **Outbound** tab (optional, for delivery status):
-   - Status webhooks go to: `/api/v1/telnyx/sms/status`
+   - **Webhook URL**: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/inbound`
+   - ⚠️ **VERIFY THE PATH**: Should be `/telnyx/sms/` NOT `/sms/telnyx/`
+4. Configure **Outbound** tab (for delivery status callbacks):
+   - **Status Callback URL**: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/status`
+   - ⚠️ **CRITICAL**: Must be `/api/v1/telnyx/sms/status` (NOT `/api/v1/sms/telnyx/status`)
+   - Without this, SMS will send but delivery confirmations won't be received (405 errors in Telnyx portal)
 5. Assign phone number(s) to this messaging profile
 
 ### 3. Phone Number Assignment
@@ -136,11 +139,16 @@ Each tenant needs a Telnyx Messaging Profile with correct webhook URLs:
 
 ### Telnyx Webhook URLs
 
-| Webhook Type | URL |
-|-------------|-----|
-| Inbound SMS | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/inbound` |
-| SMS Status | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/status` |
-| Voice (TeXML) | Configure in Telnyx TeXML Application settings |
+⚠️ **IMPORTANT**: The order matters! Use `/telnyx/sms/` NOT `/sms/telnyx/`
+
+| Webhook Type | Correct URL | Common Mistake |
+|-------------|-----|----------------|
+| Inbound SMS | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/inbound` | ❌ `/api/v1/sms/telnyx/inbound` |
+| SMS Status Callback | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/status` | ❌ `/api/v1/sms/telnyx/status` (causes 405 error) |
+| Voice (TeXML) | Configure in Telnyx TeXML Application settings | N/A |
+
+**Alternate paths (backwards compatibility):**
+- `/api/v1/telnyx/inbound` also works for inbound SMS
 
 ## SMS Opt-In Behavior
 

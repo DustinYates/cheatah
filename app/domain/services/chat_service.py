@@ -207,9 +207,12 @@ class ChatService:
         
         # Determine if we should suggest collecting contact info
         # (but let the prompt handle it naturally, not with hardcoded messages)
+        # DISABLED: Contact form popup feature disabled per user request
+        # Code preserved for future use but never triggered
         requires_contact_info = False
-        if not (collected_email or collected_phone) and turn_count >= self.FOLLOW_UP_NUDGE_TURN:
-            requires_contact_info = True
+        # Legacy logic (disabled):
+        # if not (collected_email or collected_phone) and turn_count >= self.FOLLOW_UP_NUDGE_TURN:
+        #     requires_contact_info = True
         
         # Build prompt context with contact info status
         prompt_context = {

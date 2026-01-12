@@ -87,7 +87,25 @@ gcloud secrets versions access latest --secret=database-url --project=chatbots-4
 
 **Fix:** Use `datetime.utcnow()` for naive datetimes when working with SQLAlchemy/PostgreSQL that stores naive UTC timestamps.
 
-#### 7. Chat responses truncated mid-sentence
+#### 7. Telnyx SMS Status Webhook returns 405 Method Not Allowed
+**Error:** Telnyx portal shows "Failed" deliveries with error code 405
+
+**Cause:** Webhook URL path is incorrect - `/api/v1/sms/telnyx/status` instead of `/api/v1/telnyx/sms/status`
+
+**Impact:**
+- SMS messages WILL send successfully
+- But delivery status callbacks won't be received
+- Portal shows all messages as "Failed" even though they were delivered
+
+**Fix:** Update webhook URL in Telnyx Messaging Profile:
+1. Go to Telnyx Portal → Messaging → Messaging Profiles
+2. Select your messaging profile
+3. Go to **Outbound** tab
+4. Update **Status Callback URL** to: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/status`
+5. ⚠️ Verify the path is `/telnyx/sms/status` NOT `/sms/telnyx/status`
+6. Save changes
+
+#### 8. Chat responses truncated mid-sentence
 **Error:** Bot responses cut off (e.g., "We offer a" with no completion)
 
 **Cause:** Hardcoded 500 token limit in LLM calls too restrictive
@@ -104,8 +122,11 @@ gcloud run services update chattercheatah \
 **Opt-in Policy:** The SMS service assumes users have already opted in when they text the number. STOP and HELP keywords are handled for compliance, but no opt-in verification is performed.
 
 **Telnyx Webhook Configuration:**
-- Webhook URL: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/inbound`
-- Both `/telnyx/inbound` and `/telnyx/sms/inbound` paths are supported for backwards compatibility
+- Inbound SMS Webhook URL: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/inbound`
+  - Alternate path (deprecated): `/api/v1/telnyx/inbound`
+- SMS Status Callback Webhook URL: `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/status`
+  - **CRITICAL**: Use the correct path - `/api/v1/telnyx/sms/status` NOT `/api/v1/sms/telnyx/status`
+  - Common mistake: Swapping "telnyx" and "sms" in the path will cause 405 Method Not Allowed errors
 
 **Debugging SMS Issues:**
 ```bash

@@ -1040,10 +1040,12 @@ async def telnyx_ai_call_complete(
         logger.info(f"Found tenant_id={tenant_id} for AI call")
 
         # Determine if this is a voice call vs SMS/chat interaction
-        # Voice assistant ID: assistant-ed763aa1-... (ChatterCheetah Voice BSS)
-        # Text assistant ID: assistant-d3d25f89-... (ChatterCheetah text BSS)
-        is_text_assistant = assistant_id and "d3d25f89" in assistant_id
-        is_voice_assistant = assistant_id and "ed763aa1" in assistant_id
+        # Voice assistant: assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d (ChatterCheetah Voice BSS)
+        # Text assistant: assistant-d3d25f89-a4df-4ca0-8657-7fe2f53ce348 (ChatterCheetah text BSS)
+        VOICE_ASSISTANT_ID = "assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d"
+        TEXT_ASSISTANT_ID = "assistant-d3d25f89-a4df-4ca0-8657-7fe2f53ce348"
+        is_text_assistant = assistant_id == TEXT_ASSISTANT_ID
+        is_voice_assistant = assistant_id == VOICE_ASSISTANT_ID
 
         # Voice calls have: call.* event types, call_control_id, CallDuration, etc.
         # SMS/chat has: message.* event types, no call_control_id, no duration

@@ -190,8 +190,8 @@ class FollowUpMessageService:
             return "Hi! Thanks for calling earlier. How can I help you today?"
         elif source == "email":
             if first_name:
-                return f"Hi {first_name}! Following up on your email. How can I help?"
-            return "Hi! Following up on your email inquiry. How can I help?"
+                return f"Hi {first_name}! Thanks for filling out a form on our website. How can I help?"
+            return "Hi! Thanks for filling out a form on our website. How can I help?"
         else:
             if first_name:
                 return f"Hi {first_name}! Following up on your inquiry. How can I help?"

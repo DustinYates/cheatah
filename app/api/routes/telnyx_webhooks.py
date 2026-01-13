@@ -1028,6 +1028,63 @@ async def telnyx_ai_call_complete(
 
         logger.info(f"Found tenant_id={tenant_id} for AI call")
 
+        # Determine if this is a voice call vs SMS/chat interaction
+        # Voice calls have: call.* event types, call_control_id, CallDuration, etc.
+        # SMS/chat has: message.* event types, no call_control_id, no duration
+        is_voice_call = (
+            event_type.startswith("call.") or
+            event_type in ("call.conversation.ended", "call.conversation_insights.generated") or
+            bool(call_id and call_id.startswith("call_")) or  # Telnyx call IDs start with "call_"
+            bool(duration and int(duration) > 0) or  # Voice calls have duration
+            bool(recording_url)  # Voice calls may have recordings
+        )
+
+        # Also check for SMS-specific indicators
+        is_sms_interaction = (
+            event_type.startswith("message.") or
+            event_type in ("message.received", "message.sent", "message.delivered")
+        )
+
+        if is_sms_interaction or (not is_voice_call and not call_id):
+            logger.info(f"Skipping Call record creation for non-voice interaction: event_type={event_type}, call_id={call_id}")
+            # Still create/update Lead from SMS AI Assistant interactions
+            now = datetime.utcnow()
+            if from_number:
+                normalized_from = _normalize_phone(from_number)
+                existing_lead = await db.execute(
+                    select(Lead).where(
+                        Lead.tenant_id == tenant_id,
+                        Lead.phone == normalized_from,
+                    ).order_by(Lead.created_at.desc()).limit(1)
+                )
+                lead = existing_lead.scalar_one_or_none()
+
+                if not lead:
+                    lead = Lead(
+                        tenant_id=tenant_id,
+                        phone=normalized_from,
+                        name=caller_name or None,
+                        email=caller_email or None,
+                        status="new",
+                        extra_data={"source": "sms_ai_assistant", "summary": summary},
+                    )
+                    db.add(lead)
+                    logger.info(f"Created Lead from SMS AI interaction: phone={normalized_from}")
+                else:
+                    if caller_name and not lead.name:
+                        lead.name = caller_name
+                    if caller_email and not lead.email:
+                        lead.email = caller_email
+                    logger.info(f"Updated existing Lead from SMS AI interaction: id={lead.id}")
+
+                await db.commit()
+
+            return JSONResponse(content={
+                "status": "ok",
+                "message": "sms_interaction_processed",
+                "tenant_id": tenant_id,
+            })
+
         # Create or update Call record (use naive datetime for DB compatibility)
         now = datetime.utcnow()
 

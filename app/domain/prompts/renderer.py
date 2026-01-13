@@ -108,10 +108,10 @@ def _render_level(level: Level | str) -> str:
     """Render a single level (can be string or Level object)."""
     # Handle string levels
     if isinstance(level, str):
-        return f"**{level}**"
+        return level
 
     # Handle Level objects
-    parts = [f"**{level.name}**"]
+    parts = [level.name]
     if level.description:
         parts.append(f": {level.description}")
     details = []
@@ -248,7 +248,7 @@ def render_discounts(discounts: list[Discount]) -> str:
 
     lines = ["## DISCOUNTS & PROMOTIONS"]
     for discount in discounts:
-        line = f"- **{discount.name}**: {discount.description}"
+        line = f"- {discount.name}: {discount.description}"
         if discount.calculation_notes:
             line += f" ({discount.calculation_notes})"
         lines.append(line)

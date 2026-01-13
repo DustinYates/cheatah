@@ -643,45 +643,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="card calls-card">
-          <div className="card-header">
-            <h2>Recent Calls</h2>
-            <a className="card-link" href="/calls">View all</a>
-          </div>
-
-          {callsLoading ? (
-            <LoadingState message="Loading calls..." />
-          ) : calls.length === 0 ? (
-            <EmptyState
-              icon="📞"
-              title="No calls yet"
-              description="Voice calls will appear here once customers start calling."
-            />
-          ) : (
-            <CompactTable containerClassName="calls-table-container" tableClassName="calls-table">
-              <thead>
-                <tr>
-                  <th>Date & Time</th>
-                  <th>Caller</th>
-                  <th>Duration</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {calls.map((call) => (
-                  <tr key={call.id}>
-                    <td className="call-date">{formatLeadDate(call.created_at)}</td>
-                    <td className="call-phone">{formatPhone(call.from_number)}</td>
-                    <td className="call-duration">{formatDuration(call.duration)}</td>
-                    <td>
-                      <StatusBadge status={call.status || 'new'} label={call.status || 'New'} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </CompactTable>
-          )}
-        </div>
       </div>
 
       {/* Lead Details Modal */}

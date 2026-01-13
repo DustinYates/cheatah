@@ -8,8 +8,6 @@ import Prompts from './pages/Prompts';
 import Contacts from './pages/Contacts';
 import ContactDetail from './pages/ContactDetail';
 import Calls from './pages/Calls';
-import UnknownLeads from './pages/UnknownLeads';
-import UnknownLeadDetail from './pages/UnknownLeadDetail';
 import Plots from './pages/Plots';
 import Onboarding from './pages/Onboarding';
 import BusinessProfile from './pages/BusinessProfile';
@@ -46,8 +44,6 @@ function App() {
             <Route path="contacts" element={<Contacts />} />
             <Route path="contacts/:id" element={<ContactDetail />} />
             <Route path="calls" element={<Calls />} />
-            <Route path="analytics/unknowns" element={<UnknownLeads />} />
-            <Route path="analytics/unknowns/:id" element={<UnknownLeadDetail />} />
             <Route path="analytics/usage" element={<Plots />} />
             <Route path="analytics/plots" element={<Navigate to="/analytics/usage" replace />} />
 

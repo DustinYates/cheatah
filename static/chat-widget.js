@@ -16,6 +16,9 @@
 (function() {
   'use strict';
 
+  // Initialize dataLayer for GTM compatibility (ES5)
+  window.dataLayer = window.dataLayer || [];
+
   const ChatterCheetah = {
     config: null,
     sessionId: null,
@@ -34,6 +37,24 @@
     exitIntentBound: false,
     scrollHandler: null,
     pendingEscalationMessage: null, // Store message while waiting for contact info
+    userMessageCount: 0, // Track user messages for GA4 analytics
+
+    // GTM dataLayer event helper (ES5 compatible)
+    pushDataLayerEvent: function(eventName, additionalData) {
+      var eventData = {
+        event: eventName,
+        tenant_id: this.config ? this.config.tenantId : null,
+        timestamp: new Date().toISOString()
+      };
+      if (additionalData) {
+        for (var key in additionalData) {
+          if (additionalData.hasOwnProperty(key)) {
+            eventData[key] = additionalData[key];
+          }
+        }
+      }
+      window.dataLayer.push(eventData);
+    },
 
     // Storage keys (tenant-specific to avoid conflicts)
     getStorageKey: function(suffix) {
@@ -81,6 +102,8 @@
           this.messages.forEach(msg => {
             this.renderMessage(msg.text, msg.role, false);
           });
+          // Restore user message count from restored messages for GA4 tracking
+          this.userMessageCount = this.messages.filter(function(m) { return m.role === 'user'; }).length;
         }
 
         // Restore open/closed state
@@ -129,6 +152,7 @@
     // Start a new chat conversation
     startNewChat: function() {
       this.clearSession();
+      this.userMessageCount = 0; // Reset message count for GA4 tracking
       this.hideContactForm();
       // Re-enable inputs in case they were disabled
       const messageInput = document.getElementById('cc-message-input');
@@ -1415,6 +1439,9 @@
         this.isOpen = true;
         this.isMinimized = false;
         this.saveSession(); // Persist open state
+
+        // Track chat opened event for GA4
+        this.pushDataLayerEvent('chat_button_opened');
         document.getElementById('cc-message-input').focus();
         if (this.settings?.motion?.openAnimation && this.settings.motion.openAnimation !== 'none') {
           container.classList.add('cc-open-animate');
@@ -1579,12 +1606,33 @@
       sessionStorage.setItem(this.getStorageKey('user_email'), email);
       sessionStorage.setItem(this.getStorageKey('user_phone'), phone);
 
+      // Track lead collection when name + (phone or email) provided
+      if (name && (hasPhone || hasEmail)) {
+        this.pushDataLayerEvent('chat_lead_collected', {
+          session_id: this.sessionId,
+          has_email: hasEmail,
+          has_phone: hasPhone
+        });
+      }
+
       this.hideContactForm();
 
       // Send the pending escalation message if one exists
       if (this.pendingEscalationMessage) {
         const pendingMsg = this.pendingEscalationMessage;
         this.pendingEscalationMessage = null;
+
+        // Track user message events for GA4
+        this.userMessageCount++;
+        if (this.userMessageCount === 1) {
+          this.pushDataLayerEvent('chat_first_message_sent', {
+            session_id: this.sessionId
+          });
+        } else if (this.userMessageCount === 2) {
+          this.pushDataLayerEvent('chat_second_message_sent', {
+            session_id: this.sessionId
+          });
+        }
 
         // Add user message to UI first
         this.addMessage(pendingMsg, 'user');
@@ -1624,6 +1672,18 @@
       const storedName = sessionStorage.getItem(this.getStorageKey('user_name')) || '';
       const storedEmail = sessionStorage.getItem(this.getStorageKey('user_email')) || '';
       const storedPhone = sessionStorage.getItem(this.getStorageKey('user_phone')) || '';
+
+      // Track user message events for GA4
+      this.userMessageCount++;
+      if (this.userMessageCount === 1) {
+        this.pushDataLayerEvent('chat_first_message_sent', {
+          session_id: this.sessionId
+        });
+      } else if (this.userMessageCount === 2) {
+        this.pushDataLayerEvent('chat_second_message_sent', {
+          session_id: this.sessionId
+        });
+      }
 
       this.addMessage(message, 'user');
       messageInput.value = '';

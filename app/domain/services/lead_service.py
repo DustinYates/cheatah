@@ -56,6 +56,25 @@ def normalize_phone_e164(phone: str | None) -> str | None:
     return phone  # Return original if we can't normalize (better than losing it)
 
 
+def _lead_qualifies_for_auto_conversion(lead: Lead) -> bool:
+    """Check if lead has sufficient info for automatic contact creation.
+
+    A lead qualifies if it has:
+    - A non-empty name
+    - AND either a non-empty email OR phone
+
+    Args:
+        lead: Lead to check
+
+    Returns:
+        True if lead qualifies for auto-conversion
+    """
+    has_name = bool(lead.name and lead.name.strip())
+    has_email = bool(lead.email and lead.email.strip())
+    has_phone = bool(lead.phone and lead.phone.strip())
+    return has_name and (has_email or has_phone)
+
+
 class LeadService:
     """Service for lead management (schema + state only, no Twilio/Zapier logic)."""
 
@@ -124,6 +143,9 @@ class LeadService:
         else:
             print(f"[FOLLOWUP_CHECK] Conditions NOT met - phone={bool(normalized_phone)}, has_metadata={bool(metadata)}, source={metadata.get('source') if metadata else None}", flush=True)
             logger.info(f"[FOLLOWUP_CHECK] Conditions NOT met - phone={bool(normalized_phone)}, has_metadata={bool(metadata)}, source={metadata.get('source') if metadata else None}")
+
+        # Check for auto-conversion to contact
+        await self._check_and_auto_convert(tenant_id, lead)
 
         return lead
 
@@ -221,6 +243,9 @@ class LeadService:
             await self.session.commit()
             await self.session.refresh(lead)
 
+            # Check for auto-conversion after update (lead might now qualify)
+            await self._check_and_auto_convert(tenant_id, lead)
+
         return lead
 
     async def update_lead_status(
@@ -268,6 +293,36 @@ class LeadService:
         await self.session.commit()
         await self.session.refresh(lead)
         return lead
+
+    async def _check_and_auto_convert(self, tenant_id: int, lead: Lead) -> Contact | None:
+        """Check if lead qualifies for auto-conversion and create contact if so.
+
+        Automatically converts qualifying leads to contacts without requiring
+        manual verification. A lead qualifies if it has a name AND (email OR phone).
+
+        Args:
+            tenant_id: Tenant ID
+            lead: Lead to check and potentially convert
+
+        Returns:
+            Created/linked Contact if auto-converted, None otherwise
+        """
+        if not _lead_qualifies_for_auto_conversion(lead):
+            return None
+
+        # Check if lead already has an associated contact
+        result = await self.session.execute(
+            text("SELECT id FROM contacts WHERE lead_id = :lead_id LIMIT 1"),
+            {"lead_id": lead.id}
+        )
+        if result.scalar_one_or_none() is not None:
+            logger.debug(f"Lead {lead.id} already has a contact, skipping auto-conversion")
+            return None
+
+        logger.info(f"Auto-converting lead {lead.id} to contact: name={lead.name}, email={lead.email}, phone={lead.phone}")
+        contact = await self._create_contact_from_lead(tenant_id, lead)
+        await self.session.commit()
+        return contact
 
     async def _create_contact_from_lead(self, tenant_id: int, lead: Lead) -> Contact | None:
         """Create a Contact from a verified lead if one doesn't already exist.

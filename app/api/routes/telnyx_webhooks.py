@@ -584,6 +584,17 @@ async def telnyx_ai_call_complete(
             or ""
         )
 
+        # Extract assistant ID to distinguish voice vs text assistant
+        assistant_id = (
+            body.get("assistant_id")
+            or payload.get("assistant_id")
+            or metadata.get("assistant_id")
+            or data.get("assistant_id")
+            or conversation.get("assistant_id")
+            or ""
+        )
+        logger.info(f"Telnyx assistant_id: {assistant_id}")
+
         # Phone numbers - TeXML uses PascalCase: From, To
         from_number = (
             body.get("From")  # TeXML PascalCase
@@ -1029,9 +1040,15 @@ async def telnyx_ai_call_complete(
         logger.info(f"Found tenant_id={tenant_id} for AI call")
 
         # Determine if this is a voice call vs SMS/chat interaction
+        # Voice assistant ID: assistant-ed763aa1-... (ChatterCheetah Voice BSS)
+        # Text assistant ID: assistant-d3d25f89-... (ChatterCheetah text BSS)
+        is_text_assistant = assistant_id and "d3d25f89" in assistant_id
+        is_voice_assistant = assistant_id and "ed763aa1" in assistant_id
+
         # Voice calls have: call.* event types, call_control_id, CallDuration, etc.
         # SMS/chat has: message.* event types, no call_control_id, no duration
         is_voice_call = (
+            is_voice_assistant or  # Explicitly from voice assistant
             event_type.startswith("call.") or
             event_type in ("call.conversation.ended", "call.conversation_insights.generated") or
             bool(call_id and call_id.startswith("call_")) or  # Telnyx call IDs start with "call_"
@@ -1041,12 +1058,13 @@ async def telnyx_ai_call_complete(
 
         # Also check for SMS-specific indicators
         is_sms_interaction = (
+            is_text_assistant or  # Explicitly from text assistant
             event_type.startswith("message.") or
             event_type in ("message.received", "message.sent", "message.delivered")
         )
 
         if is_sms_interaction or (not is_voice_call and not call_id):
-            logger.info(f"Skipping Call record creation for non-voice interaction: event_type={event_type}, call_id={call_id}")
+            logger.info(f"Skipping Call record creation for non-voice interaction: event_type={event_type}, call_id={call_id}, assistant_id={assistant_id}, is_text_assistant={is_text_assistant}")
             # Still create/update Lead from SMS AI Assistant interactions
             now = datetime.utcnow()
             if from_number:

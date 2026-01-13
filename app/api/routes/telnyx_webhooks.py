@@ -1110,12 +1110,12 @@ async def telnyx_ai_call_complete(
         if from_number:
             normalized_from = _normalize_phone(from_number)
 
-            # Check if contact/lead already exists
+            # Check if contact/lead already exists (get most recent if multiple)
             existing_lead = await db.execute(
                 select(Lead).where(
                     Lead.tenant_id == tenant_id,
                     Lead.phone == normalized_from,
-                )
+                ).order_by(Lead.created_at.desc()).limit(1)
             )
             lead = existing_lead.scalar_one_or_none()
 
@@ -1441,11 +1441,11 @@ async def sync_calls_to_leads(
 
             normalized_phone = _normalize_phone(call.from_number)
 
-            # Check if lead exists for this phone number
+            # Check if lead exists for this phone number (get most recent if multiple)
             lead_stmt = select(Lead).where(
                 Lead.tenant_id == call.tenant_id,
                 Lead.phone == normalized_phone,
-            )
+            ).order_by(Lead.created_at.desc()).limit(1)
             lead_result = await db.execute(lead_stmt)
             lead = lead_result.scalar_one_or_none()
 

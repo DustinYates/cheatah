@@ -410,6 +410,21 @@ class ChatService:
                         try:
                             from app.infrastructure.notifications import NotificationService
                             notification_service = NotificationService(self.session)
+
+                            # Extract topic from conversation context
+                            combined_text = f"{user_message} {llm_response}".lower()
+                            topic = "information"  # default
+                            topic_keywords = {
+                                "registration": ["registration", "register", "sign up", "signup", "enroll"],
+                                "pricing": ["pricing", "price", "cost", "fee", "rate", "tuition"],
+                                "schedule": ["schedule", "class time", "hours", "availability", "when"],
+                                "details": ["details", "information", "info", "brochure"],
+                            }
+                            for topic_name, keywords in topic_keywords.items():
+                                if any(kw in combined_text for kw in keywords):
+                                    topic = topic_name
+                                    break
+
                             await notification_service.notify_email_promise(
                                 tenant_id=tenant_id,
                                 customer_name=customer_name,
@@ -417,10 +432,11 @@ class ChatService:
                                 customer_email=customer_email,
                                 conversation_id=conversation.id,
                                 channel="chat",
+                                topic=topic,
                             )
                             logger.info(
                                 f"Email promise alert sent - tenant_id={tenant_id}, "
-                                f"conversation_id={conversation.id}"
+                                f"conversation_id={conversation.id}, topic={topic}"
                             )
                         except Exception as e:
                             logger.error(

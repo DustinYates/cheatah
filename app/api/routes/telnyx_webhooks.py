@@ -1155,6 +1155,57 @@ async def telnyx_ai_call_complete(
 
                 await db.commit()
 
+                # =============================================================
+                # Email Promise Detection for Telnyx SMS
+                # =============================================================
+                # Check if the conversation summary mentions email promises
+                # and alert the tenant so they can follow up manually
+                combined_text = f"{summary or ''} {caller_intent or ''}".lower()
+                email_promise_patterns = [
+                    "email you", "e-mail you", "send you an email", "send an email",
+                    "email that", "email the", "emailing you", "i'll email",
+                    "will email", "receive an email", "get that to your email",
+                    "send to your email", "send to your inbox",
+                ]
+
+                email_promise_detected = any(pattern in combined_text for pattern in email_promise_patterns)
+
+                if email_promise_detected:
+                    logger.info(
+                        f"Email promise detected in SMS - tenant_id={tenant_id}, "
+                        f"phone={from_number}, summary={summary[:100] if summary else 'none'}"
+                    )
+                    try:
+                        from app.infrastructure.notifications import NotificationService
+                        notification_service = NotificationService(db)
+
+                        # Extract what the customer wanted from the summary
+                        # Look for common request patterns
+                        topic = "information"  # default
+                        topic_keywords = {
+                            "registration": ["registration", "register", "sign up", "signup", "enroll"],
+                            "pricing": ["pricing", "price", "cost", "fee", "rate", "tuition"],
+                            "schedule": ["schedule", "class time", "hours", "availability", "when"],
+                            "details": ["details", "information", "info", "brochure"],
+                        }
+                        for topic_name, keywords in topic_keywords.items():
+                            if any(kw in combined_text for kw in keywords):
+                                topic = topic_name
+                                break
+
+                        await notification_service.notify_email_promise(
+                            tenant_id=tenant_id,
+                            customer_name=caller_name,
+                            customer_phone=normalized_from,
+                            customer_email=caller_email,
+                            conversation_id=sms_conversation.id if sms_conversation else None,
+                            channel="sms",
+                            topic=topic,
+                        )
+                        logger.info(f"Email promise alert sent for SMS tenant_id={tenant_id}, topic={topic}")
+                    except Exception as e:
+                        logger.error(f"Failed to send email promise alert for SMS: {e}", exc_info=True)
+
             return JSONResponse(content={
                 "status": "ok",
                 "message": "sms_interaction_processed",

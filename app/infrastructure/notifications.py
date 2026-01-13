@@ -337,6 +337,7 @@ class NotificationService:
         customer_email: str | None,
         conversation_id: int | None = None,
         channel: str = "chat",
+        topic: str | None = None,
     ) -> dict[str, Any]:
         """Alert tenant when bot promises to email a customer.
 
@@ -349,17 +350,21 @@ class NotificationService:
             customer_phone: Customer's phone number (if known)
             customer_email: Customer's email address (if known)
             conversation_id: Conversation ID for tracking
-            channel: Channel where promise was made ("chat" or "voice")
+            channel: Channel where promise was made ("chat", "voice", or "sms")
+            topic: What the customer wanted (registration, pricing, schedule, etc.)
 
         Returns:
             Notification result
         """
-        # Build minimal alert message with available contact info
+        # Build alert message with customer info and what they wanted
         contact_info = customer_email or customer_phone or "Unknown"
-        message = f"Customer awaiting email: {contact_info}"
 
-        if customer_name:
-            message = f"{customer_name} awaiting email: {contact_info}"
+        # Format: "John wants registration info emailed to john@email.com"
+        # or: "Customer wants pricing emailed to +1234567890"
+        customer_label = customer_name or "Customer"
+        topic_label = f" {topic}" if topic else ""
+
+        message = f"{customer_label} wants{topic_label} emailed to {contact_info}"
 
         metadata = {
             "customer_name": customer_name,
@@ -367,11 +372,13 @@ class NotificationService:
             "customer_email": customer_email,
             "conversation_id": conversation_id,
             "channel": channel,
+            "topic": topic,
         }
 
         logger.info(
             f"Sending email promise alert - tenant_id={tenant_id}, "
-            f"customer={customer_name or 'Unknown'}, contact={contact_info}, channel={channel}"
+            f"customer={customer_name or 'Unknown'}, contact={contact_info}, "
+            f"channel={channel}, topic={topic or 'general'}"
         )
 
         return await self.notify_admins(

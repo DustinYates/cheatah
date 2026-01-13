@@ -1191,6 +1191,20 @@ async def _check_and_fulfill_promise(
                 # Try to get caller email from conversation if available
                 caller_email = await _extract_caller_email_from_conversation(db, conversation_id)
 
+                # Extract topic from the AI response
+                combined_text = promise.original_text.lower() if promise.original_text else ""
+                topic = "information"  # default
+                topic_keywords = {
+                    "registration": ["registration", "register", "sign up", "signup", "enroll"],
+                    "pricing": ["pricing", "price", "cost", "fee", "rate", "tuition"],
+                    "schedule": ["schedule", "class time", "hours", "availability", "when"],
+                    "details": ["details", "information", "info", "brochure"],
+                }
+                for topic_name, keywords in topic_keywords.items():
+                    if any(kw in combined_text for kw in keywords):
+                        topic = topic_name
+                        break
+
                 await notification_service.notify_email_promise(
                     tenant_id=tenant_id,
                     customer_name=caller_name,
@@ -1198,10 +1212,11 @@ async def _check_and_fulfill_promise(
                     customer_email=caller_email,
                     conversation_id=conversation_id,
                     channel="voice",
+                    topic=topic,
                 )
                 logger.info(
                     f"Email promise alert sent - call_sid={call_sid}, "
-                    f"caller={caller_name or 'Unknown'}, phone={caller_phone}"
+                    f"caller={caller_name or 'Unknown'}, phone={caller_phone}, topic={topic}"
                 )
             except Exception as e:
                 logger.error(f"Failed to send email promise alert: {e}", exc_info=True)

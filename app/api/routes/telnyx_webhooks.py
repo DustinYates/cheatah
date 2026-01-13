@@ -1067,10 +1067,66 @@ async def telnyx_ai_call_complete(
 
         if is_sms_interaction or (not is_voice_call and not call_id):
             logger.info(f"Skipping Call record creation for non-voice interaction: event_type={event_type}, call_id={call_id}, assistant_id={assistant_id}, is_text_assistant={is_text_assistant}")
-            # Still create/update Lead from SMS AI Assistant interactions
+            # Create/update Conversation and Messages for SMS AI Assistant (for usage tracking)
             now = datetime.utcnow()
             if from_number:
                 normalized_from = _normalize_phone(from_number)
+
+                # Create or find SMS conversation for usage tracking
+                from app.persistence.models.conversation import Conversation, Message
+                conv_result = await db.execute(
+                    select(Conversation).where(
+                        Conversation.tenant_id == tenant_id,
+                        Conversation.phone_number == normalized_from,
+                        Conversation.channel == "sms",
+                    ).order_by(Conversation.created_at.desc()).limit(1)
+                )
+                sms_conversation = conv_result.scalar_one_or_none()
+
+                if not sms_conversation:
+                    sms_conversation = Conversation(
+                        tenant_id=tenant_id,
+                        channel="sms",
+                        phone_number=normalized_from,
+                        external_id=f"telnyx_sms_{now.timestamp()}",
+                    )
+                    db.add(sms_conversation)
+                    await db.flush()
+                    logger.info(f"Created SMS conversation for usage tracking: id={sms_conversation.id}")
+
+                # Add user message (represents the SMS interaction)
+                if transcript or summary:
+                    # Get next sequence number
+                    msg_result = await db.execute(
+                        select(Message).where(
+                            Message.conversation_id == sms_conversation.id
+                        ).order_by(Message.sequence_number.desc()).limit(1)
+                    )
+                    last_msg = msg_result.scalar_one_or_none()
+                    next_seq = (last_msg.sequence_number + 1) if last_msg else 1
+
+                    # Add user message
+                    user_msg = Message(
+                        conversation_id=sms_conversation.id,
+                        role="user",
+                        content=transcript or summary or "SMS interaction",
+                        sequence_number=next_seq,
+                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
+                    )
+                    db.add(user_msg)
+
+                    # Add assistant response message
+                    assistant_msg = Message(
+                        conversation_id=sms_conversation.id,
+                        role="assistant",
+                        content=summary or "Response provided",
+                        sequence_number=next_seq + 1,
+                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
+                    )
+                    db.add(assistant_msg)
+                    logger.info(f"Added SMS messages for usage tracking: conversation_id={sms_conversation.id}")
+
+                # Still create/update Lead from SMS AI Assistant interactions
                 existing_lead = await db.execute(
                     select(Lead).where(
                         Lead.tenant_id == tenant_id,

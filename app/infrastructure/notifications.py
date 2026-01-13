@@ -329,6 +329,61 @@ class NotificationService:
             action_url=f"/calls/{call_id}",
         )
 
+    async def notify_email_promise(
+        self,
+        tenant_id: int,
+        customer_name: str | None,
+        customer_phone: str | None,
+        customer_email: str | None,
+        conversation_id: int | None = None,
+        channel: str = "chat",
+    ) -> dict[str, Any]:
+        """Alert tenant when bot promises to email a customer.
+
+        Sends SMS to business owner with customer contact info so they
+        can follow up manually (since the bot cannot send emails).
+
+        Args:
+            tenant_id: Tenant ID
+            customer_name: Customer's name (if known)
+            customer_phone: Customer's phone number (if known)
+            customer_email: Customer's email address (if known)
+            conversation_id: Conversation ID for tracking
+            channel: Channel where promise was made ("chat" or "voice")
+
+        Returns:
+            Notification result
+        """
+        # Build minimal alert message with available contact info
+        contact_info = customer_email or customer_phone or "Unknown"
+        message = f"Customer awaiting email: {contact_info}"
+
+        if customer_name:
+            message = f"{customer_name} awaiting email: {contact_info}"
+
+        metadata = {
+            "customer_name": customer_name,
+            "customer_phone": customer_phone,
+            "customer_email": customer_email,
+            "conversation_id": conversation_id,
+            "channel": channel,
+        }
+
+        logger.info(
+            f"Sending email promise alert - tenant_id={tenant_id}, "
+            f"customer={customer_name or 'Unknown'}, contact={contact_info}, channel={channel}"
+        )
+
+        return await self.notify_admins(
+            tenant_id=tenant_id,
+            subject="Email Promise Alert",
+            message=message,
+            methods=["sms"],  # SMS only per requirements
+            metadata=metadata,
+            notification_type=NotificationType.EMAIL_PROMISE,
+            priority=NotificationPriority.HIGH,
+        )
+
     async def _create_in_app_notification(
         self,
         tenant_id: int,

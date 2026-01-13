@@ -1100,6 +1100,45 @@ async def _extract_caller_name_from_conversation(
         return None
 
 
+async def _extract_caller_email_from_conversation(
+    db: AsyncSession,
+    conversation_id: int | None,
+) -> str | None:
+    """Extract caller email from conversation history.
+
+    Args:
+        db: Database session
+        conversation_id: Conversation ID
+
+    Returns:
+        Caller email if found, None otherwise
+    """
+    if not conversation_id:
+        return None
+
+    try:
+        stmt = select(Message).where(
+            Message.conversation_id == conversation_id,
+            Message.role == "user"
+        ).order_by(Message.created_at)
+        result = await db.execute(stmt)
+        messages = result.scalars().all()
+
+        # Combine all user messages
+        user_text = " ".join([m.content for m in messages])
+
+        # Try to extract email using pattern
+        email_pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+        matches = re.findall(email_pattern, user_text, re.IGNORECASE)
+        if matches:
+            return matches[0].lower()
+
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to extract caller email: {e}")
+        return None
+
+
 async def _check_and_fulfill_promise(
     db: AsyncSession,
     tenant_id: int,
@@ -1143,7 +1182,32 @@ async def _check_and_fulfill_promise(
         caller_phone = call.from_number
         caller_name = await _extract_caller_name_from_conversation(db, conversation_id)
 
-        # Fulfill the promise
+        # Handle email promises separately - alert tenant instead of fulfilling
+        if promise.asset_type == "email_promise":
+            try:
+                from app.infrastructure.notifications import NotificationService
+                notification_service = NotificationService(db)
+
+                # Try to get caller email from conversation if available
+                caller_email = await _extract_caller_email_from_conversation(db, conversation_id)
+
+                await notification_service.notify_email_promise(
+                    tenant_id=tenant_id,
+                    customer_name=caller_name,
+                    customer_phone=caller_phone,
+                    customer_email=caller_email,
+                    conversation_id=conversation_id,
+                    channel="voice",
+                )
+                logger.info(
+                    f"Email promise alert sent - call_sid={call_sid}, "
+                    f"caller={caller_name or 'Unknown'}, phone={caller_phone}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to send email promise alert: {e}", exc_info=True)
+            return  # Don't try to fulfill email promises via SMS
+
+        # Fulfill the promise (for non-email promises)
         fulfillment_service = PromiseFulfillmentService(db)
         result = await fulfillment_service.fulfill_promise(
             tenant_id=tenant_id,

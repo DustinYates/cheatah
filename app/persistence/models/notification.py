@@ -66,6 +66,7 @@ class NotificationType:
     HANDOFF = "handoff"
     VOICEMAIL = "voicemail"
     SYSTEM = "system"
+    EMAIL_PROMISE = "email_promise"
 
 
 # Notification priorities

@@ -33,6 +33,12 @@ class PromiseDetector:
         r"(?:sending|send)\s+(?:you|over)\s+(?:the\s+)?registration",
         r"(?:i'll|i will)\s+(?:text|send)\s+(?:you|over)\s+(?:the\s+)?(?:registration|signup|sign\s*up)\s+(?:link|info)",
         r"(?:texting|sending)\s+(?:you|over)\s+(?:the\s+)?(?:registration|signup)\s+(?:link|info)",
+        # Email promise patterns
+        r"(?:i'll|i will|let me)\s+(?:email|e-mail)\s+(?:you|that)",
+        r"(?:i'll|i will)\s+send\s+(?:you\s+)?(?:an\s+)?email",
+        r"(?:emailing|email)\s+(?:you|that)\s+(?:the|a|our)",
+        r"(?:you'll receive|you will receive)\s+(?:an\s+)?email",
+        r"(?:i'll|i will)\s+(?:get|send)\s+(?:that|this)\s+(?:to\s+)?(?:your\s+)?(?:email|inbox)",
     ]
 
     # Keywords that identify what type of asset is being promised
@@ -71,6 +77,11 @@ class PromiseDetector:
             "info",
             "more about",
             "learn more",
+        ],
+        "email_promise": [
+            "email",
+            "e-mail",
+            "inbox",
         ],
     }
 

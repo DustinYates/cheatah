@@ -137,11 +137,11 @@ async def _sync_calls_to_leads_for_tenant(db: AsyncSession, tenant_id: int, logg
                 elif len(normalized_phone) == 11 and normalized_phone.startswith("1"):
                     normalized_phone = "+" + normalized_phone
 
-            # Check if lead exists
+            # Check if lead exists (get most recent if multiple)
             lead_stmt = select(Lead).where(
                 Lead.tenant_id == tenant_id,
                 Lead.phone == normalized_phone,
-            )
+            ).order_by(Lead.created_at.desc()).limit(1)
             lead_result = await db.execute(lead_stmt)
             lead = lead_result.scalar_one_or_none()
 

@@ -22,6 +22,8 @@ class Location(BaseModel):
     name: str
     address: str = ""
     is_default: bool = False
+    pool_hours: Optional[dict[str, str]] = None  # e.g., {"monday": "3:30 PM - 8:00 PM", "tuesday": "CLOSED"}
+    office_hours: Optional[dict[str, str]] = None  # e.g., {"monday_friday": "9:00 AM - 5:00 PM"}
 
 
 class ProgramBasics(BaseModel):

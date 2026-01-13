@@ -24,7 +24,7 @@ FRANCHISE_CONFIG = {
 
 CYPRESS_SPRING_PROMPT = {
     "name": "BSS Cypress-Spring Franchise Prompt",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "sections": [
         {
             "section_key": "franchise_identity",
@@ -41,18 +41,68 @@ Registration link slug: {FRANCHISE_CONFIG['slug']}""",
             "content": """AVAILABLE POOL LOCATIONS:
 (Must confirm location before sending registration link)
 
-1) LA Fitness Langham Creek
-   Address: 17800 FM 529, Houston, TX 77095
-   location_code: LALANG
-
-2) LA Fitness Cypress
-   Address: 12304 Barker Cypress Rd., Cypress, TX 77433
+1) LA Fitness Cypress
+   Address: 12304 Barker Cypress Rd, Cypress, TX 77429
    location_code: LAFCypress
 
-3) 24Hr Fitness Spring Energy
-   Address: 1000 Lake Plaza Dr., Spring, TX 77389
+2) LA Fitness Langham Creek
+   Address: 17800 Farm to Market Rd 529, Houston, TX 77095
+   location_code: LALANG
+
+3) 24 HR Fitness Spring Energy
+   Address: 1000 Lake Plaza Dr, Spring, TX 77389
    location_code: 24Spring""",
             "order": 11,
+        },
+        {
+            "section_key": "location_hours",
+            "scope": SectionScope.BUSINESS_INFO.value,
+            "content": """LOCATION HOURS - CRITICAL: NEVER make up or guess class times. Only use the hours listed below.
+
+LOCATION 1: LA Fitness - Cypress (12304 Barker Cypress Rd, Cypress, TX 77429)
+Pool Hours (Class Time Windows):
+- Monday: 3:30 PM - 8:00 PM
+- Tuesday: CLOSED
+- Wednesday: 3:30 PM - 8:00 PM
+- Thursday: CLOSED
+- Friday: CLOSED
+- Saturday: 9:00 AM - 4:00 PM
+- Sunday: CLOSED
+Office Hours:
+- Monday - Friday: 9:00 AM - 5:00 PM
+- Saturday: CLOSED
+- Sunday: CLOSED
+
+LOCATION 2: LA Fitness - Langham Creek (17800 Farm to Market Rd 529, Houston, TX 77095)
+Pool Hours (Class Time Windows):
+- Monday: CLOSED
+- Tuesday: 3:30 PM - 8:00 PM
+- Wednesday: CLOSED
+- Thursday: 3:30 PM - 8:00 PM
+- Friday: CLOSED
+- Saturday: 10:30 AM - 3:00 PM
+- Sunday: 9:00 AM - 2:00 PM
+Office Hours:
+- Monday - Friday: 9:00 AM - 5:00 PM
+- Saturday: 10:30 AM - 3:00 PM
+- Sunday: 9:00 AM - 2:00 PM
+
+LOCATION 3: 24 HR Fitness - Spring Energy (1000 Lake Plaza Dr, Spring, TX 77389)
+Pool Hours (Class Time Windows):
+- Monday: 3:30 PM - 8:00 PM
+- Tuesday: CLOSED
+- Wednesday: 3:30 PM - 8:00 PM
+- Thursday: 3:30 PM - 8:00 PM
+- Friday: CLOSED
+- Saturday: 9:00 AM - 2:00 PM
+- Sunday: CLOSED
+Office Hours:
+- Monday - Friday: 9:00 AM - 5:00 PM
+- Saturday: CLOSED
+- Sunday: CLOSED
+
+IMPORTANT: If a customer asks about class times on a day marked CLOSED, inform them that location is not available that day and suggest an alternative location that IS open.""",
+            "order": 12,
         },
         {
             "section_key": "swim_levels",
@@ -73,7 +123,7 @@ Registration link slug: {FRANCHISE_CONFIG['slug']}""",
 - Adult Level 1
 - Adult Level 2
 - Adult Level 3""",
-            "order": 12,
+            "order": 13,
         },
         {
             "section_key": "pricing_billing",
@@ -96,7 +146,7 @@ When quoting prices:
 REGISTRATION FEE:
 - $60 for one swimmer or $90 max per family
 - One-time fee due at registration""",
-            "order": 13,
+            "order": 14,
         },
         {
             "section_key": "policies",
@@ -106,7 +156,7 @@ REGISTRATION FEE:
 - Cancellation requires 30 days' notice.
 - Cancellation form:
   https://docs.google.com/forms/d/e/1FAIpQLSfJSzk32Bs5anwvboN5i30X2-g0FpuIYszT0QhR8zdxokCX_g/viewform?usp=sf_link""",
-            "order": 14,
+            "order": 15,
         },
         {
             "section_key": "makeups",
@@ -118,7 +168,7 @@ REGISTRATION FEE:
 - Valid only while actively enrolled.
 - Forfeit if absent from a scheduled makeup.
 - Maximum 3 makeups in a 60-day period.""",
-            "order": 15,
+            "order": 16,
         },
         {
             "section_key": "program_details",
@@ -135,7 +185,7 @@ STUDENT-TO-TEACHER RATIOS:
 • Tadpole: 6:1 (parent in water)
 • Stroke development: 6:1
 • Adult Level 1: 3:1; other adult levels: 4:1""",
-            "order": 16,
+            "order": 17,
         },
         {
             "section_key": "special_programs",
@@ -144,7 +194,7 @@ STUDENT-TO-TEACHER RATIOS:
 - Adaptive aquatics and special needs supported (case-by-case).
 - Private lessons offered selectively.
 - Swim team: Barracudas (non-competitive).""",
-            "order": 17,
+            "order": 18,
         },
         {
             "section_key": "contact_info",
@@ -152,7 +202,7 @@ STUDENT-TO-TEACHER RATIOS:
             "content": """CONTACT INFORMATION:
 Phone: 281-601-4588
 Email: goswimcypressspring@britishswimschool.com""",
-            "order": 18,
+            "order": 19,
         },
     ],
 }

@@ -46,6 +46,33 @@ Add more locations as needed...`,
         },
       },
       {
+        section_key: 'location_hours',
+        scope: 'business_info',
+        content: `LOCATION HOURS - CRITICAL: NEVER make up or guess class times. Only use the hours listed below.
+
+LOCATION 1: [Pool Facility Name 1] ([Address 1])
+Pool Hours (Class Time Windows):
+- Monday: [hours or CLOSED]
+- Tuesday: [hours or CLOSED]
+- Wednesday: [hours or CLOSED]
+- Thursday: [hours or CLOSED]
+- Friday: [hours or CLOSED]
+- Saturday: [hours or CLOSED]
+- Sunday: [hours or CLOSED]
+Office Hours:
+- Monday - Friday: [hours]
+- Saturday: [hours or CLOSED]
+- Sunday: [hours or CLOSED]
+
+Add more locations as needed...
+
+IMPORTANT: If a customer asks about class times on a day marked CLOSED, inform them that location is not available that day and suggest an alternative location that IS open.`,
+        order: 12,
+        placeholder_hints: {
+          '[hours or CLOSED]': 'e.g., 3:30 PM - 8:00 PM or CLOSED',
+        },
+      },
+      {
         section_key: 'swim_levels',
         scope: 'business_info',
         content: `SWIM LEVELS (Human-Readable Names):
@@ -64,7 +91,7 @@ Add more locations as needed...`,
 - Adult Level 1
 - Adult Level 2
 - Adult Level 3`,
-        order: 12,
+        order: 13,
       },
       {
         section_key: 'pricing_billing',
@@ -87,7 +114,7 @@ When quoting prices:
 REGISTRATION FEE:
 - $60 for one swimmer or $90 max per family
 - One-time fee due at registration`,
-        order: 13,
+        order: 14,
       },
       {
         section_key: 'policies',
@@ -97,7 +124,7 @@ REGISTRATION FEE:
 - Cancellation requires 30 days' notice.
 - Cancellation form:
   [YOUR CANCELLATION FORM URL]`,
-        order: 14,
+        order: 15,
         placeholder_hints: {
           '[YOUR CANCELLATION FORM URL]': 'e.g., https://docs.google.com/forms/d/e/...',
         },
@@ -112,7 +139,7 @@ REGISTRATION FEE:
 - Valid only while actively enrolled.
 - Forfeit if absent from a scheduled makeup.
 - Maximum 3 makeups in a 60-day period.`,
-        order: 15,
+        order: 16,
       },
       {
         section_key: 'program_details',
@@ -129,7 +156,7 @@ STUDENT-TO-TEACHER RATIOS:
 • Tadpole: 6:1 (parent in water)
 • Stroke development: 6:1
 • Adult Level 1: 3:1; other adult levels: 4:1`,
-        order: 16,
+        order: 17,
       },
       {
         section_key: 'special_programs',
@@ -138,7 +165,7 @@ STUDENT-TO-TEACHER RATIOS:
 - Adaptive aquatics and special needs supported (case-by-case).
 - Private lessons offered selectively.
 - Swim team: Barracudas (non-competitive).`,
-        order: 17,
+        order: 18,
       },
       {
         section_key: 'contact_info',
@@ -146,7 +173,7 @@ STUDENT-TO-TEACHER RATIOS:
         content: `CONTACT INFORMATION:
 Phone: [YOUR PHONE NUMBER]
 Email: [YOUR EMAIL ADDRESS]`,
-        order: 18,
+        order: 19,
         placeholder_hints: {
           '[YOUR PHONE NUMBER]': 'e.g., 281-601-4588',
           '[YOUR EMAIL ADDRESS]': 'e.g., goswimcypressspring@britishswimschool.com',

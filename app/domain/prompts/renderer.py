@@ -40,18 +40,46 @@ def render_business_info(display_name: str, contact: ContactInfo) -> str:
 
 
 def render_locations(locations: list[Location]) -> str:
-    """Render locations section."""
+    """Render locations section with hours."""
     if not locations:
         return ""
 
     lines = ["## LOCATIONS"]
+    lines.append("CRITICAL: NEVER make up or guess class times. Only use the pool hours listed below.")
+    lines.append("")
+
     for loc in locations:
-        loc_line = f"- {loc.name}"
+        loc_line = f"**{loc.name}**"
         if loc.address:
-            loc_line += f": {loc.address}"
+            loc_line += f" - {loc.address}"
         if loc.is_default:
             loc_line += " (Default)"
         lines.append(loc_line)
+        lines.append(f"  Location Code: {loc.code}")
+
+        # Render pool hours if available
+        pool_hours = getattr(loc, 'pool_hours', None)
+        if pool_hours:
+            lines.append("  Pool Hours (Class Time Windows):")
+            days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+            for day in days:
+                hours = pool_hours.get(day, 'Not specified')
+                lines.append(f"    - {day.capitalize()}: {hours}")
+
+        # Render office hours if available
+        office_hours = getattr(loc, 'office_hours', None)
+        if office_hours:
+            lines.append("  Office Hours:")
+            if 'monday_friday' in office_hours:
+                lines.append(f"    - Monday-Friday: {office_hours['monday_friday']}")
+            if 'saturday' in office_hours:
+                lines.append(f"    - Saturday: {office_hours['saturday']}")
+            if 'sunday' in office_hours:
+                lines.append(f"    - Sunday: {office_hours['sunday']}")
+
+        lines.append("")  # Blank line between locations
+
+    lines.append("IMPORTANT: If a customer asks about class times on a day marked CLOSED, inform them that location is not available that day and suggest an alternative location that IS open.")
 
     return "\n".join(lines)
 

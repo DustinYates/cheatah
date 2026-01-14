@@ -27,7 +27,7 @@
   background: var(--color-bg-card, white);
   border-radius: var(--radius-lg, 12px);
   width: 100%;
-  max-width: 700px;
+  max-width: 800px;
   max-height: 90vh;
   overflow: hidden;
   display: flex;
@@ -63,7 +63,7 @@
 
 .lead-details-modal .modal-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-primary, #0f172a);
 }
@@ -102,7 +102,7 @@
 }
 
 .summary-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
   color: var(--color-text-primary, #0f172a);
@@ -111,44 +111,44 @@
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
   margin-bottom: 10px;
 }
 
 .summary-item {
   display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.8125rem;
-  line-height: 1.3;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  min-width: 0;
 }
 
 .summary-icon {
   color: var(--color-text-muted, #64748b);
   flex-shrink: 0;
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
+  margin-top: 2px;
 }
 
 .summary-label {
   color: var(--color-text-muted, #64748b);
   font-weight: 500;
-  font-size: 0.75rem;
-  line-height: 1.3;
+  font-size: 0.6875rem;
+  line-height: 1.4;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
   flex-shrink: 0;
 }
 
 .summary-value {
   color: var(--color-text-primary, #1e293b);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 400;
-  line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 /* Source Pills */
@@ -161,10 +161,10 @@
 .source-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: 3px;
+  padding: 3px 8px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -355,22 +355,22 @@
 
 .timeline-item-summary {
   flex: 1;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 400;
   color: var(--color-text-primary, #1e293b);
-  line-height: 1.35;
-  margin-right: 16px;
+  line-height: 1.4;
+  margin-right: 12px;
 }
 
 .timeline-item-header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .timeline-item-timestamp {
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;
   font-weight: 400;
   line-height: 1.3;
   color: var(--color-text-muted, #94a3b8);
@@ -425,16 +425,16 @@
 
 .detail-label {
   display: block;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--color-text-muted, #64748b);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 6px;
+  letter-spacing: 0.4px;
+  margin-bottom: 4px;
 }
 
 .detail-value {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 400;
   color: var(--color-text-secondary, #334155);
   line-height: 1.4;
@@ -462,23 +462,23 @@
 
 .metadata-item {
   display: flex;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   line-height: 1.4;
-  gap: 8px;
+  gap: 6px;
 }
 
 .metadata-item-label {
   font-weight: 500;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: var(--color-text-muted, #64748b);
-  min-width: 80px;
+  min-width: 70px;
   flex-shrink: 0;
 }
 
 .metadata-item-value {
   color: var(--color-text-secondary, #334155);
   font-weight: 400;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   line-height: 1.4;
   flex: 1;
 }
@@ -509,16 +509,16 @@
 }
 
 .conversation-message-role {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--color-text-muted, #64748b);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
+  letter-spacing: 0.4px;
+  margin-bottom: 3px;
 }
 
 .conversation-message-content {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 400;
   color: var(--color-text-primary, #1e293b);
   line-height: 1.4;
@@ -542,7 +542,12 @@
   }
 
   .summary-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .summary-item {
+    flex-wrap: wrap;
   }
 
   .timeline-body {
@@ -560,5 +565,11 @@
 
   .timeline-item-line {
     left: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
   }
 }

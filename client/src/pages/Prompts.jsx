@@ -120,6 +120,7 @@ function ArchivePromptStorage({
   onChange,
   onSave,
   saving,
+  savedAt,
 }) {
   const currentValue = archivedPrompts?.[activeArchiveChannel] || '';
 
@@ -138,6 +139,11 @@ function ArchivePromptStorage({
           {saving ? 'Saving...' : 'Save Archive'}
         </button>
       </div>
+      {savedAt && (
+        <div className="archive-save-meta">
+          Saved locally at {savedAt}
+        </div>
+      )}
 
       <div className="channel-tabs channel-tabs--archive">
         {CHANNEL_TABS.map((tab) => (
@@ -519,6 +525,7 @@ export default function Prompts() {
   const [archivedPrompts, setArchivedPrompts] = useState({ web: '', voice: '', sms: '' });
   const [activeArchiveChannel, setActiveArchiveChannel] = useState('web');
   const [archiveSaving, setArchiveSaving] = useState(false);
+  const [archiveSavedAt, setArchiveSavedAt] = useState('');
 
   // Bundles State (backups)
   const [bundles, setBundles] = useState([]);
@@ -572,24 +579,53 @@ Response style:
 - Keep answers scannable with bullets and short paragraphs.
 - Restate critical info (locations, schedules, policies, pricing) exactly as provided.`;
 
-  const buildVoicePrompt = (context) => `Channel: Voice (Phone / IVR / AI Voice)
+  const buildVoicePrompt = (context) => `AUTHORITATIVE_SOURCE:
+- Voice Assistant System Prompt has highest precedence. If any conflict exists, follow this voice prompt over other configs.
+
+Channel: Voice (Phone / IVR / AI Voice)
 Primary goal: Natural speech, zero ambiguity, zero cognitive load.
 
 Hard restrictions (critical):
-- Never read or spell URLs, email addresses, full street addresses, symbols, or formatting.
-- Never speak the words "slash", "dot", "dash", "underscore", "percent", or "colon".
-- Never stack questions; ask one at a time.
-- Never give dense lists (>3 items).
+- Never read or spell full street addresses aloud. Refer to locations by name only; offer to send location details by text/email.
+- Never speak URLs. Registration link is VOICE-UNSAFE; generate internally and send via SMS/email only (never spoken).
+- Never stack questions; one at a time. Never give dense lists (>3 items).
+- Never speak the words "slash", "dot", "dash", "underscore", "percent", "colon".
+- Never mention internal systems or invent links. No emojis.
 
-Required behaviors:
-- Always confirm understanding after key steps; narrate step changes ("Moving to enrollment step.").
-- Ask for ZIP code before discussing locations.
+Required flow behaviors:
+- Confirm understanding after key steps; narrate step changes ("Moving to enrollment step.").
+- Ask for class level first. Ask for ZIP code only after class level is confirmed, solely to recommend the nearest location.
 - Use speech-safe phrasing only.
-- For email addresses, spell letter-by-letter only during confirmation.
 
-Special rules:
+Email handling:
+- Allowed for capture. Spell letter-by-letter, say "at" for @ and "dot" for ., confirm accuracy before continuing.
+- After two failed confirmations, request phone number instead.
+
+Registration link:
+- link_template: "VOICE-UNSAFE"
+- usage_rule: "Generate internally; never speak; send only via SMS or email."
+
+Level placement authority:
+- authority: "VOICE_PROMPT"
+- rule: "Use full multi-age placement logic defined in the Voice Assistant System Prompt."
+
+Tuition authority:
+- calculation_authority: "VOICE_PROMPT"
+- output_rules:
+  - Speak final monthly total only, in natural speech for dollars.
+  - Do not read tables unless explicitly asked.
+
+Voice safety (never):
+- Book a class
+- Confirm enrollment
+- Invent links
+- Mention internal systems
+- Use emojis
+- Stack questions
+- Speak URLs or full addresses
+
+Pricing rule:
 - Pricing must be verbalized (e.g., "two hundred sixty six dollars"), not shown.
-- Links are not spoken; offer to send via SMS/email instead.
 
 Tenant context (convert to speech-safe responses; summarize addresses/links instead of reading them):
 ${context}
@@ -602,19 +638,31 @@ Speech style:
   const buildSmsPrompt = (context) => `Channel: SMS / Text Messaging
 Primary goal: Brevity, clarity, low interruption.
 
-Channel rules:
-- Allowed: Short links, one idea per message, yes/no or single-choice questions, simple confirmations, quick follow-up nudges.
-- Restrictions: No long explanations, no multi-step flows in one message, no walls of text, avoid back-and-forth loops.
-- Required: Each message must be skimmable in <5 seconds and include its own context (assume the user may come back later).
-- Special rules: Links are okay. Addresses should be shortened (cross streets preferred). Pricing should be summarized, not itemized. Avoid emojis unless brand-approved.
+Channel rules (SMS-specific):
+- One idea per message; one question per message; skimmable in <5 seconds. No multi-step flows in a single SMS.
+- Full street addresses are allowed. When sending an address, include nearby context:
+  "<Location name> — <full address> (near <cross streets/area>)"
+- Registration links must be full URLs (plain text, clickable). Use the template exactly:
+  https://britishswimschool.com/cypress-spring/register/?loc=[LOCATION_CODE]&type=[LEVEL_KEY]
+  - LEVEL_KEY may be percent-encoded (e.g., Turtle%201). Never decode/normalize percent-encoding. Never show raw LEVEL_KEY except inside the URL.
+  - Customer-facing text must use display_name (e.g., "Turtle 1"); URLs must use LEVEL_KEY.
+- Ask for city or ZIP first; map internally to LOCATION_CODE; send the registration link only after location is confirmed.
+- Pricing: keep full tables as authoritative input; summarize pricing in SMS unless the user explicitly requests a full breakdown.
+- Links for cancellation/policies: provide only when asked (do not proactively send).
+- Contact capture: do not ask for the phone number (they are already texting). Confirm "Is this the best number to reach you at?" Collect name + email for follow-up/enrollment.
+- Parent participation:
+  - Tadpole: Parent in water
+  - Swimboree: Parent in water
+  - Seahorse: Parent nearby, not in water
+- Guardrails: no walls of text, no back-and-forth loops; keep responses concise and contextual.
 
 Tenant context (condense to SMS-friendly snippets):
 ${context}
 
 Message style:
-- Keep to 1–3 short sentences; prefer numbered or bullet-like lines.
+- 1–3 short sentences; numbered/bulleted when helpful.
 - Always include quick context and a single clear action/question.
-- Use links sparingly; avoid long addresses—shorten to cross streets or area.`;
+- Use the full registration URL when relevant; include address + "near <area>" when sharing locations.`;
 
   const generateChannelPrompts = () => {
     const context = masterPrompt.trim();
@@ -1086,6 +1134,8 @@ Message style:
     setArchiveSaving(true);
     try {
       localStorage.setItem(archiveStorageKey, JSON.stringify(archivedPrompts));
+      const timestamp = new Date().toLocaleString();
+      setArchiveSavedAt(timestamp);
       addToast('Archived prompts saved locally.', 'success');
     } catch (err) {
       addToast('Failed to save archive: ' + err.message, 'error');
@@ -1093,6 +1143,22 @@ Message style:
       setArchiveSaving(false);
     }
   };
+
+  useEffect(() => {
+    // Auto-save to localStorage when archive changes (debounced via requestAnimationFrame)
+    let raf;
+    raf = requestAnimationFrame(() => {
+      try {
+        localStorage.setItem(archiveStorageKey, JSON.stringify(archivedPrompts));
+        setArchiveSavedAt(new Date().toLocaleString());
+      } catch (err) {
+        console.error('Auto-save archive failed', err);
+      }
+    });
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [archivedPrompts, archiveStorageKey]);
 
   // ========================================
   // Filter and Sort Bundles (for Backups)

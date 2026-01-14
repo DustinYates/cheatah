@@ -18,7 +18,6 @@ import TelephonySettings from './pages/TelephonySettings';
 import EmailSettings from './pages/EmailSettings';
 import ManageTenants from './pages/ManageTenants';
 import PromptWizard from './pages/PromptWizard';
-import SendableAssets from './pages/SendableAssets';
 import EscalationSettings from './pages/EscalationSettings';
 import './App.css';
 
@@ -56,7 +55,6 @@ function App() {
             <Route path="settings/widget" element={<WidgetSettings />} />
             <Route path="settings/email" element={<EmailSettings />} />
             <Route path="settings/sms" element={<SmsSettings />} />
-            <Route path="settings/sendable-assets" element={<SendableAssets />} />
             <Route path="settings/escalation" element={<EscalationSettings />} />
             <Route path="settings/telephony" element={<TelephonySettings />} />
             <Route path="telephony-settings" element={<Navigate to="/settings/telephony" replace />} />

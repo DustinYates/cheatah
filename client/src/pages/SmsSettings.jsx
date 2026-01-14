@@ -1,17 +1,57 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, ErrorState, EmptyState } from '../components/ui';
 
 const API_BASE = '/api/v1';
 
 const defaultBusinessHours = {
-  monday: { start: '09:00', end: '17:00' },
-  tuesday: { start: '09:00', end: '17:00' },
-  wednesday: { start: '09:00', end: '17:00' },
-  thursday: { start: '09:00', end: '17:00' },
-  friday: { start: '09:00', end: '17:00' },
-  saturday: { start: '', end: '' },
-  sunday: { start: '', end: '' },
+  monday: { start: '09:00', end: '17:00', closed: false },
+  tuesday: { start: '09:00', end: '17:00', closed: false },
+  wednesday: { start: '09:00', end: '17:00', closed: false },
+  thursday: { start: '09:00', end: '17:00', closed: false },
+  friday: { start: '09:00', end: '17:00', closed: false },
+  saturday: { start: '', end: '', closed: true },
+  sunday: { start: '', end: '', closed: true },
+};
+
+const timezoneOptions = [
+  { value: 'America/New_York', label: 'Eastern Time', abbr: 'ET' },
+  { value: 'America/Chicago', label: 'Central Time', abbr: 'CT' },
+  { value: 'America/Denver', label: 'Mountain Time', abbr: 'MT' },
+  { value: 'America/Los_Angeles', label: 'Pacific Time', abbr: 'PT' },
+];
+
+const dayLabels = [
+  { key: 'monday', label: 'Mon', fullLabel: 'Monday' },
+  { key: 'tuesday', label: 'Tue', fullLabel: 'Tuesday' },
+  { key: 'wednesday', label: 'Wed', fullLabel: 'Wednesday' },
+  { key: 'thursday', label: 'Thu', fullLabel: 'Thursday' },
+  { key: 'friday', label: 'Fri', fullLabel: 'Friday' },
+  { key: 'saturday', label: 'Sat', fullLabel: 'Saturday' },
+  { key: 'sunday', label: 'Sun', fullLabel: 'Sunday' },
+];
+
+const formatTime12h = (time24) => {
+  if (!time24) return '';
+  const [hours, minutes] = time24.split(':').map(Number);
+  const period = hours >= 12 ? 'pm' : 'am';
+  const hours12 = hours % 12 || 12;
+  return `${hours12}:${minutes.toString().padStart(2, '0')}${period}`;
+};
+
+const normalizeBusinessHours = (hours) => {
+  if (!hours) return defaultBusinessHours;
+  const normalized = {};
+  for (const day of dayLabels) {
+    const dayData = hours[day.key] || {};
+    const isClosed = dayData.closed === true || (!dayData.start && !dayData.end);
+    normalized[day.key] = {
+      start: dayData.start || '09:00',
+      end: dayData.end || '17:00',
+      closed: isClosed,
+    };
+  }
+  return normalized;
 };
 
 export default function SmsSettings() {
@@ -25,16 +65,26 @@ export default function SmsSettings() {
     business_hours_enabled: false,
     timezone: 'America/Chicago',
     business_hours: defaultBusinessHours,
-    // Follow-up settings
     followup_enabled: false,
     followup_delay_minutes: 5,
     followup_sources: ['email', 'voice_call', 'sms'],
     followup_initial_message: '',
   });
+  const [originalSettings, setOriginalSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
+  const [toast, setToast] = useState(null);
+
+  const isDirty = useMemo(() => {
+    if (!originalSettings) return false;
+    return JSON.stringify(settings) !== JSON.stringify(originalSettings);
+  }, [settings, originalSettings]);
+
+  const showToast = useCallback((message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
 
   useEffect(() => {
     fetchSettings();
@@ -48,19 +98,17 @@ export default function SmsSettings() {
       if (user?.is_global_admin && selectedTenantId) {
         headers['X-Tenant-Id'] = selectedTenantId.toString();
       }
-      const response = await fetch(`${API_BASE}/sms/settings`, {
-        headers,
-      });
+      const response = await fetch(`${API_BASE}/sms/settings`, { headers });
       if (response.ok) {
         const data = await response.json();
-        setSettings({
+        const normalizedSettings = {
           ...data,
-          business_hours: data.business_hours || defaultBusinessHours,
-        });
+          business_hours: normalizeBusinessHours(data.business_hours),
+        };
+        setSettings(normalizedSettings);
+        setOriginalSettings(normalizedSettings);
       } else if (response.status === 404) {
-        // 404 means no settings exist yet - use defaults (already set in state)
-        // Don't set error, just use default values
-        setSettings({
+        const defaultState = {
           is_enabled: false,
           phone_number: null,
           auto_reply_enabled: false,
@@ -73,21 +121,21 @@ export default function SmsSettings() {
           followup_delay_minutes: 5,
           followup_sources: ['email', 'voice_call', 'sms'],
           followup_initial_message: '',
-        });
+        };
+        setSettings(defaultState);
+        setOriginalSettings(defaultState);
       } else {
         const errorData = await response.json().catch(() => ({}));
         setError(errorData.detail || 'Failed to load SMS settings');
       }
-    } catch (error) {
-      // Only set error if it's not a "Not Found" type error
-      if (error.message?.includes('Not Found') || error.message?.includes('not found')) {
-        // Use defaults, don't show error
-        setSettings({
+    } catch (err) {
+      if (err.message?.includes('Not Found') || err.message?.includes('not found')) {
+        const defaultState = {
           is_enabled: false,
           phone_number: null,
           auto_reply_enabled: false,
           auto_reply_message: '',
-          initial_outreach_message: "Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?",
+          initial_outreach_message: "Hi! Thanks for reaching out...",
           business_hours_enabled: false,
           timezone: 'America/Chicago',
           business_hours: defaultBusinessHours,
@@ -95,10 +143,11 @@ export default function SmsSettings() {
           followup_delay_minutes: 5,
           followup_sources: ['email', 'voice_call', 'sms'],
           followup_initial_message: '',
-        });
+        };
+        setSettings(defaultState);
+        setOriginalSettings(defaultState);
       } else {
-        console.error('Error fetching SMS settings:', error);
-        setError(error.message || 'Failed to load SMS settings');
+        setError(err.message || 'Failed to load SMS settings');
       }
     } finally {
       setLoading(false);
@@ -107,8 +156,6 @@ export default function SmsSettings() {
 
   const saveSettings = async () => {
     setSaving(true);
-    setMessage({ type: '', text: '' });
-
     try {
       const headers = {
         'Authorization': `Bearer ${token}`,
@@ -117,6 +164,17 @@ export default function SmsSettings() {
       if (user?.is_global_admin && selectedTenantId) {
         headers['X-Tenant-Id'] = selectedTenantId.toString();
       }
+
+      // Convert business_hours back to API format (without closed, use empty strings)
+      const apiBusinessHours = {};
+      for (const day of dayLabels) {
+        const dayData = settings.business_hours[day.key];
+        apiBusinessHours[day.key] = {
+          start: dayData.closed ? '' : dayData.start,
+          end: dayData.closed ? '' : dayData.end,
+        };
+      }
+
       const response = await fetch(`${API_BASE}/sms/settings`, {
         method: 'PUT',
         headers,
@@ -127,7 +185,7 @@ export default function SmsSettings() {
           initial_outreach_message: settings.initial_outreach_message,
           business_hours_enabled: settings.business_hours_enabled,
           timezone: settings.timezone,
-          business_hours: settings.business_hours,
+          business_hours: apiBusinessHours,
           followup_enabled: settings.followup_enabled,
           followup_delay_minutes: settings.followup_delay_minutes,
           followup_sources: settings.followup_sources,
@@ -137,33 +195,111 @@ export default function SmsSettings() {
 
       if (response.ok) {
         const data = await response.json();
-        setSettings({
+        const normalizedSettings = {
           ...data,
-          business_hours: data.business_hours || defaultBusinessHours,
-        });
-        setMessage({ type: 'success', text: 'Settings saved successfully!' });
+          business_hours: normalizeBusinessHours(data.business_hours),
+        };
+        setSettings(normalizedSettings);
+        setOriginalSettings(normalizedSettings);
+        showToast('Settings saved successfully');
       } else {
         const errorData = await response.json();
-        setMessage({ type: 'error', text: errorData.detail || 'Failed to save settings' });
+        showToast(errorData.detail || 'Failed to save settings', 'error');
       }
     } catch {
-      setMessage({ type: 'error', text: 'Network error. Please try again.' });
+      showToast('Network error. Please try again.', 'error');
     } finally {
       setSaving(false);
     }
   };
 
+  const handleCancel = () => {
+    if (originalSettings) {
+      setSettings(originalSettings);
+    }
+  };
 
-  // Check if global admin without tenant selected
+  const updateSetting = (key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const updateBusinessHours = (day, field, value) => {
+    setSettings(prev => ({
+      ...prev,
+      business_hours: {
+        ...prev.business_hours,
+        [day]: {
+          ...prev.business_hours[day],
+          [field]: value,
+        },
+      },
+    }));
+  };
+
+  const toggleDayClosed = (day) => {
+    setSettings(prev => ({
+      ...prev,
+      business_hours: {
+        ...prev.business_hours,
+        [day]: {
+          ...prev.business_hours[day],
+          closed: !prev.business_hours[day].closed,
+        },
+      },
+    }));
+  };
+
+  const toggleFollowupSource = (source) => {
+    setSettings(prev => {
+      const sources = prev.followup_sources || [];
+      const newSources = sources.includes(source)
+        ? sources.filter(s => s !== source)
+        : [...sources, source];
+      return { ...prev, followup_sources: newSources };
+    });
+  };
+
+  // Generate availability summary
+  const availabilitySummary = useMemo(() => {
+    if (!settings.business_hours_enabled) return null;
+
+    const tz = timezoneOptions.find(t => t.value === settings.timezone);
+    const tzAbbr = tz?.abbr || 'CT';
+
+    const openDays = dayLabels.filter(d => !settings.business_hours[d.key]?.closed);
+    if (openDays.length === 0) return `All days closed (${tzAbbr})`;
+
+    // Check if all open days have same hours
+    const firstDay = openDays[0];
+    const firstHours = settings.business_hours[firstDay.key];
+    const allSameHours = openDays.every(d => {
+      const h = settings.business_hours[d.key];
+      return h.start === firstHours.start && h.end === firstHours.end;
+    });
+
+    if (allSameHours && openDays.length > 0) {
+      const timeRange = `${formatTime12h(firstHours.start)}–${formatTime12h(firstHours.end)}`;
+      if (openDays.length === 5 && !settings.business_hours.saturday?.closed === false && !settings.business_hours.sunday?.closed === false) {
+        return `Mon–Fri ${timeRange} ${tzAbbr}; Sat/Sun closed`;
+      }
+      const dayRange = openDays.length === 1
+        ? openDays[0].label
+        : `${openDays[0].label}–${openDays[openDays.length - 1].label}`;
+      return `${dayRange} ${timeRange} ${tzAbbr}`;
+    }
+
+    return `Custom schedule (${tzAbbr})`;
+  }, [settings.business_hours_enabled, settings.business_hours, settings.timezone]);
+
   const needsTenant = user?.is_global_admin && !selectedTenantId;
 
   if (needsTenant) {
     return (
-      <div className="page-container sms-settings">
+      <div className="sms-page">
         <EmptyState
-          icon="📱"
+          icon="SMS"
           title="Select a tenant to manage SMS settings"
-          description="Please select a tenant from the dropdown above to manage their SMS settings."
+          description="Please select a tenant from the dropdown above."
         />
       </div>
     );
@@ -171,798 +307,1037 @@ export default function SmsSettings() {
 
   if (loading) {
     return (
-      <div className="page-container sms-settings">
+      <div className="sms-page">
         <LoadingState message="Loading SMS settings..." fullPage />
       </div>
     );
   }
 
-  if (error) {
-    // Check if error is about tenant context
-    if (error.includes('Tenant context required') || error.includes('Tenant context')) {
+  if (error && !error.includes('Not Found')) {
+    if (error.includes('Tenant context')) {
       return (
-        <div className="page-container sms-settings">
+        <div className="sms-page">
           <EmptyState
-            icon="📱"
+            icon="SMS"
             title="Select a tenant to manage SMS settings"
-            description="Please select a tenant from the dropdown above to manage their SMS settings."
+            description="Please select a tenant from the dropdown above."
           />
         </div>
       );
     }
-    // Don't show error for "Not Found" - we already handled it in fetchSettings
-    // Only show error for actual failures
-    if (!error.includes('Not Found') && !error.includes('not found')) {
-      return (
-        <div className="page-container sms-settings">
-          <ErrorState message={error} onRetry={fetchSettings} />
-        </div>
-      );
-    }
-    // If it was a "Not Found", continue to render the form with defaults
+    return (
+      <div className="sms-page">
+        <ErrorState message={error} onRetry={fetchSettings} />
+      </div>
+    );
   }
 
-  const updateBusinessHours = (day, field, value) => {
-    setSettings((prev) => ({
-      ...prev,
-      business_hours: {
-        ...prev.business_hours,
-        [day]: {
-          ...prev.business_hours?.[day],
-          [field]: value,
-        },
-      },
-    }));
-  };
-
-  const dayLabels = [
-    { key: 'monday', label: 'Monday' },
-    { key: 'tuesday', label: 'Tuesday' },
-    { key: 'wednesday', label: 'Wednesday' },
-    { key: 'thursday', label: 'Thursday' },
-    { key: 'friday', label: 'Friday' },
-    { key: 'saturday', label: 'Saturday' },
-    { key: 'sunday', label: 'Sunday' },
-  ];
   const smsEnabled = settings.is_enabled && !!settings.phone_number;
-  const messagingDisabled = !smsEnabled;
-  const afterHoursDisabled = messagingDisabled || !settings.business_hours_enabled;
+  const showAfterHours = settings.business_hours_enabled;
 
   return (
-    <div className="page-container sms-settings">
-      <div className="page-header">
-        <span className="page-title">SMS Settings</span>
+    <div className="sms-page">
+      {/* Sticky Save Bar */}
+      <div className={`sms-save-bar ${isDirty ? 'sms-save-bar--visible' : ''}`}>
+        <div className="sms-save-bar__content">
+          <span className="sms-save-bar__text">You have unsaved changes</span>
+          <div className="sms-save-bar__actions">
+            <button
+              type="button"
+              className="sms-btn sms-btn--ghost"
+              onClick={handleCancel}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="sms-btn sms-btn--primary"
+              onClick={saveSettings}
+              disabled={saving}
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {message.text && (
-        <div className={`alert ${message.type === 'error' ? 'alert-error' : 'alert-success'}`}>
-          {message.text}
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`sms-toast sms-toast--${toast.type}`}>
+          {toast.type === 'success' ? '✓' : '!'} {toast.message}
         </div>
       )}
 
-      <div className="card primary-card">
-        <div className="section">
-          <div className="section-header">
-            <div>
-              <div className="section-title">SMS Status</div>
-              <p className="section-subtitle">Confirm your assigned number and master SMS switch.</p>
-            </div>
-          </div>
-          <div className="section-body">
-            <div className="form-grid">
-              <div className="form-row">
-                <span className="form-label">Assigned number</span>
-                <div className="form-control">
-                  {settings.phone_number ? (
-                    <div className="inline-status active">
-                      <span className="phone-number">{settings.phone_number}</span>
-                      <span className="status-dot" aria-hidden="true"></span>
-                      <span className="status-label">Assigned</span>
-                    </div>
-                  ) : (
-                    <div className="inline-status inactive">
-                      <span className="status-dot" aria-hidden="true"></span>
-                      <span className="status-label">Not Assigned</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {!settings.phone_number && (
-                <div className="help-text tight">Contact support to assign a phone number.</div>
-              )}
+      {/* Header */}
+      <header className="sms-header">
+        <h1 className="sms-header__title">SMS Settings</h1>
+        <p className="sms-header__subtitle">Control when we reply and what messages we send.</p>
+      </header>
 
-              <div className="form-row">
-                <label className="form-label" htmlFor="sms-enabled">
-                  SMS Enabled
-                </label>
-                <div className="form-control">
-                  <input
-                    id="sms-enabled"
-                    type="checkbox"
-                    checked={settings.is_enabled}
-                    onChange={(e) => setSettings({ ...settings, is_enabled: e.target.checked })}
-                    disabled={!settings.phone_number}
-                    title={
-                      settings.phone_number
-                        ? 'Enable or disable SMS sending for this tenant.'
-                        : 'Assign a phone number to enable SMS.'
-                    }
-                  />
-                </div>
-              </div>
-              {!settings.phone_number && (
-                <div className="help-text tight">Assign a phone number to enable SMS.</div>
-              )}
-            </div>
+      <div className="sms-cards">
+        {/* Card A: SMS Line */}
+        <section className="sms-card">
+          <div className="sms-card__header">
+            <h2 className="sms-card__title">SMS Line</h2>
           </div>
-        </div>
-
-        <div className="section-divider"></div>
-
-        <div className={`section ${messagingDisabled ? 'section-disabled' : ''}`}>
-          <div className="section-header">
-            <div>
-              <div className="section-title">Messaging Behavior</div>
-              <p className="section-subtitle">Define when the system responds automatically.</p>
-            </div>
-            {messagingDisabled && <span className="section-status">SMS Off</span>}
-          </div>
-          <fieldset className="section-body" disabled={messagingDisabled}>
-            <div className="subsection">
-              <div className="subsection-title">Business Hours</div>
-              <div className="form-grid">
-                <div className="form-row">
-                  <label className="form-label" htmlFor="business-hours-enabled">
-                    Respect business hours
-                  </label>
-                  <div className="form-control">
-                    <input
-                      id="business-hours-enabled"
-                      type="checkbox"
-                      checked={settings.business_hours_enabled}
-                      onChange={(e) => setSettings({ ...settings, business_hours_enabled: e.target.checked })}
-                      title="Enforce responses during the hours below."
-                    />
+          <div className="sms-card__body">
+            <div className="sms-field">
+              <label className="sms-field__label">Assigned Number</label>
+              <div className="sms-field__value">
+                {settings.phone_number ? (
+                  <div className="sms-phone-status">
+                    <span className="sms-phone-number">{settings.phone_number}</span>
+                    <span className="sms-status-badge sms-status-badge--active">Active</span>
                   </div>
-                </div>
-
-                {settings.business_hours_enabled && (
-                  <>
-                    <div className="inline-note">
-                      Messages outside business hours will use the after-hours behavior below.
-                    </div>
-                    <div className="form-row">
-                      <label className="form-label" htmlFor="sms-timezone">
-                        Timezone
-                      </label>
-                      <div className="form-control">
-                        <select
-                          id="sms-timezone"
-                          value={settings.timezone}
-                          onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
-                        >
-                          <option value="America/New_York">Eastern Time</option>
-                          <option value="America/Chicago">Central Time</option>
-                          <option value="America/Denver">Mountain Time</option>
-                          <option value="America/Los_Angeles">Pacific Time</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="form-row form-row-top">
-                      <span className="form-label">Hours</span>
-                      <div className="form-control">
-                        <div className="hours-grid">
-                          {dayLabels.map((day) => {
-                            const range = settings.business_hours?.[day.key] || { start: '', end: '' };
-                            return (
-                              <div key={day.key} className="hours-row">
-                                <div className="hours-day">{day.label}</div>
-                                <div className="hours-time">
-                                  <input
-                                    type="time"
-                                    value={range.start || ''}
-                                    onChange={(e) => updateBusinessHours(day.key, 'start', e.target.value)}
-                                    aria-label={`${day.label} start time`}
-                                  />
-                                  <span className="hours-sep">to</span>
-                                  <input
-                                    type="time"
-                                    value={range.end || ''}
-                                    onChange={(e) => updateBusinessHours(day.key, 'end', e.target.value)}
-                                    aria-label={`${day.label} end time`}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="help-text tight">Leave a day blank to mark it as closed.</div>
-                      </div>
-                    </div>
-                  </>
+                ) : (
+                  <div className="sms-phone-status">
+                    <span className="sms-status-badge sms-status-badge--inactive">Not Assigned</span>
+                    <span className="sms-field__hint">Contact support to assign a number.</span>
+                  </div>
                 )}
               </div>
             </div>
 
-            <div className="subsection-divider"></div>
-
-            <div className={`subsection ${afterHoursDisabled ? 'subsection-disabled' : ''}`}>
-              <div className="subsection-title">After-Hours Message</div>
-              {!settings.business_hours_enabled && !messagingDisabled && (
-                <div className="inline-note">Enable Business Hours to send after-hours messages.</div>
-              )}
-              <fieldset className="subsection-body" disabled={afterHoursDisabled}>
-                <div className="form-grid">
-                  <div className="form-row">
-                    <label className="form-label" htmlFor="after-hours-enabled">
-                      Send after-hours SMS
-                    </label>
-                    <div className="form-control">
-                      <input
-                        id="after-hours-enabled"
-                        type="checkbox"
-                        checked={settings.auto_reply_enabled}
-                        onChange={(e) => setSettings({ ...settings, auto_reply_enabled: e.target.checked })}
-                        title="Send a reply when messages arrive outside business hours."
-                      />
-                    </div>
-                  </div>
-
-                  {settings.auto_reply_enabled && !afterHoursDisabled && (
-                    <div className="form-row form-row-top">
-                      <label className="form-label" htmlFor="after-hours-message">
-                        After-Hours Message
-                      </label>
-                      <div className="form-control">
-                        <textarea
-                          id="after-hours-message"
-                          className="textarea-compact textarea-short"
-                          value={settings.auto_reply_message || ''}
-                          onChange={(e) => setSettings({ ...settings, auto_reply_message: e.target.value })}
-                          placeholder="We're currently outside business hours. We'll respond when we're back."
-                          rows={2}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </fieldset>
-            </div>
-          </fieldset>
-        </div>
-
-        <div className="section-divider"></div>
-
-        <div className={`section ${messagingDisabled ? 'section-disabled' : ''}`}>
-          <div className="section-header">
-            <div>
-              <div className="section-title">Follow-Up Automation</div>
-              <p className="section-subtitle">Send a follow-up if someone does not reply.</p>
-            </div>
-            {messagingDisabled && <span className="section-status">SMS Off</span>}
-          </div>
-          <fieldset className="section-body" disabled={messagingDisabled}>
-            <div className="form-grid">
-              <div className="form-row">
-                <label className="form-label" htmlFor="followup-enabled">
-                  Send follow-up SMS
-                </label>
-                <div className="form-control">
-                  <input
-                    id="followup-enabled"
-                    type="checkbox"
-                    checked={settings.followup_enabled}
-                    onChange={(e) => setSettings({ ...settings, followup_enabled: e.target.checked })}
-                    title="Send a follow-up text for new leads."
-                  />
-                </div>
-              </div>
-
-              {settings.followup_enabled && !messagingDisabled && (
-                <>
-                  <div className="inline-note">
-                    Sent if the lead does not reply within the delay window.
-                  </div>
-                  <div className="form-row">
-                    <label className="form-label" htmlFor="followup-delay">
-                      Follow-Up Delay (minutes)
-                    </label>
-                    <div className="form-control">
-                      <input
-                        id="followup-delay"
-                        type="number"
-                        min="1"
-                        max="60"
-                        value={settings.followup_delay_minutes}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            followup_delay_minutes: parseInt(e.target.value) || 5,
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-row form-row-top">
-                    <span className="form-label">Lead sources</span>
-                    <div className="form-control">
-                      <div className="checkbox-grid">
-                        <label className="checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={settings.followup_sources?.includes('email')}
-                            onChange={(e) => {
-                              const sources = settings.followup_sources || [];
-                              if (e.target.checked) {
-                                setSettings({ ...settings, followup_sources: [...sources, 'email'] });
-                              } else {
-                                setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'email') });
-                              }
-                            }}
-                          />
-                          Email
-                        </label>
-                        <label className="checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={settings.followup_sources?.includes('voice_call')}
-                            onChange={(e) => {
-                              const sources = settings.followup_sources || [];
-                              if (e.target.checked) {
-                                setSettings({ ...settings, followup_sources: [...sources, 'voice_call'] });
-                              } else {
-                                setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'voice_call') });
-                              }
-                            }}
-                          />
-                          Calls
-                        </label>
-                        <label className="checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={settings.followup_sources?.includes('sms')}
-                            onChange={(e) => {
-                              const sources = settings.followup_sources || [];
-                              if (e.target.checked) {
-                                setSettings({ ...settings, followup_sources: [...sources, 'sms'] });
-                              } else {
-                                setSettings({ ...settings, followup_sources: sources.filter(s => s !== 'sms') });
-                              }
-                            }}
-                          />
-                          SMS
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="form-row form-row-top">
-                    <label className="form-label" htmlFor="followup-message">
-                      Follow-Up SMS Content
-                    </label>
-                    <div className="form-control">
-                      <textarea
-                        id="followup-message"
-                        className="textarea-compact textarea-short"
-                        value={settings.followup_initial_message || ''}
-                        onChange={(e) => setSettings({ ...settings, followup_initial_message: e.target.value })}
-                        placeholder="Leave empty for AI-generated follow-up. Use {name} or {first_name}."
-                        rows={2}
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </fieldset>
-        </div>
-
-        <div className="section-divider"></div>
-
-        <div className={`section ${messagingDisabled ? 'section-disabled' : ''}`}>
-          <div className="section-header">
-            <div>
-              <div className="section-title">Settings / Tests</div>
-              <p className="section-subtitle">
-                Used when you initiate a conversation from the dashboard button. Not used for inbound messages or automation.
+            <div className="sms-field sms-field--toggle">
+              <label className="sms-toggle" htmlFor="sms-enabled">
+                <input
+                  id="sms-enabled"
+                  type="checkbox"
+                  checked={settings.is_enabled}
+                  onChange={(e) => updateSetting('is_enabled', e.target.checked)}
+                  disabled={!settings.phone_number}
+                  className="sms-toggle__input"
+                />
+                <span className="sms-toggle__switch" />
+                <span className="sms-toggle__label">SMS Enabled</span>
+              </label>
+              <p className="sms-field__description">
+                {settings.phone_number
+                  ? 'When enabled, the system can send and receive SMS messages.'
+                  : 'Assign a phone number to enable SMS messaging.'}
               </p>
             </div>
-            {messagingDisabled && <span className="section-status">SMS Off</span>}
           </div>
-          <fieldset className="section-body" disabled={messagingDisabled}>
-            <div className="form-grid">
-              <div className="form-row form-row-top">
-                <label className="form-label" htmlFor="initial-message">
-                  Initiate message (dashboard button)
-                </label>
-                <div className="form-control">
-                  <textarea
-                    id="initial-message"
-                    className="textarea-compact textarea-short"
-                    value={settings.initial_outreach_message || ''}
-                    onChange={(e) => setSettings({ ...settings, initial_outreach_message: e.target.value })}
-                    placeholder="Hi! Thanks for reaching out..."
-                    rows={2}
-                  />
+        </section>
+
+        {/* Card B: Availability */}
+        <section className={`sms-card ${!smsEnabled ? 'sms-card--disabled' : ''}`}>
+          <div className="sms-card__header">
+            <h2 className="sms-card__title">Availability</h2>
+            {!smsEnabled && <span className="sms-card__badge">SMS Off</span>}
+          </div>
+          <div className="sms-card__body">
+            <div className="sms-field sms-field--toggle">
+              <label className="sms-toggle" htmlFor="business-hours-enabled">
+                <input
+                  id="business-hours-enabled"
+                  type="checkbox"
+                  checked={settings.business_hours_enabled}
+                  onChange={(e) => updateSetting('business_hours_enabled', e.target.checked)}
+                  disabled={!smsEnabled}
+                  className="sms-toggle__input"
+                />
+                <span className="sms-toggle__switch" />
+                <span className="sms-toggle__label">Use Business Hours</span>
+              </label>
+              <p className="sms-field__description">
+                Restrict auto-responses to specific hours. Outside these hours, after-hours behavior applies.
+              </p>
+            </div>
+
+            {settings.business_hours_enabled && (
+              <>
+                <div className="sms-field sms-field--row">
+                  <label className="sms-field__label" htmlFor="timezone">Timezone</label>
+                  <select
+                    id="timezone"
+                    className="sms-select"
+                    value={settings.timezone}
+                    onChange={(e) => updateSetting('timezone', e.target.value)}
+                    disabled={!smsEnabled}
+                  >
+                    {timezoneOptions.map(tz => (
+                      <option key={tz.value} value={tz.value}>{tz.label}</option>
+                    ))}
+                  </select>
                 </div>
+
+                {availabilitySummary && (
+                  <div className="sms-summary">
+                    <span className="sms-summary__icon">🕐</span>
+                    <span className="sms-summary__text">{availabilitySummary}</span>
+                  </div>
+                )}
+
+                <div className="sms-schedule">
+                  <div className="sms-schedule__header">
+                    <span className="sms-schedule__col">Day</span>
+                    <span className="sms-schedule__col">Hours</span>
+                    <span className="sms-schedule__col sms-schedule__col--status">Status</span>
+                  </div>
+                  {dayLabels.map(day => {
+                    const dayData = settings.business_hours[day.key];
+                    const isClosed = dayData?.closed;
+                    return (
+                      <div key={day.key} className={`sms-schedule__row ${isClosed ? 'sms-schedule__row--closed' : ''}`}>
+                        <span className="sms-schedule__day">{day.fullLabel}</span>
+                        <div className="sms-schedule__times">
+                          {isClosed ? (
+                            <span className="sms-schedule__closed-label">Closed</span>
+                          ) : (
+                            <>
+                              <input
+                                type="time"
+                                className="sms-time-input"
+                                value={dayData?.start || '09:00'}
+                                onChange={(e) => updateBusinessHours(day.key, 'start', e.target.value)}
+                                disabled={!smsEnabled}
+                                aria-label={`${day.fullLabel} start time`}
+                              />
+                              <span className="sms-schedule__sep">to</span>
+                              <input
+                                type="time"
+                                className="sms-time-input"
+                                value={dayData?.end || '17:00'}
+                                onChange={(e) => updateBusinessHours(day.key, 'end', e.target.value)}
+                                disabled={!smsEnabled}
+                                aria-label={`${day.fullLabel} end time`}
+                              />
+                            </>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className={`sms-closed-toggle ${isClosed ? 'sms-closed-toggle--active' : ''}`}
+                          onClick={() => toggleDayClosed(day.key)}
+                          disabled={!smsEnabled}
+                          aria-pressed={isClosed}
+                        >
+                          {isClosed ? 'Closed' : 'Open'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* Card C: After-Hours Behavior */}
+        {showAfterHours && (
+          <section className={`sms-card ${!smsEnabled ? 'sms-card--disabled' : ''}`}>
+            <div className="sms-card__header">
+              <h2 className="sms-card__title">After-Hours Behavior</h2>
+              {!smsEnabled && <span className="sms-card__badge">SMS Off</span>}
+            </div>
+            <div className="sms-card__body">
+              <p className="sms-card__description">
+                What should happen when someone texts outside business hours?
+              </p>
+
+              <div className="sms-radio-group">
+                <label className="sms-radio">
+                  <input
+                    type="radio"
+                    name="after-hours-behavior"
+                    checked={settings.auto_reply_enabled}
+                    onChange={() => updateSetting('auto_reply_enabled', true)}
+                    disabled={!smsEnabled}
+                    className="sms-radio__input"
+                  />
+                  <span className="sms-radio__mark" />
+                  <span className="sms-radio__content">
+                    <span className="sms-radio__label">Auto-reply with after-hours message</span>
+                    <span className="sms-radio__description">Send an automated response letting them know you're closed.</span>
+                  </span>
+                </label>
+
+                <label className="sms-radio">
+                  <input
+                    type="radio"
+                    name="after-hours-behavior"
+                    checked={!settings.auto_reply_enabled}
+                    onChange={() => updateSetting('auto_reply_enabled', false)}
+                    disabled={!smsEnabled}
+                    className="sms-radio__input"
+                  />
+                  <span className="sms-radio__mark" />
+                  <span className="sms-radio__content">
+                    <span className="sms-radio__label">Do not auto-reply</span>
+                    <span className="sms-radio__description">Messages are logged but no automatic response is sent.</span>
+                  </span>
+                </label>
+              </div>
+
+              {settings.auto_reply_enabled && (
+                <div className="sms-field sms-field--textarea">
+                  <label className="sms-field__label" htmlFor="after-hours-message">
+                    After-Hours Message
+                  </label>
+                  <div className="sms-textarea-wrapper">
+                    <textarea
+                      id="after-hours-message"
+                      className="sms-textarea"
+                      value={settings.auto_reply_message || ''}
+                      onChange={(e) => updateSetting('auto_reply_message', e.target.value)}
+                      placeholder="We're currently outside business hours. We'll respond when we're back."
+                      disabled={!smsEnabled}
+                      maxLength={500}
+                      rows={3}
+                    />
+                    <span className="sms-textarea__count">
+                      {(settings.auto_reply_message || '').length}/500
+                    </span>
+                  </div>
+                  <p className="sms-field__hint">
+                    Tip: Use {'{name}'} or {'{first_name}'} for personalization.
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Card D: Follow-Up Automation */}
+        <section className={`sms-card ${!smsEnabled ? 'sms-card--disabled' : ''}`}>
+          <div className="sms-card__header">
+            <h2 className="sms-card__title">Follow-Up Automation</h2>
+            {!smsEnabled && <span className="sms-card__badge">SMS Off</span>}
+          </div>
+          <div className="sms-card__body">
+            <div className="sms-field sms-field--toggle">
+              <label className="sms-toggle" htmlFor="followup-enabled">
+                <input
+                  id="followup-enabled"
+                  type="checkbox"
+                  checked={settings.followup_enabled}
+                  onChange={(e) => updateSetting('followup_enabled', e.target.checked)}
+                  disabled={!smsEnabled}
+                  className="sms-toggle__input"
+                />
+                <span className="sms-toggle__switch" />
+                <span className="sms-toggle__label">Send Follow-Up if No Reply</span>
+              </label>
+              <p className="sms-field__description">
+                Automatically send a follow-up SMS if we don't receive a reply from the lead.
+              </p>
+            </div>
+
+            {settings.followup_enabled && (
+              <>
+                <div className="sms-field sms-field--row">
+                  <label className="sms-field__label" htmlFor="followup-delay">
+                    Send follow-up after
+                  </label>
+                  <div className="sms-input-group">
+                    <input
+                      id="followup-delay"
+                      type="number"
+                      className="sms-input sms-input--number"
+                      value={settings.followup_delay_minutes}
+                      onChange={(e) => updateSetting('followup_delay_minutes', Math.max(1, Math.min(60, parseInt(e.target.value) || 5)))}
+                      disabled={!smsEnabled}
+                      min={1}
+                      max={60}
+                    />
+                    <span className="sms-input-group__suffix">minutes of no reply</span>
+                  </div>
+                </div>
+
+                <div className="sms-field">
+                  <label className="sms-field__label">Apply to leads from</label>
+                  <p className="sms-field__hint" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
+                    Follow-up only applies to new leads created from these sources.
+                  </p>
+                  <div className="sms-chip-group">
+                    {[
+                      { key: 'email', label: 'Email' },
+                      { key: 'voice_call', label: 'Phone Calls' },
+                      { key: 'sms', label: 'SMS' },
+                    ].map(source => (
+                      <button
+                        key={source.key}
+                        type="button"
+                        className={`sms-chip ${settings.followup_sources?.includes(source.key) ? 'sms-chip--active' : ''}`}
+                        onClick={() => toggleFollowupSource(source.key)}
+                        disabled={!smsEnabled}
+                      >
+                        {source.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="sms-field sms-field--textarea">
+                  <label className="sms-field__label" htmlFor="followup-message">
+                    Follow-Up Message
+                  </label>
+                  <div className="sms-textarea-wrapper">
+                    <textarea
+                      id="followup-message"
+                      className="sms-textarea"
+                      value={settings.followup_initial_message || ''}
+                      onChange={(e) => updateSetting('followup_initial_message', e.target.value)}
+                      placeholder="Hi {first_name}, just following up on my earlier message..."
+                      disabled={!smsEnabled}
+                      maxLength={500}
+                      rows={3}
+                    />
+                    <span className="sms-textarea__count">
+                      {(settings.followup_initial_message || '').length}/500
+                    </span>
+                  </div>
+                  <p className="sms-field__hint">
+                    Leave empty to use an AI-generated follow-up based on the conversation.
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* Card E: Testing */}
+        <section className={`sms-card ${!smsEnabled ? 'sms-card--disabled' : ''}`}>
+          <div className="sms-card__header">
+            <h2 className="sms-card__title">Test SMS</h2>
+            {!smsEnabled && <span className="sms-card__badge">SMS Off</span>}
+          </div>
+          <div className="sms-card__body">
+            <p className="sms-card__description">
+              This message is sent when you manually initiate a conversation from the dashboard.
+              It's not used for inbound messages or automation.
+            </p>
+
+            <div className="sms-field sms-field--textarea">
+              <label className="sms-field__label" htmlFor="initial-message">
+                Initiate Message
+              </label>
+              <div className="sms-textarea-wrapper">
+                <textarea
+                  id="initial-message"
+                  className="sms-textarea"
+                  value={settings.initial_outreach_message || ''}
+                  onChange={(e) => updateSetting('initial_outreach_message', e.target.value)}
+                  placeholder="Hi! Thanks for reaching out..."
+                  disabled={!smsEnabled}
+                  maxLength={500}
+                  rows={3}
+                />
+                <span className="sms-textarea__count">
+                  {(settings.initial_outreach_message || '').length}/500
+                </span>
               </div>
             </div>
-          </fieldset>
-        </div>
+          </div>
+        </section>
       </div>
 
-      <div className="page-actions">
+      {/* Bottom Save Button (always visible) */}
+      <div className="sms-actions">
         <button
-          className="btn btn-primary"
+          type="button"
+          className="sms-btn sms-btn--primary sms-btn--lg"
           onClick={saveSettings}
-          disabled={saving}
-          title="Save all SMS settings"
+          disabled={saving || !isDirty}
         >
           {saving ? 'Saving...' : 'Save Settings'}
         </button>
       </div>
 
       <style>{`
-        .page-container.sms-settings {
-          max-width: 960px;
+        .sms-page {
+          max-width: 720px;
           margin: 0 auto;
-          padding: 1rem 1.25rem 1.5rem;
+          padding: 1rem 1.5rem 3rem;
         }
 
-        .page-header {
-          margin-bottom: 0.5rem;
+        /* Sticky Save Bar */
+        .sms-save-bar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          z-index: 100;
+          background: #1a1a1a;
+          transform: translateY(-100%);
+          transition: transform 0.2s ease;
+        }
+        .sms-save-bar--visible {
+          transform: translateY(0);
+        }
+        .sms-save-bar__content {
+          max-width: 720px;
+          margin: 0 auto;
+          padding: 0.75rem 1.5rem;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+        }
+        .sms-save-bar__text {
+          color: #fff;
+          font-size: 0.875rem;
+          font-weight: 500;
+        }
+        .sms-save-bar__actions {
+          display: flex;
+          gap: 0.5rem;
         }
 
-        .page-title {
+        /* Toast */
+        .sms-toast {
+          position: fixed;
+          bottom: 1.5rem;
+          left: 50%;
+          transform: translateX(-50%);
+          padding: 0.75rem 1.25rem;
+          border-radius: 8px;
+          font-size: 0.875rem;
+          font-weight: 500;
+          z-index: 200;
+          animation: slideUp 0.3s ease;
+        }
+        .sms-toast--success {
+          background: #065f46;
+          color: #fff;
+        }
+        .sms-toast--error {
+          background: #991b1b;
+          color: #fff;
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translate(-50%, 10px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+
+        /* Header */
+        .sms-header {
+          margin-bottom: 1.5rem;
+        }
+        .sms-header__title {
+          font-size: 1.5rem;
+          font-weight: 600;
+          color: #111;
+          margin: 0 0 0.25rem;
+        }
+        .sms-header__subtitle {
+          font-size: 0.9375rem;
+          color: #666;
+          margin: 0;
+        }
+
+        /* Cards */
+        .sms-cards {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        .sms-card {
+          background: #fff;
+          border: 1px solid #e5e5e5;
+          border-radius: 12px;
+          overflow: hidden;
+        }
+        .sms-card--disabled {
+          opacity: 0.6;
+          pointer-events: none;
+        }
+        .sms-card__header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 1rem 1.25rem;
+          border-bottom: 1px solid #f0f0f0;
+          background: #fafafa;
+        }
+        .sms-card__title {
           font-size: 1rem;
           font-weight: 600;
-          color: #1a1a1a;
+          color: #111;
+          margin: 0;
         }
-
-        .card {
-          background: #fff;
-          border-radius: 8px;
-          padding: 0.7rem;
-          margin-bottom: 0.65rem;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+        .sms-card__badge {
+          font-size: 0.6875rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          padding: 0.25rem 0.5rem;
+          border-radius: 4px;
+          background: #f3f4f6;
+          color: #6b7280;
         }
-
-        .primary-card {
+        .sms-card__body {
+          padding: 1.25rem;
           display: flex;
           flex-direction: column;
-          gap: 0.7rem;
+          gap: 1rem;
+        }
+        .sms-card__description {
+          font-size: 0.875rem;
+          color: #666;
+          margin: 0;
+          line-height: 1.5;
         }
 
-        .section {
+        /* Fields */
+        .sms-field {
           display: flex;
           flex-direction: column;
-          gap: 0.45rem;
+          gap: 0.375rem;
         }
-
-        .section-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
+        .sms-field--row {
+          flex-direction: row;
+          align-items: center;
           gap: 0.75rem;
         }
-
-        .section-title {
-          font-size: 0.88rem;
-          font-weight: 600;
-          color: #2c2c2c;
-          margin: 0;
+        .sms-field--toggle {
+          gap: 0.25rem;
         }
-
-        .section-subtitle {
-          margin: 0.15rem 0 0;
-          font-size: 0.82rem;
-          color: #666;
-        }
-
-        .section-status {
-          font-size: 0.7rem;
-          font-weight: 600;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
-          color: #666;
-          background: #f2f2f2;
-          padding: 0.2rem 0.45rem;
-          border-radius: 999px;
-          align-self: flex-start;
-        }
-
-        .section-body,
-        .subsection-body {
-          border: none;
-          padding: 0;
-          margin: 0;
-          min-width: 0;
-        }
-
-        .section-body {
-          display: flex;
-          flex-direction: column;
-          gap: 0.55rem;
-        }
-
-        .section-disabled {
-          opacity: 0.6;
-        }
-
-        .section-divider {
-          height: 1px;
-          background: #eee;
-          margin: 0.3rem 0;
-        }
-
-        .subsection {
-          display: flex;
-          flex-direction: column;
-          gap: 0.45rem;
-        }
-
-        .subsection-title {
-          font-size: 0.82rem;
-          font-weight: 600;
-          color: #4a4a4a;
-          text-transform: uppercase;
-          letter-spacing: 0.02em;
-        }
-
-        .subsection-divider {
-          height: 1px;
-          background: #efefef;
-          margin: 0.2rem 0;
-        }
-
-        .subsection-disabled {
-          opacity: 0.7;
-        }
-
-        .form-grid {
-          display: flex;
-          flex-direction: column;
-          gap: 0.45rem;
-        }
-
-        .form-row {
-          display: grid;
-          grid-template-columns: 160px 1fr;
-          align-items: center;
-          gap: 0.5rem;
-        }
-
-        .form-row-top {
-          align-items: start;
-        }
-
-        .form-label {
-          font-size: 0.85rem;
+        .sms-field__label {
+          font-size: 0.875rem;
           font-weight: 500;
-          color: #444;
-        }
-
-        .form-control {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          flex-wrap: wrap;
-        }
-
-        .inline-status {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.4rem;
-          flex-wrap: wrap;
-        }
-
-        .status-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: #ccc;
-        }
-
-        .inline-status.active .status-dot {
-          background: #34a853;
-        }
-
-        .inline-status.inactive .status-dot {
-          background: #f9ab00;
-        }
-
-        .phone-number {
-          font-size: 1rem;
-          font-weight: 600;
-          font-family: monospace;
-        }
-
-        .status-label {
-          color: #666;
-          font-size: 0.85rem;
-        }
-
-        .inline-note {
-          font-size: 0.8rem;
-          color: #555;
-          margin: 0.1rem 0 0;
-        }
-
-        .hours-grid {
-          display: grid;
-          gap: 0.35rem;
-        }
-
-        .hours-row {
-          display: grid;
-          grid-template-columns: 110px 1fr;
-          align-items: center;
-          gap: 0.5rem;
-        }
-
-        .hours-day {
-          font-weight: 500;
-          font-size: 0.85rem;
-        }
-
-        .hours-time {
-          display: flex;
-          align-items: center;
-          gap: 0.4rem;
-          flex-wrap: wrap;
-        }
-
-        .hours-time input[type="time"] {
-          padding: 0.25rem 0.4rem;
-          font-size: 0.85rem;
-        }
-
-        .hours-sep {
-          color: #666;
-          font-size: 0.8rem;
-        }
-
-        .checkbox-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-          gap: 0.35rem 0.75rem;
-        }
-
-        .checkbox-label {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.35rem;
-          font-weight: 400;
-          font-size: 0.85rem;
-          cursor: pointer;
-        }
-
-        .checkbox-label input[type="checkbox"] {
-          width: 14px;
-          height: 14px;
-        }
-
-        input[type="number"] {
-          width: 110px;
-          padding: 0.4rem 0.5rem;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 0.9rem;
           color: #333;
         }
-
-        input[type="checkbox"] {
-          width: 16px;
-          height: 16px;
-          cursor: pointer;
+        .sms-field__value {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
         }
-
-        textarea,
-        select {
-          width: 100%;
-          padding: 0.45rem 0.5rem;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          font-size: 0.9rem;
-          font-family: inherit;
-          color: #333;
-        }
-
-        select {
-          max-width: 240px;
-        }
-
-        textarea {
-          resize: none;
-        }
-
-        .textarea-compact {
-          height: 72px;
-        }
-
-        .textarea-short {
-          height: 64px;
-        }
-
-        input:focus,
-        textarea:focus,
-        select:focus {
-          outline: none;
-          border-color: #4285f4;
-          box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.16);
-        }
-
-        .help-text {
-          font-size: 0.8rem;
+        .sms-field__description {
+          font-size: 0.8125rem;
           color: #666;
-          margin: 0.25rem 0 0;
-          line-height: 1.3;
+          margin: 0;
+          line-height: 1.4;
         }
-
-        .help-text.tight {
+        .sms-field__hint {
+          font-size: 0.75rem;
+          color: #888;
           margin-top: 0.25rem;
         }
 
-        .alert {
-          padding: 0.5rem 0.75rem;
-          border-radius: 6px;
-          margin-bottom: 0.75rem;
-          font-size: 0.9rem;
-        }
-
-        .alert-success {
-          background: #e6f4ea;
-          color: #1e7e34;
-        }
-
-        .alert-error {
-          background: #fce8e6;
-          color: #c5221f;
-        }
-
-        .page-actions {
+        /* Phone Status */
+        .sms-phone-status {
           display: flex;
-          justify-content: flex-start;
-          margin-top: 0.5rem;
+          align-items: center;
+          gap: 0.75rem;
+          flex-wrap: wrap;
+        }
+        .sms-phone-number {
+          font-size: 1.125rem;
+          font-weight: 600;
+          font-family: ui-monospace, monospace;
+          color: #111;
+        }
+        .sms-status-badge {
+          font-size: 0.6875rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          padding: 0.25rem 0.5rem;
+          border-radius: 4px;
+        }
+        .sms-status-badge--active {
+          background: #dcfce7;
+          color: #166534;
+        }
+        .sms-status-badge--inactive {
+          background: #fef3c7;
+          color: #92400e;
         }
 
-        .btn {
-          padding: 0.5rem 1.25rem;
-          border: none;
-          border-radius: 6px;
-          font-size: 0.9rem;
-          font-weight: 500;
+        /* Toggle Switch */
+        .sms-toggle {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
           cursor: pointer;
-          transition: background-color 0.2s;
         }
-
-        .btn:disabled {
-          opacity: 0.6;
+        .sms-toggle__input {
+          position: absolute;
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+        .sms-toggle__switch {
+          position: relative;
+          width: 44px;
+          height: 24px;
+          background: #d1d5db;
+          border-radius: 12px;
+          transition: background 0.2s;
+          flex-shrink: 0;
+        }
+        .sms-toggle__switch::after {
+          content: '';
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 20px;
+          height: 20px;
+          background: #fff;
+          border-radius: 50%;
+          transition: transform 0.2s;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .sms-toggle__input:checked + .sms-toggle__switch {
+          background: #4f46e5;
+        }
+        .sms-toggle__input:checked + .sms-toggle__switch::after {
+          transform: translateX(20px);
+        }
+        .sms-toggle__input:focus-visible + .sms-toggle__switch {
+          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3);
+        }
+        .sms-toggle__input:disabled + .sms-toggle__switch {
+          opacity: 0.5;
           cursor: not-allowed;
         }
-
-        .btn-primary {
-          background: #4285f4;
-          color: white;
+        .sms-toggle__label {
+          font-size: 0.9375rem;
+          font-weight: 500;
+          color: #111;
         }
 
-        .btn-primary:hover:not(:disabled) {
-          background: #3367d6;
+        /* Select */
+        .sms-select {
+          padding: 0.5rem 0.75rem;
+          font-size: 0.875rem;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+          background: #fff;
+          color: #111;
+          min-width: 180px;
+        }
+        .sms-select:focus {
+          outline: none;
+          border-color: #4f46e5;
+          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
         }
 
-        @media (max-width: 720px) {
-          .form-row {
-            grid-template-columns: 1fr;
-          }
+        /* Summary */
+        .sms-summary {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.625rem 0.875rem;
+          background: #f0f9ff;
+          border-radius: 8px;
+          border: 1px solid #bae6fd;
+        }
+        .sms-summary__icon {
+          font-size: 1rem;
+        }
+        .sms-summary__text {
+          font-size: 0.8125rem;
+          color: #0369a1;
+          font-weight: 500;
+        }
 
-          .form-control {
-            width: 100%;
-          }
+        /* Schedule Grid */
+        .sms-schedule {
+          border: 1px solid #e5e5e5;
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        .sms-schedule__header {
+          display: grid;
+          grid-template-columns: 100px 1fr 80px;
+          gap: 0.5rem;
+          padding: 0.625rem 0.875rem;
+          background: #f9fafb;
+          border-bottom: 1px solid #e5e5e5;
+          font-size: 0.6875rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #6b7280;
+        }
+        .sms-schedule__col--status {
+          text-align: center;
+        }
+        .sms-schedule__row {
+          display: grid;
+          grid-template-columns: 100px 1fr 80px;
+          gap: 0.5rem;
+          padding: 0.625rem 0.875rem;
+          align-items: center;
+          border-bottom: 1px solid #f0f0f0;
+        }
+        .sms-schedule__row:last-child {
+          border-bottom: none;
+        }
+        .sms-schedule__row--closed {
+          background: #fafafa;
+        }
+        .sms-schedule__day {
+          font-size: 0.875rem;
+          font-weight: 500;
+          color: #333;
+        }
+        .sms-schedule__times {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+        .sms-schedule__sep {
+          font-size: 0.75rem;
+          color: #888;
+        }
+        .sms-schedule__closed-label {
+          font-size: 0.8125rem;
+          color: #888;
+          font-style: italic;
+        }
+        .sms-time-input {
+          padding: 0.375rem 0.5rem;
+          font-size: 0.8125rem;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+          width: 100px;
+        }
+        .sms-time-input:focus {
+          outline: none;
+          border-color: #4f46e5;
+        }
+        .sms-closed-toggle {
+          padding: 0.375rem 0.625rem;
+          font-size: 0.75rem;
+          font-weight: 500;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+          background: #fff;
+          color: #4b5563;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .sms-closed-toggle:hover {
+          border-color: #9ca3af;
+        }
+        .sms-closed-toggle--active {
+          background: #fee2e2;
+          border-color: #fca5a5;
+          color: #991b1b;
+        }
 
-          .hours-row {
+        /* Radio Group */
+        .sms-radio-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+        }
+        .sms-radio {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.75rem;
+          cursor: pointer;
+          padding: 0.75rem;
+          border: 1px solid #e5e5e5;
+          border-radius: 8px;
+          transition: all 0.15s;
+        }
+        .sms-radio:hover {
+          border-color: #c7d2fe;
+          background: #f5f5ff;
+        }
+        .sms-radio:has(.sms-radio__input:checked) {
+          border-color: #4f46e5;
+          background: #eef2ff;
+        }
+        .sms-radio__input {
+          position: absolute;
+          opacity: 0;
+        }
+        .sms-radio__mark {
+          width: 20px;
+          height: 20px;
+          border: 2px solid #d1d5db;
+          border-radius: 50%;
+          flex-shrink: 0;
+          position: relative;
+          margin-top: 2px;
+        }
+        .sms-radio__input:checked + .sms-radio__mark {
+          border-color: #4f46e5;
+        }
+        .sms-radio__input:checked + .sms-radio__mark::after {
+          content: '';
+          position: absolute;
+          top: 4px;
+          left: 4px;
+          width: 8px;
+          height: 8px;
+          background: #4f46e5;
+          border-radius: 50%;
+        }
+        .sms-radio__content {
+          display: flex;
+          flex-direction: column;
+          gap: 0.125rem;
+        }
+        .sms-radio__label {
+          font-size: 0.9375rem;
+          font-weight: 500;
+          color: #111;
+        }
+        .sms-radio__description {
+          font-size: 0.8125rem;
+          color: #666;
+        }
+
+        /* Textarea */
+        .sms-field--textarea {
+          gap: 0.5rem;
+        }
+        .sms-textarea-wrapper {
+          position: relative;
+        }
+        .sms-textarea {
+          width: 100%;
+          padding: 0.75rem;
+          font-size: 0.875rem;
+          font-family: inherit;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          resize: none;
+          line-height: 1.5;
+        }
+        .sms-textarea:focus {
+          outline: none;
+          border-color: #4f46e5;
+          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+        }
+        .sms-textarea__count {
+          position: absolute;
+          bottom: 0.5rem;
+          right: 0.75rem;
+          font-size: 0.6875rem;
+          color: #9ca3af;
+        }
+
+        /* Input */
+        .sms-input-group {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+        .sms-input {
+          padding: 0.5rem 0.75rem;
+          font-size: 0.875rem;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+        }
+        .sms-input--number {
+          width: 80px;
+          text-align: center;
+        }
+        .sms-input:focus {
+          outline: none;
+          border-color: #4f46e5;
+          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+        }
+        .sms-input-group__suffix {
+          font-size: 0.875rem;
+          color: #666;
+        }
+
+        /* Chip Group */
+        .sms-chip-group {
+          display: flex;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+        }
+        .sms-chip {
+          padding: 0.5rem 1rem;
+          font-size: 0.8125rem;
+          font-weight: 500;
+          border: 1px solid #d1d5db;
+          border-radius: 20px;
+          background: #fff;
+          color: #4b5563;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .sms-chip:hover {
+          border-color: #a5b4fc;
+          background: #f5f5ff;
+        }
+        .sms-chip--active {
+          background: #4f46e5;
+          border-color: #4f46e5;
+          color: #fff;
+        }
+        .sms-chip--active:hover {
+          background: #4338ca;
+          border-color: #4338ca;
+        }
+
+        /* Buttons */
+        .sms-btn {
+          padding: 0.5rem 1rem;
+          font-size: 0.875rem;
+          font-weight: 500;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.15s;
+          border: none;
+        }
+        .sms-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .sms-btn--primary {
+          background: #4f46e5;
+          color: #fff;
+        }
+        .sms-btn--primary:hover:not(:disabled) {
+          background: #4338ca;
+        }
+        .sms-btn--ghost {
+          background: transparent;
+          color: #fff;
+          border: 1px solid rgba(255,255,255,0.3);
+        }
+        .sms-btn--ghost:hover:not(:disabled) {
+          background: rgba(255,255,255,0.1);
+        }
+        .sms-btn--lg {
+          padding: 0.75rem 2rem;
+          font-size: 1rem;
+        }
+
+        /* Actions */
+        .sms-actions {
+          margin-top: 1.5rem;
+          display: flex;
+          justify-content: flex-start;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+          .sms-page {
+            padding: 1rem;
+          }
+          .sms-field--row {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .sms-schedule__header,
+          .sms-schedule__row {
             grid-template-columns: 1fr;
+            gap: 0.375rem;
+          }
+          .sms-schedule__col--status {
+            text-align: left;
+          }
+          .sms-schedule__times {
+            flex-wrap: wrap;
+          }
+          .sms-save-bar__content {
+            padding: 0.75rem 1rem;
+            flex-direction: column;
+            gap: 0.75rem;
           }
         }
       `}</style>

@@ -113,6 +113,28 @@ function MasterPromptGenerator({ value, onChange, onGenerate }) {
   );
 }
 
+function ArchivePromptStorage({ value, onChange }) {
+  return (
+    <div className="master-prompt-card">
+      <div className="master-prompt-card__header">
+        <div>
+          <h2>Archive: Previous LLM Versions</h2>
+          <p>Drop older prompt drafts here for reference only. This storage does not affect the live prompts.</p>
+        </div>
+      </div>
+
+      <textarea
+        className="master-prompt-card__textarea"
+        placeholder="Paste prior LLM prompt versions or notes. Not used by the generator."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={8}
+        spellCheck={false}
+      />
+    </div>
+  );
+}
+
 function ChannelPromptsSection({
   channelPrompts,
   activeChannel,
@@ -465,6 +487,7 @@ export default function Prompts() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [masterPrompt, setMasterPrompt] = useState('');
   const [generatedPrompts, setGeneratedPrompts] = useState(null);
+  const [archivedPrompt, setArchivedPrompt] = useState('');
 
   // Bundles State (backups)
   const [bundles, setBundles] = useState([]);
@@ -1083,6 +1106,12 @@ Message style:
         value={masterPrompt}
         onChange={setMasterPrompt}
         onGenerate={generateChannelPrompts}
+      />
+
+      {/* Archive box (reference only) */}
+      <ArchivePromptStorage
+        value={archivedPrompt}
+        onChange={setArchivedPrompt}
       />
 
       {/* Channel Prompts (Web, Voice, SMS) */}

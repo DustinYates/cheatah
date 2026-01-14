@@ -166,8 +166,8 @@ class EscalationService:
             action_url=f"/conversations/{escalation.conversation_id}" if escalation.conversation_id else None,
         )
         
-        # Update escalation with notification status
-        escalation.admin_notified_at = datetime.now(timezone.utc)
+        # Update escalation with notification status (use naive datetime for DB compatibility)
+        escalation.admin_notified_at = datetime.utcnow()
         escalation.notification_methods = [n["notifications"] for n in notification_result.get("notifications", [])]
         escalation.notification_status = notification_result
         
@@ -197,7 +197,7 @@ class EscalationService:
             return None
         
         escalation.status = "resolved"
-        escalation.resolved_at = datetime.now(timezone.utc)
+        escalation.resolved_at = datetime.utcnow()
         escalation.resolved_by = resolved_by
         escalation.resolution_notes = resolution_notes
         

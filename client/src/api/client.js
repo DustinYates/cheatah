@@ -254,6 +254,12 @@ class ApiClient {
     return true;
   }
 
+  async cleanupTestLeads() {
+    return this.request('/leads/cleanup/test-data', {
+      method: 'DELETE',
+    });
+  }
+
   async triggerFollowUp(leadId) {
     return this.request(`/leads/${leadId}/trigger-followup`, {
       method: 'POST',

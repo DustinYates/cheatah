@@ -434,14 +434,85 @@ async def generate_prompts(tenant_id: int):
         print(f"{separator}\n")
 
 
+async def save_prompts_to_db(tenant_id: int):
+    """Generate and save channel prompts to the database."""
+
+    async with AsyncSessionLocal() as db:
+        # Get tenant info
+        result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+        tenant = result.scalar_one_or_none()
+
+        if not tenant:
+            print(f"ERROR: Tenant {tenant_id} not found")
+            return
+
+        # Get tenant config
+        result = await db.execute(
+            select(TenantPromptConfig).where(TenantPromptConfig.tenant_id == tenant_id)
+        )
+        config_record = result.scalar_one_or_none()
+
+        if not config_record or not config_record.config_json:
+            print(f"ERROR: Tenant {tenant_id} has no prompt config")
+            return
+
+        config = config_record.config_json
+        business_name = config.get("display_name", tenant.name)
+
+        # Assemble Core Brain
+        core_brain = assemble_core_brain(config, tenant.name)
+
+        # Generate channel prompts
+        web_prompt = WEB_CHAT_WRAPPER.format(
+            business_name=business_name,
+            core_brain=core_brain
+        )
+
+        voice_prompt = VOICE_BOT_WRAPPER.format(
+            business_name=business_name,
+            core_brain=core_brain
+        )
+
+        sms_prompt = SMS_BOT_WRAPPER.format(
+            business_name=business_name,
+            core_brain=core_brain
+        )
+
+        # Save to database
+        config_record.config_json["web_prompt"] = web_prompt
+        config_record.config_json["voice_prompt"] = voice_prompt
+        config_record.config_json["sms_prompt"] = sms_prompt
+
+        await db.commit()
+
+        print(f"\n{'=' * 60}")
+        print(f"SAVED PROMPTS FOR: {business_name} (Tenant ID: {tenant_id})")
+        print(f"{'=' * 60}")
+        print(f"\n✓ web_prompt: {len(web_prompt)} characters")
+        print(f"✓ voice_prompt: {len(voice_prompt)} characters")
+        print(f"✓ sms_prompt: {len(sms_prompt)} characters")
+        print(f"\nPrompts are now active and will be used by the system.")
+
+
 if __name__ == "__main__":
     tenant_id = 1  # Default to tenant 1
+    save_mode = False
 
-    if len(sys.argv) > 1:
-        try:
-            tenant_id = int(sys.argv[1])
-        except ValueError:
-            print(f"Invalid tenant_id: {sys.argv[1]}")
-            sys.exit(1)
+    args = sys.argv[1:]
 
-    asyncio.run(generate_prompts(tenant_id))
+    # Parse arguments
+    for arg in args:
+        if arg == "--save":
+            save_mode = True
+        else:
+            try:
+                tenant_id = int(arg)
+            except ValueError:
+                print(f"Invalid argument: {arg}")
+                print("Usage: python scripts/generate_channel_prompts.py [tenant_id] [--save]")
+                sys.exit(1)
+
+    if save_mode:
+        asyncio.run(save_prompts_to_db(tenant_id))
+    else:
+        asyncio.run(generate_prompts(tenant_id))

@@ -178,6 +178,7 @@ export default function Dashboard() {
   const [actionLoading, setActionLoading] = useState(null);
   const [selectedLead, setSelectedLead] = useState(null);
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -329,6 +330,24 @@ export default function Dashboard() {
     setSelectedLead(lead);
   };
 
+  const handleCleanupTestData = async () => {
+    if (!confirm('Delete all test leads (None names, Caller +, SMS Contact +)? This cannot be undone.')) {
+      return;
+    }
+    setCleanupLoading(true);
+    try {
+      const result = await api.cleanupTestLeads();
+      // Refresh leads after cleanup
+      await fetchData();
+      setError('');
+      alert(`Deleted ${result.deleted} test leads`);
+    } catch (err) {
+      setError(`Failed to cleanup: ${err.message}`);
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
   const closeModal = () => {
     setSelectedLead(null);
   };
@@ -461,7 +480,17 @@ export default function Dashboard() {
         <div className="card leads-card leads-card-wide">
           <div className="card-header">
             <h2>Recent Leads</h2>
-            <a className="card-link" href="/contacts">View all</a>
+            <div className="card-header__actions">
+              <button
+                className="btn btn--danger btn--sm"
+                onClick={handleCleanupTestData}
+                disabled={cleanupLoading}
+                title="Delete test leads (None names, Caller +, SMS Contact +)"
+              >
+                {cleanupLoading ? 'Deleting...' : '🗑️ Delete Test Data'}
+              </button>
+              <a className="card-link" href="/contacts">View all</a>
+            </div>
           </div>
           {error && <div className="error">{error}</div>}
 

@@ -641,6 +641,10 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
     ) -> str | None:
         """Compose chat-specific prompt using v2 architecture.
 
+        Priority:
+        1. Check for direct 'web_prompt' field in config_json (new unified system)
+        2. Fall back to assembled prompt from base config + tenant sections
+
         Args:
             tenant_id: Tenant ID
             context: Runtime context
@@ -648,6 +652,15 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         Returns:
             Assembled chat prompt, or None if no v2 config exists
         """
+        # Try new unified prompt system first
+        direct_prompt = await self._get_channel_prompt(tenant_id, "web_prompt")
+        if direct_prompt:
+            logger.info(f"[PROMPT] Using direct web_prompt for tenant {tenant_id}")
+            # Add contact collection context if available
+            contact_context = self._build_chat_contact_context(context)
+            return direct_prompt + contact_context
+
+        # Fall back to assembled prompt
         base_prompt = await self.compose_prompt_v2(tenant_id, channel="chat", context=context)
         if base_prompt is None:
             return None
@@ -660,6 +673,10 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
     ) -> str | None:
         """Compose voice-specific prompt using v2 architecture.
 
+        Priority:
+        1. Check for direct 'voice_prompt' field in config_json (new unified system)
+        2. Fall back to assembled prompt from base config + tenant sections
+
         Args:
             tenant_id: Tenant ID
             context: Runtime context
@@ -667,6 +684,13 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         Returns:
             Assembled voice prompt, or None if no v2 config exists
         """
+        # Try new unified prompt system first
+        direct_prompt = await self._get_channel_prompt(tenant_id, "voice_prompt")
+        if direct_prompt:
+            logger.info(f"[PROMPT] Using direct voice_prompt for tenant {tenant_id}")
+            return direct_prompt
+
+        # Fall back to assembled prompt
         return await self.compose_prompt_v2(tenant_id, channel="voice", context=context)
 
     async def compose_prompt_v2_sms(
@@ -676,6 +700,10 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
     ) -> str | None:
         """Compose SMS-specific prompt using v2 architecture.
 
+        Priority:
+        1. Check for direct 'sms_prompt' field in config_json (new unified system)
+        2. Fall back to assembled prompt from base config + tenant sections
+
         Args:
             tenant_id: Tenant ID
             context: Runtime context
@@ -683,7 +711,118 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         Returns:
             Assembled SMS prompt, or None if no v2 config exists
         """
+        # Try new unified prompt system first
+        direct_prompt = await self._get_channel_prompt(tenant_id, "sms_prompt")
+        if direct_prompt:
+            logger.info(f"[PROMPT] Using direct sms_prompt for tenant {tenant_id}")
+            return direct_prompt
+
+        # Fall back to assembled prompt
         return await self.compose_prompt_v2(tenant_id, channel="sms", context=context)
+
+    async def _get_channel_prompt(self, tenant_id: int, prompt_key: str) -> str | None:
+        """Get a direct channel prompt from config_json.
+
+        Args:
+            tenant_id: Tenant ID
+            prompt_key: Key in config_json (web_prompt, voice_prompt, sms_prompt)
+
+        Returns:
+            Prompt string if found, None otherwise
+        """
+        config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
+        if not config_record or not config_record.config_json:
+            return None
+
+        prompt = config_record.config_json.get(prompt_key)
+        if prompt and isinstance(prompt, str) and prompt.strip():
+            return prompt.strip()
+        return None
+
+    async def get_channel_prompt(self, tenant_id: int, channel: str) -> str | None:
+        """Get direct channel prompt for editing.
+
+        Args:
+            tenant_id: Tenant ID
+            channel: Channel name (web, voice, sms)
+
+        Returns:
+            Prompt string if found, None otherwise
+        """
+        prompt_key_map = {
+            "web": "web_prompt",
+            "chat": "web_prompt",
+            "voice": "voice_prompt",
+            "sms": "sms_prompt",
+        }
+        prompt_key = prompt_key_map.get(channel)
+        if not prompt_key:
+            return None
+        return await self._get_channel_prompt(tenant_id, prompt_key)
+
+    async def set_channel_prompt(self, tenant_id: int, channel: str, prompt: str) -> bool:
+        """Set direct channel prompt.
+
+        Args:
+            tenant_id: Tenant ID
+            channel: Channel name (web, voice, sms)
+            prompt: The complete prompt text
+
+        Returns:
+            True if successful, False otherwise
+        """
+        prompt_key_map = {
+            "web": "web_prompt",
+            "chat": "web_prompt",
+            "voice": "voice_prompt",
+            "sms": "sms_prompt",
+        }
+        prompt_key = prompt_key_map.get(channel)
+        if not prompt_key:
+            return False
+
+        config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
+        if not config_record:
+            # Create new config record
+            from app.persistence.models.tenant_prompt_config import TenantPromptConfig
+            config_record = TenantPromptConfig(
+                tenant_id=tenant_id,
+                schema_version="v2",
+                config_json={prompt_key: prompt},
+                is_active=True,
+            )
+            self.session.add(config_record)
+        else:
+            # Update existing config
+            if config_record.config_json is None:
+                config_record.config_json = {}
+            config_record.config_json[prompt_key] = prompt
+
+        await self.session.commit()
+
+        # Invalidate cache for this tenant
+        PromptCache.invalidate(tenant_id)
+
+        return True
+
+    async def get_all_channel_prompts(self, tenant_id: int) -> dict[str, str | None]:
+        """Get all channel prompts for a tenant.
+
+        Args:
+            tenant_id: Tenant ID
+
+        Returns:
+            Dict with keys: web_prompt, voice_prompt, sms_prompt
+        """
+        config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
+        if not config_record or not config_record.config_json:
+            return {"web_prompt": None, "voice_prompt": None, "sms_prompt": None}
+
+        return {
+            "web_prompt": config_record.config_json.get("web_prompt"),
+            "voice_prompt": config_record.config_json.get("voice_prompt"),
+            "sms_prompt": config_record.config_json.get("sms_prompt"),
+        }
 
     async def get_prompt_v2_config(self, tenant_id: int) -> dict | None:
         """Get the raw v2 config JSON for a tenant.

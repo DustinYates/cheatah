@@ -64,6 +64,38 @@
   margin-bottom: var(--dash-space-3);
 }
 
+.card-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--dash-space-3);
+}
+
+.btn--danger {
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.btn--danger:hover {
+  background: #b91c1c;
+}
+
+.btn--danger:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.btn--sm {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
 .card-link {
   font-size: 12px;
   color: #475569;

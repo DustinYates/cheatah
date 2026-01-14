@@ -335,3 +335,196 @@ async def preview_from_json(
         channel=channel,
         config_id=None,
     )
+
+
+# =============================================================================
+# UNIFIED CHANNEL PROMPTS (New Architecture)
+# =============================================================================
+
+
+class ChannelPromptRequest(BaseModel):
+    """Request to update a channel prompt."""
+
+    prompt: str
+
+
+class ChannelPromptResponse(BaseModel):
+    """Response containing a channel prompt."""
+
+    channel: str
+    prompt: str | None
+    has_prompt: bool
+
+
+class AllChannelPromptsResponse(BaseModel):
+    """Response containing all channel prompts."""
+
+    web_prompt: str | None
+    voice_prompt: str | None
+    sms_prompt: str | None
+    has_web: bool
+    has_voice: bool
+    has_sms: bool
+
+
+@router.get("/channel-prompts", response_model=AllChannelPromptsResponse)
+async def get_all_channel_prompts(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AllChannelPromptsResponse:
+    """Get all channel prompts for a tenant.
+
+    Returns the direct channel prompts (web, voice, SMS) if they exist.
+    """
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant ID required",
+        )
+
+    prompt_service = PromptService(db)
+    prompts = await prompt_service.get_all_channel_prompts(tenant_id)
+
+    return AllChannelPromptsResponse(
+        web_prompt=prompts.get("web_prompt"),
+        voice_prompt=prompts.get("voice_prompt"),
+        sms_prompt=prompts.get("sms_prompt"),
+        has_web=prompts.get("web_prompt") is not None,
+        has_voice=prompts.get("voice_prompt") is not None,
+        has_sms=prompts.get("sms_prompt") is not None,
+    )
+
+
+@router.get("/channel-prompts/{channel}", response_model=ChannelPromptResponse)
+async def get_channel_prompt(
+    channel: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ChannelPromptResponse:
+    """Get a specific channel prompt.
+
+    Args:
+        channel: Channel name (web, voice, sms)
+    """
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant ID required",
+        )
+
+    if channel not in ["web", "voice", "sms", "chat"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid channel. Must be one of: web, voice, sms",
+        )
+
+    prompt_service = PromptService(db)
+    prompt = await prompt_service.get_channel_prompt(tenant_id, channel)
+
+    # Normalize channel name for response
+    response_channel = "web" if channel == "chat" else channel
+
+    return ChannelPromptResponse(
+        channel=response_channel,
+        prompt=prompt,
+        has_prompt=prompt is not None,
+    )
+
+
+@router.put("/channel-prompts/{channel}", response_model=ChannelPromptResponse)
+async def set_channel_prompt(
+    channel: str,
+    request: ChannelPromptRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ChannelPromptResponse:
+    """Set a specific channel prompt.
+
+    Args:
+        channel: Channel name (web, voice, sms)
+        request: The prompt text
+    """
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant ID required",
+        )
+
+    if channel not in ["web", "voice", "sms", "chat"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid channel. Must be one of: web, voice, sms",
+        )
+
+    if not request.prompt or not request.prompt.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Prompt cannot be empty",
+        )
+
+    prompt_service = PromptService(db)
+    success = await prompt_service.set_channel_prompt(tenant_id, channel, request.prompt)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save prompt",
+        )
+
+    # Normalize channel name for response
+    response_channel = "web" if channel == "chat" else channel
+
+    return ChannelPromptResponse(
+        channel=response_channel,
+        prompt=request.prompt,
+        has_prompt=True,
+    )
+
+
+@router.delete("/channel-prompts/{channel}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_channel_prompt(
+    channel: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Delete a specific channel prompt.
+
+    This will cause the channel to fall back to assembled prompts.
+
+    Args:
+        channel: Channel name (web, voice, sms)
+    """
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant ID required",
+        )
+
+    if channel not in ["web", "voice", "sms", "chat"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid channel. Must be one of: web, voice, sms",
+        )
+
+    prompt_key_map = {
+        "web": "web_prompt",
+        "chat": "web_prompt",
+        "voice": "voice_prompt",
+        "sms": "sms_prompt",
+    }
+    prompt_key = prompt_key_map.get(channel)
+
+    repo = TenantPromptConfigRepository(db)
+    config = await repo.get_by_tenant_id(tenant_id)
+
+    if config and config.config_json and prompt_key in config.config_json:
+        del config.config_json[prompt_key]
+        await db.commit()
+
+        # Invalidate cache
+        from app.domain.services.prompt_service import PromptCache
+        PromptCache.invalidate(tenant_id)

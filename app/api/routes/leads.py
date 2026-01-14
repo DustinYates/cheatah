@@ -586,3 +586,37 @@ async def cleanup_none_name_leads(
     await db.commit()
 
     return {"deleted": count, "message": f"Deleted {count} leads with None/empty names"}
+
+
+@router.delete("/cleanup/test-data")
+async def cleanup_test_leads(
+    tenant_id: int = Depends(require_tenant_context),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete all test/junk leads for this tenant (None names, Caller + prefix, SMS Contact prefix)."""
+    from sqlalchemy import or_
+    from app.persistence.models.lead import Lead
+
+    # Delete leads that are test data
+    result = await db.execute(
+        select(Lead).where(
+            Lead.tenant_id == tenant_id,
+            or_(
+                Lead.name == None,
+                Lead.name == "",
+                Lead.name == "None",
+                Lead.name.like("Caller +%"),
+                Lead.name.like("SMS Contact +%"),
+            )
+        )
+    )
+    leads_to_delete = result.scalars().all()
+    count = len(leads_to_delete)
+
+    for lead in leads_to_delete:
+        await db.delete(lead)
+
+    await db.commit()
+
+    return {"deleted": count, "message": f"Deleted {count} test leads"}

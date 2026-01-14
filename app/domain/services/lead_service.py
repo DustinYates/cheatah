@@ -401,7 +401,7 @@ class LeadService:
         Returns:
             True if deleted, False if not found
         """
-        from app.persistence.models.email_conversation import EmailConversation
+        from app.persistence.models.tenant_email_config import EmailConversation
 
         # Check if lead exists
         result = await self.session.execute(

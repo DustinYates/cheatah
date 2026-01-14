@@ -179,6 +179,11 @@ class ApiClient {
     return this.request(`/analytics/usage${query ? `?${query}` : ''}`);
   }
 
+  async getConversationAnalytics(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/analytics/conversations${query ? `?${query}` : ''}`);
+  }
+
   async revealTelephonyCredential(field) {
     return this.request('/admin/telephony/credentials/reveal', {
       method: 'POST',
@@ -425,6 +430,54 @@ class ApiClient {
 
   async getBaseConfig(businessType = 'bss') {
     return this.request(`/prompt-config/base-config?business_type=${businessType}`);
+  }
+
+  // Channel Prompts (Unified Prompt Architecture)
+  async getChannelPrompts() {
+    return this.request('/prompt-config/channel-prompts');
+  }
+
+  async getChannelPrompt(channel) {
+    return this.request(`/prompt-config/channel-prompts/${channel}`);
+  }
+
+  async setChannelPrompt(channel, prompt) {
+    return this.request(`/prompt-config/channel-prompts/${channel}`, {
+      method: 'PUT',
+      body: JSON.stringify({ prompt }),
+    });
+  }
+
+  async deleteChannelPrompt(channel) {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const selectedTenant = this.getSelectedTenant();
+    const userInfo = this.getUserInfo();
+    if (userInfo?.is_global_admin && selectedTenant) {
+      headers['X-Tenant-Id'] = selectedTenant.toString();
+    }
+
+    const response = await fetch(`${API_BASE}/prompt-config/channel-prompts/${channel}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (response.status === 204) {
+      return true;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Delete failed' }));
+      throw new Error(error.detail || 'Delete failed');
+    }
+
+    return true;
   }
 
   async getContacts(params = {}) {

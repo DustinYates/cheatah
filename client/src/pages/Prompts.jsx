@@ -71,7 +71,159 @@ function CollapsibleSection({ title, badge, helperText, defaultOpen = false, chi
 }
 
 // ========================================
-// Live Prompt Section (Hero)
+// Channel Prompts Section (Web, Voice, SMS tabs)
+// ========================================
+
+const CHANNEL_TABS = [
+  { key: 'web', label: 'Web Chat', icon: '💬', description: 'Website chatbot prompt' },
+  { key: 'voice', label: 'Voice', icon: '📞', description: 'Phone/voice bot prompt' },
+  { key: 'sms', label: 'SMS', icon: '📱', description: 'Text message bot prompt' },
+];
+
+function ChannelPromptsSection({
+  channelPrompts,
+  activeChannel,
+  setActiveChannel,
+  onSave,
+  onDelete,
+  saving,
+  loading,
+  addToast,
+}) {
+  const [editedPrompt, setEditedPrompt] = useState('');
+  const [hasChanges, setHasChanges] = useState(false);
+
+  // Update edited prompt when channel changes or prompts load
+  useEffect(() => {
+    const promptKey = `${activeChannel}_prompt`;
+    const currentPrompt = channelPrompts?.[promptKey] || '';
+    setEditedPrompt(currentPrompt);
+    setHasChanges(false);
+  }, [activeChannel, channelPrompts]);
+
+  const handlePromptChange = (value) => {
+    setEditedPrompt(value);
+    const promptKey = `${activeChannel}_prompt`;
+    const originalPrompt = channelPrompts?.[promptKey] || '';
+    setHasChanges(value !== originalPrompt);
+  };
+
+  const handleSave = async () => {
+    await onSave(activeChannel, editedPrompt);
+    setHasChanges(false);
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete the ${activeChannel} prompt? The channel will fall back to assembled prompts.`)) return;
+    await onDelete(activeChannel);
+    setEditedPrompt('');
+    setHasChanges(false);
+  };
+
+  const currentTab = CHANNEL_TABS.find(t => t.key === activeChannel);
+  const hasPrompt = editedPrompt && editedPrompt.trim().length > 0;
+
+  if (loading) {
+    return (
+      <div className="channel-prompts-section">
+        <div className="channel-prompts-loading">
+          <span>Loading channel prompts...</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="channel-prompts-section">
+      <div className="channel-prompts-banner">
+        <span className="channel-prompts-banner__icon">ℹ️</span>
+        <span>Each channel has its own dedicated prompt. Edit below to customize per-channel behavior.</span>
+      </div>
+
+      {/* Channel Tabs */}
+      <div className="channel-tabs">
+        {CHANNEL_TABS.map((tab) => {
+          const promptKey = `${tab.key}_prompt`;
+          const hasContent = channelPrompts?.[promptKey];
+          return (
+            <button
+              key={tab.key}
+              className={`channel-tab ${activeChannel === tab.key ? 'channel-tab--active' : ''} ${hasContent ? 'channel-tab--has-content' : ''}`}
+              onClick={() => setActiveChannel(tab.key)}
+            >
+              <span className="channel-tab__icon">{tab.icon}</span>
+              <span className="channel-tab__label">{tab.label}</span>
+              {hasContent && <span className="channel-tab__indicator">●</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Editor Area */}
+      <div className="channel-editor">
+        <div className="channel-editor__header">
+          <div className="channel-editor__title">
+            <span className="channel-editor__icon">{currentTab?.icon}</span>
+            <div>
+              <h3>{currentTab?.label} Prompt</h3>
+              <p className="channel-editor__description">{currentTab?.description}</p>
+            </div>
+          </div>
+          <div className="channel-editor__status">
+            {hasPrompt ? (
+              <span className="status-pill status-pill--live">
+                <span className="status-pill__icon">●</span>
+                <span className="status-pill__label">Active</span>
+              </span>
+            ) : (
+              <span className="status-pill status-pill--muted">
+                <span className="status-pill__icon">○</span>
+                <span className="status-pill__label">Not Set</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        <textarea
+          className="channel-editor__textarea"
+          value={editedPrompt}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          placeholder={`Enter the full system prompt for ${currentTab?.label}...`}
+          rows={20}
+          spellCheck={false}
+        />
+
+        <div className="channel-editor__footer">
+          <div className="channel-editor__meta">
+            {hasChanges && <span className="channel-editor__unsaved">Unsaved changes</span>}
+            <span className="channel-editor__char-count">{editedPrompt.length.toLocaleString()} characters</span>
+          </div>
+          <div className="channel-editor__actions">
+            {hasPrompt && (
+              <button
+                className="btn btn--ghost btn--danger"
+                onClick={handleDelete}
+                disabled={saving}
+              >
+                Delete Prompt
+              </button>
+            )}
+            <button
+              className="btn btn--primary"
+              onClick={handleSave}
+              disabled={saving || !hasChanges}
+            >
+              {saving ? 'Saving...' : 'Save Prompt'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// Live Prompt Section (Hero) - Legacy
 // ========================================
 
 function LivePromptSection({
@@ -291,6 +443,12 @@ export default function Prompts() {
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceCopied, setVoiceCopied] = useState(false);
 
+  // Channel prompts state (unified architecture)
+  const [channelPrompts, setChannelPrompts] = useState(null);
+  const [channelPromptsLoading, setChannelPromptsLoading] = useState(true);
+  const [activeChannel, setActiveChannel] = useState('web');
+  const [channelSaving, setChannelSaving] = useState(false);
+
   // ========================================
   // Data Fetching
   // ========================================
@@ -316,7 +474,20 @@ export default function Prompts() {
   }, [showConfigModal]);
 
   const fetchAllData = async () => {
-    await Promise.all([fetchConfig(), fetchBundles()]);
+    await Promise.all([fetchConfig(), fetchBundles(), fetchChannelPrompts()]);
+  };
+
+  const fetchChannelPrompts = async () => {
+    setChannelPromptsLoading(true);
+    try {
+      const data = await api.getChannelPrompts();
+      setChannelPrompts(data);
+    } catch (err) {
+      console.error('Failed to fetch channel prompts:', err);
+      setChannelPrompts(null);
+    } finally {
+      setChannelPromptsLoading(false);
+    }
   };
 
   const fetchConfig = async () => {
@@ -463,6 +634,46 @@ export default function Prompts() {
       addToast('Failed to preview: ' + err.message, 'error');
     } finally {
       setPreviewLoading(false);
+    }
+  };
+
+  // ========================================
+  // Channel Prompt Handlers
+  // ========================================
+
+  const handleSaveChannelPrompt = async (channel, prompt) => {
+    setChannelSaving(true);
+    try {
+      await api.setChannelPrompt(channel, prompt);
+      // Update local state
+      setChannelPrompts(prev => ({
+        ...prev,
+        [`${channel}_prompt`]: prompt,
+        [`has_${channel}`]: true,
+      }));
+      addToast(`${channel.charAt(0).toUpperCase() + channel.slice(1)} prompt saved!`, 'success');
+    } catch (err) {
+      addToast('Failed to save prompt: ' + err.message, 'error');
+    } finally {
+      setChannelSaving(false);
+    }
+  };
+
+  const handleDeleteChannelPrompt = async (channel) => {
+    setChannelSaving(true);
+    try {
+      await api.deleteChannelPrompt(channel);
+      // Update local state
+      setChannelPrompts(prev => ({
+        ...prev,
+        [`${channel}_prompt`]: null,
+        [`has_${channel}`]: false,
+      }));
+      addToast(`${channel.charAt(0).toUpperCase() + channel.slice(1)} prompt deleted`, 'success');
+    } catch (err) {
+      addToast('Failed to delete prompt: ' + err.message, 'error');
+    } finally {
+      setChannelSaving(false);
     }
   };
 
@@ -747,14 +958,16 @@ export default function Prompts() {
         </div>
       </div>
 
-      {/* Section A: Live Prompt (Hero) */}
-      <LivePromptSection
-        config={config}
-        baseConfig={baseConfig}
-        onPreview={handlePreview}
-        onEditConfig={() => setShowConfigModal(true)}
-        previewLoading={previewLoading}
-        configLoading={configLoading}
+      {/* Section A: Channel Prompts (Web, Voice, SMS) */}
+      <ChannelPromptsSection
+        channelPrompts={channelPrompts}
+        activeChannel={activeChannel}
+        setActiveChannel={setActiveChannel}
+        onSave={handleSaveChannelPrompt}
+        onDelete={handleDeleteChannelPrompt}
+        saving={channelSaving}
+        loading={channelPromptsLoading}
+        addToast={addToast}
       />
 
       {/* Section B: Components (Collapsible) */}

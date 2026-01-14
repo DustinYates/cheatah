@@ -48,6 +48,8 @@ dependencies = [
     "google-auth-httplib2>=0.1.0",
     # HTTP Client (Website Scraping)
     "httpx>=0.25.0",
+    # Error Tracking
+    "sentry-sdk[fastapi]>=1.39.0",
 ]
 
 [project.optional-dependencies]

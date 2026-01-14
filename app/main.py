@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +17,21 @@ from app.settings import settings
 
 # Setup logging
 setup_logging()
+
+# Initialize Sentry for error tracking
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        profiles_sample_rate=settings.sentry_traces_sample_rate,
+        enable_tracing=True,
+        # Capture 100% of errors
+        sample_rate=1.0,
+        # Add useful context
+        send_default_pii=False,  # Don't send personally identifiable info
+        # Integrations are auto-detected for FastAPI, SQLAlchemy, etc.
+    )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     chat_follow_up_nudge_turn: int = 3
     chat_max_tokens: int = 8000  # Max tokens for LLM chat responses
 
+    # Sentry Error Tracking
+    sentry_dsn: str = ""  # Get from https://sentry.io
+    sentry_traces_sample_rate: float = 0.1  # 10% of transactions for performance monitoring
+
     # Application
     environment: str = "development"
     log_level: str = "INFO"

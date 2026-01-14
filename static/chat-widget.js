@@ -1486,31 +1486,44 @@
       this.isMinimized = !this.isMinimized;
     },
 
-    // Convert URLs and markdown in text to HTML
+    // Convert text to safe HTML (no markdown rendering). Guardrail: only plain text or simple links.
     linkifyText: function(text) {
-      // Regular expression to match URLs
       const urlRegex = /(https?:\/\/[^\s]+)/g;
 
-      // Escape HTML to prevent XSS
       const escapeHtml = (str) => {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
       };
 
-      // First escape HTML
-      let processed = escapeHtml(text);
+      const preprocessMarkdown = (str) => {
+        const lines = str.split('\n').map((line) => {
+          // Strip markdown headings
+          let cleaned = line.replace(/^#{1,6}\s*/, '');
+          // Strip bold/underline markers
+          cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1');
+          // Convert table-style rows to bullets
+          if (cleaned.includes('|')) {
+            const cells = cleaned.split('|').map((c) => c.trim()).filter(Boolean);
+            if (cells.length > 1) {
+              cleaned = `• ${cells.join(' — ')}`;
+            }
+          }
+          return cleaned;
+        });
+        return lines.join('\n');
+      };
 
-      // Process markdown bold (**text**) - use non-greedy matching
-      processed = processed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-      // Process markdown italic (*text*) - use non-greedy matching
-      processed = processed.replace(/(?<!\*)\*(?!\*)(.+?)\*(?!\*)/g, '<em>$1</em>');
+      const safeText = preprocessMarkdown(text);
+      let processed = escapeHtml(safeText);
 
       // Replace URLs with clickable links
       processed = processed.replace(urlRegex, (url) => {
         return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--cc-link-color); text-decoration: underline;">${url}</a>`;
       });
+
+      // Preserve line breaks
+      processed = processed.replace(/\n/g, '<br>');
 
       return processed;
     },

@@ -6,6 +6,7 @@ from typing import ClassVar
 
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import attributes
 
 from app.domain.prompts.assembler import PromptAssembler
 from app.domain.prompts.schemas.v1.bss_schema import BSSTenantConfig
@@ -797,6 +798,8 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
             if config_record.config_json is None:
                 config_record.config_json = {}
             config_record.config_json[prompt_key] = prompt
+            # Mark the JSON column as modified so SQLAlchemy detects the change
+            attributes.flag_modified(config_record, "config_json")
 
         await self.session.commit()
 

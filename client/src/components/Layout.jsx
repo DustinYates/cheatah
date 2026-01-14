@@ -124,9 +124,6 @@ export default function Layout() {
                 <li>
                   <NavLink to="/settings/sms">SMS Settings</NavLink>
                 </li>
-                <li>
-                  <NavLink to="/settings/escalation">Escalation Alerts</NavLink>
-                </li>
                 {user?.is_global_admin && (
                   <li>
                     <NavLink to="/settings/telephony">Telephony</NavLink>

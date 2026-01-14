@@ -554,3 +554,35 @@ async def get_related_leads(
         )
 
     return RelatedLeadsResponse(leads=lead_responses)
+
+
+@router.delete("/cleanup/none-names")
+async def cleanup_none_name_leads(
+    tenant_id: int = Depends(require_tenant_context),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete all leads with None/NULL/empty names for this tenant."""
+    from sqlalchemy import text, or_
+    from app.persistence.models.lead import Lead
+
+    # Delete leads with NULL, empty string, or 'None' as name
+    result = await db.execute(
+        select(Lead).where(
+            Lead.tenant_id == tenant_id,
+            or_(
+                Lead.name == None,
+                Lead.name == "",
+                Lead.name == "None",
+            )
+        )
+    )
+    leads_to_delete = result.scalars().all()
+    count = len(leads_to_delete)
+
+    for lead in leads_to_delete:
+        await db.delete(lead)
+
+    await db.commit()
+
+    return {"deleted": count, "message": f"Deleted {count} leads with None/empty names"}

@@ -135,11 +135,6 @@ function ChannelPromptsSection({
 
   return (
     <div className="channel-prompts-section">
-      <div className="channel-prompts-banner">
-        <span className="channel-prompts-banner__icon">ℹ️</span>
-        <span>Each channel has its own dedicated prompt. Edit below to customize per-channel behavior.</span>
-      </div>
-
       {/* Channel Tabs */}
       <div className="channel-tabs">
         {CHANNEL_TABS.map((tab) => {
@@ -947,18 +942,9 @@ export default function Prompts() {
             Manage your chatbot's prompt configuration
           </p>
         </div>
-        <div className="prompts-header__actions">
-          <button
-            className="btn btn--ai btn--lg"
-            onClick={() => navigate('/settings/prompts/wizard')}
-          >
-            <span className="btn__icon">✨</span>
-            Build with AI
-          </button>
-        </div>
       </div>
 
-      {/* Section A: Channel Prompts (Web, Voice, SMS) */}
+      {/* Channel Prompts (Web, Voice, SMS) */}
       <ChannelPromptsSection
         channelPrompts={channelPrompts}
         activeChannel={activeChannel}
@@ -969,178 +955,6 @@ export default function Prompts() {
         loading={channelPromptsLoading}
         addToast={addToast}
       />
-
-      {/* Section B: Components (Collapsible) */}
-      <CollapsibleSection
-        title="Components"
-        helperText="View base config and tenant-specific data"
-        defaultOpen={false}
-      >
-        <div className="components-grid">
-          {/* Base Config Card */}
-          <div className="component-card component-card--base">
-            <div className="component-card__header">
-              <div className="component-card__title">
-                <span className="component-card__icon">⚙️</span>
-                <div>
-                  <h3>Base Config</h3>
-                  <p>Hardcoded conversation rules</p>
-                </div>
-              </div>
-              <span className="status-pill status-pill--system">
-                <span className="status-pill__icon">🔒</span>
-                <span className="status-pill__label">System</span>
-              </span>
-            </div>
-
-            {baseConfig && (
-              <div className="component-card__chips">
-                {Object.keys(baseConfig.sections || {}).slice(0, 4).map((key) => (
-                  <span key={key} className="v2-section-chip">{key}</span>
-                ))}
-                {Object.keys(baseConfig.sections || {}).length > 4 && (
-                  <span className="v2-section-chip v2-section-chip--more">
-                    +{Object.keys(baseConfig.sections).length - 4} more
-                  </span>
-                )}
-              </div>
-            )}
-
-            <div className="component-card__actions">
-              <button
-                className="btn btn--ghost btn--sm"
-                onClick={() => setShowBaseModal(true)}
-              >
-                View Base Rules
-              </button>
-            </div>
-          </div>
-
-          {/* Tenant Config Card */}
-          <div className={`component-card ${config ? 'component-card--active' : ''}`}>
-            <div className="component-card__header">
-              <div className="component-card__title">
-                <span className="component-card__icon">📋</span>
-                <div>
-                  <h3>Tenant Config</h3>
-                  <p>{config ? 'Locations, levels, tuition, policies' : 'Not configured'}</p>
-                </div>
-              </div>
-              <span className={`status-pill ${config ? 'status-pill--active' : 'status-pill--muted'}`}>
-                <span className="status-pill__icon">{config ? '●' : '○'}</span>
-                <span className="status-pill__label">{config ? 'Active' : 'Not Set'}</span>
-              </span>
-            </div>
-
-            {config && (
-              <div className="component-card__meta">
-                Updated: {formatDateTimeParts(config.updated_at).date}
-                {isGlobalAdmin && config.id !== undefined && config.id !== null && (
-                  <RevealField label="Config ID" value={config.id} />
-                )}
-              </div>
-            )}
-
-            <div className="component-card__actions">
-              <button
-                className="btn btn--primary btn--sm"
-                onClick={() => setShowConfigModal(true)}
-              >
-                {config ? 'Edit Config' : 'Upload Config'}
-              </button>
-              {config && (
-                <button
-                  className="btn btn--ghost btn--sm btn--danger"
-                  onClick={handleDeleteConfig}
-                >
-                  Delete
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </CollapsibleSection>
-
-      {/* Section C: Backups (Collapsible) */}
-      <CollapsibleSection
-        title="Backups"
-        helperText="Previously saved prompts (not used by chatbot)"
-        badge={bundles.length > 0 && (
-          <span className="prompts-section__count">{bundles.length}</span>
-        )}
-        defaultOpen={false}
-      >
-        {bundlesLoading ? (
-          <LoadingState message="Loading backups..." />
-        ) : bundles.length === 0 ? (
-          <div className="backups-empty">
-            <p>No backup prompts saved.</p>
-            <p className="backups-empty__hint">
-              Use the AI Wizard to create a new prompt, which will be saved as a backup.
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* Simplified Toolbar */}
-            <div className="backups-toolbar">
-              <div className="toolbar__search">
-                <svg className="toolbar__search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10zm0-1.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" fill="currentColor"/>
-                  <path d="M10.5 10.5l3 3-1 1-3-3 1-1z" fill="currentColor"/>
-                </svg>
-                <input
-                  type="text"
-                  className="toolbar__search-input"
-                  placeholder="Search backups..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-
-              <div className="toolbar__sort-wrapper">
-                <select
-                  className="toolbar__sort"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  aria-label="Sort backups"
-                >
-                  <option value="updated">Last updated</option>
-                  <option value="created">Recently created</option>
-                  <option value="name">Name (A-Z)</option>
-                </select>
-              </div>
-            </div>
-
-            {filteredAndSortedBundles.length === 0 ? (
-              <div className="backups-empty">
-                <p>No backups match your search.</p>
-                <button
-                  className="btn btn--ghost"
-                  onClick={() => setSearchQuery('')}
-                >
-                  Clear search
-                </button>
-              </div>
-            ) : (
-              <div className="backups-list">
-                {filteredAndSortedBundles.map((bundle) => (
-                  <BackupItem
-                    key={bundle.id}
-                    bundle={bundle}
-                    onView={openEdit}
-                    onTest={openTest}
-                    onRestore={handleRestore}
-                    onDelete={handleDeleteBundle}
-                    restoring={restoring}
-                    deleting={deleting}
-                    showIds={isGlobalAdmin}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </CollapsibleSection>
 
       {/* ========================================
           Modals

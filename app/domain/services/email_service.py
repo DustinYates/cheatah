@@ -390,9 +390,13 @@ class EmailService:
                 if not message_id:
                     continue
                 
-                # Fetch full message
-                message = gmail_client.get_message(message_id)
-                
+                # Fetch full message (skip if deleted/unavailable)
+                try:
+                    message = gmail_client.get_message(message_id)
+                except GmailAPIError as e:
+                    logger.warning(f"Message {message_id} not found (may have been deleted): {e}")
+                    continue
+
                 # Skip messages sent by us
                 if self._is_outgoing_message(message, email_address):
                     continue

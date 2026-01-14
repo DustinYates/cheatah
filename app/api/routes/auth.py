@@ -85,14 +85,14 @@ async def login(
 
     # Find user by email
     user = await user_repo.get_by_email(login_data.email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
 
-    # Verify password
-    if not verify_password(login_data.password, user.hashed_password):
+    # Always verify password to prevent timing attacks
+    # Use a dummy hash if user doesn't exist so response time is constant
+    dummy_hash = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.V4ferYxZ1uYmWe"
+    stored_hash = user.hashed_password if user else dummy_hash
+    password_valid = verify_password(login_data.password, stored_hash)
+
+    if not user or not password_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",

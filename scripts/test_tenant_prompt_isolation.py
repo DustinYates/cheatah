@@ -135,7 +135,7 @@ async def test_tenant_isolation() -> None:
                 print(f"  - {bundle.name} v{bundle.version} [{bundle.status}]")
 
             print(f"\nGlobal (Platform):")
-            global_bundles = await prompt_repo.list(None)
+            global_bundles = await prompt_repo.list(None, allow_cross_tenant=True)
             for bundle in global_bundles:
                 print(f"  - {bundle.name} v{bundle.version} [{bundle.status}]")
 

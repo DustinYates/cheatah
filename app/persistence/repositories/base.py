@@ -38,11 +38,30 @@ class BaseRepository(Generic[ModelType]):
         tenant_id: int | None,
         skip: int = 0,
         limit: int = 100,
+        allow_cross_tenant: bool = False,
         **filters
     ) -> list[ModelType]:
-        """List entities, scoped to tenant."""
+        """List entities, scoped to tenant.
+
+        Args:
+            tenant_id: The tenant ID to scope the query to. Required unless allow_cross_tenant=True.
+            skip: Number of records to skip for pagination.
+            limit: Maximum number of records to return.
+            allow_cross_tenant: Set to True to allow queries without tenant filtering.
+                               Required when tenant_id is None.
+            **filters: Additional field filters to apply.
+
+        Raises:
+            ValueError: If tenant_id is None and allow_cross_tenant is False.
+        """
+        if tenant_id is None and not allow_cross_tenant:
+            raise ValueError(
+                f"tenant_id is required for {self.model.__name__}.list(). "
+                "Use allow_cross_tenant=True for intentional global queries."
+            )
+
         stmt = select(self.model)
-        
+
         if tenant_id is not None:
             stmt = stmt.where(self.model.tenant_id == tenant_id)
             logger.debug(f"Listing {self.model.__name__} for tenant_id={tenant_id}")

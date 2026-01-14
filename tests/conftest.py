@@ -6,30 +6,27 @@ from sqlalchemy.orm import sessionmaker
 
 from app.persistence.database import Base, get_db
 from app.persistence.models import *  # noqa: F401, F403
+from app.settings import get_async_database_url
 
 
 @pytest.fixture
 async def db_session():
-    """Create a test database session."""
-    # Use in-memory SQLite for testing
+    """Create a test database session using PostgreSQL."""
     engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
+        get_async_database_url(),
         echo=False,
     )
-    
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     async_session = sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
-    
+
     async with async_session() as session:
         yield session
-    
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    
+
     await engine.dispose()
 
 

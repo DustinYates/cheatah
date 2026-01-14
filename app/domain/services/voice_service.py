@@ -400,71 +400,77 @@ class VoiceService:
             buffer = ""
             is_first = True
             chunk_count = 0
-            
+
             # Sentence-ending patterns for chunking
             sentence_enders = ('.', '!', '?', '—')
             clause_enders = (',', ';', ':', '—')
-            
-            async for token in self.llm_orchestrator.generate_stream(
+
+            # Store stream reference for proper cleanup
+            stream = self.llm_orchestrator.generate_stream(
                 conversation_context,
                 context={"temperature": 0.3, "max_tokens": 350},  # Lower temp reduces hallucinations
-            ):
-                buffer += token
-                
-                # Check if we have a complete chunk to yield
-                # First chunk: yield after first sentence or clause (for fast start)
-                # Subsequent chunks: yield after sentences for natural flow
-                
-                should_yield = False
-                yield_text = ""
-                
-                if is_first:
-                    # For first chunk, yield after first sentence OR if we have enough for a clause
-                    for ender in sentence_enders:
-                        if ender in buffer:
-                            idx = buffer.rfind(ender)
-                            yield_text = buffer[:idx + 1].strip()
-                            buffer = buffer[idx + 1:].lstrip()
-                            should_yield = True
-                            break
-                    
-                    # If no sentence ender but we have a clause and enough text, yield it
-                    if not should_yield and len(buffer) > 50:
-                        for ender in clause_enders:
+            )
+            try:
+                async for token in stream:
+                    buffer += token
+
+                    # Check if we have a complete chunk to yield
+                    # First chunk: yield after first sentence or clause (for fast start)
+                    # Subsequent chunks: yield after sentences for natural flow
+
+                    should_yield = False
+                    yield_text = ""
+
+                    if is_first:
+                        # For first chunk, yield after first sentence OR if we have enough for a clause
+                        for ender in sentence_enders:
                             if ender in buffer:
                                 idx = buffer.rfind(ender)
                                 yield_text = buffer[:idx + 1].strip()
                                 buffer = buffer[idx + 1:].lstrip()
                                 should_yield = True
                                 break
-                else:
-                    # For subsequent chunks, prefer complete sentences
-                    for ender in sentence_enders:
-                        if ender in buffer:
-                            idx = buffer.rfind(ender)
-                            yield_text = buffer[:idx + 1].strip()
-                            buffer = buffer[idx + 1:].lstrip()
-                            should_yield = True
-                            break
-                
-                if should_yield and yield_text:
-                    # Apply post-processing to the chunk
-                    processed_text = self._post_process_for_speech(yield_text)
-                    chunk_count += 1
-                    
-                    yield StreamingVoiceChunk(
-                        text=processed_text,
-                        intent=intent,
-                        is_first_chunk=is_first,
-                        is_final_chunk=False,
-                    )
-                    is_first = False
-            
+
+                        # If no sentence ender but we have a clause and enough text, yield it
+                        if not should_yield and len(buffer) > 50:
+                            for ender in clause_enders:
+                                if ender in buffer:
+                                    idx = buffer.rfind(ender)
+                                    yield_text = buffer[:idx + 1].strip()
+                                    buffer = buffer[idx + 1:].lstrip()
+                                    should_yield = True
+                                    break
+                    else:
+                        # For subsequent chunks, prefer complete sentences
+                        for ender in sentence_enders:
+                            if ender in buffer:
+                                idx = buffer.rfind(ender)
+                                yield_text = buffer[:idx + 1].strip()
+                                buffer = buffer[idx + 1:].lstrip()
+                                should_yield = True
+                                break
+
+                    if should_yield and yield_text:
+                        # Apply post-processing to the chunk
+                        processed_text = self._post_process_for_speech(yield_text)
+                        chunk_count += 1
+
+                        yield StreamingVoiceChunk(
+                            text=processed_text,
+                            intent=intent,
+                            is_first_chunk=is_first,
+                            is_final_chunk=False,
+                        )
+                        is_first = False
+            finally:
+                # Ensure stream is properly closed to prevent resource leaks
+                await stream.aclose()
+
             # Yield any remaining buffer as final chunk
             if buffer.strip():
                 processed_text = self._post_process_for_speech(buffer.strip())
                 processed_text = self._apply_response_guardrails(processed_text)
-                
+
                 yield StreamingVoiceChunk(
                     text=processed_text,
                     intent=intent,
@@ -482,7 +488,7 @@ class VoiceService:
                     is_first_chunk=True,
                     is_final_chunk=True,
                 )
-            
+
             llm_latency = (time.time() - llm_start) * 1000
             logger.info(f"Voice streaming LLM latency: {llm_latency:.1f}ms, chunks: {chunk_count}")
             

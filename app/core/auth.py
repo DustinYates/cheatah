@@ -7,6 +7,15 @@ from jose import JWTError, jwt
 
 from app.settings import settings
 
+# Validate JWT secret key at startup
+_DEFAULT_SECRET = "dev-secret-key-change-in-production"
+
+if settings.environment == "production" and settings.jwt_secret_key == _DEFAULT_SECRET:
+    raise RuntimeError(
+        "SECURITY ERROR: JWT_SECRET_KEY environment variable must be set in production. "
+        "Cannot use default secret key."
+    )
+
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
     """Create a JWT access token.

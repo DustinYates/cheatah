@@ -3,7 +3,7 @@
 import logging
 import re
 from datetime import datetime
-from sqlalchemy import text
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.persistence.models.contact import Contact
@@ -390,12 +390,9 @@ class LeadService:
 
     async def delete_lead(self, tenant_id: int, lead_id: int) -> bool:
         """Delete a lead by ID.
-        
+
         Before deleting, nullifies any contact's lead_id and email_conversations.lead_id
         that references this lead to prevent foreign key constraint violations.
-        
-        Uses raw SQL to avoid ORM relationship loading which would query
-        non-existent columns in the Contact model.
 
         Args:
             tenant_id: Tenant ID
@@ -404,32 +401,33 @@ class LeadService:
         Returns:
             True if deleted, False if not found
         """
-        # First, check if lead exists using raw SQL to avoid relationship loading
+        from app.persistence.models.email_conversation import EmailConversation
+
+        # Check if lead exists
         result = await self.session.execute(
-            text("SELECT id FROM leads WHERE id = :lead_id AND tenant_id = :tenant_id"),
-            {"lead_id": lead_id, "tenant_id": tenant_id}
+            select(Lead.id).where(Lead.id == lead_id, Lead.tenant_id == tenant_id)
         )
         if result.scalar_one_or_none() is None:
             return False
-        
-        # Nullify any contact's lead_id that references this lead using raw SQL
+
+        # Nullify any contact's lead_id that references this lead
         await self.session.execute(
-            text("UPDATE contacts SET lead_id = NULL WHERE tenant_id = :tenant_id AND lead_id = :lead_id"),
-            {"tenant_id": tenant_id, "lead_id": lead_id}
+            update(Contact)
+            .where(Contact.tenant_id == tenant_id, Contact.lead_id == lead_id)
+            .values(lead_id=None)
         )
-        
-        # Nullify any email_conversation's lead_id that references this lead using raw SQL
-        # This prevents the foreign key constraint violation on email_conversations_lead_id_fkey
+
+        # Nullify any email_conversation's lead_id that references this lead
         await self.session.execute(
-            text("UPDATE email_conversations SET lead_id = NULL WHERE tenant_id = :tenant_id AND lead_id = :lead_id"),
-            {"tenant_id": tenant_id, "lead_id": lead_id}
+            update(EmailConversation)
+            .where(EmailConversation.tenant_id == tenant_id, EmailConversation.lead_id == lead_id)
+            .values(lead_id=None)
         )
-        
-        # Delete the lead using raw SQL to avoid relationship loading
+
+        # Delete the lead
         await self.session.execute(
-            text("DELETE FROM leads WHERE id = :lead_id AND tenant_id = :tenant_id"),
-            {"lead_id": lead_id, "tenant_id": tenant_id}
+            delete(Lead).where(Lead.id == lead_id, Lead.tenant_id == tenant_id)
         )
-        
+
         await self.session.commit()
         return True

@@ -573,17 +573,17 @@ CRITICAL CONSTRAINTS:
 - Be warm and friendly, not pushy or salesy
 
 MESSAGE REQUIREMENTS:
-- Reference the previous interaction naturally (call, email, chat, etc.)
+- ALWAYS introduce yourself as a chatbot (e.g., "Hi, this is the BSS chatbot!" or "Hey, I'm the automated assistant for British Swim School")
+- NEVER say "I saw your email" or reference emails directly - instead say something like "I saw that you are interested in swimming with us"
 - Use their first name if known
 - Include a simple question or invitation to continue the conversation
 - Match the business's friendly, professional tone
-- Make it feel personal, not automated
 - End with an open question to encourage response
 
 EXAMPLES OF GOOD MESSAGES:
-- "Hi John! Following up from earlier. Still have questions about our services?"
-- "Hey there! Thanks for reaching out. Did you find what you needed?"
-- "Hi Sarah! Wanted to check in after your call. How can I help?"
+- "Hi John! This is the BSS chatbot. I saw you're interested in swimming with us. How can I help?"
+- "Hey Sarah! I'm the automated assistant for British Swim School. Noticed you're interested - any questions I can answer?"
+- "Hi! This is the BSS chatbot. Saw you're looking into swim lessons. What can I help you with today?"
 
 Generate ONLY the SMS message text, nothing else. No quotes, no explanation, just the message."""
 

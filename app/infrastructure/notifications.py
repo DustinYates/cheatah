@@ -738,7 +738,7 @@ class NotificationService:
             Dict with escalation settings (enabled, notification_methods, quiet_hours, etc.)
         """
         from sqlalchemy import select
-        from app.persistence.models.tenant import TenantPromptConfig
+        from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 
         stmt = select(TenantPromptConfig).where(TenantPromptConfig.tenant_id == tenant_id)
         result = await self.session.execute(stmt)

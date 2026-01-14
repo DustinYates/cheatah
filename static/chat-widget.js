@@ -1697,8 +1697,7 @@
 
       this.markInteracted();
 
-      // Disable input
-      if (messageInput) messageInput.disabled = true;
+      // Only disable send button to prevent double-sends, keep input enabled for typing
       if (sendButton) sendButton.disabled = true;
       loading.style.display = 'block';
 
@@ -1741,8 +1740,7 @@
         console.error('Chat error:', error);
         this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
       } finally {
-        // Re-enable input
-        if (messageInput) messageInput.disabled = false;
+        // Re-enable send button
         if (sendButton) sendButton.disabled = false;
         loading.style.display = 'none';
         if (messageInput) messageInput.focus();

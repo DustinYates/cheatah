@@ -23,6 +23,16 @@ from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
+# Pre-compiled regex patterns for better performance
+# These are compiled once at module load instead of on each function call
+_EMAIL_PATTERN = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', re.IGNORECASE)
+_PHONE_PATTERN = re.compile(r'(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})')
+_EXPLICIT_NAME_PATTERN = re.compile(r"\b(?:I'?m|I am|my name is|this is|im|name's|call me|it's|its)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)", re.IGNORECASE)
+_CAPITALIZED_NAME_PATTERN = re.compile(r"([A-Z][a-z]+\s+[A-Z][a-z]+)")
+_DRAFT_PREFIX_PATTERN = re.compile(r'^draft\s+\d+:\s*', re.IGNORECASE)
+_TRAILING_WORD_PATTERN = re.compile(r"([A-Za-z]+)$")
+_LOWERCASE_ENDING_PATTERN = re.compile(r"[a-z]$")
+
 
 @dataclass
 class ChatResult:
@@ -626,16 +636,12 @@ class ChatService:
 
     def _extract_email_regex(self, text: str) -> str | None:
         """Extract email using regex as fallback."""
-        # Simple email regex pattern
-        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-        matches = re.findall(email_pattern, text, re.IGNORECASE)
+        matches = _EMAIL_PATTERN.findall(text)
         return matches[0].lower() if matches else None
     
     def _extract_phone_regex(self, text: str) -> str | None:
         """Extract phone number using regex as fallback."""
-        # Phone pattern - matches various formats
-        phone_pattern = r'(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})'
-        matches = re.findall(phone_pattern, text)
+        matches = _PHONE_PATTERN.findall(text)
         if matches:
             # Extract digits only
             match = matches[0]
@@ -681,8 +687,7 @@ class ChatService:
         # Pattern 1: Explicit name introduction phrases (case insensitive)
         # Patterns like "I'm X", "my name is X", "I am X", "this is X", "im X", "call me X"
         # Use word boundary \b to avoid matching "im" inside words like "swim"
-        explicit_pattern = r"\b(?:I'?m|I am|my name is|this is|im|name's|call me|it's|its)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)"
-        matches = re.findall(explicit_pattern, text, re.IGNORECASE)
+        matches = _EXPLICIT_NAME_PATTERN.findall(text)
         if matches:
             name = matches[0].strip()
             # Split into words and stop at first stop word
@@ -707,9 +712,8 @@ class ChatService:
 
         # Pattern 2: Proper capitalized First Last format (case SENSITIVE - must be properly capitalized)
         # This pattern requires actual capital letters to avoid matching casual phrases
-        capitalized_pattern = r"([A-Z][a-z]+\s+[A-Z][a-z]+)"
         # Use case-sensitive matching here - names should be capitalized
-        matches = re.findall(capitalized_pattern, text)  # No re.IGNORECASE
+        matches = _CAPITALIZED_NAME_PATTERN.findall(text)
         if matches:
             name = matches[0].strip()
             # Check it's not a false positive
@@ -948,8 +952,7 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
 
         # Remove "Draft X:" prefix (case insensitive)
         # Matches patterns like "Draft 1:", "draft 2:", "DRAFT 3:", etc.
-        draft_pattern = r'(?i)^draft\s+\d+:\s*'
-        cleaned = re.sub(draft_pattern, '', cleaned)
+        cleaned = _DRAFT_PREFIX_PATTERN.sub('', cleaned)
 
         return cleaned
 
@@ -969,7 +972,7 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
         if trimmed.endswith((",", ":", ";", "-")):
             return True
 
-        match = re.search(r"([A-Za-z]+)$", trimmed)
+        match = _TRAILING_WORD_PATTERN.search(trimmed)
         if not match:
             return False
 
@@ -1009,7 +1012,7 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
         if match.group(1).lower() in dangling_words:
             return True
 
-        if len(trimmed) >= 80 and re.search(r"[a-z]$", trimmed):
+        if len(trimmed) >= 80 and _LOWERCASE_ENDING_PATTERN.search(trimmed):
             return True
 
         return False

@@ -113,7 +113,16 @@ function MasterPromptGenerator({ value, onChange, onGenerate }) {
   );
 }
 
-function ArchivePromptStorage({ value, onChange }) {
+function ArchivePromptStorage({
+  archivedPrompts,
+  activeArchiveChannel,
+  setActiveArchiveChannel,
+  onChange,
+  onSave,
+  saving,
+}) {
+  const currentValue = archivedPrompts?.[activeArchiveChannel] || '';
+
   return (
     <div className="master-prompt-card">
       <div className="master-prompt-card__header">
@@ -121,13 +130,33 @@ function ArchivePromptStorage({ value, onChange }) {
           <h2>Archive: Previous LLM Versions</h2>
           <p>Drop older prompt drafts here for reference only. This storage does not affect the live prompts.</p>
         </div>
+        <button
+          className="btn btn--primary"
+          onClick={onSave}
+          disabled={saving}
+        >
+          {saving ? 'Saving...' : 'Save Archive'}
+        </button>
+      </div>
+
+      <div className="channel-tabs channel-tabs--archive">
+        {CHANNEL_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            className={`channel-tab ${activeArchiveChannel === tab.key ? 'channel-tab--active' : ''}`}
+            onClick={() => setActiveArchiveChannel(tab.key)}
+          >
+            <span className="channel-tab__icon">{tab.icon}</span>
+            <span className="channel-tab__label">{tab.label}</span>
+          </button>
+        ))}
       </div>
 
       <textarea
-        className="master-prompt-card__textarea"
-        placeholder="Paste prior LLM prompt versions or notes. Not used by the generator."
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        className="master-prompt-card__textarea archive-textarea"
+        placeholder="Paste prior LLM prompt versions or notes for this channel. Not used by the generator."
+        value={currentValue}
+        onChange={(e) => onChange(activeArchiveChannel, e.target.value)}
         rows={8}
         spellCheck={false}
       />
@@ -487,7 +516,9 @@ export default function Prompts() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [masterPrompt, setMasterPrompt] = useState('');
   const [generatedPrompts, setGeneratedPrompts] = useState(null);
-  const [archivedPrompt, setArchivedPrompt] = useState('');
+  const [archivedPrompts, setArchivedPrompts] = useState({ web: '', voice: '', sms: '' });
+  const [activeArchiveChannel, setActiveArchiveChannel] = useState('web');
+  const [archiveSaving, setArchiveSaving] = useState(false);
 
   // Bundles State (backups)
   const [bundles, setBundles] = useState([]);
@@ -1027,6 +1058,43 @@ Message style:
   };
 
   // ========================================
+  // Archive persistence (localStorage, per tenant)
+  // ========================================
+
+  const archiveStorageKey = `prompt_archive_v1_${selectedTenantId || 'global'}`;
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(archiveStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setArchivedPrompts({
+          web: parsed.web || '',
+          voice: parsed.voice || '',
+          sms: parsed.sms || '',
+        });
+      } else {
+        setArchivedPrompts({ web: '', voice: '', sms: '' });
+      }
+    } catch (err) {
+      console.error('Failed to load archived prompts', err);
+      setArchivedPrompts({ web: '', voice: '', sms: '' });
+    }
+  }, [archiveStorageKey]);
+
+  const handleSaveArchive = async () => {
+    setArchiveSaving(true);
+    try {
+      localStorage.setItem(archiveStorageKey, JSON.stringify(archivedPrompts));
+      addToast('Archived prompts saved locally.', 'success');
+    } catch (err) {
+      addToast('Failed to save archive: ' + err.message, 'error');
+    } finally {
+      setArchiveSaving(false);
+    }
+  };
+
+  // ========================================
   // Filter and Sort Bundles (for Backups)
   // ========================================
 
@@ -1108,12 +1176,6 @@ Message style:
         onGenerate={generateChannelPrompts}
       />
 
-      {/* Archive box (reference only) */}
-      <ArchivePromptStorage
-        value={archivedPrompt}
-        onChange={setArchivedPrompt}
-      />
-
       {/* Channel Prompts (Web, Voice, SMS) */}
       <ChannelPromptsSection
         channelPrompts={channelPrompts}
@@ -1125,6 +1187,18 @@ Message style:
         loading={channelPromptsLoading}
         addToast={addToast}
         injectedPrompts={generatedPrompts}
+      />
+
+      {/* Archive box (reference only) */}
+      <ArchivePromptStorage
+        archivedPrompts={archivedPrompts}
+        activeArchiveChannel={activeArchiveChannel}
+        setActiveArchiveChannel={setActiveArchiveChannel}
+        onChange={(channel, value) => {
+          setArchivedPrompts((prev) => ({ ...prev, [channel]: value }));
+        }}
+        onSave={handleSaveArchive}
+        saving={archiveSaving}
       />
 
       {/* ========================================

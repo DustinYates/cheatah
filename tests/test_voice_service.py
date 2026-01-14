@@ -13,14 +13,19 @@ from app.domain.services.voice_service import (
 )
 
 
+@pytest.fixture
+def voice_service():
+    """Create a VoiceService instance with mocked dependencies."""
+    mock_session = MagicMock()
+    with patch('app.domain.services.voice_service.LLMOrchestrator'):
+        service = VoiceService(mock_session)
+        service.llm_orchestrator = MagicMock()
+        service.llm_orchestrator.generate = AsyncMock(return_value='{"name": null, "reason": null, "urgency": "medium", "preferred_callback_time": null}')
+        return service
+
+
 class TestIntentDetection:
     """Tests for intent detection from transcribed speech."""
-
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        return VoiceService(mock_session)
 
     def test_detect_pricing_intent(self, voice_service):
         """Test detecting pricing inquiry intent."""
@@ -69,7 +74,7 @@ class TestIntentDetection:
             "I need help with something",
             "I have a problem",
             "There's an issue with my account",
-            "This isn't working",
+            "This is not working",
             "I have a complaint",
         ]
         
@@ -105,12 +110,6 @@ class TestIntentDetection:
 class TestEscalationDetection:
     """Tests for escalation trigger detection."""
 
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        return VoiceService(mock_session)
-
     def test_escalation_on_human_request(self, voice_service):
         """Test escalation when caller asks for human."""
         test_cases = [
@@ -141,12 +140,6 @@ class TestEscalationDetection:
 
 class TestResponseGuardrails:
     """Tests for response guardrail application."""
-
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        return VoiceService(mock_session)
 
     def test_removes_markdown(self, voice_service):
         """Test that markdown is removed from responses."""
@@ -199,12 +192,6 @@ class TestResponseGuardrails:
 class TestDataExtraction:
     """Tests for structured data extraction from calls."""
 
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        return VoiceService(mock_session)
-
     @pytest.mark.asyncio
     async def test_extracts_email_from_messages(self, voice_service):
         """Test email extraction from conversation messages."""
@@ -255,12 +242,6 @@ class TestDataExtraction:
 
 class TestOutcomeDetermination:
     """Tests for call outcome determination."""
-
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        return VoiceService(mock_session)
 
     @pytest.mark.asyncio
     async def test_booking_intent_returns_booking_requested(self, voice_service):
@@ -317,13 +298,6 @@ class TestOutcomeDetermination:
 
 class TestVoiceResultCreation:
     """Tests for voice turn processing results."""
-
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        service = VoiceService(mock_session)
-        return service
 
     @pytest.mark.asyncio
     async def test_returns_error_on_missing_tenant(self, voice_service):

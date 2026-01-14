@@ -187,12 +187,17 @@ class TestBusinessHoursService:
 
     def test_handles_invalid_time_format_gracefully(self):
         """Test handles invalid time format by defaulting to open."""
+        # Use all days to ensure the test works regardless of current day
+        all_days = {
+            day: {"start": "invalid", "end": "17:00"}
+            for day in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        }
         result = is_within_business_hours(
-            business_hours={"monday": {"start": "invalid", "end": "17:00"}},
+            business_hours=all_days,
             timezone_str="UTC",
             business_hours_enabled=True,
         )
-        # Should return True (default to open on error)
+        # Should return True (default to open on error from exception handler)
         assert result is True
 
     def test_handles_missing_start_end(self):

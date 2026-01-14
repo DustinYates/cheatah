@@ -1,6 +1,7 @@
 """Tests for tenant isolation."""
 
 import pytest
+import uuid
 
 from app.persistence.models.conversation import Conversation
 from app.persistence.models.tenant import Tenant
@@ -12,10 +13,11 @@ from app.persistence.repositories.tenant_repository import TenantRepository
 async def test_tenant_isolation_in_queries(db_session):
     """Test that queries are properly isolated by tenant_id."""
     tenant_repo = TenantRepository(db_session)
-    
-    # Create two tenants
-    tenant1 = await tenant_repo.create(None, name="Tenant 1", subdomain="tenant1")
-    tenant2 = await tenant_repo.create(None, name="Tenant 2", subdomain="tenant2")
+
+    # Create two tenants with unique subdomains
+    unique_id = uuid.uuid4().hex[:8]
+    tenant1 = await tenant_repo.create(None, name="Tenant 1", subdomain=f"tenant1-{unique_id}")
+    tenant2 = await tenant_repo.create(None, name="Tenant 2", subdomain=f"tenant2-{unique_id}")
     
     # Create conversations for each tenant
     conv_repo = ConversationRepository(db_session)

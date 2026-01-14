@@ -15,7 +15,11 @@ def mock_session():
     session.add = MagicMock()
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
-    session.execute = AsyncMock()
+    # Mock execute to return None for escalation settings query (uses defaults)
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None
+    mock_result.scalars.return_value.all.return_value = []
+    session.execute = AsyncMock(return_value=mock_result)
     return session
 
 
@@ -23,6 +27,8 @@ def mock_session():
 def notification_service(mock_session):
     """Create a notification service with mocked dependencies."""
     service = NotificationService(mock_session)
+    # Pre-mock user_repo.list to return empty by default (tests override as needed)
+    service.user_repo.list = AsyncMock(return_value=[])
     return service
 
 

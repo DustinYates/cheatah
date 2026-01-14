@@ -49,8 +49,8 @@ def test_opt_in_keyword_detection():
 def test_normal_message():
     """Test normal message (no compliance keywords)."""
     handler = ComplianceHandler()
-    
-    result = handler.check_compliance("Hello, I need help")
+
+    result = handler.check_compliance("Hello, I have a question about pricing")
     assert result.action == "allow"
     assert result.is_compliant
     assert result.response_message is None

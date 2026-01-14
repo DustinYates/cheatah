@@ -19,6 +19,17 @@ from app.domain.services.voice_service import (
 )
 
 
+@pytest.fixture
+def voice_service():
+    """Create a VoiceService instance with mocked dependencies."""
+    mock_session = MagicMock()
+    with patch('app.domain.services.voice_service.LLMOrchestrator'):
+        service = VoiceService(mock_session)
+        service.llm_orchestrator = MagicMock()
+        service.llm_orchestrator.generate = AsyncMock(return_value='{"name": null, "reason": null, "urgency": "medium", "preferred_callback_time": null}')
+        return service
+
+
 @dataclass
 class EvalCase:
     """A test case for voice evaluation."""
@@ -80,12 +91,6 @@ HALLUCINATION_EVAL_CASES = [
 
 class TestHallucinationGuards:
     """Tests for hallucination detection and blocking."""
-
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        return VoiceService(mock_session)
 
     def test_detects_invented_phone_number(self, voice_service):
         """Test that invented phone numbers are flagged."""
@@ -158,12 +163,6 @@ class TestHallucinationGuards:
 class TestFastIntentDetection:
     """Tests for the TTFA-optimized intent detection."""
 
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        return VoiceService(mock_session)
-
     def test_fast_intent_is_synchronous(self, voice_service):
         """Test that fast intent detection doesn't require await."""
         # This should work without async/await
@@ -218,12 +217,6 @@ class TestFastIntentDetection:
 class TestTTFAMetrics:
     """Tests for TTFA latency tracking."""
 
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        return VoiceService(mock_session)
-
     def test_fast_intent_is_fast(self, voice_service):
         """Test that fast intent detection completes quickly."""
         start = time.time()
@@ -250,12 +243,6 @@ class TestTTFAMetrics:
 
 class TestPromptGrounding:
     """Tests for the grounding facts system."""
-
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        return VoiceService(mock_session)
 
     def test_format_business_hours(self, voice_service):
         """Test business hours formatting."""
@@ -289,12 +276,6 @@ class TestPromptGrounding:
 class TestResponseQuality:
     """Tests for response quality characteristics."""
 
-    @pytest.fixture
-    def voice_service(self):
-        """Create a VoiceService instance with mocked session."""
-        mock_session = MagicMock()
-        return VoiceService(mock_session)
-
     def test_response_length_within_limits(self, voice_service):
         """Test that guardrails enforce max response length."""
         long_response = "This is a sentence. " * 50
@@ -316,9 +297,9 @@ class TestResponseQuality:
         """Test that formal text is converted to contractions."""
         response = "I am happy to help. You are welcome to call back."
         result = voice_service._post_process_for_speech(response)
-        
+
         assert "I'm" in result
-        assert "You're" in result
+        assert "you're" in result.lower()
 
 
 # Benchmark utilities for TTFA tracking

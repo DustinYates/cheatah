@@ -1,6 +1,7 @@
 """Tests for conversation persistence."""
 
 import pytest
+import uuid
 
 from app.domain.services.conversation_service import ConversationService
 from app.persistence.models.tenant import Tenant
@@ -12,9 +13,10 @@ async def test_conversation_message_chronological_order(db_session):
     """Test that messages are stored and retrieved in chronological order."""
     tenant_repo = TenantRepository(db_session)
     conversation_service = ConversationService(db_session)
-    
-    # Create tenant
-    tenant = await tenant_repo.create(None, name="Test Tenant", subdomain="test")
+
+    # Create tenant with unique subdomain
+    unique_subdomain = f"test-{uuid.uuid4().hex[:8]}"
+    tenant = await tenant_repo.create(None, name="Test Tenant", subdomain=unique_subdomain)
     
     # Create conversation
     conversation = await conversation_service.create_conversation(

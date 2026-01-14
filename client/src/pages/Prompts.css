@@ -90,6 +90,52 @@
   flex-shrink: 0;
 }
 
+.master-prompt-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: var(--space-4);
+  margin: var(--space-4) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  box-shadow: 0 8px 16px -8px rgba(15, 23, 42, 0.08);
+}
+
+.master-prompt-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.master-prompt-card__header h2 {
+  margin: 0;
+}
+
+.master-prompt-card__header p {
+  margin: 4px 0 0 0;
+  color: #475569;
+}
+
+.master-prompt-card__textarea {
+  width: 100%;
+  min-height: 180px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  background: #f8fafc;
+}
+
+.master-prompt-card__textarea:focus {
+  outline: 2px solid #3b82f6;
+  background: #fff;
+}
+
 /* ========================================
    Buttons - Modern Hierarchy
    ======================================== */
@@ -1431,6 +1477,16 @@
   max-height: 90vh;
 }
 
+.preview-modal {
+  max-width: 1100px;
+  height: 85vh;
+  max-height: 85vh;
+}
+
+.preview-modal .v2-preview-content {
+  max-height: 68vh;
+}
+
 .large-modal form {
   padding: 0 24px;
   max-height: 60vh;
@@ -2004,24 +2060,6 @@
    ======================================== */
 .live-prompt-section {
   margin-bottom: var(--space-4);
-}
-
-.live-prompt-banner {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: var(--radius-card);
-  margin-bottom: var(--space-3);
-  font-size: 13px;
-  color: #1e40af;
-}
-
-.live-prompt-banner__icon {
-  font-size: 16px;
-  flex-shrink: 0;
 }
 
 .live-prompt-card {

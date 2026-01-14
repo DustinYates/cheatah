@@ -226,9 +226,27 @@
 }
 
 /* Column-specific sizing */
+.leads-table th.col-select,
+.leads-table td.col-select {
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+  text-align: center;
+  padding-left: 12px;
+  padding-right: 4px;
+}
+
+.leads-table th.col-select input[type="checkbox"],
+.leads-table td.col-select input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #4f46e5;
+}
+
 .leads-table th.col-person,
 .leads-table td.col-person {
-  width: 28%;
+  width: 26%;
   min-width: 180px;
 }
 

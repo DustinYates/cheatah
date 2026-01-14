@@ -5,7 +5,7 @@
 set -e
 
 # Configuration - UPDATE THESE
-GCP_PROJECT="${GCP_PROJECT:-your-project-id}"
+GCP_PROJECT="${GCP_PROJECT:-chatbots-466618}"
 SERVICE_NAME="${SERVICE_NAME:-chattercheatah}"
 REGION="${REGION:-us-central1}"
 REPO_NAME="cloud-run-builds"

@@ -178,7 +178,8 @@ export default function Dashboard() {
   const [actionLoading, setActionLoading] = useState(null);
   const [selectedLead, setSelectedLead] = useState(null);
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
-  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -330,21 +331,58 @@ export default function Dashboard() {
     setSelectedLead(lead);
   };
 
-  const handleCleanupTestData = async () => {
-    if (!confirm('Delete all test leads (None names, Caller +, SMS Contact +)? This cannot be undone.')) {
+  const handleSelectLead = (leadId) => {
+    setSelectedLeadIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(leadId)) {
+        next.delete(leadId);
+      } else {
+        next.add(leadId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedLeadIds.size === leads.length) {
+      setSelectedLeadIds(new Set());
+    } else {
+      setSelectedLeadIds(new Set(leads.map((lead) => lead.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedLeadIds.size === 0) return;
+
+    const count = selectedLeadIds.size;
+    if (!confirm(`Are you sure you want to delete ${count} lead${count > 1 ? 's' : ''}? This action cannot be undone.`)) {
       return;
     }
-    setCleanupLoading(true);
+
+    setBulkDeleteLoading(true);
     try {
-      const result = await api.cleanupTestLeads();
-      // Refresh leads after cleanup
-      await fetchData();
-      setError('');
-      alert(`Deleted ${result.deleted} test leads`);
+      const deletePromises = Array.from(selectedLeadIds).map((id) =>
+        api.deleteLead(id).catch((err) => ({ error: true, id, message: err.message }))
+      );
+      const results = await Promise.all(deletePromises);
+      const failed = results.filter((r) => r?.error);
+
+      if (failed.length > 0) {
+        setError(`Failed to delete ${failed.length} lead(s)`);
+      } else {
+        setError('');
+      }
+
+      // Remove successfully deleted leads from state
+      const failedIds = new Set(failed.map((f) => f.id));
+      setLeads((prevLeads) =>
+        prevLeads.filter((lead) => !selectedLeadIds.has(lead.id) || failedIds.has(lead.id))
+      );
+      setSelectedLeadIds(new Set());
     } catch (err) {
-      setError(`Failed to cleanup: ${err.message}`);
+      setError(`Failed to delete leads: ${err.message}`);
     } finally {
-      setCleanupLoading(false);
+      setBulkDeleteLoading(false);
     }
   };
 
@@ -481,14 +519,15 @@ export default function Dashboard() {
           <div className="card-header">
             <h2>Recent Leads</h2>
             <div className="card-header__actions">
-              <button
-                className="btn btn--danger btn--sm"
-                onClick={handleCleanupTestData}
-                disabled={cleanupLoading}
-                title="Delete test leads (None names, Caller +, SMS Contact +)"
-              >
-                {cleanupLoading ? 'Deleting...' : '🗑️ Delete Test Data'}
-              </button>
+              {selectedLeadIds.size > 0 && (
+                <button
+                  className="btn btn--danger btn--sm"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleteLoading}
+                >
+                  {bulkDeleteLoading ? 'Deleting...' : `Delete Selected (${selectedLeadIds.size})`}
+                </button>
+              )}
               <a className="card-link" href="/contacts">View all</a>
             </div>
           </div>
@@ -504,6 +543,15 @@ export default function Dashboard() {
             <CompactTable containerClassName="leads-table-container" tableClassName="leads-table">
               <thead>
                 <tr>
+                  <th className="col-select">
+                    <input
+                      type="checkbox"
+                      checked={leads.length > 0 && selectedLeadIds.size === leads.length}
+                      onChange={handleSelectAll}
+                      title="Select all"
+                      aria-label="Select all leads"
+                    />
+                  </th>
                   <th className="col-person">Lead</th>
                   <th className="col-phone">Phone</th>
                   <th className="col-source">Source</th>
@@ -515,6 +563,14 @@ export default function Dashboard() {
               <tbody>
                 {leads.map((lead) => (
                   <tr key={lead.id} className={getRowClassName(lead)}>
+                    <td className="col-select">
+                      <input
+                        type="checkbox"
+                        checked={selectedLeadIds.has(lead.id)}
+                        onChange={() => handleSelectLead(lead.id)}
+                        aria-label={`Select ${lead.name || 'lead'}`}
+                      />
+                    </td>
                     <td className="col-person">
                       <div className="lead-person">
                         <span className="lead-person__name">{formatName(lead.name)}</span>

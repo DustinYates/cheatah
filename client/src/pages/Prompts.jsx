@@ -80,6 +80,39 @@ const CHANNEL_TABS = [
   { key: 'sms', label: 'SMS', icon: '📱', description: 'Text message bot prompt' },
 ];
 
+// ========================================
+// Master Prompt Generator
+// ========================================
+
+function MasterPromptGenerator({ value, onChange, onGenerate }) {
+  return (
+    <div className="master-prompt-card">
+      <div className="master-prompt-card__header">
+        <div>
+          <h2>Tenant Prompt Drop-In</h2>
+          <p>Paste the tenant’s source prompt once. We’ll generate channel-safe versions for Web, Voice, and SMS.</p>
+        </div>
+        <button
+          className="btn btn--primary"
+          onClick={onGenerate}
+          disabled={!value.trim()}
+        >
+          Generate channel prompts
+        </button>
+      </div>
+
+      <textarea
+        className="master-prompt-card__textarea"
+        placeholder="Paste the tenant prompt or working doc here. We’ll apply channel-specific rules automatically."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={8}
+        spellCheck={false}
+      />
+    </div>
+  );
+}
+
 function ChannelPromptsSection({
   channelPrompts,
   activeChannel,
@@ -89,6 +122,7 @@ function ChannelPromptsSection({
   saving,
   loading,
   addToast,
+  injectedPrompts,
 }) {
   const [editedPrompt, setEditedPrompt] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
@@ -96,10 +130,16 @@ function ChannelPromptsSection({
   // Update edited prompt when channel changes or prompts load
   useEffect(() => {
     const promptKey = `${activeChannel}_prompt`;
+    const injected = injectedPrompts?.[activeChannel];
+    if (injected !== undefined && injected !== null) {
+      setEditedPrompt(injected);
+      setHasChanges(true);
+      return;
+    }
     const currentPrompt = channelPrompts?.[promptKey] || '';
     setEditedPrompt(currentPrompt);
     setHasChanges(false);
-  }, [activeChannel, channelPrompts]);
+  }, [activeChannel, channelPrompts, injectedPrompts]);
 
   const handlePromptChange = (value) => {
     setEditedPrompt(value);
@@ -118,6 +158,16 @@ function ChannelPromptsSection({
     await onDelete(activeChannel);
     setEditedPrompt('');
     setHasChanges(false);
+  };
+
+  const handleCopy = async () => {
+    if (!editedPrompt) return;
+    try {
+      await navigator.clipboard.writeText(editedPrompt);
+      addToast('Prompt copied to clipboard', 'success');
+    } catch (err) {
+      addToast('Failed to copy prompt: ' + err.message, 'error');
+    }
   };
 
   const currentTab = CHANNEL_TABS.find(t => t.key === activeChannel);
@@ -194,6 +244,13 @@ function ChannelPromptsSection({
             <span className="channel-editor__char-count">{editedPrompt.length.toLocaleString()} characters</span>
           </div>
           <div className="channel-editor__actions">
+            <button
+              className="btn btn--ghost"
+              onClick={handleCopy}
+              disabled={!hasPrompt}
+            >
+              Copy Prompt
+            </button>
             {hasPrompt && (
               <button
                 className="btn btn--ghost btn--danger"
@@ -243,11 +300,6 @@ function LivePromptSection({
 
   return (
     <div className="live-prompt-section">
-      <div className="live-prompt-banner">
-        <span className="live-prompt-banner__icon">ℹ️</span>
-        <span>Runtime uses: Base Config + Active Tenant Config</span>
-      </div>
-
       <div className="live-prompt-card">
         <div className="live-prompt-card__header">
           <div className="live-prompt-card__title">
@@ -411,6 +463,8 @@ export default function Prompts() {
   const [previewChannel, setPreviewChannel] = useState('chat');
   const [showPreview, setShowPreview] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [masterPrompt, setMasterPrompt] = useState('');
+  const [generatedPrompts, setGeneratedPrompts] = useState(null);
 
   // Bundles State (backups)
   const [bundles, setBundles] = useState([]);
@@ -443,6 +497,86 @@ export default function Prompts() {
   const [channelPromptsLoading, setChannelPromptsLoading] = useState(true);
   const [activeChannel, setActiveChannel] = useState('web');
   const [channelSaving, setChannelSaving] = useState(false);
+
+  // ========================================
+  // Prompt Generator (master -> channel variants)
+  // ========================================
+
+  const buildWebPrompt = (context) => `Channel: Web Chat (Text UI)
+Primary goal: Accuracy, clarity, and structured guidance.
+
+Channel rules:
+- Allowed: URLs and clickable links, bullet lists/tables, multiple questions in one turn, explicit confirmations, step-by-step instructions, repeating info verbatim when helpful.
+- Restrictions: Do not assume intent—confirm before actions. Do not capture PII without consent. Avoid long paragraphs; chunk responses. No silent state changes—narrate what you are doing.
+- Special rules: Can show full addresses and pricing numerically. Can ask for email/phone inline. Maintain visible state (e.g., "Step 2 of 4").
+
+Tenant context (ground your answers in this): 
+${context}
+
+Response style:
+- Label steps and confirm before progressing.
+- Keep answers scannable with bullets and short paragraphs.
+- Restate critical info (locations, schedules, policies, pricing) exactly as provided.`;
+
+  const buildVoicePrompt = (context) => `Channel: Voice (Phone / IVR / AI Voice)
+Primary goal: Natural speech, zero ambiguity, zero cognitive load.
+
+Hard restrictions (critical):
+- Never read or spell URLs, email addresses, full street addresses, symbols, or formatting.
+- Never speak the words "slash", "dot", "dash", "underscore", "percent", or "colon".
+- Never stack questions; ask one at a time.
+- Never give dense lists (>3 items).
+
+Required behaviors:
+- Always confirm understanding after key steps; narrate step changes ("Moving to enrollment step.").
+- Ask for ZIP code before discussing locations.
+- Use speech-safe phrasing only.
+- For email addresses, spell letter-by-letter only during confirmation.
+
+Special rules:
+- Pricing must be verbalized (e.g., "two hundred sixty six dollars"), not shown.
+- Links are not spoken; offer to send via SMS/email instead.
+
+Tenant context (convert to speech-safe responses; summarize addresses/links instead of reading them):
+${context}
+
+Speech style:
+- One question at a time, short confirmations ("Got it.", "Okay.").
+- Offer to send details via SMS/email for anything with links/addresses.
+- Keep lists to max 3 items; otherwise summarize and offer details via SMS.`;
+
+  const buildSmsPrompt = (context) => `Channel: SMS / Text Messaging
+Primary goal: Brevity, clarity, low interruption.
+
+Channel rules:
+- Allowed: Short links, one idea per message, yes/no or single-choice questions, simple confirmations, quick follow-up nudges.
+- Restrictions: No long explanations, no multi-step flows in one message, no walls of text, avoid back-and-forth loops.
+- Required: Each message must be skimmable in <5 seconds and include its own context (assume the user may come back later).
+- Special rules: Links are okay. Addresses should be shortened (cross streets preferred). Pricing should be summarized, not itemized. Avoid emojis unless brand-approved.
+
+Tenant context (condense to SMS-friendly snippets):
+${context}
+
+Message style:
+- Keep to 1–3 short sentences; prefer numbered or bullet-like lines.
+- Always include quick context and a single clear action/question.
+- Use links sparingly; avoid long addresses—shorten to cross streets or area.`;
+
+  const generateChannelPrompts = () => {
+    const context = masterPrompt.trim();
+    if (!context) {
+      addToast('Paste the tenant prompt before generating channel versions.', 'error');
+      return;
+    }
+    const newPrompts = {
+      web: buildWebPrompt(context),
+      voice: buildVoicePrompt(context),
+      sms: buildSmsPrompt(context),
+    };
+    setGeneratedPrompts(newPrompts);
+    setActiveChannel('web');
+    addToast('Generated channel-safe prompts. Review and save each one.', 'success');
+  };
 
   // ========================================
   // Data Fetching
@@ -944,6 +1078,13 @@ export default function Prompts() {
         </div>
       </div>
 
+      {/* Master Prompt Generator */}
+      <MasterPromptGenerator
+        value={masterPrompt}
+        onChange={setMasterPrompt}
+        onGenerate={generateChannelPrompts}
+      />
+
       {/* Channel Prompts (Web, Voice, SMS) */}
       <ChannelPromptsSection
         channelPrompts={channelPrompts}
@@ -954,6 +1095,7 @@ export default function Prompts() {
         saving={channelSaving}
         loading={channelPromptsLoading}
         addToast={addToast}
+        injectedPrompts={generatedPrompts}
       />
 
       {/* ========================================
@@ -1056,7 +1198,7 @@ export default function Prompts() {
       {/* Preview Modal */}
       {showPreview && (
         <div className="modal-overlay" onClick={() => setShowPreview(false)}>
-          <div className="modal large-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal large-modal preview-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Live Prompt Preview</h2>
               <button className="modal-close" onClick={() => setShowPreview(false)}>×</button>

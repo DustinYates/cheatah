@@ -170,11 +170,12 @@ async def _sync_calls_to_leads_for_tenant(db: AsyncSession, tenant_id: int, logg
             }
 
             if not lead:
-                # Create new lead
+                # Create new lead - use phone number as fallback name
+                display_name = caller_name if caller_name else f"Caller {normalized_phone}"
                 lead = Lead(
                     tenant_id=tenant_id,
                     phone=normalized_phone,
-                    name=caller_name,
+                    name=display_name,
                     email=caller_email,
                     status="new",
                     extra_data={"voice_calls": [call_data]},

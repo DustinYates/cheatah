@@ -1136,10 +1136,12 @@ async def telnyx_ai_call_complete(
                 lead = existing_lead.scalar_one_or_none()
 
                 if not lead:
+                    # Use phone number as fallback name if no name extracted
+                    display_name = caller_name if caller_name else f"SMS Contact {normalized_from}"
                     lead = Lead(
                         tenant_id=tenant_id,
                         phone=normalized_from,
-                        name=caller_name or None,
+                        name=display_name,
                         email=caller_email or None,
                         status="new",
                         extra_data={"source": "sms_ai_assistant", "summary": summary},
@@ -1316,11 +1318,13 @@ async def telnyx_ai_call_complete(
 
             if not lead:
                 # Create new lead with extracted info
+                # Use phone number as fallback name if no name extracted
+                display_name = caller_name if caller_name else f"Caller {normalized_from}"
                 lead = Lead(
                     tenant_id=tenant_id,
                     phone=normalized_from,
-                    name=caller_name or None,  # Set name on lead if extracted
-                    email=caller_email or None,  # Set email on lead if extracted
+                    name=display_name,
+                    email=caller_email or None,
                     status="new",
                     extra_data={"voice_calls": [call_data]},
                 )
@@ -1659,11 +1663,12 @@ async def sync_calls_to_leads(
             }
 
             if not lead:
-                # Create new lead
+                # Create new lead - use phone number as fallback name
+                display_name = caller_name if caller_name else f"Caller {normalized_phone}"
                 lead = Lead(
                     tenant_id=call.tenant_id,
                     phone=normalized_phone,
-                    name=caller_name,
+                    name=display_name,
                     email=caller_email,
                     status="new",
                     extra_data={"voice_calls": [call_data]},

@@ -84,7 +84,7 @@ const CHANNEL_TABS = [
 // Master Prompt Generator
 // ========================================
 
-function MasterPromptGenerator({ value, onChange, onGenerate }) {
+function MasterPromptGenerator({ value, onChange, onGenerate, onSave, saving, savedAt }) {
   return (
     <div className="master-prompt-card">
       <div className="master-prompt-card__header">
@@ -92,14 +92,29 @@ function MasterPromptGenerator({ value, onChange, onGenerate }) {
           <h2>Tenant Prompt Drop-In</h2>
           <p>Paste the tenant’s source prompt once. We’ll generate channel-safe versions for Web, Voice, and SMS.</p>
         </div>
-        <button
-          className="btn btn--primary"
-          onClick={onGenerate}
-          disabled={!value.trim()}
-        >
-          Generate channel prompts
-        </button>
+        <div className="master-prompt-actions">
+          <button
+            className="btn btn--secondary"
+            onClick={onSave}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Save drop-in'}
+          </button>
+          <button
+            className="btn btn--primary"
+            onClick={onGenerate}
+            disabled={!value.trim()}
+          >
+            Generate channel prompts
+          </button>
+        </div>
       </div>
+
+      {savedAt && (
+        <div className="archive-save-meta">
+          Saved locally at {savedAt}
+        </div>
+      )}
 
       <textarea
         className="master-prompt-card__textarea"
@@ -521,6 +536,8 @@ export default function Prompts() {
   const [showPreview, setShowPreview] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [masterPrompt, setMasterPrompt] = useState('');
+  const [masterSaving, setMasterSaving] = useState(false);
+  const [masterSavedAt, setMasterSavedAt] = useState('');
   const [generatedPrompts, setGeneratedPrompts] = useState(null);
   const [archivedPrompts, setArchivedPrompts] = useState({ web: '', voice: '', sms: '' });
   const [activeArchiveChannel, setActiveArchiveChannel] = useState('web');
@@ -1110,12 +1127,13 @@ Message style:
   // ========================================
 
   const archiveStorageKey = `prompt_archive_v1_${selectedTenantId || 'global'}`;
+  const masterStorageKey = `prompt_master_v1_${selectedTenantId || 'global'}`;
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(archiveStorageKey);
-      if (raw) {
-        const parsed = JSON.parse(raw);
+      const rawArchive = localStorage.getItem(archiveStorageKey);
+      if (rawArchive) {
+        const parsed = JSON.parse(rawArchive);
         setArchivedPrompts({
           web: parsed.web || '',
           voice: parsed.voice || '',
@@ -1124,11 +1142,19 @@ Message style:
       } else {
         setArchivedPrompts({ web: '', voice: '', sms: '' });
       }
+
+      const rawMaster = localStorage.getItem(masterStorageKey);
+      if (rawMaster) {
+        setMasterPrompt(rawMaster);
+      } else {
+        setMasterPrompt('');
+      }
     } catch (err) {
       console.error('Failed to load archived prompts', err);
       setArchivedPrompts({ web: '', voice: '', sms: '' });
+      setMasterPrompt('');
     }
-  }, [archiveStorageKey]);
+  }, [archiveStorageKey, masterStorageKey]);
 
   const handleSaveArchive = async () => {
     setArchiveSaving(true);
@@ -1143,6 +1169,36 @@ Message style:
       setArchiveSaving(false);
     }
   };
+
+  const handleSaveMaster = async () => {
+    setMasterSaving(true);
+    try {
+      localStorage.setItem(masterStorageKey, masterPrompt);
+      const timestamp = new Date().toLocaleString();
+      setMasterSavedAt(timestamp);
+      addToast('Drop-in saved locally.', 'success');
+    } catch (err) {
+      addToast('Failed to save drop-in: ' + err.message, 'error');
+    } finally {
+      setMasterSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    // Auto-save master prompt to localStorage when it changes (debounced via requestAnimationFrame)
+    let raf;
+    raf = requestAnimationFrame(() => {
+      try {
+        localStorage.setItem(masterStorageKey, masterPrompt);
+        setMasterSavedAt(new Date().toLocaleString());
+      } catch (err) {
+        console.error('Auto-save master failed', err);
+      }
+    });
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [masterPrompt, masterStorageKey]);
 
   useEffect(() => {
     // Auto-save to localStorage when archive changes (debounced via requestAnimationFrame)
@@ -1240,6 +1296,9 @@ Message style:
         value={masterPrompt}
         onChange={setMasterPrompt}
         onGenerate={generateChannelPrompts}
+        onSave={handleSaveMaster}
+        saving={masterSaving}
+        savedAt={masterSavedAt}
       />
 
       {/* Channel Prompts (Web, Voice, SMS) */}

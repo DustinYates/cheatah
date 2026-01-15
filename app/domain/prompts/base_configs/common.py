@@ -78,30 +78,58 @@ Opening question: "Who will be swimming — you, your child, or someone else?"
 
 Branch logic based on response:
 
-1) If user indicates SELF (me/I/myself/I want to learn):
+1) If user indicates SELF (me/I/myself/I want to learn/I'm the swimmer):
    - swimmer_role = "self"
-   - Use SECOND PERSON for all swimmer questions: "How old are you?" "Have you had lessons before?"
-   - The user IS the swimmer
+   - The user IS the swimmer — address them directly in 2nd person
+   - CORRECT: "How old are you?" "Have you had lessons before?" "Are you comfortable in water?"
+   - WRONG: "How old is [their name]?" — never refer to the person you're talking to in 3rd person
 
-2) If user indicates CHILD/OTHER or provides a NAME:
+2) If user indicates CHILD/OTHER or provides a NAME with relationship context:
    - swimmer_role = "other"
-   - Use THIRD PERSON for swimmer questions: "How old is [Name]?" "Has [Name] had lessons before?"
+   - Use 3rd person with swimmer's name
+   - CORRECT: "How old is Max?" "Has Max had lessons before?"
 
-3) If user replies with ONLY A NAME (single token, no relationship context):
-   - Ask ONE clarification: "Is [Name] the swimmer, or are you the swimmer?"
-   - Based on answer, set swimmer_role appropriately
+3) If user replies with ONLY A NAME (e.g., "Penny") with no relationship context:
+   - Ask ONE clarification: "Just to confirm — are you the swimmer, or is Penny someone else?"
+   - If they confirm it's themselves: swimmer_role="self", use 2nd person going forward
+   - If they say it's their child/someone else: swimmer_role="other", use 3rd person
 
 Identity rules:
 - NEVER say "Nice to meet you, [Name]" unless swimmer_role="self" AND user explicitly stated their own name
 - Do NOT assume the speaker's name from the swimmer's name
 - Store parent_name separately from swimmer_name
 - Only set parent_name when explicitly provided as the account holder/parent
-- Keep responses concise; no self-narration
 
 Examples:
 User: "My son Max" → swimmer_role="other", swimmer_name="Max", ask "How old is Max?"
-User: "Me" → swimmer_role="self", ask "How old are you?"
-User: "Sarah" → Clarify: "Is Sarah the swimmer, or are you the swimmer?"
+User: "Me" or "I want to learn" → swimmer_role="self", ask "How old are you?"
+User: "Penny" (just a name) → Clarify first, then set swimmer_role based on answer
+User: "I'm Penny" or "My name is Penny" → swimmer_role="self", swimmer_name="Penny", ask "How old are you?" (NOT "How old is Penny?")
+"""
+
+# Pronoun usage rules - CRITICAL for natural conversation
+PRONOUN_USAGE_RULES = """## PRONOUN USAGE RULES (CRITICAL)
+
+This rule applies to ALL questions about the swimmer throughout the conversation.
+
+When swimmer_role = "self":
+- The person chatting IS the swimmer
+- Use 2ND PERSON (you/your) for ALL swimmer-related questions:
+  ✓ "How old are you?"
+  ✓ "Have you had swim lessons before?"
+  ✓ "Are you comfortable putting your face in the water?"
+  ✓ "Can you float on your back?"
+  ✗ NEVER: "How old is [Name]?" when talking TO that person
+
+When swimmer_role = "other":
+- The person chatting is a PARENT/GUARDIAN asking about someone else
+- Use 3RD PERSON with the swimmer's name:
+  ✓ "How old is Emma?"
+  ✓ "Has Emma had swim lessons before?"
+  ✓ "Is Emma comfortable putting her face in the water?"
+
+REMEMBER: If someone tells you their name (e.g., "I'm Penny"), they are the person you're talking to.
+Asking "How old is Penny?" when talking TO Penny is grammatically incorrect and unnatural.
 """
 
 # Voice channel wrapper - applied when channel is "voice"

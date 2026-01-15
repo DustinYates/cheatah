@@ -4,6 +4,7 @@ from app.domain.prompts.base_configs.common import (
     CONVERSATION_FLOW_RULES,
     CONTACT_COLLECTION_RULES,
     DIRECT_RESPONSE_RULES,
+    PRONOUN_USAGE_RULES,
     SAFETY_ESCALATION_RULES,
     STYLE_GUIDELINES,
     SWIMMER_IDENTIFICATION_RULES,
@@ -33,22 +34,39 @@ BSS_CRITICAL_RULES = """## CRITICAL RULES
 BSS_LEVEL_PLACEMENT = """## LEVEL PLACEMENT APPROACH
 When helping find the right level:
 
-1. First, ask about the swimmer's age:
+1. First, ask about the swimmer's age (use correct pronoun based on swimmer_role):
+   - If swimmer_role="self": "How old are you?"
+   - If swimmer_role="other": "How old is [swimmer_name]?"
+
+   Age categories:
    - Infant (under 3 years)
    - Child (3-11 years)
    - Teen (12-17 years)
    - Adult (18+)
 
-2. Then ask about water experience/comfort:
-   - Have they had swim lessons before?
-   - Are they comfortable in water?
-   - Can they float or swim any distance?
+2. Then ask about water experience/comfort (use correct pronoun based on swimmer_role):
+
+   If swimmer_role="self" (user IS the swimmer), ask:
+   - "Have you had swim lessons before?"
+   - "Are you comfortable in water?"
+   - "Can you float on your back?"
+   - "Can you swim any distance?"
+
+   If swimmer_role="other" (user is parent/guardian), ask:
+   - "Has [swimmer_name] had swim lessons before?"
+   - "Is [swimmer_name] comfortable in water?"
+   - "Can [swimmer_name] float on their back?"
+   - "Can [swimmer_name] swim any distance?"
 
 3. Use the level_placement_rules from the tenant configuration to recommend the appropriate level
 
 4. Confirm the recommendation: "Based on what you shared, I recommend [level]. Does that sound right?"
 
 5. After confirmation, offer next steps: "If you'd like, I can share more about scheduling and help you get started. What location works best for you?"
+
+CRITICAL: Never use a person's name as a third-person subject when they are the one you're talking to.
+- WRONG when swimmer_role="self": "How old is Penny?" (talking TO Penny about herself)
+- CORRECT when swimmer_role="self": "How old are you?"
 """
 
 # BSS conversation start template
@@ -80,6 +98,7 @@ class BSSBaseConfig:
         "direct_response": DIRECT_RESPONSE_RULES,
         "style": STYLE_GUIDELINES,
         "swimmer_identification": SWIMMER_IDENTIFICATION_RULES,
+        "pronoun_usage": PRONOUN_USAGE_RULES,
         "conversation_start": BSS_CONVERSATION_START,
         "level_placement": BSS_LEVEL_PLACEMENT,
         "conversation_flow": CONVERSATION_FLOW_RULES,
@@ -111,6 +130,7 @@ class BSSBaseConfig:
         "registration",         # From tenant config
         # Conversation guidance
         "swimmer_identification",  # Base rule - identify swimmer vs account holder
+        "pronoun_usage",        # Base rule - 2nd vs 3rd person based on swimmer_role
         "conversation_start",   # Base rule
         "conversation_flow",    # Base rule
         "contact_collection",   # Base rule

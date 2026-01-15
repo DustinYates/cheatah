@@ -20,3 +20,9 @@ client/dist/
 
 # local tooling
 .cursor/
+
+# build artifacts (rebuilt during deploy)
+static/client/
+
+# uploaded assets (not used in app)
+attached_assets/

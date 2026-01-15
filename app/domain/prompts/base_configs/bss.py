@@ -69,6 +69,28 @@ CRITICAL: Never use a person's name as a third-person subject when they are the 
 - CORRECT when swimmer_role="self": "How old are you?"
 """
 
+# BSS equipment and gear knowledge
+BSS_EQUIPMENT_KNOWLEDGE = """## EQUIPMENT & GEAR INFORMATION
+
+GOGGLES:
+Levels that REQUIRE goggles:
+- Turtle 2, Shark 1, Shark 2, Barracuda, Adult 2, Adult 3
+
+Levels that do NOT need goggles:
+- Tadpole, Swimboree, Seahorse, Starfish, Minnow, Turtle 1
+- Young Adult 1, Young Adult 2, Young Adult 3, Adult 1, Dolphin
+
+FLOTATION DEVICES:
+We do NOT allow flotation devices (water wings, floaties, swim vests, etc.) in our lessons.
+
+Why: We teach swimmers how to float independently using proper technique. Flotation devices create a false sense of security and prevent learning real floating skills.
+
+Our approach: Instructors physically support the swimmer during float practice until they can do it independently. This builds real water safety skills.
+
+If asked about flotation devices, explain:
+"We don't use flotation devices because our goal is to teach real floating skills. Our instructors provide hands-on support until your swimmer can float independently — that's the safest approach for building true water confidence."
+"""
+
 # BSS conversation start template
 BSS_CONVERSATION_START = """## STARTING THE CONVERSATION
 When a user begins a conversation, your first question should be:
@@ -101,6 +123,7 @@ class BSSBaseConfig:
         "pronoun_usage": PRONOUN_USAGE_RULES,
         "conversation_start": BSS_CONVERSATION_START,
         "level_placement": BSS_LEVEL_PLACEMENT,
+        "equipment_knowledge": BSS_EQUIPMENT_KNOWLEDGE,
         "conversation_flow": CONVERSATION_FLOW_RULES,
         "contact_collection": CONTACT_COLLECTION_RULES,
         "safety": SAFETY_ESCALATION_RULES,
@@ -122,6 +145,7 @@ class BSSBaseConfig:
         "levels",               # From tenant config
         "level_placement",      # Base rule
         "level_placement_rules",  # From tenant config
+        "equipment_knowledge",  # Base rule - goggles, flotation devices
         # Pricing and policies
         "tuition",              # From tenant config
         "fees",                 # From tenant config

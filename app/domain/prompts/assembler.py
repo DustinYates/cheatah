@@ -1,5 +1,6 @@
 """Assembles final system prompt from base config + tenant config."""
 
+from datetime import datetime
 from typing import Optional
 
 from app.domain.prompts.base_configs import get_base_config
@@ -151,6 +152,10 @@ class PromptAssembler:
 
         # Build context section
         context_lines = ["\n## CURRENT CONVERSATION CONTEXT"]
+
+        # Add current date/time so the chatbot knows the actual date
+        now = datetime.now()
+        context_lines.append(f"Today's date: {now.strftime('%A, %B %d, %Y')}")
 
         # What's been collected
         collected = []

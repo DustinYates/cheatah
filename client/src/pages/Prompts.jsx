@@ -5,6 +5,7 @@ import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { ToastContainer } from '../components/ui/Toast';
 import { formatDateTimeParts } from '../utils/dateFormat';
 import { useAuth } from '../context/AuthContext';
+import TestChatWidget from '../components/TestChatWidget';
 import './Prompts.css';
 
 // ========================================
@@ -1730,6 +1731,9 @@ Message style:
           </div>
         </div>
       )}
+
+      {/* Floating Test Chat Widget */}
+      <TestChatWidget />
     </div>
   );
 }

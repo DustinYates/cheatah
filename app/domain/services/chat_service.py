@@ -16,6 +16,7 @@ from app.domain.services.promise_detector import PromiseDetector, DetectedPromis
 from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
 from app.domain.services.user_request_detector import UserRequestDetector
 from app.domain.services.prompt_service import PromptService
+from app.utils.name_validator import validate_name, extract_name_from_explicit_statement
 from app.llm.orchestrator import LLMOrchestrator
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.repositories.tenant_repository import TenantRepository
@@ -860,7 +861,19 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             for key in ['name', 'email', 'phone']:
                 if result[key] == "" or result[key] == "null":
                     result[key] = None
-                    
+
+            # Validate the extracted name using strict validation
+            if result["name"]:
+                validated_name = validate_name(
+                    result["name"],
+                    require_explicit=result.get("name_is_explicit", False)
+                )
+                if validated_name != result["name"]:
+                    logger.info(
+                        f"Name validation changed: '{result['name']}' -> '{validated_name}'"
+                    )
+                result["name"] = validated_name
+
             logger.debug(f"Final extracted contact info: {result}")
             return result
             
@@ -868,11 +881,21 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             logger.warning(
                 f"Failed to parse contact extraction response: {e}, response: {response[:200]}"
             )
-            # Use regex results as fallback
+            # Validate regex result before returning as fallback
+            if result["name"]:
+                result["name"] = validate_name(
+                    result["name"],
+                    require_explicit=result.get("name_is_explicit", False)
+                )
             return result
         except Exception as e:
             logger.error(f"Contact extraction failed: {e}", exc_info=True)
-            # Use regex results as fallback
+            # Validate regex result before returning as fallback
+            if result["name"]:
+                result["name"] = validate_name(
+                    result["name"],
+                    require_explicit=result.get("name_is_explicit", False)
+                )
             return result
 
     async def _process_chat_core(

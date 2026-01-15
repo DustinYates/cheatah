@@ -4,6 +4,8 @@ import logging
 import re
 from typing import Any
 
+from app.utils.name_validator import validate_name
+
 try:
     import phonenumbers
     from phonenumbers import NumberParseException
@@ -523,63 +525,29 @@ class EmailBodyParser:
                         return cleaned
         return None
 
-    def _clean_name(self, name: str) -> str | None:
-        """Clean and validate a name string.
-        
+    def _clean_name(self, name: str, from_explicit_field: bool = True) -> str | None:
+        """Clean and validate a name string using strict validation.
+
         Args:
             name: Raw name string
-            
+            from_explicit_field: If True, the name came from an explicit form field
+
         Returns:
             Cleaned name or None if invalid
         """
         if not name:
             return None
-        
-        # Clean whitespace first
-        name = ' '.join(name.split())
-        name = name.strip()
-        
-        # Remove angle brackets if present
-        name = re.sub(r'[<>]', '', name)
-        
-        # Remove email-like patterns (if someone put an email in name field)
-        # But be careful - don't reject names that happen to contain @ in a non-email context
-        if '@' in name:
-            # Check if it's actually an email address
-            if self.EMAIL_PATTERN.search(name):
-                logger.debug(f"_clean_name: rejected '{name}' - contains email pattern")
-                return None
-            # If it's not a full email, just remove the @ symbol and continue
-            name = name.replace('@', '')
-        
-        # Remove phone-like patterns (but allow names with some numbers)
-        # Only reject if it looks like a phone number format
-        phone_match = re.search(r'\(?\d{3}\)?\s*-?\s*\d{3}\s*-?\s*\d{4}', name)
-        if phone_match and len(phone_match.group(0)) >= 10:
-            # If the name is mostly a phone number, reject it
-            if len(phone_match.group(0)) >= len(name) * 0.7:
-                logger.debug(f"_clean_name: rejected '{name}' - mostly phone number")
-                return None
-        
-        # Basic validation: should have at least 2 characters and not be all numbers
-        if len(name) < 2:
-            logger.debug(f"_clean_name: rejected '{name}' - too short")
-            return None
-        
-        # Don't reject if it's all numbers - some names might have numbers (e.g., "John 2nd")
-        # But reject if it's clearly just a number sequence
-        if name.replace(' ', '').isdigit() and len(name.replace(' ', '')) > 3:
-            logger.debug(f"_clean_name: rejected '{name}' - all digits")
-            return None
-        
-        # Reject common non-name values
-        name_lower = name.lower()
-        if name_lower in ['n/a', 'none', 'null', 'unknown', 'name', 'email', 'phone']:
-            logger.debug(f"_clean_name: rejected '{name}' - common non-name value")
-            return None
 
-        logger.debug(f"_clean_name: accepted '{name}'")
-        return name.strip()
+        # Use the strict name validator
+        # Names from form fields are considered "explicit"
+        validated = validate_name(name, require_explicit=from_explicit_field)
+
+        if validated:
+            logger.debug(f"_clean_name: accepted '{validated}'")
+        else:
+            logger.debug(f"_clean_name: rejected '{name}'")
+
+        return validated
 
     def _extract_email(self, parsed_data: dict[str, str], email_body: str) -> str | None:
         """Extract and validate email from parsed data.

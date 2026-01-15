@@ -495,13 +495,29 @@ export default function Dashboard() {
     return formatted.replace(/\s[A-Z]{2,4}$/, '');
   };
 
-  // Format name - handle "none", "unknown", null, etc.
+  // Format name - handle invalid names, null, common acknowledgements, etc.
   const formatName = (name) => {
-    if (!name) return 'None';
+    if (!name) return 'Unknown';
     const lower = name.toLowerCase().trim();
-    if (lower === 'none' || lower === 'unknown' || lower === 'n/a' || lower === 'not provided') {
-      return 'None';
+
+    // Common invalid name values
+    const invalidNames = [
+      'none', 'unknown', 'n/a', 'not provided', 'null', 'undefined',
+      // Common acknowledgements that shouldn't be names
+      'yes', 'yep', 'yeah', 'ok', 'okay', 'sure', 'good', 'great', 'fine',
+      'thanks', 'thank you', 'no', 'nope', 'nah', 'hello', 'hi', 'hey',
+      'can', 'will', 'maybe', 'test', 'testing', 'demo'
+    ];
+
+    if (invalidNames.includes(lower)) {
+      return 'Unknown';
     }
+
+    // Reject single character or very short names (except known short names)
+    if (name.trim().length < 2) {
+      return 'Unknown';
+    }
+
     return name;
   };
 

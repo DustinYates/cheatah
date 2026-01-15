@@ -15,6 +15,7 @@ from app.domain.services.escalation_service import EscalationService
 from app.domain.services.intent_detector import IntentDetector
 from app.domain.services.lead_service import LeadService
 from app.domain.services.prompt_service import PromptService
+from app.utils.name_validator import validate_name
 from app.infrastructure.gmail_client import GmailAPIError, GmailClient
 from app.persistence.models.conversation import Conversation
 from app.persistence.models.tenant_email_config import EmailConversation, TenantEmailConfig
@@ -813,8 +814,16 @@ class EmailService:
                     f"Additional fields: {list(additional_fields.keys())}"
                 )
         else:
-            # If no structured data, use parsed name or sender name as fallback
-            info["name"] = parsed.get("name") or sender_name or None
+            # If no structured data, use parsed name only (already validated)
+            # Do NOT use sender_name as fallback - it may be chat text like "Good", "Yes"
+            parsed_name = parsed.get("name")
+            if parsed_name:
+                info["name"] = parsed_name
+            else:
+                # Only use sender_name if it passes strict validation
+                # This prevents names like "Good", "Yes" from being captured
+                validated_sender = validate_name(sender_name, require_explicit=False)
+                info["name"] = validated_sender
         
         # For email: Only use structured form data if found, otherwise fall back to sender email
         # This ensures form submissions use the form's email field, not the email sender's address

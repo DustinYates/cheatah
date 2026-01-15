@@ -15,6 +15,7 @@ from app.domain.services.escalation_service import EscalationService
 from app.domain.services.intent_detector import IntentDetector
 from app.domain.services.opt_in_service import OptInService
 from app.domain.services.prompt_service import PromptService
+from app.utils.name_validator import validate_name
 from app.infrastructure.telephony.factory import TelephonyProviderFactory
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.lead import Lead
@@ -593,8 +594,13 @@ Respond with ONLY valid JSON, no explanation:
             if key in ["name", "email"]:
                 # These go to main lead fields
                 if key == "name" and not lead.name and value:
-                    lead.name = value
-                    logger.info(f"Updated lead {lead.id} name: {value}")
+                    # Validate name before setting
+                    validated_name = validate_name(value, require_explicit=False)
+                    if validated_name:
+                        lead.name = validated_name
+                        logger.info(f"Updated lead {lead.id} name: {validated_name}")
+                    else:
+                        logger.info(f"Rejected invalid name for lead {lead.id}: {value}")
                 elif key == "email" and not lead.email and value:
                     lead.email = value
                     logger.info(f"Updated lead {lead.id} email: {value}")
@@ -651,8 +657,13 @@ Respond with ONLY valid JSON, no explanation:
                 # Update existing lead with new information
                 updated = False
                 if extracted_name and (not existing_lead.name or name_is_explicit):
-                    existing_lead.name = extracted_name
-                    updated = True
+                    # Validate name before setting (double-check validation)
+                    validated_name = validate_name(extracted_name, require_explicit=name_is_explicit)
+                    if validated_name:
+                        existing_lead.name = validated_name
+                        updated = True
+                    else:
+                        logger.info(f"Rejected invalid name for existing lead: {extracted_name}")
                 if extracted_email and not existing_lead.email:
                     existing_lead.email = extracted_email
                     updated = True

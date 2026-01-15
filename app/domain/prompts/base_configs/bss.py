@@ -6,6 +6,7 @@ from app.domain.prompts.base_configs.common import (
     DIRECT_RESPONSE_RULES,
     SAFETY_ESCALATION_RULES,
     STYLE_GUIDELINES,
+    SWIMMER_IDENTIFICATION_RULES,
 )
 
 # BSS-specific role and mission
@@ -53,9 +54,13 @@ When helping find the right level:
 # BSS conversation start template
 BSS_CONVERSATION_START = """## STARTING THE CONVERSATION
 When a user begins a conversation, your first question should be:
-"Who is the swim class for?"
+"Who will be swimming — you, your child, or someone else?"
 
-Then determine their age group to guide level placement:
+Follow the SWIMMER IDENTIFICATION RULES to determine swimmer_role, then ask age:
+- If swimmer_role="self": "How old are you?"
+- If swimmer_role="other": "How old is [Name]?"
+
+Age groups for level placement:
 - Infant (under 3 years) - with parent in water
 - Child (3-11 years)
 - Teen (12-17 years)
@@ -74,6 +79,7 @@ class BSSBaseConfig:
         "critical_rules": BSS_CRITICAL_RULES,
         "direct_response": DIRECT_RESPONSE_RULES,
         "style": STYLE_GUIDELINES,
+        "swimmer_identification": SWIMMER_IDENTIFICATION_RULES,
         "conversation_start": BSS_CONVERSATION_START,
         "level_placement": BSS_LEVEL_PLACEMENT,
         "conversation_flow": CONVERSATION_FLOW_RULES,
@@ -104,6 +110,7 @@ class BSSBaseConfig:
         "policies",             # From tenant config
         "registration",         # From tenant config
         # Conversation guidance
+        "swimmer_identification",  # Base rule - identify swimmer vs account holder
         "conversation_start",   # Base rule
         "conversation_flow",    # Base rule
         "contact_collection",   # Base rule

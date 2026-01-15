@@ -10,6 +10,7 @@ from app.persistence.models.contact import Contact
 from app.persistence.models.lead import Lead
 from app.persistence.repositories.contact_repository import ContactRepository
 from app.persistence.repositories.lead_repository import LeadRepository
+from app.utils.name_validator import validate_name
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,11 @@ class LeadService:
         if phone and normalized_phone != phone:
             logger.info(f"Normalized phone from '{phone}' to '{normalized_phone}'")
 
+        # Validate name using strict validation
+        validated_name = validate_name(name, require_explicit=True) if name else None
+        if name and validated_name != name:
+            logger.info(f"Name validation: '{name}' -> '{validated_name}'")
+
         # Check for existing lead with same email or phone
         existing_lead = await self._find_existing_lead(tenant_id, email, normalized_phone)
 
@@ -121,8 +127,8 @@ class LeadService:
             logger.info(f"Found existing lead {existing_lead.id} for email={email}, phone={normalized_phone}")
             # Update existing lead with new info
             updated = False
-            if name and not existing_lead.name:
-                existing_lead.name = name
+            if validated_name and not existing_lead.name:
+                existing_lead.name = validated_name
                 updated = True
             if email and not existing_lead.email:
                 existing_lead.email = email
@@ -159,7 +165,7 @@ class LeadService:
                 conversation_id=conversation_id,
                 email=email,
                 phone=normalized_phone,
-                name=name,
+                name=validated_name,  # Use validated name
                 extra_data=metadata,  # Map metadata parameter to extra_data field
             )
 
@@ -309,11 +315,16 @@ class LeadService:
             logger.info(f"Updated lead {lead_id} with phone: {normalized_phone}")
         # For name: update if missing, OR if force_name_update is True (explicit name introduction)
         if name and (not lead.name or force_name_update):
-            if lead.name and force_name_update:
-                logger.info(f"Overwriting lead {lead_id} name from '{lead.name}' to '{name}' (explicit introduction)")
-            lead.name = name
-            updated = True
-            logger.info(f"Updated lead {lead_id} with name: {name}")
+            # Validate name before setting
+            validated_name = validate_name(name, require_explicit=force_name_update)
+            if validated_name:
+                if lead.name and force_name_update:
+                    logger.info(f"Overwriting lead {lead_id} name from '{lead.name}' to '{validated_name}' (explicit introduction)")
+                lead.name = validated_name
+                updated = True
+                logger.info(f"Updated lead {lead_id} with name: {validated_name}")
+            else:
+                logger.info(f"Rejected invalid name for lead {lead_id}: '{name}'")
 
         if updated:
             await self.session.commit()

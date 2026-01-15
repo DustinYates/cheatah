@@ -57,7 +57,12 @@ export default function ChatbotPreview({ className = '' }) {
         { role: 'assistant', content: result.response },
       ]);
     } catch (err) {
-      const errorMessage = err.message || 'Test failed. Please try again.';
+      console.error('ChatbotPreview test error:', err);
+      let errorMessage = err.message || 'Test failed. Please try again.';
+      // Add hint for common issues
+      if (errorMessage.includes('No active prompt') || errorMessage.includes('not found')) {
+        errorMessage = 'No web chat prompt configured. Please save a Web Chat prompt first.';
+      }
       setMessages((prev) => [
         ...prev,
         { role: 'error', content: errorMessage },

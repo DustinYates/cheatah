@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     scrapingbee_api_key: str = ""
     
     # Chat guardrails
-    chat_max_turns: int = 20
+    chat_max_turns: int = 100
     chat_timeout_seconds: int = 2700  # 45 minutes (increased from 15 minutes)
     chat_follow_up_nudge_turn: int = 3
     chat_max_tokens: int = 8000  # Max tokens for LLM chat responses

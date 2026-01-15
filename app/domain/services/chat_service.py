@@ -794,6 +794,9 @@ NAME EXTRACTION RULES (IMPORTANT):
 - Extract the COMPLETE name including first and last name if provided
 - Do NOT extract business names, product names, or other non-person names
 - If multiple names are mentioned, extract the most recent or most clearly stated one
+- CRITICAL: Do NOT include pronouns (he, she, they, him, her, them) as part of the name!
+  * If one message says "Ashley" and the next says "He loves to swim", the name is ONLY "Ashley", NOT "Ashley He"
+  * Pronouns at the start of messages refer to someone being discussed, not the user's last name
 
 GENERAL RULES:
 - Only extract information explicitly stated by the user

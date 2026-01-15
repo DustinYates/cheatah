@@ -1488,7 +1488,7 @@
 
     // Convert text to safe HTML (no markdown rendering). Guardrail: only plain text or simple links.
     linkifyText: function(text) {
-      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const urlRegex = /(https?:\/\/[^\s.,;:!?)\]]+)/g;
 
       const escapeHtml = (str) => {
         const div = document.createElement('div');

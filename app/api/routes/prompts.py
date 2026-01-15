@@ -469,12 +469,14 @@ async def test_prompt(
         sorted_sections = sorted(section_map.items(), key=lambda x: (x[1][1], x[0]))
         composed_prompt = "\n\n".join([content for _, (content, _) in sorted_sections])
     else:
-        composed_prompt = await prompt_service.compose_prompt(tenant_id, use_draft=True)
+        # Use compose_prompt_chat to check channel prompts (web_prompt) first,
+        # then fall back to bundle-based prompts
+        composed_prompt = await prompt_service.compose_prompt_chat(tenant_id)
 
     if composed_prompt is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No prompt configured for this tenant.",
+            detail="No prompt configured for this tenant. Please save a Web Chat prompt first.",
         )
 
     history = test_request.history or []

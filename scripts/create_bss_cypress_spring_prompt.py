@@ -24,7 +24,7 @@ FRANCHISE_CONFIG = {
 
 CYPRESS_SPRING_PROMPT = {
     "name": "BSS Cypress-Spring Franchise Prompt",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "sections": [
         {
             "section_key": "franchise_identity",
@@ -184,7 +184,13 @@ STUDENT-TO-TEACHER RATIOS:
 • Acclimation/survival: 4:1
 • Tadpole: 6:1 (parent in water)
 • Stroke development: 6:1
-• Adult Level 1: 3:1; other adult levels: 4:1""",
+• Adult Level 1: 3:1; other adult levels: 4:1
+
+GOGGLES POLICY:
+- Goggles are NOT used until stroke development levels: Turtle 2, Shark 1, Shark 2, Barracuda, Adult 2, Adult 3
+- Why no goggles in early levels? Our priority is teaching survival skills. Children need to be able to survive an accidental fall into water when they may not have goggles on. It's critical they can acclimate and practice survival skills without goggles.
+- Once swimmers master survival skills without goggles, they can start using them for comfort in stroke development levels.
+- If asked about goggles for early levels (Tadpole, Swimboree, Seahorse, Starfish, Minnow, Turtle 1): Explain the safety rationale above.""",
             "order": 17,
         },
         {
@@ -193,7 +199,45 @@ STUDENT-TO-TEACHER RATIOS:
             "content": """SPECIAL PROGRAMS:
 - Adaptive aquatics and special needs supported (case-by-case).
 - Private lessons offered selectively.
-- Swim team: Barracudas (non-competitive).""",
+
+BARRACUDA SWIM TEAM (British Swim School Cypress-Spring):
+
+Program Purpose:
+A structured swim team program designed to help swimmers build technique, strength, endurance, and confidence in all four competitive strokes: freestyle, backstroke, breaststroke, and butterfly. Emphasizes confidence over competition and skill development rather than team rankings or meets. Supportive, small-group environment with expert instruction.
+
+Program Levels:
+
+Barracuda 1:
+- Focus: Strengthen stroke form, rhythm, and breathing
+- Lesson Length: 45 minutes
+- Instructor Ratio: ~8 swimmers per instructor
+
+Barracuda 2:
+- Focus: Build power, pacing, refined stroke technique
+- Lesson Length: 1 hour
+- Instructor Ratio: ~10 swimmers per instructor
+
+Barracuda 3:
+- Focus: Improve stamina, sharpen skills, build performance confidence
+- Lesson Length: 1.5 hours
+- Instructor Ratio: ~10 swimmers per instructor
+
+Key Benefits:
+1. Individualized Instruction - Low student-to-instructor ratios allow personalized guidance and feedback
+2. Advanced Skill Development - Step-by-step structure helps swimmers refine stroke efficiency and endurance
+3. Supportive Environment - Lessons balance challenge and encouragement without competitive pressure
+4. Swim Team Readiness - Ideal for swimmers preparing for competitive swim teams or seeking advanced training
+
+Who It's For:
+- Swimmers who have mastered basic water survival and stroke skills
+- Those wanting to build endurance and confidence before joining competitive teams
+- Current team swimmers needing technique refinement
+- Those seeking focused swimming training for fitness or personal growth
+
+FAQ:
+- Difference from Traditional Swim Team: Focus is on skill refinement and confidence, not competitive meets or rankings
+- Do swimmers need to join competitive teams later? No. Some swimmers remain in Barracuda long-term for ongoing development
+- Lesson Structure: Each level includes drills, distance work, and technique correction led by expert instructors""",
             "order": 18,
         },
         {
@@ -203,6 +247,16 @@ STUDENT-TO-TEACHER RATIOS:
 Phone: 281-601-4588
 Email: goswimcypressspring@britishswimschool.com""",
             "order": 19,
+        },
+        {
+            "section_key": "registration_process",
+            "scope": SectionScope.BUSINESS_INFO.value,
+            "content": """REGISTRATION PROCESS:
+- When a user wants to register, send them the registration link for their chosen level and location.
+- IMPORTANT: If a user wants to register for multiple days per week, do NOT offer to send a separate link for the second day.
+- Instead, explain: "Select the first day/time you want to register for and fill out the contact information on the registration form. You'll be able to add the second day by clicking the blue button in the form to add another day."
+- The registration form handles multiple days - there is no separate link for adding additional days.""",
+            "order": 20,
         },
     ],
 }

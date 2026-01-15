@@ -35,6 +35,15 @@ ACKNOWLEDGEMENT_WORDS = {
     "a", "b", "c", "i", "u", "r", "y", "n",
 }
 
+# Common pronouns that should NOT appear as last name components
+# These often get incorrectly captured when users say things like:
+# "Ashley" followed by "He loves to swim" -> incorrectly extracted as "Ashley He"
+PRONOUN_SUFFIXES = {
+    "he", "she", "they", "him", "her", "them",
+    "his", "hers", "their", "theirs",
+    "it", "its",
+}
+
 # Patterns that indicate non-name content
 URL_PATTERN = re.compile(r'https?://|www\.|\.com|\.org|\.net|\.io', re.IGNORECASE)
 EMAIL_PATTERN = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}')
@@ -107,6 +116,17 @@ def validate_name(name: str | None, require_explicit: bool = False) -> str | Non
     if name_lower in ACKNOWLEDGEMENT_WORDS:
         logger.debug(f"Name rejected (common acknowledgement): '{name}'")
         return None
+
+    # Check if name ends with a pronoun (common extraction error)
+    # e.g., "Ashley He" where "He" came from "He loves to swim..."
+    name_parts = name_lower.split()
+    if len(name_parts) > 1 and name_parts[-1] in PRONOUN_SUFFIXES:
+        # Strip the pronoun suffix and keep just the first part(s)
+        cleaned_parts = name_parts[:-1]
+        cleaned_name = ' '.join(cleaned_parts)
+        logger.info(f"Name cleaned (pronoun suffix removed): '{name}' -> '{cleaned_name}'")
+        # Re-validate the cleaned name
+        return validate_name(cleaned_name, require_explicit=require_explicit)
 
     # Check if mostly non-letters (allow spaces, hyphens, apostrophes, periods)
     # Names should be predominantly letters

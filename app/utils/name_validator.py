@@ -44,6 +44,29 @@ PRONOUN_SUFFIXES = {
     "it", "its",
 }
 
+# Words that are clearly NOT surnames and should be stripped when appearing
+# as the last word of a multi-word name. This catches cases like:
+# "Ashley No" (from "No prior experience") or "John Yes" (from "Yes, I'm interested")
+# Note: We exclude words like "will" that could be legitimate surnames (Will Smith)
+NON_SURNAME_SUFFIXES = {
+    # Negatives - clearly not surnames
+    "no", "nope", "nah", "na", "nay", "not",
+    # Affirmatives - clearly not surnames
+    "yes", "yep", "yeah", "yea", "yup", "ya", "aye",
+    # Acknowledgements - clearly not surnames
+    "ok", "okay", "k", "kk", "okey",
+    "sure", "alright", "aight",
+    # Common conversation words that get concatenated
+    "thanks", "thank", "thx", "please", "pls",
+    "hello", "hi", "hey", "bye",
+    # Question/response starters
+    "what", "when", "where", "who", "why", "how",
+    "well", "so", "just", "like",
+    # Short words that are never surnames
+    "um", "uh", "hmm", "ah", "oh", "eh",
+    "i", "we", "my", "me",
+}
+
 # Patterns that indicate non-name content
 URL_PATTERN = re.compile(r'https?://|www\.|\.com|\.org|\.net|\.io', re.IGNORECASE)
 EMAIL_PATTERN = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}')
@@ -117,14 +140,16 @@ def validate_name(name: str | None, require_explicit: bool = False) -> str | Non
         logger.debug(f"Name rejected (common acknowledgement): '{name}'")
         return None
 
-    # Check if name ends with a pronoun (common extraction error)
+    # Check if name ends with a pronoun or non-surname word (common extraction error)
     # e.g., "Ashley He" where "He" came from "He loves to swim..."
+    # e.g., "Ashley No" where "No" came from "No prior experience"
     name_parts = name_lower.split()
-    if len(name_parts) > 1 and name_parts[-1] in PRONOUN_SUFFIXES:
-        # Strip the pronoun suffix and keep just the first part(s)
+    invalid_suffixes = PRONOUN_SUFFIXES | NON_SURNAME_SUFFIXES
+    if len(name_parts) > 1 and name_parts[-1] in invalid_suffixes:
+        # Strip the invalid suffix and keep just the first part(s)
         cleaned_parts = name_parts[:-1]
         cleaned_name = ' '.join(cleaned_parts)
-        logger.info(f"Name cleaned (pronoun suffix removed): '{name}' -> '{cleaned_name}'")
+        logger.info(f"Name cleaned (invalid suffix removed): '{name}' -> '{cleaned_name}'")
         # Re-validate the cleaned name
         return validate_name(cleaned_name, require_explicit=require_explicit)
 

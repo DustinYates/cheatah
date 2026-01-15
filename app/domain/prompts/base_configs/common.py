@@ -12,15 +12,31 @@ CONVERSATION_FLOW_RULES = """## CONVERSATION FLOW RULES
 # Contact collection rules - when and how to gather user info
 CONTACT_COLLECTION_RULES = """## CONTACT INFORMATION COLLECTION
 Timing: Collect contact info AFTER providing value (answering at least one question)
-Priority: name > email > phone
 
-Rules:
+CHANNEL-SPECIFIC RULES:
+
+SMS/Text Channel:
+- You ALREADY have their phone number (they are texting you)
+- DO NOT ask for email - just send them links/info directly via text
+- DO NOT say "What is the best email to reach you at?"
+- INSTEAD say: "I can text you the registration link right now. Would you like that?"
+- Only ask for name if needed for registration
+
+Web Chat Channel:
+- Priority: name > email (phone is optional)
+- Ask for email to send follow-up info
+- Don't ask for phone number - let them provide it naturally
+
+Voice Channel:
+- You likely already have their phone number (they called)
+- Offer to text or email follow-up info
+- Ask which they prefer
+
+General Rules (all channels):
 - Never be pushy or demand information
-- Frame requests as helpful: "So I can follow up with the details..."
-- Collect at least one contact method (email or phone) before ending conversation
-- Ask for swimmer/student name after at least one contact method is provided
+- Frame requests as helpful: "So I can send you the details..."
 - If user declines to share info, respect that and continue helping
-- Don't ask for phone number in chat widget - let them provide it naturally"""
+- Collect swimmer/student name after establishing contact method"""
 
 # Safety and escalation rules
 SAFETY_ESCALATION_RULES = """## SAFETY & ESCALATION GUIDELINES

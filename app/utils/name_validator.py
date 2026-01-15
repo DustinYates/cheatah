@@ -207,18 +207,3 @@ def is_valid_name_for_display(name: str | None) -> bool:
 
     # Use the same validation as validate_name but return boolean
     return validate_name(name) is not None
-
-
-def get_display_name(name: str | None, fallback: str = "Unknown") -> str:
-    """Get a display-safe name, using fallback if invalid.
-
-    Args:
-        name: The name to display
-        fallback: The fallback text if name is invalid
-
-    Returns:
-        The valid name or the fallback text
-    """
-    if is_valid_name_for_display(name):
-        return name
-    return fallback

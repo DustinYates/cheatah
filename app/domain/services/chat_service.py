@@ -671,6 +671,10 @@ class ChatService:
             'good afternoon', 'good evening', 'good night', 'how are',
             'what is', 'who is', 'where is', 'when is', 'why is',
             'can you', 'could you', 'would you', 'will you', 'should you',
+            # Single words that are commonly misinterpreted as names
+            'good', 'great', 'fine', 'cool', 'nice', 'ok', 'okay', 'sure',
+            'yes', 'no', 'nah', 'yeah', 'yep', 'nope', 'thanks', 'thank',
+            'im good', 'nah im good', 'all good', 'thats good', "that's good",
         }
 
         # Common stop words that indicate the name has ended

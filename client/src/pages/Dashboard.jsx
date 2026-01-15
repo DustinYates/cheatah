@@ -210,9 +210,9 @@ export default function Dashboard() {
 
       if (leadsResult.status === 'fulfilled') {
         const leadsData = leadsResult.value;
-        // Sort by created_at descending (most recent first)
+        // Sort by updated_at descending (most recent activity first)
         const sortedLeads = (leadsData.leads || leadsData || []).sort(
-          (a, b) => new Date(b.created_at) - new Date(a.created_at)
+          (a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)
         );
         setLeads(sortedLeads);
       } else {
@@ -610,7 +610,7 @@ export default function Dashboard() {
                       </div>
                     </td>
                     <td className="col-date">
-                      <span className="lead-date">{formatLeadDate(lead.created_at)}</span>
+                      <span className="lead-date">{formatLeadDate(lead.updated_at || lead.created_at)}</span>
                     </td>
                     <td className="col-details">
                       <div className="details-cell">

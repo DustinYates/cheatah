@@ -93,7 +93,10 @@ class LeadService:
         name: str | None = None,
         metadata: dict | None = None,
     ) -> Lead:
-        """Capture a lead (create lead record).
+        """Capture a lead (create or update existing lead record).
+
+        If a lead with matching email or phone already exists, updates it.
+        Otherwise creates a new lead.
 
         Args:
             tenant_id: Tenant ID
@@ -104,21 +107,61 @@ class LeadService:
             metadata: Optional metadata dictionary (mapped to extra_data)
 
         Returns:
-            Created lead
+            Created or updated lead
         """
         # Normalize phone to E.164 format for SMS compatibility
         normalized_phone = normalize_phone_e164(phone) if phone else None
         if phone and normalized_phone != phone:
             logger.info(f"Normalized phone from '{phone}' to '{normalized_phone}'")
 
-        lead = await self.lead_repo.create(
-            tenant_id,
-            conversation_id=conversation_id,
-            email=email,
-            phone=normalized_phone,
-            name=name,
-            extra_data=metadata,  # Map metadata parameter to extra_data field
-        )
+        # Check for existing lead with same email or phone
+        existing_lead = await self._find_existing_lead(tenant_id, email, normalized_phone)
+
+        if existing_lead:
+            logger.info(f"Found existing lead {existing_lead.id} for email={email}, phone={normalized_phone}")
+            # Update existing lead with new info
+            updated = False
+            if name and not existing_lead.name:
+                existing_lead.name = name
+                updated = True
+            if email and not existing_lead.email:
+                existing_lead.email = email
+                updated = True
+            if normalized_phone and not existing_lead.phone:
+                existing_lead.phone = normalized_phone
+                updated = True
+            if conversation_id and not existing_lead.conversation_id:
+                existing_lead.conversation_id = conversation_id
+                updated = True
+            # Merge metadata
+            if metadata:
+                if existing_lead.extra_data:
+                    # Preserve existing data, add new source info
+                    merged = dict(existing_lead.extra_data)
+                    if "sources" not in merged:
+                        merged["sources"] = [merged.get("source", "unknown")]
+                    if metadata.get("source") and metadata["source"] not in merged["sources"]:
+                        merged["sources"].append(metadata["source"])
+                    merged.update({k: v for k, v in metadata.items() if k != "source"})
+                    existing_lead.extra_data = merged
+                else:
+                    existing_lead.extra_data = metadata
+                updated = True
+            # Update timestamp so lead appears at top
+            existing_lead.updated_at = datetime.utcnow()
+            if updated:
+                await self.session.commit()
+                await self.session.refresh(existing_lead)
+            lead = existing_lead
+        else:
+            lead = await self.lead_repo.create(
+                tenant_id,
+                conversation_id=conversation_id,
+                email=email,
+                phone=normalized_phone,
+                name=name,
+                extra_data=metadata,  # Map metadata parameter to extra_data field
+            )
 
         # Schedule SMS follow-up if conditions are met
         print(f"[FOLLOWUP_CHECK] lead_id={lead.id}, phone={normalized_phone}, metadata={metadata}", flush=True)
@@ -148,6 +191,39 @@ class LeadService:
         await self._check_and_auto_convert(tenant_id, lead)
 
         return lead
+
+    async def _find_existing_lead(
+        self, tenant_id: int, email: str | None, phone: str | None
+    ) -> Lead | None:
+        """Find existing lead by email or phone.
+
+        Args:
+            tenant_id: Tenant ID
+            email: Email to search for
+            phone: Phone to search for (should be normalized)
+
+        Returns:
+            Existing lead or None
+        """
+        if not email and not phone:
+            return None
+
+        from sqlalchemy import or_
+
+        conditions = []
+        if email:
+            conditions.append(Lead.email == email)
+        if phone:
+            conditions.append(Lead.phone == phone)
+
+        stmt = (
+            select(Lead)
+            .where(Lead.tenant_id == tenant_id, or_(*conditions))
+            .order_by(Lead.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def get_lead(self, tenant_id: int, lead_id: int) -> Lead | None:
         """Get a lead by ID.

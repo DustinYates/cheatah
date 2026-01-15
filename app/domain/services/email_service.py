@@ -207,9 +207,10 @@ class EmailService:
         print(f"[LEAD_CAPTURE] subject='{subject}', should_capture={should_capture_lead}, has_extracted_info={extracted_info is not None}, existing_lead_id={email_conversation.lead_id}", flush=True)
         print(f"[LEAD_CAPTURE] extracted_info={extracted_info}", flush=True)
         logger.info(f"Lead capture check: subject='{subject}', should_capture={should_capture_lead}, has_extracted_info={extracted_info is not None}, has_existing_lead={email_conversation.lead_id is not None}")
-        
+
+        # Only capture leads from emails with matching subject prefixes
         if extracted_info and should_capture_lead:
-            print(f"[LEAD_CAPTURE] All conditions met, attempting to create lead", flush=True)
+            print(f"[LEAD_CAPTURE] Subject matches prefix, attempting to create lead", flush=True)
             # Build metadata for lead (include additional fields and parsing metadata)
             metadata = {"source": "email"}
             if extracted_info.get("additional_fields"):
@@ -244,12 +245,12 @@ class EmailService:
                 print(f"[LEAD_CAPTURE] ERROR: {type(e).__name__}: {e}", flush=True)
                 logger.error(f"Error capturing lead: {e}", exc_info=True)
         elif not should_capture_lead:
-            print(f"[LEAD_CAPTURE] SKIP: subject '{subject}' does not match prefixes", flush=True)
-            logger.info(f"Skipping lead capture for email with subject '{subject}' - does not match configured prefixes")
-        elif not extracted_info:
-            print(f"[LEAD_CAPTURE] SKIP: no extracted_info", flush=True)
+            print(f"[LEAD_CAPTURE] SKIP: subject '{subject}' does not match configured prefixes", flush=True)
+            logger.info(f"Skipping lead capture - subject does not match prefixes")
+        else:
+            print(f"[LEAD_CAPTURE] SKIP: no contact info extracted from email", flush=True)
 
-        # For lead capture emails, just capture the lead and return without sending a response
+        # For emails with matching subject prefix, capture lead and skip LLM response
         # This prevents auto-replies to form submission emails
         if should_capture_lead:
             print(f"[LEAD_CAPTURE] Lead capture email - skipping LLM response and email reply", flush=True)
@@ -401,18 +402,11 @@ class EmailService:
                 if self._is_outgoing_message(message, email_address):
                     continue
                 
-                print(f"[EMAIL_SERVICE] Processing inbound email: subject='{message.get('subject', '')}', from='{message.get('from', '')}'", flush=True)
-                logger.info(f"Processing inbound email: subject='{message.get('subject', '')}', from='{message.get('from', '')}'")
-
                 subject = message.get("subject", "")
-                if not self._should_capture_lead_from_subject(
-                    subject=subject,
-                    email_config=email_config,
-                ):
-                    logger.info(f"Skipping email due to subject filter: subject='{subject}'")
-                    continue
-                
-                # Process the inbound email
+                print(f"[EMAIL_SERVICE] Processing inbound email: subject='{subject}', from='{message.get('from', '')}'", flush=True)
+                logger.info(f"Processing inbound email: subject='{subject}', from='{message.get('from', '')}'")
+
+                # Process the inbound email (lead capture decision happens inside based on subject)
                 result = await self.process_inbound_email(
                     tenant_id=email_config.tenant_id,
                     from_email=message.get("from", ""),

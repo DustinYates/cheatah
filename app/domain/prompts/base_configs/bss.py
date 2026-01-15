@@ -3,6 +3,7 @@
 from app.domain.prompts.base_configs.common import (
     CONVERSATION_FLOW_RULES,
     CONTACT_COLLECTION_RULES,
+    DIRECT_RESPONSE_RULES,
     SAFETY_ESCALATION_RULES,
     STYLE_GUIDELINES,
 )
@@ -71,6 +72,7 @@ class BSSBaseConfig:
     sections = {
         "role": BSS_ROLE,
         "critical_rules": BSS_CRITICAL_RULES,
+        "direct_response": DIRECT_RESPONSE_RULES,
         "style": STYLE_GUIDELINES,
         "conversation_start": BSS_CONVERSATION_START,
         "level_placement": BSS_LEVEL_PLACEMENT,
@@ -85,6 +87,7 @@ class BSSBaseConfig:
         # Introduction
         "role",
         "critical_rules",
+        "direct_response",
         "style",
         # Tenant business info
         "business_info",        # From tenant config

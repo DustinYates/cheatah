@@ -93,6 +93,7 @@ class LeadService:
         phone: str | None = None,
         name: str | None = None,
         metadata: dict | None = None,
+        skip_dedup: bool = False,
     ) -> Lead:
         """Capture a lead (create or update existing lead record).
 
@@ -106,6 +107,9 @@ class LeadService:
             phone: Optional phone (will be normalized to E.164 format)
             name: Optional name
             metadata: Optional metadata dictionary (mapped to extra_data)
+            skip_dedup: If True, always create a new lead even if one exists
+                       with the same email/phone. Useful for chatbot conversations
+                       where multiple people may use the same contact info.
 
         Returns:
             Created or updated lead
@@ -120,8 +124,12 @@ class LeadService:
         if name and validated_name != name:
             logger.info(f"Name validation: '{name}' -> '{validated_name}'")
 
-        # Check for existing lead with same email or phone
-        existing_lead = await self._find_existing_lead(tenant_id, email, normalized_phone)
+        # Check for existing lead with same email or phone (unless skip_dedup is set)
+        existing_lead = None
+        if not skip_dedup:
+            existing_lead = await self._find_existing_lead(tenant_id, email, normalized_phone)
+        else:
+            logger.info(f"Skipping deduplication for new chatbot lead (skip_dedup=True)")
 
         if existing_lead:
             logger.info(f"Found existing lead {existing_lead.id} for email={email}, phone={normalized_phone}")

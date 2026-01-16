@@ -140,10 +140,21 @@ def validate_name(name: str | None, require_explicit: bool = False) -> str | Non
         logger.debug(f"Name rejected (common acknowledgement): '{name}'")
         return None
 
+    # Check if name starts with an acknowledgment/filler word (common extraction error)
+    # e.g., "Fine Emilio" where "Fine" came from "Fine, my name is Emilio"
+    # e.g., "Good Sarah" where "Good" came from "Good morning, I'm Sarah"
+    name_parts = name_lower.split()
+    if len(name_parts) > 1 and name_parts[0] in ACKNOWLEDGEMENT_WORDS:
+        # Strip the invalid prefix and keep the rest
+        cleaned_parts = name_parts[1:]
+        cleaned_name = ' '.join(cleaned_parts)
+        logger.info(f"Name cleaned (invalid prefix removed): '{name}' -> '{cleaned_name}'")
+        # Re-validate the cleaned name
+        return validate_name(cleaned_name, require_explicit=require_explicit)
+
     # Check if name ends with a pronoun or non-surname word (common extraction error)
     # e.g., "Ashley He" where "He" came from "He loves to swim..."
     # e.g., "Ashley No" where "No" came from "No prior experience"
-    name_parts = name_lower.split()
     invalid_suffixes = PRONOUN_SUFFIXES | NON_SURNAME_SUFFIXES
     if len(name_parts) > 1 and name_parts[-1] in invalid_suffixes:
         # Strip the invalid suffix and keep just the first part(s)

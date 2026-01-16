@@ -9,6 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import attributes
 
 from app.domain.prompts.assembler import PromptAssembler
+from app.domain.prompts.base_configs.bss import (
+    BSS_EQUIPMENT_KNOWLEDGE,
+    BSS_LOCATION_LINK_GUARDRAILS,
+)
 from app.domain.prompts.schemas.v1.bss_schema import BSSTenantConfig
 from app.persistence.models.prompt import PromptBundle, PromptChannel, PromptSection, PromptStatus
 from app.persistence.repositories.prompt_repository import PromptRepository
@@ -657,9 +661,12 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         direct_prompt = await self._get_channel_prompt(tenant_id, "web_prompt")
         if direct_prompt:
             logger.info(f"[PROMPT] Using direct web_prompt for tenant {tenant_id}")
+            # Prepend critical base rules (location guardrails, equipment knowledge)
+            # These MUST be included even with custom prompts to enforce guardrails
+            critical_rules = self._get_critical_base_rules()
             # Add contact collection context if available
             contact_context = self._build_chat_contact_context(context)
-            return direct_prompt + contact_context
+            return critical_rules + direct_prompt + contact_context
 
         # Fall back to assembled prompt
         base_prompt = await self.compose_prompt_v2(tenant_id, channel="chat", context=context)
@@ -689,7 +696,10 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         direct_prompt = await self._get_channel_prompt(tenant_id, "voice_prompt")
         if direct_prompt:
             logger.info(f"[PROMPT] Using direct voice_prompt for tenant {tenant_id}")
-            return direct_prompt
+            # Prepend critical base rules (location guardrails, equipment knowledge)
+            # These MUST be included even with custom prompts to enforce guardrails
+            critical_rules = self._get_critical_base_rules()
+            return critical_rules + direct_prompt
 
         # Fall back to assembled prompt
         return await self.compose_prompt_v2(tenant_id, channel="voice", context=context)
@@ -716,7 +726,10 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         direct_prompt = await self._get_channel_prompt(tenant_id, "sms_prompt")
         if direct_prompt:
             logger.info(f"[PROMPT] Using direct sms_prompt for tenant {tenant_id}")
-            return direct_prompt
+            # Prepend critical base rules (location guardrails, equipment knowledge)
+            # These MUST be included even with custom prompts to enforce guardrails
+            critical_rules = self._get_critical_base_rules()
+            return critical_rules + direct_prompt
 
         # Fall back to assembled prompt
         return await self.compose_prompt_v2(tenant_id, channel="sms", context=context)
@@ -739,6 +752,21 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         if prompt and isinstance(prompt, str) and prompt.strip():
             return prompt.strip()
         return None
+
+    def _get_critical_base_rules(self) -> str:
+        """Get critical base rules that MUST be included in all prompts.
+
+        These rules are prepended to direct channel prompts to ensure
+        critical guardrails are always in place, even when using custom prompts.
+
+        Returns:
+            String containing critical base rules (location guardrails, equipment knowledge)
+        """
+        return f"""
+{BSS_LOCATION_LINK_GUARDRAILS}
+
+{BSS_EQUIPMENT_KNOWLEDGE}
+"""
 
     async def get_channel_prompt(self, tenant_id: int, channel: str) -> str | None:
         """Get direct channel prompt for editing.

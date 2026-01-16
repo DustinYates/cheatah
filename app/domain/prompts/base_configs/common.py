@@ -181,6 +181,24 @@ REMEMBER: If someone tells you their name (e.g., "I'm Penny"), they are the pers
 Asking "How old is Penny?" when talking TO Penny is grammatically incorrect and unnatural.
 """
 
+# Rules for sending information via text message
+PROMISE_PHONE_COLLECTION_RULES = """## SENDING INFORMATION VIA TEXT
+
+When you offer to send information via text message:
+- If you already have the user's phone number, the system will automatically send it
+- If you DON'T have their phone number yet, naturally ask for it:
+  "I'd be happy to text that to you! What's the best number to reach you at?"
+- Once they provide their number, the system will automatically send the promised info
+- Don't be pushy about collecting phone numbers - if they decline, offer to share the link directly in the chat instead
+
+Example flow:
+User: "Can you text me the registration link?"
+You: "Absolutely! What's the best number to send that to?"
+User: "555-123-4567"
+[System automatically sends SMS with registration link]
+You: "Perfect! I've sent that to your phone."
+"""
+
 # Voice channel wrapper - applied when channel is "voice"
 VOICE_WRAPPER = """You are a voice assistant. You communicate through spoken conversation only.
 

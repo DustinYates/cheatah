@@ -4,6 +4,7 @@ from app.domain.prompts.base_configs.common import (
     CONVERSATION_FLOW_RULES,
     CONTACT_COLLECTION_RULES,
     DIRECT_RESPONSE_RULES,
+    PROMISE_PHONE_COLLECTION_RULES,
     PRONOUN_USAGE_RULES,
     SAFETY_ESCALATION_RULES,
     STYLE_GUIDELINES,
@@ -312,6 +313,7 @@ class BSSBaseConfig:
         "branding_language": BSS_BRANDING_LANGUAGE,
         "conversation_flow": CONVERSATION_FLOW_RULES,
         "contact_collection": CONTACT_COLLECTION_RULES,
+        "promise_phone_collection": PROMISE_PHONE_COLLECTION_RULES,
         "safety": SAFETY_ESCALATION_RULES,
     }
 
@@ -349,6 +351,7 @@ class BSSBaseConfig:
         "conversation_start",   # Base rule
         "conversation_flow",    # Base rule
         "contact_collection",   # Base rule
+        "promise_phone_collection",  # Base rule - how to handle texting info
         "safety",               # Base rule
     ]
 

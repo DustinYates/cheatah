@@ -12,6 +12,7 @@ from app.domain.services.conversation_service import ConversationService
 from app.domain.services.escalation_service import EscalationService
 from app.domain.services.lead_service import LeadService
 from app.domain.services.contact_service import ContactService
+from app.domain.services.pending_promise_service import PendingPromiseService
 from app.domain.services.promise_detector import PromiseDetector, DetectedPromise
 from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
 from app.domain.services.user_request_detector import UserRequestDetector
@@ -68,6 +69,7 @@ class ChatService:
         self.promise_detector = PromiseDetector()
         self.user_request_detector = UserRequestDetector()
         self.promise_fulfillment_service = PromiseFulfillmentService(session)
+        self.pending_promise_service = PendingPromiseService(session)
         self.prompt_service = PromptService(session)
         self.llm_orchestrator = LLMOrchestrator()
         self.tenant_repo = TenantRepository(session)
@@ -260,7 +262,10 @@ class ChatService:
         )
         if existing_lead:
             await self.lead_service.bump_lead_activity(tenant_id, existing_lead.id)
-        
+
+        # Track phone BEFORE extraction to detect if it was just collected this turn
+        phone_before_extraction = existing_lead.phone if existing_lead else None
+
         # Extract contact info from conversation messages
         extracted_info = await self._extract_contact_info_from_conversation(
             messages, user_message
@@ -354,13 +359,74 @@ class ChatService:
             or (existing_lead.name if existing_lead else None)
         )
 
-        if customer_phone:
-            # Import qualification validator for registration link validation
-            from app.domain.services.registration_qualification_validator import (
-                RegistrationQualificationValidator,
-            )
-            qualification_validator = RegistrationQualificationValidator(self.session)
+        # Import qualification validator for registration link validation
+        from app.domain.services.registration_qualification_validator import (
+            RegistrationQualificationValidator,
+        )
+        qualification_validator = RegistrationQualificationValidator(self.session)
 
+        # Track SMS confirmation to append to response
+        sms_confirmation = None
+
+        # Detect if phone was just collected this turn
+        phone_just_collected = extracted_phone and not phone_before_extraction
+
+        # ============================================================
+        # PENDING PROMISE FULFILLMENT: If phone was just collected,
+        # check for any pending promises and fulfill them
+        # ============================================================
+        if phone_just_collected and existing_lead:
+            pending_promises = await self.pending_promise_service.get_pending_promises(existing_lead)
+            if pending_promises:
+                logger.info(
+                    f"Phone just collected, fulfilling {len(pending_promises)} pending promises - "
+                    f"tenant_id={tenant_id}, conversation_id={conversation.id}"
+                )
+                for pending in pending_promises:
+                    try:
+                        # Validate registration links before fulfillment
+                        should_fulfill = True
+                        if pending.asset_type == "registration_link":
+                            qualification_status = await qualification_validator.check_qualification(
+                                tenant_id=tenant_id,
+                                conversation_id=conversation.id,
+                                messages=messages,
+                            )
+                            if not qualification_status.is_qualified:
+                                logger.info(
+                                    f"Pending registration link blocked - not qualified. "
+                                    f"tenant_id={tenant_id}, missing={qualification_status.missing_requirements}"
+                                )
+                                should_fulfill = False
+
+                        if should_fulfill:
+                            fulfillment_result = await self.promise_fulfillment_service.fulfill_promise(
+                                tenant_id=tenant_id,
+                                conversation_id=conversation.id,
+                                promise=pending.to_detected_promise(),
+                                phone=customer_phone,
+                                name=customer_name,
+                            )
+                            await self.pending_promise_service.mark_promise_fulfilled(
+                                existing_lead, pending.asset_type, fulfillment_result
+                            )
+                            logger.info(
+                                f"Pending promise fulfilled - tenant_id={tenant_id}, "
+                                f"asset_type={pending.asset_type}, status={fulfillment_result.get('status')}"
+                            )
+                            if fulfillment_result.get("status") == "sent":
+                                sms_confirmation = "\n\nI've just sent that information to your phone via text!"
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to fulfill pending promise - tenant_id={tenant_id}, error={e}",
+                            exc_info=True,
+                        )
+
+        # ============================================================
+        # IMMEDIATE FULFILLMENT: Handle user requests and AI promises
+        # when phone is already available
+        # ============================================================
+        if customer_phone:
             # First check if user requested registration info
             user_request = self.user_request_detector.detect_request(user_message)
             if user_request and user_request.confidence >= 0.6:
@@ -409,92 +475,104 @@ class ChatService:
                             f"Failed to fulfill user request - tenant_id={tenant_id}, error={e}",
                             exc_info=True,
                         )
-            else:
-                # Check for AI promises to send information
-                promise = self.promise_detector.detect_promise(llm_response)
-                if promise and promise.confidence >= 0.6:
+
+        # ============================================================
+        # AI PROMISE DETECTION: Check for AI promises to text info
+        # (runs regardless of phone availability)
+        # ============================================================
+        promise = self.promise_detector.detect_promise(llm_response)
+        if promise and promise.confidence >= 0.6:
+            logger.info(
+                f"AI promise detected - tenant_id={tenant_id}, "
+                f"conversation_id={conversation.id}, asset_type={promise.asset_type}, "
+                f"confidence={promise.confidence:.2f}"
+            )
+
+            # Handle email promises separately - alert tenant instead of fulfilling
+            if promise.asset_type == "email_promise":
+                try:
+                    from app.infrastructure.notifications import NotificationService
+                    notification_service = NotificationService(self.session)
+
+                    # Extract topic from conversation context
+                    combined_text = f"{user_message} {llm_response}".lower()
+                    topic = "information"  # default
+                    topic_keywords = {
+                        "registration": ["registration", "register", "sign up", "signup", "enroll"],
+                        "pricing": ["pricing", "price", "cost", "fee", "rate", "tuition"],
+                        "schedule": ["schedule", "class time", "hours", "availability", "when"],
+                        "details": ["details", "information", "info", "brochure"],
+                    }
+                    for topic_name, keywords in topic_keywords.items():
+                        if any(kw in combined_text for kw in keywords):
+                            topic = topic_name
+                            break
+
+                    await notification_service.notify_email_promise(
+                        tenant_id=tenant_id,
+                        customer_name=customer_name,
+                        customer_phone=customer_phone,
+                        customer_email=customer_email,
+                        conversation_id=conversation.id,
+                        channel="chat",
+                        topic=topic,
+                    )
                     logger.info(
-                        f"AI promise detected - tenant_id={tenant_id}, "
-                        f"conversation_id={conversation.id}, asset_type={promise.asset_type}, "
-                        f"confidence={promise.confidence:.2f}"
+                        f"Email promise alert sent - tenant_id={tenant_id}, "
+                        f"conversation_id={conversation.id}, topic={topic}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to send email promise alert - tenant_id={tenant_id}, error={e}",
+                        exc_info=True,
+                    )
+            elif customer_phone:
+                # We have a phone - fulfill immediately
+                should_fulfill = True
+                if promise.asset_type == "registration_link":
+                    qualification_status = await qualification_validator.check_qualification(
+                        tenant_id=tenant_id,
+                        conversation_id=conversation.id,
+                        messages=messages,
+                    )
+                    if not qualification_status.is_qualified:
+                        logger.info(
+                            f"Registration link promise blocked - not qualified. "
+                            f"tenant_id={tenant_id}, missing={qualification_status.missing_requirements}"
+                        )
+                        should_fulfill = False
+
+                if should_fulfill:
+                    try:
+                        fulfillment_result = await self.promise_fulfillment_service.fulfill_promise(
+                            tenant_id=tenant_id,
+                            conversation_id=conversation.id,
+                            promise=promise,
+                            phone=customer_phone,
+                            name=customer_name,
+                        )
+                        logger.info(
+                            f"Promise fulfillment result - tenant_id={tenant_id}, "
+                            f"status={fulfillment_result.get('status')}"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to fulfill promise - tenant_id={tenant_id}, error={e}",
+                            exc_info=True,
+                        )
+            else:
+                # No phone available - store as pending promise for later fulfillment
+                if existing_lead:
+                    await self.pending_promise_service.store_pending_promise(existing_lead, promise)
+                    logger.info(
+                        f"Stored pending promise (no phone yet) - tenant_id={tenant_id}, "
+                        f"conversation_id={conversation.id}, asset_type={promise.asset_type}"
                     )
 
-                    # Handle email promises separately - alert tenant instead of fulfilling
-                    if promise.asset_type == "email_promise":
-                        try:
-                            from app.infrastructure.notifications import NotificationService
-                            notification_service = NotificationService(self.session)
-
-                            # Extract topic from conversation context
-                            combined_text = f"{user_message} {llm_response}".lower()
-                            topic = "information"  # default
-                            topic_keywords = {
-                                "registration": ["registration", "register", "sign up", "signup", "enroll"],
-                                "pricing": ["pricing", "price", "cost", "fee", "rate", "tuition"],
-                                "schedule": ["schedule", "class time", "hours", "availability", "when"],
-                                "details": ["details", "information", "info", "brochure"],
-                            }
-                            for topic_name, keywords in topic_keywords.items():
-                                if any(kw in combined_text for kw in keywords):
-                                    topic = topic_name
-                                    break
-
-                            await notification_service.notify_email_promise(
-                                tenant_id=tenant_id,
-                                customer_name=customer_name,
-                                customer_phone=customer_phone,
-                                customer_email=customer_email,
-                                conversation_id=conversation.id,
-                                channel="chat",
-                                topic=topic,
-                            )
-                            logger.info(
-                                f"Email promise alert sent - tenant_id={tenant_id}, "
-                                f"conversation_id={conversation.id}, topic={topic}"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to send email promise alert - tenant_id={tenant_id}, error={e}",
-                                exc_info=True,
-                            )
-                    else:
-                        # For registration links, validate qualification first
-                        should_fulfill = True
-                        if promise.asset_type == "registration_link":
-                            qualification_status = await qualification_validator.check_qualification(
-                                tenant_id=tenant_id,
-                                conversation_id=conversation.id,
-                                messages=messages,
-                            )
-                            if not qualification_status.is_qualified:
-                                logger.info(
-                                    f"Registration link promise blocked - not qualified. "
-                                    f"tenant_id={tenant_id}, missing={qualification_status.missing_requirements}"
-                                )
-                                should_fulfill = False
-
-                        if should_fulfill:
-                            try:
-                                # Fulfill the promise immediately (send SMS with promised content)
-                                fulfillment_result = await self.promise_fulfillment_service.fulfill_promise(
-                                    tenant_id=tenant_id,
-                                    conversation_id=conversation.id,
-                                    promise=promise,
-                                    phone=customer_phone,
-                                    name=customer_name,
-                                )
-                                logger.info(
-                                    f"Promise fulfillment result - tenant_id={tenant_id}, "
-                                    f"status={fulfillment_result.get('status')}"
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to fulfill promise - tenant_id={tenant_id}, error={e}",
-                                    exc_info=True,
-                                )
-
-        # No hardcoded contact info nudge - let the LLM handle it naturally through the prompt
+        # Build final response with optional SMS confirmation
         final_response = llm_response
+        if sms_confirmation:
+            final_response = llm_response + sms_confirmation
 
         return ChatResult(
             session_id=session_id,

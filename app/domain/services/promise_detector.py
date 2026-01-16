@@ -37,6 +37,11 @@ class PromiseDetector:
         # "send that text" variations (bot says "I'll send that text to you")
         r"(?:i'll|i will)\s+send\s+(?:that|the)\s+text\s+(?:to\s+)?you",
         r"send\s+(?:that|the)\s+text\s+to\s+you\s+(?:now|right now|right away)",
+        # Passive "get...sent" constructions (bot says "I'll get that link sent over to you")
+        r"(?:i'll|i will)\s+get\s+(?:that|the|this)\s+(?:link|info|information|text)\s+sent",
+        r"(?:link|info|text)\s+sent\s+(?:over\s+)?to\s+you",
+        r"sent\s+(?:over\s+)?to\s+you\s+(?:at|right\s+away|now)",
+        r"get\s+(?:that|this|the)\s+(?:sent|over)\s+to\s+you",
         # Email promise patterns
         r"(?:i'll|i will|let me)\s+(?:email|e-mail)\s+(?:you|that)",
         r"(?:i'll|i will)\s+send\s+(?:you\s+)?(?:an\s+)?email",

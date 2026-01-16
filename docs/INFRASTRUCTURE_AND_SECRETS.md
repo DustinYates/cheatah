@@ -10,6 +10,7 @@
 | `LOG_LEVEL` | Application log level | global | `INFO` | N/A |
 | `API_V1_PREFIX` | API route prefix | global | `/api/v1` | N/A |
 | `API_BASE_URL` | Public base URL for embed code | global | `https://chattercheatah-900139201687.us-central1.run.app` | N/A |
+| `GCS_WIDGET_ASSETS_BUCKET` | GCS bucket for widget custom icons/images | global | `chattercheetah-widget-assets` | N/A |
 
 ### API Keys (Secrets)
 
@@ -249,6 +250,18 @@ tenant_sms_configs.voxie_phone_number → Tenant ID lookup
 - `roles/secretmanager.secretAccessor` - Secrets access
 - `roles/cloudsql.client` - Cloud SQL connection
 - `roles/pubsub.subscriber` - Gmail push notifications
+- `roles/storage.objectAdmin` - Widget asset uploads to GCS
+
+### GCS Bucket: Widget Assets
+
+| Setting | Value |
+|---------|-------|
+| **Bucket Name** | `chattercheetah-widget-assets` |
+| **Location** | `us-central1` |
+| **Purpose** | Store custom widget launcher icons (PNG, JPG, WebP, SVG) |
+| **Public Access** | Yes (for widget display on customer sites) |
+| **Path Format** | `tenants/{tenant_id}/widget-assets/{asset_id}.{ext}` |
+| **Max File Size** | 1 MB |
 
 ### Domain Mapping
 

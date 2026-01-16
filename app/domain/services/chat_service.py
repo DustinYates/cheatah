@@ -29,7 +29,10 @@ logger = logging.getLogger(__name__)
 # These are compiled once at module load instead of on each function call
 _EMAIL_PATTERN = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', re.IGNORECASE)
 _PHONE_PATTERN = re.compile(r'(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})')
+# Pattern for explicit introductions like "I'm John", "my name is Sarah", "im ralph"
 _EXPLICIT_NAME_PATTERN = re.compile(r"\b(?:I'?m|I am|my name is|this is|im|name's|call me|it's|its)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)", re.IGNORECASE)
+# Pattern for name stated first followed by comma and context, like "scott, im 68" or "john, I need help"
+_NAME_FIRST_PATTERN = re.compile(r"^([A-Za-z]{2,15})(?:\s+[A-Za-z]{2,15})?,\s*(?:im|i'm|i am|i)\s", re.IGNORECASE)
 _CAPITALIZED_NAME_PATTERN = re.compile(r"([A-Z][a-z]+\s+[A-Z][a-z]+)")
 _DRAFT_PREFIX_PATTERN = re.compile(r'^draft\s+\d+:\s*', re.IGNORECASE)
 _TRAILING_WORD_PATTERN = re.compile(r"([A-Za-z]+)$")
@@ -770,6 +773,15 @@ class ChatService:
             'let', 'help', 'just', 'now', 'looking', 'interested', 'calling', 'texting', 'asking',
         }
 
+        # Pattern 0: Name stated first, like "scott, im 68" or "john, i need help"
+        # This handles cases where users put their name first followed by comma
+        match = _NAME_FIRST_PATTERN.match(text)
+        if match:
+            name = match.group(1).strip()
+            name = name.capitalize()
+            if len(name) >= 2 and name.lower() not in false_positive_names:
+                return (name, True)  # True = explicit name introduction
+
         # Pattern 1: Explicit name introduction phrases (case insensitive)
         # Patterns like "I'm X", "my name is X", "I am X", "this is X", "im X", "call me X"
         # Use word boundary \b to avoid matching "im" inside words like "swim"
@@ -873,6 +885,7 @@ NAME EXTRACTION RULES (IMPORTANT):
 - Look for names in ALL these patterns:
   * Direct introductions: "I'm John", "my name is Sarah", "I am Mike", "this is Jane"
   * Casual introductions: "im ralph", "im John Anthony", "John here", "it's Sarah"
+  * Name first with comma: "scott, im 68 years old", "john, I need help", "sarah, can you help me"
   * Names stated alone when asked: If asked "what's your name?" and they reply "John Anthony", extract "John Anthony"
   * Names in context: "You can call me Mike", "My friends call me Sam"
 - Extract the COMPLETE name including first and last name if provided
@@ -902,9 +915,26 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             logger.debug(f"LLM extraction response: {response[:200]}...")
             
             # Parse JSON response
-            # Clean up response - sometimes LLM adds extra text
+            # Clean up response - sometimes LLM adds extra text or markdown
             response = response.strip()
-            
+
+            # Strip markdown code blocks if present (```json ... ```, `` ... ``, or `json ... `)
+            # Handle various backtick patterns LLMs might use
+            if response.startswith("`"):
+                # Remove leading backticks and optional language hint
+                response = response.lstrip("`")
+                if response.lower().startswith("json"):
+                    response = response[4:].lstrip()  # Remove "json" and whitespace
+                # Handle multiline code blocks
+                if "\n" in response:
+                    lines = response.split("\n")
+                    # Remove trailing backticks line if present
+                    if lines and lines[-1].strip().replace("`", "") == "":
+                        lines = lines[:-1]
+                    response = "\n".join(lines).strip()
+                # Remove any trailing backticks
+                response = response.rstrip("`").strip()
+
             # Try to find JSON in response
             if response.startswith("{"):
                 json_end = response.rfind("}") + 1
@@ -916,7 +946,7 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
                 if start != -1 and end > start:
                     response = response[start:end]
                 else:
-                    logger.warning(f"Could not find JSON in LLM response: {response}")
+                    logger.warning(f"Could not find JSON in LLM response: {response[:200]}")
                     # Use regex results as fallback
                     return result
             

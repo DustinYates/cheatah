@@ -1,34 +1,27 @@
-# Chatter Cheetah
+# Chatter Cheatah
 
 Multi-tenant AI customer communication platform built on GCP.
 
-## Phase 0
+## Overview
 
-This is the foundational backend architecture phase, focusing on:
+AI-powered customer communication platform supporting:
 - Multi-tenant architecture with strict tenant isolation
-- Core persistence (Tenants, Users, Conversations, Messages, Leads, Prompts)
+- Web chat, SMS, voice, and email channels
 - Prompt system with global base and tenant overrides
 - LLM abstraction layer (Gemini 2.5 Flash)
 - Redis caching and idempotency
-- Analytics event hooks
-
-## Twilio Subaccount Plan
-
-Phase 1 now assumes every tenant is mapped to a Twilio subaccount under the global admin account so that inbound/outbound chat, SMS, voice, and eventually email bots are isolated by `AccountSid` instead of only by shared phone numbers. The detailed implementation plan is tracked in `phase_1_mvp_ai_receptionist_80f03ecc.plan.md`, but the summary is:
-
-1. Provision a Twilio subaccount per tenant and persist its SID/credentials in the tenant profile.
-2. Map incoming webhooks to tenants using the subaccount `AccountSid` (with fallbacks to configured numbers) before creating conversations or leads.
-3. Use the tenant-specific credentials for outbound interactions so chat/SMS/voice requests stay within that tenant’s sandbox.
+- Lead capture and analytics
 
 ## Technology Stack
 
 - **Language**: Python 3.11+
 - **Framework**: FastAPI
-- **Database**: Cloud SQL (Postgres)
-- **Cache**: Redis (MemoryStore)
+- **Database**: Supabase (PostgreSQL)
+- **Cache**: Redis (Upstash)
 - **Package Manager**: uv
 - **Deployment**: Cloud Run
 - **LLM**: Gemini 2.5 Flash via Google Generative AI
+- **SMS/Voice**: Telnyx
 
 ## Setup (Backend)
 
@@ -51,8 +44,6 @@ Phase 1 now assumes every tenant is mapped to a Twilio subaccount under the glo
    cp .env.example .env
    ```
 
-   **Important:** For debugging scripts and local development, always use the production database connection string. Local database connections may point to different databases or stale data. Use the production `DATABASE_URL` from GCP Secret Manager.
-
 4. Start local services (Postgres + Redis):
    ```bash
    docker-compose up -d
@@ -68,30 +59,21 @@ Phase 1 now assumes every tenant is mapped to a Twilio subaccount under the glo
    uv run uvicorn app.main:app --reload
    ```
 
-### Environment variables
+### Environment Variables
 
 Set the following in `.env`:
 
-| Variable | Description | Example |
-| --- | --- | --- |
-| `DATABASE_URL` | Postgres URL (asyncpg) | `postgresql+asyncpg://user:pass@localhost:5432/chattercheatah` |
-
-**Note:** When running debug scripts or local development tools, always use the production database connection string from GCP Secret Manager. Local `.env` files may point to different databases or contain stale data, which can cause confusion when debugging production issues.
-
-| `REDIS_URL` | Redis connection (optional for dev) | `redis://localhost:6379/0` |
-| `REDIS_ENABLED` | Toggle Redis use | `false` |
-| `JWT_SECRET_KEY` | JWT signing key | `change-me` |
-| `JWT_ALGORITHM` | JWT algorithm | `HS256` |
-| `GEMINI_API_KEY` | Google AI key | `...` |
-| `GEMINI_MODEL` | Gemini model | `gemini-3-flash-preview` |
-| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | SMS credentials (optional) | `...` |
-| `CLOUD_TASKS_WORKER_URL` | Cloud Tasks worker endpoint (prod) | `https://.../workers/sms` |
-| `GMAIL_CLIENT_ID` | Gmail OAuth client ID | `...` |
-| `GMAIL_CLIENT_SECRET` | Gmail OAuth client secret | `...` |
-| `GMAIL_PUBSUB_TOPIC` | Gmail push notifications topic | `projects/.../topics/gmail-push` |
-| `CLOUD_TASKS_EMAIL_WORKER_URL` | Email worker endpoint (prod) | `https://.../workers/email` |
-
-The API will still start with Redis disabled or LLM keys missing; related features will be no-ops.
+| Variable | Description |
+| --- | --- |
+| `DATABASE_URL` | Supabase Postgres URL (asyncpg) |
+| `REDIS_URL` | Redis connection URL |
+| `REDIS_ENABLED` | Toggle Redis use (`true`/`false`) |
+| `JWT_SECRET_KEY` | JWT signing key |
+| `GEMINI_API_KEY` | Google AI API key |
+| `GEMINI_MODEL` | Gemini model (e.g., `gemini-2.5-flash-preview-05-20`) |
+| `TELNYX_API_KEY` | Telnyx API key for SMS/Voice |
+| `GMAIL_CLIENT_ID` | Gmail OAuth client ID |
+| `GMAIL_CLIENT_SECRET` | Gmail OAuth client secret |
 
 ## Project Structure
 
@@ -102,10 +84,12 @@ The API will still start with Redis disabled or LLM keys missing; related featur
   - `llm/` - LLM abstraction layer
   - `infrastructure/` - Redis, Pub/Sub, Analytics
   - `core/` - Auth, tenant context, idempotency
+  - `workers/` - Background workers (SMS, email)
+  - `utils/` - Utility functions
 - `alembic/` - Database migrations
 - `tests/` - Test suite
-- `notebooks/` - Jupyter notebooks for analysis (Vertex AI Workbench)
-- `scripts/` - Python analysis scripts
+- `scripts/` - Python analysis and admin scripts
+- `notebooks/` - Jupyter notebooks for analysis
 - `client/` - React frontend (Vite)
 
 ## Frontend (Vite React)
@@ -147,37 +131,28 @@ Apply migrations:
 uv run alembic upgrade head
 ```
 
-## Deployment
-
-The application is designed to run on:
-- **Cloud Run** - Main FastAPI application
-- **Vertex AI Workbench** - Notebooks and analysis scripts
-
-See deployment documentation for GCP setup instructions.
-
 ## Deployment Reference
 
 **Project Structure:**
-- Backend: `~/Desktop/chattercheetah/app`
-- Frontend: `~/Desktop/chattercheetah/client`
+- Backend: `~/Desktop/chattercheatah/app`
+- Frontend: `~/Desktop/chattercheatah/client`
 
 **Cloud Run Services:**
 - Backend: `chattercheatah` → https://chattercheatah-900139201687.us-central1.run.app
 - Frontend: `chattercheatah-frontend` → https://chattercheatah-frontend-900139201687.us-central1.run.app
 
 **Database:**
-- Cloud SQL Instance: `chattercheatah-db` (PostgreSQL 15) in `us-central1-c`
-- Database Name: `chattercheatah`
+- Supabase PostgreSQL
 
 **Deploy Commands:**
 ```bash
 # Frontend
-cd ~/Desktop/chattercheetah/client
+cd ~/Desktop/chattercheatah/client
 npm run build
 gcloud run deploy chattercheatah-frontend --source . --region us-central1 --project chatbots-466618 --allow-unauthenticated
 
 # Backend
-cd ~/Desktop/chattercheetah
+cd ~/Desktop/chattercheatah
 gcloud run deploy chattercheatah --source . --region us-central1 --project chatbots-466618
 ```
 
@@ -189,16 +164,17 @@ gcloud run deploy chattercheatah --source . --region us-central1 --project chatb
 - Lead capture and conversation history
 
 ### SMS
-- Twilio-based SMS handling
+- Telnyx-based SMS handling
 - Compliance handling (STOP, HELP, etc.)
 - Business hours support
+- Auto-send links when chatbot promises to text
 
 ### Voice
-- AI receptionist for inbound calls
-- Call recording and summarization
+- Telnyx-based AI receptionist for inbound calls
+- Real-time voice conversations
 - Handoff to human agents
 
-### Email (NEW)
+### Email
 - Gmail-based email responder
 - OAuth 2.0 tenant authentication
 - Thread-aware AI responses
@@ -206,11 +182,10 @@ gcloud run deploy chattercheatah --source . --region us-central1 --project chatb
 
 ## Additional Docs
 
-- `DEVELOPMENT.md` — sync workflow between local and GCP Vertex AI Workbench
+- `DEVELOPMENT.md` — sync workflow between local and GCP
 - `DEPLOYMENT.md` — Cloud Run deployment, secrets, and troubleshooting
 - `docs/NEW_TENANT_SETUP.md` — Complete tenant onboarding checklist
-- `docs/TELNYX_WEBHOOK_SETUP.md` — Telnyx webhook configuration reference (CRITICAL for SMS)
+- `docs/TELNYX_WEBHOOK_SETUP.md` — Telnyx webhook configuration (CRITICAL for SMS/Voice)
 - `docs/EMAIL_RESPONDER_SETUP.md` — Gmail email responder configuration
-- `docs/VOICE_ASSISTANT_ROADMAP.md` — Voice assistant implementation plan
-- `docs/tenant_onboarding.md` — tenant onboarding runbook (repeatable process + examples)
+- `docs/tenant_onboarding.md` — tenant onboarding runbook
 - `docs/config_matrix.md` — configuration/secrets matrix (global vs per-tenant)

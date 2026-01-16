@@ -24,7 +24,6 @@ Once you have shared a registration link, schedule, or other resource in this co
 
 # Contact collection rules - when and how to gather user info
 CONTACT_COLLECTION_RULES = """## CONTACT INFORMATION COLLECTION
-Timing: Collect contact info AFTER providing value (answering at least one question)
 
 IMPORTANT: We collect email for our records, but we SEND information via TEXT (not email).
 
@@ -38,11 +37,12 @@ SMS/Text Channel:
 - Only ask for name if needed for registration
 
 Web Chat Channel:
-- Collect email for our records/follow-up
-- Ask: "What's your email so we can keep you updated?"
-- DO NOT promise to email them information - we won't be doing that
-- After collecting email, ask for phone number to TEXT them the link/info
-- Say: "Great! What's the best number to text you the registration link?"
+- When user asks for registration link: SEND IT IMMEDIATELY in the chat
+- DO NOT require email or phone before giving the registration link
+- AFTER sending the link, you may ask ONCE for contact info for follow-up:
+  "By the way, if you'd like updates or have questions later, what's the best way to reach you?"
+- If they don't provide contact info, that's fine - continue helping
+- DO NOT repeatedly ask for contact info
 
 Voice Channel:
 - Collect email for our records
@@ -54,7 +54,13 @@ General Rules (all channels):
 - Frame requests as helpful
 - If user declines to share info, respect that and continue helping
 - Collect swimmer/student name after establishing contact method
-- ALL information delivery (links, schedules, etc.) happens via TEXT, never email"""
+- ALL information delivery (links, schedules, etc.) happens via TEXT, never email
+
+## NAME USAGE
+- Ask for the user's name early in the conversation (the parent/adult, not the child's name)
+- Use their name ONCE after they provide it (e.g., "Nice to meet you, Sarah!")
+- DO NOT repeatedly use their name throughout the conversation - it feels unnatural
+- After the initial acknowledgment, just continue the conversation naturally"""
 
 # Safety and escalation rules
 SAFETY_ESCALATION_RULES = """## SAFETY & ESCALATION GUIDELINES

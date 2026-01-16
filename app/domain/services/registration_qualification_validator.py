@@ -144,13 +144,16 @@ class RegistrationQualificationValidator:
         if not age_info:
             missing.append("age_group")
 
-        # Experience level should be discussed
-        if not experience_info.get("discussed"):
-            missing.append("experience_level")
-
         # Level recommendation should be made before registration
+        # This is the most important check - it means the bot has enough info
+        # to suggest a specific class level
         if not level_recommendation.get("recommended"):
             missing.append("level_recommendation")
+
+            # Experience level is only required if no level recommendation yet
+            # Once a level is recommended, experience was implicitly considered
+            if not experience_info.get("discussed"):
+                missing.append("experience_level")
 
         # Location is recommended but not strictly required
         # (user might be exploring options)

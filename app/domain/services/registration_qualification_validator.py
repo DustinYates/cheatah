@@ -74,17 +74,32 @@ class RegistrationQualificationValidator:
     ]
 
     # Keywords indicating a level recommendation was made
+    # Include all BSS program levels
     LEVEL_KEYWORDS = [
         "recommend",
         "suggest",
         "level",
         "class",
+        # BSS infant/toddler levels
         "tadpole",
+        "swimboree",
         "seahorse",
+        # BSS child levels
         "starfish",
+        "minnow",
+        "turtle 1",
+        "turtle 2",
+        "turtle",
+        # BSS adult levels
+        "adult level",
+        "young adult",
+        # BSS specialty
         "dolphin",
+        "barracuda",
         "parent-child",
         "water babies",
+        "adaptive",
+        "private lesson",
     ]
 
     def __init__(self, session: AsyncSession) -> None:

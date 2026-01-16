@@ -490,6 +490,109 @@ async def trigger_followup(
         )
 
 
+class SendAssetResponse(BaseModel):
+    """Response for sending an asset to a lead."""
+
+    success: bool
+    message: str
+    message_id: str | None = None
+    to: str | None = None
+
+
+@router.post("/{lead_id}/send-asset", response_model=SendAssetResponse)
+async def send_asset_to_lead(
+    lead_id: int,
+    asset_type: str = Query(default="registration_link", description="Asset type to send"),
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    tenant_id: Annotated[int, Depends(require_tenant_context)] = None,
+) -> SendAssetResponse:
+    """Send a configured asset (registration link, schedule, etc.) to a lead via SMS.
+
+    This is the manual "send text" action from the leads table.
+    Uses the tenant's configured sendable_assets to compose and send the SMS.
+
+    Args:
+        lead_id: Lead ID to send to
+        asset_type: Type of asset to send (registration_link, schedule, pricing, info)
+        db: Database session
+        current_user: Authenticated user
+        tenant_id: Tenant context
+
+    Returns:
+        SendAssetResponse with success status and message ID
+    """
+    import logging
+    from app.domain.services.promise_detector import DetectedPromise
+    from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
+
+    logger = logging.getLogger(__name__)
+
+    # Verify lead exists
+    lead_service = LeadService(db)
+    lead = await lead_service.get_lead(tenant_id, lead_id)
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found",
+        )
+
+    if not lead.phone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lead has no phone number. Cannot send SMS.",
+        )
+
+    # Validate asset type
+    valid_types = ["registration_link", "schedule", "pricing", "info"]
+    if asset_type not in valid_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid asset type. Must be one of: {', '.join(valid_types)}",
+        )
+
+    # Create a promise for the asset type
+    promise = DetectedPromise(
+        asset_type=asset_type,
+        confidence=1.0,
+        original_text=f"Manual send of {asset_type} by {current_user.email}",
+    )
+
+    fulfillment_service = PromiseFulfillmentService(db)
+
+    result = await fulfillment_service.fulfill_promise(
+        tenant_id=tenant_id,
+        conversation_id=lead.conversation_id or 0,
+        promise=promise,
+        phone=lead.phone,
+        name=lead.name,
+    )
+
+    logger.info(
+        f"Manual asset send - lead_id={lead_id}, asset_type={asset_type}, "
+        f"user={current_user.email}, result={result.get('status')}"
+    )
+
+    if result.get("status") == "sent":
+        return SendAssetResponse(
+            success=True,
+            message=f"{asset_type.replace('_', ' ').title()} sent successfully",
+            message_id=result.get("message_id"),
+            to=result.get("to"),
+        )
+    elif result.get("status") == "skipped":
+        return SendAssetResponse(
+            success=False,
+            message="SMS skipped - already sent recently (1 hour dedup window)",
+        )
+    else:
+        return SendAssetResponse(
+            success=False,
+            message=result.get("error") or f"Failed to send: {result.get('status')}",
+        )
+
+
 class RelatedLeadsResponse(BaseModel):
     """Related leads response."""
 

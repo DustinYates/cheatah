@@ -24,6 +24,7 @@ from app.persistence.repositories.call_summary_repository import CallSummaryRepo
 from app.persistence.repositories.contact_repository import ContactRepository
 from app.persistence.repositories.business_profile_repository import BusinessProfileRepository
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
+from app.utils.name_validator import validate_name
 
 logger = logging.getLogger(__name__)
 
@@ -1361,8 +1362,12 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
         for pattern in name_patterns:
             matches = re.findall(pattern, user_text, re.IGNORECASE)
             if matches:
-                data.name = matches[0].strip().title()
-                break
+                # Validate name to strip invalid suffixes like "No", pronouns, etc.
+                raw_name = matches[0].strip().title()
+                validated = validate_name(raw_name, require_explicit=True)
+                if validated:
+                    data.name = validated
+                    break
         
         # Try LLM extraction for more complex data (including name if regex failed)
         try:
@@ -1394,7 +1399,11 @@ Respond with ONLY JSON:
 
                 # Only use LLM name if regex didn't find one
                 if not data.name and extracted.get("name") and extracted["name"] != "null":
-                    data.name = extracted["name"].strip().title()
+                    # Validate name to strip invalid suffixes like "No", pronouns, etc.
+                    raw_name = extracted["name"].strip().title()
+                    validated = validate_name(raw_name, require_explicit=True)
+                    if validated:
+                        data.name = validated
                 if extracted.get("reason") and extracted["reason"] != "null":
                     data.reason = extracted["reason"]
                 if extracted.get("urgency") and extracted["urgency"] != "null":

@@ -766,14 +766,20 @@ class ChatService:
         )
         
         # Build conversation text for LLM extraction
+        # Include BOTH user and assistant messages for context
+        # This is critical for name extraction - the LLM needs to see that
+        # the bot asked "what is your name?" to know that "chuck" is a name
         conversation_text = []
         for msg in messages:
             if msg.role == "user":
                 conversation_text.append(f"User: {msg.content}")
+            elif msg.role == "assistant":
+                conversation_text.append(f"Assistant: {msg.content}")
         conversation_text.append(f"User: {current_user_message}")
         
         # Limit to recent messages to avoid large prompts
-        recent_messages = conversation_text[-10:]  # Last 10 user messages
+        # Increased limit since we now include both user and assistant messages
+        recent_messages = conversation_text[-15:]  # Last 15 messages (user + assistant)
         
         extraction_prompt = """Analyze the following conversation messages and extract any contact information the user has provided.
 

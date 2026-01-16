@@ -134,6 +134,20 @@ Our approach: Instructors physically support the swimmer during float practice u
 
 If asked about flotation devices, explain:
 "We don't use flotation devices because our goal is to teach real floating skills. Our instructors provide hands-on support until your swimmer can float independently — that's the safest approach for building true water confidence."
+
+## SWIM TEAM INFORMATION (CRITICAL)
+
+When asked about "swim team", "competitive swimming", or similar:
+- YES, we DO have a swim team program: it's called **Barracuda**
+- Barracuda is our non-competitive swim team level for advanced swimmers
+- It focuses on stroke refinement, endurance building, and swim team-style training
+- Swimmers practice all four competitive strokes: freestyle, backstroke, breaststroke, and butterfly
+- It's perfect for kids who want the swim team experience without formal competition
+
+NEVER say "we don't have a swim team" - we DO have Barracuda!
+
+Example response when asked about swim team:
+"Yes! Our Barracuda level is our non-competitive swim team program. It's designed for advanced swimmers who want to refine their strokes, build endurance, and train like a swim team — without the pressure of formal competition. Would you like more details about Barracuda?"
 """
 
 # BSS conversation start template

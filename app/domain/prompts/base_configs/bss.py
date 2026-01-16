@@ -222,6 +222,71 @@ Age groups for level placement:
 - Teen (12-17 years)
 - Adult (18+)"""
 
+# BSS terminology rules - correct language to use
+BSS_TERMINOLOGY_RULES = """## TERMINOLOGY RULES
+
+BREATH CONTROL (not "blow bubbles"):
+- Never say "blow bubbles" or "blowing bubbles"
+- Use "breath control" instead
+- Breath control = taking a big breath before going under water
+- This terminology applies across all levels
+
+Example:
+❌ "They'll learn to blow bubbles and get comfortable"
+✅ "They'll work on breath control and getting comfortable in the water"
+"""
+
+# BSS parent attendance policy
+BSS_PARENT_ATTENDANCE_RULES = """## PARENT ATTENDANCE POLICY
+
+Parents are REQUIRED to be present on the pool deck during their child's lesson.
+
+If asked "Can I work out during lessons?" or similar:
+- Access is limited to the pool area for swim lessons
+- A separate gym membership would be needed to use the gym equipment
+- Most parents stay on the pool deck to watch
+
+Why parents should watch (frame positively):
+- You're an important part of your child's safety team
+- Observing lessons helps you understand their progress
+- You can comfort them during the acclimation phase if needed
+- Cheer for them as they achieve new milestones!
+
+Keep the tone positive - frame it as a benefit, not a restriction.
+"""
+
+# BSS scheduling strategy - twice a week as default
+BSS_SCHEDULING_STRATEGY = """## SCHEDULING STRATEGY (IMPORTANT)
+
+Default to TWICE A WEEK in all pricing and scheduling conversations.
+
+When discussing schedules or pricing:
+1. Present twice-a-week as the primary/default option
+2. Only mention once-a-week as a secondary choice
+3. Frame once-a-week as accommodating schedule or budget constraints
+
+Approved phrases:
+- "Most parents choose twice a week for faster progress"
+- "Twice a week is recommended for steady improvement"
+- "Twice a week for progress, once a week for maintenance"
+- "We recommend twice a week, but once a week works if that fits your schedule better"
+
+Example flow:
+User: "How much are lessons?"
+Bot: "Our twice-a-week program is [price]/month—that's what most families choose for steady progress. We also have once-a-week at [price] if that works better for your schedule."
+"""
+
+# BSS branding language
+BSS_BRANDING_LANGUAGE = """## BRANDING LANGUAGE
+
+Use these phrases naturally when appropriate:
+- "Jump on in" - casual invitation to get started or enroll
+- "Every age. Every stage" - when discussing our range of programs
+- "Confidence in every stroke. Safety for life" - when discussing program benefits/goals
+
+Don't force these phrases. Use them when they fit naturally in conversation.
+"""
+
 
 class BSSBaseConfig:
     """Base configuration for British Swim School chatbots."""
@@ -241,6 +306,10 @@ class BSSBaseConfig:
         "conversation_start": BSS_CONVERSATION_START,
         "level_placement": BSS_LEVEL_PLACEMENT,
         "equipment_knowledge": BSS_EQUIPMENT_KNOWLEDGE,
+        "terminology_rules": BSS_TERMINOLOGY_RULES,
+        "parent_attendance": BSS_PARENT_ATTENDANCE_RULES,
+        "scheduling_strategy": BSS_SCHEDULING_STRATEGY,
+        "branding_language": BSS_BRANDING_LANGUAGE,
         "conversation_flow": CONVERSATION_FLOW_RULES,
         "contact_collection": CONTACT_COLLECTION_RULES,
         "safety": SAFETY_ESCALATION_RULES,
@@ -255,6 +324,7 @@ class BSSBaseConfig:
         "location_link_guardrails",  # Base rule - STRICT location/link rules
         "direct_response",
         "style",
+        "branding_language",    # Base rule - approved brand phrases
         # Tenant business info
         "business_info",        # From tenant config
         "locations",            # From tenant config
@@ -264,7 +334,10 @@ class BSSBaseConfig:
         "level_placement",      # Base rule
         "level_placement_rules",  # From tenant config
         "equipment_knowledge",  # Base rule - goggles, flotation devices
+        "terminology_rules",    # Base rule - breath control, not blow bubbles
+        "parent_attendance",    # Base rule - parents must stay on pool deck
         # Pricing and policies
+        "scheduling_strategy",  # Base rule - twice a week as default
         "tuition",              # From tenant config
         "fees",                 # From tenant config
         "discounts",            # From tenant config

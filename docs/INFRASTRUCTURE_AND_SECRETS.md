@@ -1,4 +1,4 @@
-# ChatterCheetah Infrastructure & Secrets Documentation
+# ChatterCheatah Infrastructure & Secrets Documentation
 
 ## 1. Global Environment Variables
 
@@ -181,7 +181,7 @@ tenant_sms_configs.voxie_phone_number → Tenant ID lookup
 
 | Role | Description |
 |------|-------------|
-| `admin` | System-wide admin (ChatterCheetah staff) |
+| `admin` | System-wide admin (ChatterCheatah staff) |
 | `tenant_admin` | Tenant administrator |
 | `user` | Regular tenant user |
 

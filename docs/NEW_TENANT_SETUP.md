@@ -1,6 +1,6 @@
 # New Tenant Setup Checklist
 
-This document outlines the steps required to fully configure a new tenant in ChatterCheetah.
+This document outlines the steps required to fully configure a new tenant in ChatterCheatah.
 
 ## 1. Create Tenant in Admin Panel
 
@@ -169,7 +169,7 @@ Voice functionality uses Telnyx AI Assistant to handle inbound calls with tenant
 Run the voice config setup script to create `TenantVoiceConfig` record:
 
 ```bash
-cd /path/to/chattercheetah
+cd /path/to/chattercheatah
 source .venv/bin/activate
 python scripts/setup_voice_configs.py
 ```

@@ -9,7 +9,7 @@ Conventions:
 - **Source of truth**:
   - Env = environment variable (local `.env` or Cloud Run env var)
   - Secret Manager = mounted into env vars on Cloud Run
-  - DB = Postgres (Cloud SQL)
+  - DB = Postgres (Supabase)
 
 ---
 
@@ -17,9 +17,7 @@ Conventions:
 
 | Config name | Scope | Purpose | Where used | Source of truth | Example value |
 |---|---|---|---|---|---|
-| `DATABASE_URL` | Global | Postgres connection string (async) | `app/settings.py` | Secret Manager / Env | `postgresql+asyncpg://app_user:<redacted>@/chattercheatah?host=/cloudsql/project:region:instance` |
-| `CLOUD_SQL_INSTANCE_CONNECTION_NAME` | Global | Cloud SQL instance connection name (informational; not required if `DATABASE_URL` is complete) | `app/settings.py` | Env | `project:region:instance` |
-| `CLOUD_SQL_DATABASE_NAME` | Global | Cloud SQL database name (informational) | `app/settings.py` | Env | `chattercheatah` |
+| `DATABASE_URL` | Global | Postgres connection string (async) | `app/settings.py` | Secret Manager / Env | `postgresql+asyncpg://user:<redacted>@aws-0-us-central1.pooler.supabase.com:5432/postgres` |
 | `JWT_SECRET_KEY` | Global | JWT signing key | `app/core/auth.py` | Secret Manager | `<redacted>` |
 | `JWT_ALGORITHM` | Global | JWT algorithm | `app/core/auth.py` | Env | `HS256` |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Global | Token TTL | `app/core/auth.py` | Env | `720` |
@@ -70,7 +68,7 @@ Conventions:
 | `users.role` | Per-tenant/global | Authorization role | `app/api/deps.py` | DB | `tenant_admin` |
 | `tenant_business_profiles.*` | Per-tenant | Shared business facts | profile/voice services | DB | `business_name="Example Customer"` |
 | `prompt_bundles.*` + `prompt_sections.*` | Global + per-tenant | Prompt system base + overlays | `app/domain/services/prompt_service.py` | DB | (varies) |
-| `tenant_sms_configs.*` | Per-tenant | SMS settings & Twilio mapping | SMS webhook + services | DB | `twilio_phone_number="+15555550123"` |
+| `tenant_sms_configs.*` | Per-tenant | SMS settings & Telnyx/Twilio mapping | SMS webhook + services | DB | `telnyx_phone_number="+15555550123"` |
 | `tenant_voice_configs.*` | Per-tenant | Voice greeting/handoff/escalation | voice webhook + services | DB | `handoff_mode="take_message"` |
 | `tenant_email_configs.*` | Per-tenant | Gmail OAuth tokens/settings/watch | email services | DB | `gmail_email="ops@exampleco.test"` |
 | `email_conversations.*` | Per-tenant | Gmail thread → internal conversation mapping | email services | DB | `gmail_thread_id="18c..."` |
@@ -79,6 +77,6 @@ Conventions:
 
 ## Notes / gaps to track
 
-- Per-tenant secrets stored in DB today include Twilio auth tokens and Gmail refresh tokens; plan to encrypt at rest or move to a dedicated secret store.
+- Per-tenant secrets stored in DB today include Telnyx/Twilio API keys and Gmail refresh tokens; plan to encrypt at rest or move to a dedicated secret store.
 - CORS is currently `*` (not environment-configurable yet).
 - The public chat endpoint accepts a raw `tenant_id`; consider adding a tenant public token or signed embed key.

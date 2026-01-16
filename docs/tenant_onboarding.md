@@ -66,7 +66,7 @@ Log in via API:
 ```bash
 curl -sS -X POST "$API_BASE/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@chattercheetah.com","password":"admin123"}'
+  -d '{"email":"admin@chattercheatah.com","password":"admin123"}'
 ```
 
 #### Step 2 — Create a tenant
@@ -175,7 +175,7 @@ The `messages` table does not include `tenant_id`. To ensure isolation, message 
 
 ### Storage paths (recommended convention)
 
-This repo currently stores Twilio recording URLs directly (no GCS storage integration yet). If/when adding object storage, use tenant prefixing:
+This repo currently stores recording URLs directly (no GCS storage integration yet). If/when adding object storage, use tenant prefixing:
 
 ```text
 gs://<bucket>/tenants/1042/
@@ -183,14 +183,14 @@ gs://<bucket>/tenants/1042/
 
 ---
 
-## 3) Database (Cloud SQL / Postgres) onboarding notes
+## 3) Database (Supabase / Postgres) onboarding notes
 
 ### Connection examples
 
-Cloud SQL via Unix socket (Cloud Run):
+Supabase via connection pooler (Cloud Run):
 
 ```bash
-DATABASE_URL=postgresql+asyncpg://app_user:<redacted>@/chattercheatah?host=/cloudsql/project:region:instance
+DATABASE_URL=postgresql+asyncpg://user:<redacted>@aws-0-us-central1.pooler.supabase.com:5432/postgres
 ```
 
 Local Postgres (docker-compose):
@@ -225,45 +225,51 @@ DATABASE_URL=postgresql+asyncpg://chattercheatah:dev_password@localhost:5432/cha
 
 ## 5) Integrations runbook (SMS / Voice / Email)
 
-### SMS (Twilio)
+### SMS (Telnyx - Primary)
 
 **Tenant routing**
 
 Inbound webhooks map tenant by:
 
-1) `TenantSmsConfig.twilio_phone_number == To`, else  
-2) `TenantSmsConfig.twilio_account_sid == AccountSid`
+1) `TenantSmsConfig.telnyx_phone_number == To`, else
+2) `TenantSmsConfig.twilio_phone_number == To` (legacy)
 
 **Provisioning steps**
 
 1. Create/update tenant SMS config (admin or internal tooling):
-   - Assign `twilio_phone_number`
-   - Set `twilio_account_sid`/`twilio_auth_token` (per-tenant credential model)
-2. Tenant enables SMS in their settings (`/api/v1/sms/settings`).
+   - Assign `telnyx_phone_number`
+   - Set `telnyx_api_key` and `telnyx_messaging_profile_id`
+   - Configure 10DLC compliance in Telnyx Portal (required for US SMS)
+2. Set up webhooks in Telnyx Portal (see `docs/NEW_TENANT_SETUP.md`)
+3. Tenant enables SMS in their settings (`/api/v1/sms/settings`).
 
 **How to test**
 
-- Send an inbound SMS to the tenant’s configured number.
+- Send an inbound SMS to the tenant's configured number.
 - Confirm a conversation is created with `conversations.tenant_id = 1042`.
 
-### Voice (Twilio)
+### Voice (Telnyx AI Assistant - Primary)
 
 **Tenant routing**
 
-Inbound voice webhooks map tenant by:
+Voice calls are handled by Telnyx AI Assistant configured per-tenant:
 
-1) `TenantBusinessProfile.twilio_voice_phone == To`, else  
-2) `TenantSmsConfig.twilio_phone_number == To`
+1) Each tenant has their own AI Assistant in Telnyx Portal
+2) Phone number is assigned to the AI Assistant
+3) Call completion webhook posts to `/api/v1/telnyx/ai-call-complete`
 
 **Provisioning steps**
 
-1. Provision/assign a voice number (admin endpoint or operator workflow).
-2. Configure tenant voice behavior (`/api/v1/voice/settings`).
+1. Create TenantVoiceConfig record (`scripts/setup_voice_configs.py`)
+2. Create Telnyx AI Assistant in portal with tenant-specific prompt
+3. Assign phone number to AI Assistant
+4. Configure webhooks for call events
 
 **How to test**
 
 - Place a call to the tenant number.
-- Confirm a `calls` row and `conversations` row exist with the correct tenant.
+- Verify AI responds with tenant-specific information.
+- Confirm call records are created in the database.
 
 ### Email (Gmail OAuth + Pub/Sub + Cloud Tasks)
 
@@ -342,6 +348,6 @@ Safe to share:
 
 Never share:
 
-- OAuth refresh tokens, Twilio auth tokens, JWT secret keys, API keys
+- OAuth refresh tokens, Telnyx/Twilio auth tokens, JWT secret keys, API keys
 - `Authorization: Bearer ...` headers
 

@@ -1,10 +1,10 @@
 # Development Workflow
 
-This guide covers the development workflow for Chatter Cheetah when working between your Mac (using Cursor) and GCP.
+This guide covers the development workflow for Chatter Cheatah when working between your Mac and GCP.
 
 ## Overview
 
-- **Local Development**: Use Cursor on Mac for code editing and debugging
+- **Local Development**: Edit code locally on your Mac
 - **GCP Vertex AI Workbench**: Run and develop Jupyter notebooks
 - **GCP Cloud Run**: Deploy the FastAPI application
 - **Sync Strategy**: Push code changes to GCP, pull notebook changes back
@@ -31,7 +31,7 @@ This guide covers the development workflow for Chatter Cheetah when working betw
 
 ### Option 1: Manual Sync (Simple)
 
-1. **Edit code in Cursor** on your Mac
+1. **Edit code locally** on your Mac
 2. **Push to GCP** when ready to test notebooks or deploy:
    ```bash
    ./scripts/sync-to-gcp.sh
@@ -127,7 +127,7 @@ git push origin main  # Triggers automatic deployment
 ## Recommended Workflow for Different Tasks
 
 ### Working on FastAPI Backend
-1. Edit code in Cursor
+1. Edit code locally
 2. Test locally: `uv run uvicorn app.main:app --reload`
 3. Run tests: `uv run pytest`
 4. When ready to deploy: `./scripts/deploy-cloud-run.sh`
@@ -141,7 +141,7 @@ git push origin main  # Triggers automatic deployment
 
 ### Hybrid Development (Code + Notebooks)
 1. Start watch mode: `./scripts/sync-to-gcp.sh -w`
-2. Edit code in Cursor
+2. Edit code locally
 3. Changes sync automatically to GCP
 4. Test in notebooks on Vertex AI Workbench
 5. Pull notebooks periodically: `./scripts/pull-notebooks.sh`
@@ -152,7 +152,7 @@ git push origin main  # Triggers automatic deployment
 
 If you're heavily iterating on notebooks:
 - Keep a terminal with watch mode running
-- Make small code changes in Cursor
+- Make small code changes locally
 - Test immediately in your notebook on GCP
 - No manual sync needed!
 

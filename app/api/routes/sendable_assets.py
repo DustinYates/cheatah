@@ -1,7 +1,9 @@
 """API routes for managing sendable assets (registration links, schedules, etc.)."""
 
 import logging
+import re
 from typing import Annotated, Any
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -16,6 +18,63 @@ from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def validate_and_fix_url(url: str) -> str:
+    """Validate and fix a URL by properly encoding query parameters.
+
+    Args:
+        url: The URL to validate and fix
+
+    Returns:
+        Properly encoded URL
+
+    Raises:
+        ValueError: If URL is invalid or contains line breaks
+    """
+    # Check for line breaks or whitespace in the URL
+    if '\n' in url or '\r' in url:
+        raise ValueError("URL cannot contain line breaks")
+
+    # Check for unencoded spaces in the URL (these should be %20)
+    if ' ' in url:
+        raise ValueError("URL cannot contain spaces. Use %20 for spaces in query parameters.")
+
+    try:
+        parsed = urlparse(url)
+
+        # Validate scheme
+        if parsed.scheme not in ('http', 'https'):
+            raise ValueError("URL must use http or https scheme")
+
+        # Validate netloc (domain)
+        if not parsed.netloc:
+            raise ValueError("URL must include a domain")
+
+        # If there's a query string, ensure it's properly encoded
+        if parsed.query:
+            # Parse and re-encode to ensure proper formatting
+            params = parse_qs(parsed.query, keep_blank_values=True)
+            fixed_params = {}
+            for key, values in params.items():
+                value = values[0] if values else ""
+                fixed_params[key] = value
+
+            fixed_query = urlencode(fixed_params, safe='')
+            fixed_url = urlunparse((
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                fixed_query,
+                parsed.fragment
+            ))
+            return fixed_url
+
+        return url
+
+    except Exception as e:
+        raise ValueError(f"Invalid URL: {e}")
 
 
 class SendableAsset(BaseModel):
@@ -113,6 +172,15 @@ async def upsert_sendable_asset(
             detail="SMS template must contain {url} placeholder",
         )
 
+    # Validate and fix the URL (ensure proper encoding)
+    try:
+        validated_url = validate_and_fix_url(request.url)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
     # Get or create tenant prompt config
     stmt = select(TenantPromptConfig).where(TenantPromptConfig.tenant_id == tenant_id)
     result = await db.execute(stmt)
@@ -140,7 +208,7 @@ async def upsert_sendable_asset(
 
     config["sendable_assets"][asset_type] = {
         "sms_template": request.sms_template,
-        "url": request.url,
+        "url": validated_url,  # Use the validated/fixed URL
         "enabled": request.enabled,
     }
 

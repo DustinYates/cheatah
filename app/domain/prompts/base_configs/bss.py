@@ -60,6 +60,18 @@ WHERE:
 - LOCATION_CODE must be exactly one of: LAFCypress, LALANG, 24Spring
 - CLASS_TYPE must be a valid level name (e.g., Tadpole, Starfish, etc.) - never free text
 
+**CRITICAL URL FORMATTING RULES:**
+- URLs MUST be a SINGLE UNINTERRUPTED STRING with NO line breaks, spaces, or formatting
+- For class types with spaces, replace spaces with %20 (URL encoding):
+  * "Adult Level 3" → type=Adult%20Level%203
+  * "Young Adult 1" → type=Young%20Adult%201
+  * "Turtle 1" → type=Turtle%201
+  * "Shark 2" → type=Shark%202
+- Single-word levels stay as-is: Tadpole, Starfish, Minnow, Seahorse, Swimboree, Barracuda, Dolphin
+- NEVER put the URL on multiple lines or add line breaks
+- NEVER add markdown formatting around URLs
+- The ENTIRE URL must be clickable as one link
+
 LINK RULES:
 - Only provide a registration link if you have confirmed the user's preferred location
 - If location is not confirmed, DO NOT send any link - ask which location first
@@ -67,12 +79,18 @@ LINK RULES:
 - NEVER send: britishswimschool.com/register (missing location), register-starfish-class, or any made-up path
 - If you cannot provide a valid link, say: "I can send you the registration link once we confirm which location works best for you."
 
+CORRECT URL EXAMPLES:
+✓ https://britishswimschool.com/cypress-spring/register/?loc=LAFCypress
+✓ https://britishswimschool.com/cypress-spring/register/?loc=24Spring&type=Barracuda
+✓ https://britishswimschool.com/cypress-spring/register/?loc=LALANG&type=Adult%20Level%203
+✓ https://britishswimschool.com/cypress-spring/register/?loc=LAFCypress&type=Young%20Adult%201
+
 VIOLATIONS TO AVOID:
 ❌ "Here's the link: britishswimschool.com/register" (missing location parameter)
 ❌ "Register at register-starfish-class" (fabricated URL)
 ❌ "You can sign up at our Katy location" (location not allowed)
-✓ "Here's the registration link for LA Fitness Cypress: https://britishswimschool.com/cypress-spring/register/?loc=LAFCypress"
-✓ "Which location works best for you so I can send the correct registration link?"
+❌ type=Adult Level 3 (spaces not encoded - WRONG)
+❌ URL split across multiple lines (must be single string)
 """
 
 # BSS level placement approach

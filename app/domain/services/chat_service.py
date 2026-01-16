@@ -16,6 +16,7 @@ from app.domain.services.promise_detector import PromiseDetector, DetectedPromis
 from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
 from app.domain.services.user_request_detector import UserRequestDetector
 from app.domain.services.prompt_service import PromptService
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from app.utils.name_validator import validate_name, extract_name_from_explicit_statement
 from app.llm.orchestrator import LLMOrchestrator
 from app.persistence.models.conversation import Conversation, Message
@@ -993,7 +994,110 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
         # Matches patterns like "Draft 1:", "draft 2:", "DRAFT 3:", etc.
         cleaned = _DRAFT_PREFIX_PATTERN.sub('', cleaned)
 
+        # Fix URLs in the response (encode spaces, remove line breaks)
+        cleaned = self._fix_urls_in_response(cleaned)
+
         return cleaned
+
+    def _fix_urls_in_response(self, text: str) -> str:
+        """Fix URLs in the response by encoding spaces and removing line breaks.
+
+        This ensures all URLs are properly formatted and clickable.
+
+        Args:
+            text: Text that may contain URLs
+
+        Returns:
+            Text with fixed URLs
+        """
+        if not text:
+            return text
+
+        # Pattern to find URLs (including incomplete ones that might span lines)
+        # Matches http:// or https:// followed by any characters until whitespace or end
+        url_pattern = re.compile(
+            r'(https?://[^\s<>"\']+)',
+            re.IGNORECASE
+        )
+
+        def fix_url(match: re.Match) -> str:
+            url = match.group(1)
+
+            # Remove any trailing punctuation that's not part of the URL
+            trailing = ""
+            while url and url[-1] in '.,;:!?)':
+                # Keep trailing ) only if there's a matching ( in the URL
+                if url[-1] == ')' and '(' in url:
+                    break
+                trailing = url[-1] + trailing
+                url = url[:-1]
+
+            try:
+                # Parse the URL
+                parsed = urlparse(url)
+
+                # If there's a query string, properly encode it
+                if parsed.query:
+                    # Parse existing query params
+                    # Note: parse_qs returns lists, we need to flatten them
+                    params = parse_qs(parsed.query, keep_blank_values=True)
+
+                    # Rebuild params, properly encoding values with spaces
+                    fixed_params = {}
+                    for key, values in params.items():
+                        # Take the first value (query params shouldn't have multiple values here)
+                        value = values[0] if values else ""
+                        # The value might already be partially encoded or have spaces
+                        # urlencode will handle encoding properly
+                        fixed_params[key] = value
+
+                    # Rebuild the URL with properly encoded query string
+                    fixed_query = urlencode(fixed_params, safe='')
+                    fixed_url = urlunparse((
+                        parsed.scheme,
+                        parsed.netloc,
+                        parsed.path,
+                        parsed.params,
+                        fixed_query,
+                        parsed.fragment
+                    ))
+                    return fixed_url + trailing
+                else:
+                    # No query string, return as-is with trailing punctuation
+                    return url + trailing
+
+            except Exception as e:
+                logger.warning(f"Failed to fix URL '{url}': {e}")
+                return match.group(0)  # Return original if parsing fails
+
+        # Apply URL fixing
+        fixed_text = url_pattern.sub(fix_url, text)
+
+        # Also check for URLs that might have line breaks in the middle
+        # Pattern: URL followed by newline and continuation of URL-like content
+        multiline_url_pattern = re.compile(
+            r'(https?://\S+)\s*\n\s*([^\s<>"\']+(?:\S*))',
+            re.IGNORECASE
+        )
+
+        def fix_multiline_url(match: re.Match) -> str:
+            url_part1 = match.group(1).rstrip()
+            url_part2 = match.group(2).strip()
+
+            # Check if the second part looks like a URL continuation
+            # (starts with query params or path segments)
+            if url_part2.startswith(('&', '?', '/', '%')):
+                # Rejoin the URL parts
+                combined = url_part1 + url_part2
+                # Process through the URL fixer
+                return url_pattern.sub(fix_url, combined)
+
+            # Not a continuation, return original with parts separated
+            return match.group(0)
+
+        fixed_text = multiline_url_pattern.sub(fix_multiline_url, fixed_text)
+
+        return fixed_text
 
     def _response_needs_completion(self, response: str) -> bool:
         """Check if the response appears to be cut off mid-sentence."""

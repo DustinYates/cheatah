@@ -203,8 +203,8 @@ def _generate_initial_message(lead: Lead, sms_config: TenantSmsConfig) -> str:
         return "Hi! Thanks for calling earlier. I wanted to follow up and see if I can help with any other questions. What brings you to us today?"
     elif source == "email":
         if first_name:
-            return f"Hi {first_name}! Thanks for filling out a form on our website. I'm here to help - what questions can I answer for you?"
-        return "Hi! Thanks for filling out a form on our website. I'm here to help - what questions can I answer for you?"
+            return f"Hi {first_name}! We saw your 'get in touch' form. Can I help answer any questions?"
+        return "Hi! We saw your 'get in touch' form. Can I help answer any questions?"
     else:
         if first_name:
             return f"Hi {first_name}! Thanks for reaching out. I wanted to follow up and see how I can help you today."

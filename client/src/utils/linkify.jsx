@@ -20,6 +20,50 @@ function sanitizeUrl(url) {
 }
 
 /**
+ * Join URLs that were split across multiple lines by LLM output
+ * e.g., "https://britishswimschool\n.com/path" -> "https://britishswimschool.com/path"
+ *
+ * @param {string} text - The text that may contain split URLs
+ * @returns {string} - Text with URLs joined
+ */
+function joinSplitUrls(text) {
+  let result = text;
+  let iterations = 0;
+  const maxIterations = 15; // Safety limit - may need multiple passes
+
+  while (iterations < maxIterations) {
+    const before = result;
+
+    // Match: URL + whitespace + any non-whitespace chunk
+    result = result.replace(
+      /(https?:\/\/[^\s<>"']+)(\s+)(\S+)/gi,
+      (match, urlPart, whitespace, continuation) => {
+        // Always join if continuation contains URL-indicative characters
+        // (dots, slashes, query params, percent-encoding, equals, ampersands)
+        if (/[./\\?&=%]/.test(continuation)) {
+          return urlPart + continuation;
+        }
+
+        // Join path segments that follow an incomplete URL path
+        // e.g., "https://site.com/cy" + "press-spring" should join
+        if (/^[a-z0-9][a-z0-9-_]*$/i.test(continuation)) {
+          // Check if URL ends with a partial path (ends with /word or just domain)
+          if (/\/[a-z0-9-_]*$/i.test(urlPart)) {
+            return urlPart + continuation;
+          }
+        }
+
+        return match; // Don't join - probably regular text
+      }
+    );
+
+    if (result === before) break;
+    iterations++;
+  }
+  return result;
+}
+
+/**
  * Check if a URL is a valid registration link
  * @param {string} url - The URL to check
  * @returns {boolean}
@@ -45,6 +89,9 @@ export function linkifyText(text) {
     return text;
   }
 
+  // First, join any URLs that were split across lines
+  const textWithJoinedUrls = joinSplitUrls(text);
+
   // URL pattern - matches http/https URLs
   // This pattern is designed to capture full URLs including query strings
   const urlPattern = /(https?:\/\/[^\s<>"']+)/gi;
@@ -53,10 +100,10 @@ export function linkifyText(text) {
   let lastIndex = 0;
   let match;
 
-  while ((match = urlPattern.exec(text)) !== null) {
+  while ((match = urlPattern.exec(textWithJoinedUrls)) !== null) {
     // Add text before the URL
     if (match.index > lastIndex) {
-      parts.push(text.substring(lastIndex, match.index));
+      parts.push(textWithJoinedUrls.substring(lastIndex, match.index));
     }
 
     // Sanitize and add the URL as a link
@@ -92,11 +139,11 @@ export function linkifyText(text) {
   }
 
   // Add any remaining text
-  if (lastIndex < text.length) {
-    parts.push(text.substring(lastIndex));
+  if (lastIndex < textWithJoinedUrls.length) {
+    parts.push(textWithJoinedUrls.substring(lastIndex));
   }
 
-  return parts.length > 0 ? parts : [text];
+  return parts.length > 0 ? parts : [textWithJoinedUrls];
 }
 
 /**

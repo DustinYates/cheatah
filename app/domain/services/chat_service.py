@@ -999,52 +999,66 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
         return cleaned
 
     def _fix_urls_in_response(self, text: str) -> str:
-        """Fix URLs in the response by joining split lines.
+        """Fix URLs in the response by joining split parts.
 
-        This ensures URLs are not broken across lines. We intentionally do NOT
-        re-encode URLs because the LLM is instructed to use pre-encoded type
-        codes (e.g., Adult%20Level%203). Re-encoding would cause double-encoding.
+        This ensures URLs are not broken across lines or spaces. We intentionally
+        do NOT re-encode URLs because the LLM is instructed to use pre-encoded
+        type codes (e.g., Adult%20Level%203). Re-encoding would cause double-encoding.
 
         Args:
             text: Text that may contain URLs
 
         Returns:
-            Text with fixed URLs (line breaks removed from within URLs)
+            Text with fixed URLs (whitespace removed from within URLs)
         """
         if not text:
             return text
 
-        # First pass: Fix URLs that are split across lines
-        # Pattern: URL followed by newline and continuation of URL-like content
-        multiline_url_pattern = re.compile(
-            r'(https?://\S+)\s*\n\s*([&?/][^\s<>"\']*)',
+        fixed_text = text
+
+        # First pass: Iteratively join URL parts split by ANY whitespace
+        # Pattern: URL + whitespace + continuation starting with URL-like chars
+        # Loop to handle multiple breaks in the same URL
+        split_url_pattern = re.compile(
+            r'(https?://\S+)(\s+)([.&?/][^\s<>"\']*)',
             re.IGNORECASE
         )
 
-        def fix_multiline_url(match: re.Match) -> str:
-            url_part1 = match.group(1).rstrip()
-            url_part2 = match.group(2).strip()
-            # Rejoin the URL parts (they definitely belong together
-            # since part2 starts with &, ?, or /)
-            return url_part1 + url_part2
+        max_iterations = 15  # Safety limit
+        for _ in range(max_iterations):
+            new_text = split_url_pattern.sub(r'\1\3', fixed_text)
+            if new_text == fixed_text:
+                break
+            fixed_text = new_text
 
-        fixed_text = multiline_url_pattern.sub(fix_multiline_url, text)
+        # Second pass: Join URL + whitespace + path-like continuation
+        # e.g., "https://site.com/cy" + " " + "press-spring" -> joined
+        path_continuation_pattern = re.compile(
+            r'(https?://[^\s<>"\']+/)(\s+)([a-zA-Z0-9][a-zA-Z0-9\-_]*)',
+            re.IGNORECASE
+        )
 
-        # Second pass: Remove any remaining whitespace within URLs
-        # This catches cases where the URL has spaces or tabs embedded
-        url_pattern = re.compile(
-            r'(https?://britishswimschool\.com/[^\s<>"\']*)',
+        for _ in range(max_iterations):
+            new_text = path_continuation_pattern.sub(r'\1\3', fixed_text)
+            if new_text == fixed_text:
+                break
+            fixed_text = new_text
+
+        # Third pass: Remove any remaining embedded whitespace in BSS URLs
+        # This is a final safety net for any whitespace we missed
+        bss_url_pattern = re.compile(
+            r'(https?://britishswimschool[^\s]*)',
             re.IGNORECASE
         )
 
         def clean_bss_url(match: re.Match) -> str:
             url = match.group(1)
-            # Remove any embedded whitespace (shouldn't happen with proper LLM output)
-            # but provides safety net
-            url = re.sub(r'\s+', '', url)
-            return url
+            # Find where the URL ends (at a space followed by non-URL text)
+            # and clean only the URL part
+            cleaned = re.sub(r'\s+', '', url)
+            return cleaned
 
-        fixed_text = url_pattern.sub(clean_bss_url, fixed_text)
+        fixed_text = bss_url_pattern.sub(clean_bss_url, fixed_text)
 
         return fixed_text
 

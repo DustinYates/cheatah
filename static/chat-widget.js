@@ -1520,6 +1520,45 @@
       return url.replace(/\s+/g, '');
     },
 
+    // Join URLs that the LLM split across multiple lines
+    // e.g., "https://britishswimschool\n.com/path" -> "https://britishswimschool.com/path"
+    joinSplitUrls: function(text) {
+      let result = text;
+      let iterations = 0;
+      const maxIterations = 15; // Safety limit - may need multiple passes
+
+      while (iterations < maxIterations) {
+        const before = result;
+
+        // Match: URL + whitespace + any non-whitespace chunk
+        result = result.replace(
+          /(https?:\/\/[^\s<>"']+)(\s+)(\S+)/gi,
+          (match, urlPart, whitespace, continuation) => {
+            // Always join if continuation contains URL-indicative characters
+            // (dots, slashes, query params, percent-encoding, equals, ampersands)
+            if (/[.\/\?&=%]/.test(continuation)) {
+              return urlPart + continuation;
+            }
+
+            // Join path segments that follow an incomplete URL path
+            // e.g., "https://site.com/cy" + "press-spring" should join
+            if (/^[a-z0-9][a-z0-9\-_]*$/i.test(continuation)) {
+              // Check if URL ends with a partial path (ends with /word or just domain)
+              if (/\/[a-z0-9\-_]*$/i.test(urlPart)) {
+                return urlPart + continuation;
+              }
+            }
+
+            return match; // Don't join - probably regular text
+          }
+        );
+
+        if (result === before) break;
+        iterations++;
+      }
+      return result;
+    },
+
     // Convert text to safe HTML (no markdown rendering). Guardrail: only plain text or simple links.
     linkifyText: function(text) {
       // URL pattern - captures full URLs including query strings and encoded characters
@@ -1551,7 +1590,19 @@
       };
 
       const self = this;
-      const safeText = preprocessMarkdown(text);
+      // First, join any URLs that were split across lines
+      const textWithJoinedUrls = this.joinSplitUrls(text);
+
+      // Nuclear option: Find BSS URLs and strip ALL internal whitespace
+      // Pattern: https://britishswimschool followed by URL chars with possible whitespace
+      let cleanedText = textWithJoinedUrls;
+      const bssUrlPattern = /(https?:\/\/britishswimschool)([.\w\-\/%?&=\s]+?)(?=\s+[A-Z]|\s+Would|\s+Let|\s+I\s|\s+You|\s+If|\s+Feel|\s*$)/gi;
+      cleanedText = cleanedText.replace(bssUrlPattern, (match, start, rest) => {
+        // Strip all whitespace from the URL portion
+        return start + rest.replace(/\s+/g, '');
+      });
+
+      const safeText = preprocessMarkdown(cleanedText);
       let processed = escapeHtml(safeText);
 
       // Replace URLs with clickable links

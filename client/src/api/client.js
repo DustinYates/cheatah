@@ -770,6 +770,12 @@ class ApiClient {
     return this.requestFormData('/widget/icon/upload', formData);
   }
 
+  async uploadWidgetAsset(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.requestFormData('/widget/assets', formData);
+  }
+
   // Telephony configuration methods
   async getTelephonyConfig() {
     return this.request('/admin/telephony/config');

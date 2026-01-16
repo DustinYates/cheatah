@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     # GCP Configuration (optional for local dev)
     gcp_project_id: str = "local-development"
     gcp_region: str = "us-central1"
+    gcs_widget_assets_bucket: str = ""  # GCS bucket for widget assets (icons, images)
 
     # Cloud SQL (Postgres)
     database_url: str = ""

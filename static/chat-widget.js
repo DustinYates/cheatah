@@ -320,7 +320,22 @@
       toggle.style.borderRadius = shapeMap[iconSettings.shape] || '50%';
 
       // Apply icon type (emoji or image)
-      if (iconSettings.type === 'image' && iconSettings.imageUrl) {
+      // Determine image URL based on source (upload vs url)
+      let imageUrl = null;
+      if (iconSettings.type === 'image') {
+        if (iconSettings.imageSource === 'upload' && iconSettings.imageAssetUrl) {
+          // Use uploaded asset URL with cache busting
+          imageUrl = iconSettings.imageAssetUrl + (iconSettings.imageAssetUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
+        } else if (iconSettings.imageSource === 'url' && iconSettings.imageUrl) {
+          // Use external URL
+          imageUrl = iconSettings.imageUrl;
+        } else if (iconSettings.imageUrl) {
+          // Backwards compatibility: use imageUrl if no imageSource specified
+          imageUrl = iconSettings.imageUrl;
+        }
+      }
+
+      if (imageUrl) {
         // Load custom image
         const img = new Image();
         img.onload = () => {
@@ -336,7 +351,7 @@
             iconWrapper.textContent = iconSettings.emoji || '💬';
           }
         };
-        img.src = iconSettings.imageUrl;
+        img.src = imageUrl;
         img.alt = 'Chat';
       } else {
         // Use emoji

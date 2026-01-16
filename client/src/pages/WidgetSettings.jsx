@@ -58,6 +58,9 @@ const defaultWidgetSettings = {
     type: 'emoji',
     emoji: '💬',
     imageUrl: '',
+    imageSource: 'url',  // 'upload' or 'url'
+    imageAssetId: null,
+    imageAssetUrl: null,
     shape: 'circle',
     customBorderRadius: '50%',
     size: 'medium',
@@ -225,6 +228,12 @@ export default function WidgetSettings() {
   const [previewFocus, setPreviewFocus] = useState('');
   const [previewPulse, setPreviewPulse] = useState('');
   const previewPulseTimeout = useRef(null);
+
+  // Icon upload state
+  const [iconUploading, setIconUploading] = useState(false);
+  const [iconUploadError, setIconUploadError] = useState('');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const fileInputRef = useRef(null);
 
   const iconSizeMap = {
     small: '50px',
@@ -409,6 +418,90 @@ export default function WidgetSettings() {
       }
     }));
     pulsePreview(category);
+  };
+
+  // Icon upload handlers
+  const ALLOWED_ICON_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'];
+  const MAX_ICON_SIZE = 1 * 1024 * 1024; // 1 MB
+
+  const handleIconUpload = async (file) => {
+    setIconUploadError('');
+
+    // Validate file type
+    if (!ALLOWED_ICON_TYPES.includes(file.type)) {
+      setIconUploadError('Invalid file type. Please upload PNG, JPG, WebP, or SVG.');
+      return;
+    }
+
+    // Validate file size
+    if (file.size > MAX_ICON_SIZE) {
+      setIconUploadError('File too large. Maximum size is 1 MB.');
+      return;
+    }
+
+    setIconUploading(true);
+    try {
+      const result = await api.uploadWidgetAsset(file);
+      // Update widget settings with the uploaded asset
+      setWidgetSettings(prev => ({
+        ...prev,
+        icon: {
+          ...prev.icon,
+          imageSource: 'upload',
+          imageAssetId: result.asset_id,
+          imageAssetUrl: result.public_url,
+          imageUrl: '' // Clear URL when using upload
+        }
+      }));
+      pulsePreview('icon');
+    } catch (err) {
+      setIconUploadError(err.message || 'Failed to upload image');
+    } finally {
+      setIconUploading(false);
+    }
+  };
+
+  const handleIconFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleIconUpload(file);
+    }
+    // Reset input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleIconDragOver = (e) => {
+    e.preventDefault();
+    setIsDraggingOver(true);
+  };
+
+  const handleIconDragLeave = (e) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+  };
+
+  const handleIconDrop = (e) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleIconUpload(file);
+    }
+  };
+
+  const handleRemoveUploadedIcon = () => {
+    setWidgetSettings(prev => ({
+      ...prev,
+      icon: {
+        ...prev.icon,
+        imageSource: 'url',
+        imageAssetId: null,
+        imageAssetUrl: null
+      }
+    }));
+    pulsePreview('icon');
   };
 
   const handleWidgetSubmit = async (e) => {
@@ -719,19 +812,109 @@ export default function WidgetSettings() {
 
                   {widgetSettings.icon.type === 'image' && (
                     <>
+                      {/* Image Source Tabs */}
                       <div className="form-group">
-                        <label htmlFor="widget-icon-image-url">
-                          Image URL <span className="info-icon" title="Paste the URL of your logo or custom icon.">ⓘ</span>
+                        <label>
+                          Image Source <span className="info-icon" title="Choose to upload an image or provide a URL.">ⓘ</span>
                         </label>
-                        <input
-                          type="url"
-                          id="widget-icon-image-url"
-                          value={widgetSettings.icon.imageUrl}
-                          onChange={(e) => handleWidgetChange('icon', 'imageUrl', e.target.value)}
-                          placeholder="https://example.com/logo.png"
-                        />
-                        <small>Recommended: Square image, PNG or SVG format, transparent background.</small>
+                        <div className="segmented-control">
+                          <button
+                            type="button"
+                            className={`segment ${widgetSettings.icon.imageSource === 'upload' ? 'active' : ''}`}
+                            onClick={() => handleWidgetChange('icon', 'imageSource', 'upload')}
+                          >
+                            Upload
+                          </button>
+                          <button
+                            type="button"
+                            className={`segment ${widgetSettings.icon.imageSource === 'url' ? 'active' : ''}`}
+                            onClick={() => handleWidgetChange('icon', 'imageSource', 'url')}
+                          >
+                            URL
+                          </button>
+                        </div>
                       </div>
+
+                      {/* Upload Tab Content */}
+                      {widgetSettings.icon.imageSource === 'upload' && (
+                        <div className="form-group">
+                          {widgetSettings.icon.imageAssetUrl ? (
+                            // Preview uploaded image
+                            <div className="uploaded-image-preview">
+                              <img
+                                src={widgetSettings.icon.imageAssetUrl}
+                                alt="Uploaded icon"
+                                className="preview-image"
+                              />
+                              <div className="preview-actions">
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => fileInputRef.current?.click()}
+                                >
+                                  Replace
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-danger btn-sm"
+                                  onClick={handleRemoveUploadedIcon}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            // Drop zone for upload
+                            <div
+                              className={`drop-zone ${isDraggingOver ? 'drag-over' : ''} ${iconUploading ? 'uploading' : ''}`}
+                              onDragOver={handleIconDragOver}
+                              onDragLeave={handleIconDragLeave}
+                              onDrop={handleIconDrop}
+                              onClick={() => !iconUploading && fileInputRef.current?.click()}
+                            >
+                              {iconUploading ? (
+                                <div className="upload-progress">
+                                  <div className="spinner" />
+                                  <span>Uploading...</span>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="drop-icon">📁</div>
+                                  <p>Drag & drop an image here, or click to browse</p>
+                                  <small>PNG, JPG, WebP, or SVG • Max 1 MB</small>
+                                </>
+                              )}
+                            </div>
+                          )}
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                            onChange={handleIconFileSelect}
+                            style={{ display: 'none' }}
+                          />
+                          {iconUploadError && (
+                            <div className="error-message">{iconUploadError}</div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* URL Tab Content */}
+                      {widgetSettings.icon.imageSource === 'url' && (
+                        <div className="form-group">
+                          <label htmlFor="widget-icon-image-url">
+                            Image URL <span className="info-icon" title="Paste the URL of your logo or custom icon.">ⓘ</span>
+                          </label>
+                          <input
+                            type="url"
+                            id="widget-icon-image-url"
+                            value={widgetSettings.icon.imageUrl}
+                            onChange={(e) => handleWidgetChange('icon', 'imageUrl', e.target.value)}
+                            placeholder="https://example.com/logo.png"
+                          />
+                          <small>Recommended: Square image, PNG or SVG format, transparent background.</small>
+                        </div>
+                      )}
 
                       <div className="form-group">
                         <label className="checkbox-label">
@@ -1901,10 +2084,16 @@ export default function WidgetSettings() {
                       }}
                     >
                       {widgetSettings.icon.type === 'emoji' && (widgetSettings.icon.emoji || '💬')}
-                      {widgetSettings.icon.type === 'image' && widgetSettings.icon.imageUrl && (
+                      {widgetSettings.icon.type === 'image' && widgetSettings.icon.imageSource === 'upload' && widgetSettings.icon.imageAssetUrl && (
+                        <img src={widgetSettings.icon.imageAssetUrl} alt="Widget icon preview" />
+                      )}
+                      {widgetSettings.icon.type === 'image' && widgetSettings.icon.imageSource === 'url' && widgetSettings.icon.imageUrl && (
                         <img src={widgetSettings.icon.imageUrl} alt="Widget icon preview" />
                       )}
-                      {widgetSettings.icon.type === 'image' && !widgetSettings.icon.imageUrl && (
+                      {widgetSettings.icon.type === 'image' && !(
+                        (widgetSettings.icon.imageSource === 'upload' && widgetSettings.icon.imageAssetUrl) ||
+                        (widgetSettings.icon.imageSource === 'url' && widgetSettings.icon.imageUrl)
+                      ) && (
                         <span>{widgetSettings.icon.fallbackToEmoji ? (widgetSettings.icon.emoji || '💬') : '◎'}</span>
                       )}
                       {widgetSettings.attention.unreadDot && (

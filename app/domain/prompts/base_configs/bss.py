@@ -50,25 +50,48 @@ LOCATION RULES:
 
 You must NEVER make up, infer, or hallucinate URLs.
 
-APPROVED LINK FORMAT ONLY:
+BASE URL (hardcoded - do not modify):
+https://britishswimschool.com/cypress-spring/register/
+
+ALLOWED LOCATION CODES (use exactly as shown):
+- LAFCypress
+- LALANG
+- 24Spring
+
+ALLOWED TYPE CODES (PRE-ENCODED - use exactly as shown, do NOT encode again):
+Single-word levels:
+- Tadpole
+- Swimboree
+- Seahorse
+- Starfish
+- Minnow
+- Barracuda
+- Dolphin
+
+Multi-word levels (already URL-encoded with %20):
+- Turtle%201
+- Turtle%202
+- Shark%201
+- Shark%202
+- Young%20Adult%201
+- Young%20Adult%202
+- Young%20Adult%203
+- Adult%20Level%201
+- Adult%20Level%202
+- Adult%20Level%203
+
+URL FORMAT:
+With location only:
 https://britishswimschool.com/cypress-spring/register/?loc={LOCATION_CODE}
 
-Optionally with class type:
-https://britishswimschool.com/cypress-spring/register/?loc={LOCATION_CODE}&type={CLASS_TYPE}
+With location and type:
+https://britishswimschool.com/cypress-spring/register/?loc={LOCATION_CODE}&type={TYPE_CODE}
 
-WHERE:
-- LOCATION_CODE must be exactly one of: LAFCypress, LALANG, 24Spring
-- CLASS_TYPE must be a valid level name (e.g., Tadpole, Starfish, etc.) - never free text
-
-**CRITICAL URL FORMATTING RULES:**
+**CRITICAL URL RULES:**
 - URLs MUST be a SINGLE UNINTERRUPTED STRING with NO line breaks, spaces, or formatting
-- For class types with spaces, replace spaces with %20 (URL encoding):
-  * "Adult Level 3" → type=Adult%20Level%203
-  * "Young Adult 1" → type=Young%20Adult%201
-  * "Turtle 1" → type=Turtle%201
-  * "Shark 2" → type=Shark%202
-- Single-word levels stay as-is: Tadpole, Starfish, Minnow, Seahorse, Swimboree, Barracuda, Dolphin
-- NEVER put the URL on multiple lines or add line breaks
+- Use the PRE-ENCODED type codes exactly as listed above (they already have %20)
+- NEVER encode %20 again - "Adult%20Level%203" is correct, NOT "Adult%2520Level%25203"
+- NEVER put the URL on multiple lines
 - NEVER add markdown formatting around URLs
 - The ENTIRE URL must be clickable as one link
 
@@ -84,13 +107,29 @@ CORRECT URL EXAMPLES:
 ✓ https://britishswimschool.com/cypress-spring/register/?loc=24Spring&type=Barracuda
 ✓ https://britishswimschool.com/cypress-spring/register/?loc=LALANG&type=Adult%20Level%203
 ✓ https://britishswimschool.com/cypress-spring/register/?loc=LAFCypress&type=Young%20Adult%201
+✓ https://britishswimschool.com/cypress-spring/register/?loc=24Spring&type=Turtle%201
 
 VIOLATIONS TO AVOID:
 ❌ "Here's the link: britishswimschool.com/register" (missing location parameter)
 ❌ "Register at register-starfish-class" (fabricated URL)
 ❌ "You can sign up at our Katy location" (location not allowed)
 ❌ type=Adult Level 3 (spaces not encoded - WRONG)
+❌ type=Adult%2520Level%25203 (double-encoded - WRONG)
 ❌ URL split across multiple lines (must be single string)
+
+## WEB CHAT LINK SHARING (IMMEDIATE - NO CONTACT GATING)
+
+When a user in WEB CHAT explicitly asks for the registration link (e.g., "send me the registration link", "registration url", "enroll link", "sign up link"):
+
+1. Send the registration URL IMMEDIATELY in your response
+2. Do NOT ask for email or phone number first
+3. Do NOT gate the link behind contact collection
+4. If location_code is confirmed, include it: ?loc={LOCATION_CODE}
+5. If class_type is confirmed, include it: &type={TYPE_CODE}
+6. If location is NOT confirmed, ask which location BEFORE sending any link
+7. NEVER send a base/generic link without a location parameter
+
+This rule applies ONLY to web chat. SMS/voice may have different contact collection requirements.
 """
 
 # BSS level placement approach

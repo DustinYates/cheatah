@@ -1136,10 +1136,24 @@
           max-width: 80%;
           word-wrap: break-word;
           white-space: pre-wrap;
-          overflow-wrap: break-word;
+          overflow-wrap: anywhere;
           font-size: var(--cc-font-size);
           line-height: var(--cc-line-height);
           box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        /* URL Links - styled for proper wrapping without breaking */
+        .cc-message-link {
+          color: var(--cc-link-color);
+          text-decoration: underline;
+          word-break: break-all;
+          overflow-wrap: anywhere;
+        }
+        .cc-message.user .cc-message-link {
+          color: rgba(255, 255, 255, 0.9);
+        }
+        .cc-message-link:hover {
+          text-decoration: none;
+          opacity: 0.85;
         }
         .cc-message.user {
           background: var(--cc-secondary);
@@ -1501,9 +1515,16 @@
       this.isMinimized = !this.isMinimized;
     },
 
+    // Sanitize URL by removing any embedded whitespace (fixes broken URLs from LLM output)
+    sanitizeUrl: function(url) {
+      return url.replace(/\s+/g, '');
+    },
+
     // Convert text to safe HTML (no markdown rendering). Guardrail: only plain text or simple links.
     linkifyText: function(text) {
-      const urlRegex = /(https?:\/\/[^\s.,;:!?)\]]+)/g;
+      // URL pattern - captures full URLs including query strings and encoded characters
+      // Note: We capture generously and then clean up trailing punctuation
+      const urlRegex = /(https?:\/\/[^\s<>"']+)/gi;
 
       const escapeHtml = (str) => {
         const div = document.createElement('div');
@@ -1529,12 +1550,29 @@
         return lines.join('\n');
       };
 
+      const self = this;
       const safeText = preprocessMarkdown(text);
       let processed = escapeHtml(safeText);
 
       // Replace URLs with clickable links
-      processed = processed.replace(urlRegex, (url) => {
-        return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--cc-link-color); text-decoration: underline;">${url}</a>`;
+      processed = processed.replace(urlRegex, (match) => {
+        let url = match;
+        let trailing = '';
+
+        // Remove trailing punctuation that's not part of the URL
+        while (url.length > 0 && /[.,;:!?)}\]>]$/.test(url)) {
+          // Keep trailing ) only if there's a matching ( in the URL
+          if (url.endsWith(')') && url.includes('(')) {
+            break;
+          }
+          trailing = url.slice(-1) + trailing;
+          url = url.slice(0, -1);
+        }
+
+        // Sanitize the URL (remove any embedded whitespace)
+        const cleanUrl = self.sanitizeUrl(url);
+
+        return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="cc-message-link">${cleanUrl}</a>${trailing}`;
       });
 
       // Preserve line breaks

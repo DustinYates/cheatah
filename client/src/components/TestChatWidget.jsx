@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../api/client';
+import { renderLinkifiedText } from '../utils/linkify';
 import './TestChatWidget.css';
 
 /**
@@ -169,7 +170,7 @@ export default function TestChatWidget({ onTestComplete, className = '' }) {
                     <span className="test-chat-widget__message-avatar">🐆</span>
                   )}
                   <div className="test-chat-widget__bubble">
-                    {msg.content}
+                    {renderLinkifiedText(msg.content)}
                   </div>
                 </div>
               ))

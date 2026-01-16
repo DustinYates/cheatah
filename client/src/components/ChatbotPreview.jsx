@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../api/client';
+import { renderLinkifiedText } from '../utils/linkify';
 import './ChatbotPreview.css';
 
 /**
@@ -146,7 +147,7 @@ export default function ChatbotPreview({ className = '' }) {
                     <span className="chatbot-preview__message-avatar">🐆</span>
                   )}
                   <div className="chatbot-preview__bubble">
-                    {msg.content}
+                    {renderLinkifiedText(msg.content)}
                   </div>
                 </div>
               ))}

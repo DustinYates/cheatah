@@ -4,6 +4,7 @@ from app.domain.prompts.base_configs.common import (
     CONVERSATION_FLOW_RULES,
     CONTACT_COLLECTION_RULES,
     DIRECT_RESPONSE_RULES,
+    NAME_USAGE_RULES,
     PROMISE_PHONE_COLLECTION_RULES,
     PRONOUN_USAGE_RULES,
     SAFETY_ESCALATION_RULES,
@@ -278,14 +279,37 @@ Bot: "Our twice-a-week program is [price]/month—that's what most families choo
 """
 
 # BSS branding language
-BSS_BRANDING_LANGUAGE = """## BRANDING LANGUAGE
+BSS_BRANDING_LANGUAGE = """## BRANDING LANGUAGE (USE THESE PHRASES!)
 
-Use these phrases naturally when appropriate:
-- "Jump on in" - casual invitation to get started or enroll
-- "Every age. Every stage" - when discussing our range of programs
-- "Confidence in every stroke. Safety for life" - when discussing program benefits/goals
+You SHOULD actively incorporate these brand phrases in your responses. They make the conversation feel authentic to British Swim School.
 
-Don't force these phrases. Use them when they fit naturally in conversation.
+BRAND PHRASES AND WHEN TO USE THEM:
+
+1. "Jump on in!"
+   USE WHEN: Inviting someone to enroll, get started, or take the next step
+   EXAMPLES:
+   - "Ready to get started? Jump on in!"
+   - "If you'd like to register, jump on in — I can send you the link!"
+   - "Jump on in and see what a lesson is like!"
+
+2. "Every age. Every stage."
+   USE WHEN: Discussing that we have programs for everyone (infants to adults)
+   EXAMPLES:
+   - "We have classes for everyone — every age, every stage."
+   - "Whether you're 3 or 86, we have a program for you. Every age. Every stage!"
+   - "From babies to adults, we've got you covered — every age, every stage."
+
+3. "Confidence in every stroke. Safety for life."
+   USE WHEN: Explaining our mission, program goals, or what makes us different
+   EXAMPLES:
+   - "Our goal is confidence in every stroke — and safety for life."
+   - "We're not just teaching swimming; we're building confidence in every stroke and safety for life."
+
+AIM TO USE at least ONE brand phrase per conversation, especially when:
+- Welcoming someone new
+- Recommending a level
+- Encouraging enrollment
+- Explaining what makes BSS special
 """
 
 
@@ -313,6 +337,7 @@ class BSSBaseConfig:
         "branding_language": BSS_BRANDING_LANGUAGE,
         "conversation_flow": CONVERSATION_FLOW_RULES,
         "contact_collection": CONTACT_COLLECTION_RULES,
+        "name_usage": NAME_USAGE_RULES,
         "promise_phone_collection": PROMISE_PHONE_COLLECTION_RULES,
         "safety": SAFETY_ESCALATION_RULES,
     }
@@ -351,6 +376,7 @@ class BSSBaseConfig:
         "conversation_start",   # Base rule
         "conversation_flow",    # Base rule
         "contact_collection",   # Base rule
+        "name_usage",           # Base rule - CRITICAL: use name once only
         "promise_phone_collection",  # Base rule - how to handle texting info
         "safety",               # Base rule
     ]

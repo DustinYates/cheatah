@@ -23,6 +23,7 @@ class PromiseDetector:
     PROMISE_PATTERNS = [
         # Direct promise patterns
         r"(?:i'll|i will|let me|i can|i'm going to)\s+(?:text|sms|send)\s+(?:you|that)",
+        r"(?:i'd be happy to|happy to|glad to|i'd love to)\s+(?:text|sms|send)\s+(?:you|that)",
         r"(?:sending|send)\s+(?:you|that)\s+(?:the|a|our)",
         r"(?:i'll|i will)\s+(?:get|send)\s+(?:you|that)\s+(?:the|a|our|some)",
         # Implicit promise patterns
@@ -33,6 +34,9 @@ class PromiseDetector:
         r"(?:sending|send)\s+(?:you|over)\s+(?:the\s+)?registration",
         r"(?:i'll|i will)\s+(?:text|send)\s+(?:you|over)\s+(?:the\s+)?(?:registration|signup|sign\s*up)\s+(?:link|info)",
         r"(?:texting|sending)\s+(?:you|over)\s+(?:the\s+)?(?:registration|signup)\s+(?:link|info)",
+        # "send that text" variations (bot says "I'll send that text to you")
+        r"(?:i'll|i will)\s+send\s+(?:that|the)\s+text\s+(?:to\s+)?you",
+        r"send\s+(?:that|the)\s+text\s+to\s+you\s+(?:now|right now|right away)",
         # Email promise patterns
         r"(?:i'll|i will|let me)\s+(?:email|e-mail)\s+(?:you|that)",
         r"(?:i'll|i will)\s+send\s+(?:you\s+)?(?:an\s+)?email",
@@ -170,8 +174,10 @@ class PromiseDetector:
         """
         confidence = 0.5  # Base confidence for pattern match
 
-        # Boost confidence for explicit "I'll send" patterns
+        # Boost confidence for explicit promise patterns
         if "i'll send" in text or "i will send" in text:
+            confidence += 0.2
+        if "i'd be happy to" in text or "happy to text" in text or "glad to text" in text:
             confidence += 0.2
 
         # Boost confidence for multiple asset keywords

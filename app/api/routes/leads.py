@@ -104,7 +104,6 @@ async def _sync_calls_to_leads_for_tenant(db: AsyncSession, tenant_id: int, logg
     This runs when the leads list is fetched to ensure voice calls appear on the dashboard.
     """
     from app.persistence.models.call import Call
-    from app.persistence.models.call_summary import CallSummary
     from app.persistence.models.lead import Lead
     from sqlalchemy.orm import joinedload
     from sqlalchemy.orm.attributes import flag_modified
@@ -672,7 +671,7 @@ async def cleanup_none_name_leads(
     current_user: User = Depends(get_current_user),
 ):
     """Delete all leads with None/NULL/empty names for this tenant."""
-    from sqlalchemy import text, or_
+    from sqlalchemy import or_
     from app.persistence.models.lead import Lead
 
     # Delete leads with NULL, empty string, or 'None' as name

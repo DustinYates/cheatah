@@ -98,126 +98,6 @@ async def _check_llm_responded(db: AsyncSession, conversation_id: int | None) ->
     return result.scalar() is not None
 
 
-async def _sync_calls_to_leads_for_tenant(db: AsyncSession, tenant_id: int, logger) -> None:
-    """Auto-sync calls to leads for a specific tenant.
-
-    This runs when the leads list is fetched to ensure voice calls appear on the dashboard.
-    """
-    from app.persistence.models.call import Call
-    from app.persistence.models.lead import Lead
-    from sqlalchemy.orm import joinedload
-    from sqlalchemy.orm.attributes import flag_modified
-
-    try:
-        # Find calls for this tenant that have a from_number
-        stmt = (
-            select(Call)
-            .options(joinedload(Call.summary))
-            .where(Call.tenant_id == tenant_id)
-            .where(Call.from_number.isnot(None))
-            .order_by(Call.created_at.desc())
-            .limit(100)  # Limit to recent calls for performance
-        )
-        result = await db.execute(stmt)
-        calls = result.unique().scalars().all()
-
-        if not calls:
-            return
-
-        synced = 0
-        updated = 0  # Track leads with updated timestamps
-        for call in calls:
-            if not call.from_number:
-                continue
-
-            # Normalize phone number
-            normalized_phone = call.from_number
-            if not normalized_phone.startswith("+"):
-                if len(normalized_phone) == 10:
-                    normalized_phone = "+1" + normalized_phone
-                elif len(normalized_phone) == 11 and normalized_phone.startswith("1"):
-                    normalized_phone = "+" + normalized_phone
-
-            # Check if lead exists (get most recent if multiple)
-            lead_stmt = select(Lead).where(
-                Lead.tenant_id == tenant_id,
-                Lead.phone == normalized_phone,
-            ).order_by(Lead.created_at.desc()).limit(1)
-            lead_result = await db.execute(lead_stmt)
-            lead = lead_result.scalar_one_or_none()
-
-            # Get call data
-            caller_name = None
-            caller_email = None
-            summary_text = None
-            caller_intent = None
-
-            if call.summary:
-                extracted = call.summary.extracted_fields or {}
-                caller_name = extracted.get("name")
-                caller_email = extracted.get("email")
-                caller_intent = extracted.get("reason")
-                summary_text = call.summary.summary_text
-
-            call_data = {
-                "source": "voice_call",
-                "call_id": call.id,
-                "call_date": call.created_at.strftime("%Y-%m-%d %H:%M") if call.created_at else None,
-                "summary": summary_text,
-                "caller_name": caller_name,
-                "caller_email": caller_email,
-                "caller_intent": caller_intent,
-                "duration": call.duration,
-            }
-
-            if not lead:
-                # Skip creating new leads via auto-sync.
-                # Leads should only be created through explicit lead capture (conversations, forms, etc.)
-                # This prevents deleted leads from being auto-recreated.
-                continue
-
-            else:
-                # Check if this call is already in the lead's voice_calls
-                existing_data = dict(lead.extra_data) if lead.extra_data else {}
-                voice_calls = existing_data.get("voice_calls", [])
-                existing_call_ids = [vc.get("call_id") for vc in voice_calls if isinstance(vc, dict)]
-
-                if call.id not in existing_call_ids:
-                    voice_calls = list(voice_calls)
-                    voice_calls.append(call_data)
-                    existing_data["voice_calls"] = voice_calls
-                    lead.extra_data = existing_data
-                    flag_modified(lead, "extra_data")
-
-                    if caller_name and not lead.name:
-                        lead.name = caller_name
-                    if caller_email and not lead.email:
-                        lead.email = caller_email
-                    synced += 1
-
-                # Always update updated_at if this call is more recent
-                # This ensures leads with existing calls also get correct updated_at
-                if call.created_at:
-                    if not lead.updated_at or call.created_at > lead.updated_at:
-                        lead.updated_at = call.created_at
-                        updated += 1
-
-            # Link CallSummary to lead
-            if call.summary and not call.summary.lead_id:
-                await db.flush()
-                call.summary.lead_id = lead.id
-
-        if synced > 0 or updated > 0:
-            await db.commit()
-            if synced > 0:
-                logger.info(f"Auto-synced {synced} calls to leads for tenant {tenant_id}")
-            if updated > 0:
-                logger.info(f"Updated timestamps for {updated} leads for tenant {tenant_id}")
-
-    except Exception as e:
-        logger.warning(f"Auto-sync calls to leads failed: {e}")
-
-
 @router.get("", response_model=LeadsListResponse)
 async def list_leads(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -231,9 +111,6 @@ async def list_leads(
     import logging
     logger = logging.getLogger(__name__)
     logger.info(f"Listing leads for tenant_id={tenant_id}, user={current_user.email}")
-
-    # Auto-sync calls to leads before fetching (for this tenant only)
-    await _sync_calls_to_leads_for_tenant(db, tenant_id, logger)
 
     lead_service = LeadService(db)
     leads = await lead_service.list_leads(tenant_id, skip=skip, limit=limit)

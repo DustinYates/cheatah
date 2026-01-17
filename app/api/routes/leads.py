@@ -41,6 +41,7 @@ class LeadResponse(BaseModel):
     status: str | None
     extra_data: dict | None
     created_at: str
+    updated_at: str | None = None
     llm_responded: bool | None = None  # True if assistant responded, False if not, None if no conversation
 
     class Config:
@@ -125,6 +126,7 @@ async def _sync_calls_to_leads_for_tenant(db: AsyncSession, tenant_id: int, logg
             return
 
         synced = 0
+        updated = 0  # Track leads with updated timestamps
         for call in calls:
             if not call.from_number:
                 continue
@@ -192,19 +194,26 @@ async def _sync_calls_to_leads_for_tenant(db: AsyncSession, tenant_id: int, logg
                         lead.name = caller_name
                     if caller_email and not lead.email:
                         lead.email = caller_email
-                    # Update created_at to call time so lead appears at top
-                    if call.created_at:
-                        lead.created_at = call.created_at
                     synced += 1
+
+                # Always update updated_at if this call is more recent
+                # This ensures leads with existing calls also get correct updated_at
+                if call.created_at:
+                    if not lead.updated_at or call.created_at > lead.updated_at:
+                        lead.updated_at = call.created_at
+                        updated += 1
 
             # Link CallSummary to lead
             if call.summary and not call.summary.lead_id:
                 await db.flush()
                 call.summary.lead_id = lead.id
 
-        if synced > 0:
+        if synced > 0 or updated > 0:
             await db.commit()
-            logger.info(f"Auto-synced {synced} calls to leads for tenant {tenant_id}")
+            if synced > 0:
+                logger.info(f"Auto-synced {synced} calls to leads for tenant {tenant_id}")
+            if updated > 0:
+                logger.info(f"Updated timestamps for {updated} leads for tenant {tenant_id}")
 
     except Exception as e:
         logger.warning(f"Auto-sync calls to leads failed: {e}")
@@ -251,6 +260,7 @@ async def list_leads(
                 status=lead.status if hasattr(lead, 'status') else None,
                 extra_data=lead.extra_data,
                 created_at=_isoformat_utc(lead.created_at),
+                updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
                 llm_responded=llm_responded,
             )
         )
@@ -290,6 +300,7 @@ async def get_lead(
         status=lead.status if hasattr(lead, 'status') else None,
         extra_data=lead.extra_data,
         created_at=_isoformat_utc(lead.created_at),
+        updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
     )
 
@@ -378,7 +389,8 @@ async def update_lead_status(
         phone=lead.phone,
         status=lead.status if hasattr(lead, 'status') else None,
         extra_data=lead.extra_data,
-        created_at=lead.created_at.isoformat() if lead.created_at else None,
+        created_at=_isoformat_utc(lead.created_at),
+        updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
     )
 
@@ -645,6 +657,7 @@ async def get_related_leads(
                 status=rel_lead.status if hasattr(rel_lead, 'status') else None,
                 extra_data=rel_lead.extra_data,
                 created_at=_isoformat_utc(rel_lead.created_at),
+                updated_at=_isoformat_utc(rel_lead.updated_at) if rel_lead.updated_at else None,
                 llm_responded=llm_responded,
             )
         )

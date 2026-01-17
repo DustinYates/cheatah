@@ -152,6 +152,14 @@ class FollowUpMessageService:
 
     def _format_sms_response(self, response: str) -> str:
         """Format LLM response for SMS constraints."""
+        # Remove any URLs - LLM should not include links in follow-up messages
+        # URLs should only come from configured sendable_assets via promise fulfillment
+        original = response
+        response = re.sub(r"https?://[^\s]+", "", response)
+        response = re.sub(r"www\.[^\s]+", "", response)
+        if response != original:
+            logger.warning(f"Stripped URL(s) from follow-up message. Original: {original[:200]}")
+
         # Remove markdown formatting
         response = re.sub(r"\*\*(.+?)\*\*", r"\1", response)
         response = re.sub(r"\*(.+?)\*", r"\1", response)

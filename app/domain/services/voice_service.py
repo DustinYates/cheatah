@@ -1199,7 +1199,14 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
             
             # Extract structured data
             extracted_data = await self._extract_call_data(messages, call.from_number)
-            
+
+            # Check if we should send follow-up SMS (qualification OR promise)
+            should_send_followup = await self._should_send_followup_sms(
+                tenant_id=call.tenant_id,
+                conversation_id=conversation.id,
+                messages=messages,
+            )
+
             # Generate summary using LLM
             summary_text = await self._generate_summary_text(
                 conversation_text=conversation_text,
@@ -1221,6 +1228,7 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
                 phone=call.from_number,
                 extracted_data=extracted_data,
                 conversation_id=conversation.id,
+                should_send_followup=should_send_followup,
             )
             
             # Create summary
@@ -1502,15 +1510,17 @@ Write a professional summary (2-3 sentences):"""
         phone: str,
         extracted_data: ExtractedCallData,
         conversation_id: int,
+        should_send_followup: bool = True,
     ) -> tuple[int | None, int | None]:
         """Create or update lead and contact from call data.
-        
+
         Args:
             tenant_id: Tenant ID
             phone: Caller phone number
             extracted_data: Extracted call data
             conversation_id: Conversation ID
-            
+            should_send_followup: Whether to schedule follow-up SMS (default True)
+
         Returns:
             Tuple of (contact_id, lead_id)
         """
@@ -1546,18 +1556,24 @@ Write a professional summary (2-3 sentences):"""
                     logger.info(f"Auto-verified lead from voice call: lead_id={lead_id}")
             elif extracted_data.name or extracted_data.email or phone:
                 # Create new lead - auto-verified since we have phone from caller ID
+                # Build metadata with skip_followup flag if not qualified/promised
+                lead_metadata = {
+                    "source": "voice_call",
+                    "reason": extracted_data.reason,
+                    "urgency": extracted_data.urgency,
+                    "preferred_callback_time": extracted_data.preferred_callback_time,
+                }
+                if not should_send_followup:
+                    lead_metadata["skip_followup"] = True
+                    lead_metadata["skip_followup_reason"] = "Voice call not qualified and no SMS promise made"
+
                 lead = await self.lead_service.capture_lead(
                     tenant_id=tenant_id,
                     conversation_id=conversation_id,
                     email=extracted_data.email,
                     phone=phone,
                     name=extracted_data.name,
-                    metadata={
-                        "source": "voice_call",
-                        "reason": extracted_data.reason,
-                        "urgency": extracted_data.urgency,
-                        "preferred_callback_time": extracted_data.preferred_callback_time,
-                    },
+                    metadata=lead_metadata,
                 )
                 # Auto-verify voice call leads since we have confirmed phone from caller ID
                 lead.status = 'verified'
@@ -1585,6 +1601,73 @@ Write a professional summary (2-3 sentences):"""
                 
         except Exception as e:
             logger.error(f"Failed to create/update lead/contact: {e}", exc_info=True)
-        
+
         return contact_id, lead_id
+
+    async def _should_send_followup_sms(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        messages: list[Message],
+    ) -> bool:
+        """Determine if follow-up SMS should be sent after voice call.
+
+        Follow-up should be sent if EITHER:
+        1. Caller is qualified (age + level recommendation collected)
+        2. OR Assistant promised to send info (e.g., "I'll text you the registration link")
+
+        Args:
+            tenant_id: Tenant ID
+            conversation_id: Conversation ID
+            messages: Conversation messages
+
+        Returns:
+            True if follow-up SMS should be scheduled
+        """
+        try:
+            # Check 1: Is caller qualified?
+            from app.domain.services.registration_qualification_validator import (
+                RegistrationQualificationValidator,
+            )
+
+            validator = RegistrationQualificationValidator(self.session)
+            qualification_status = await validator.check_qualification(
+                tenant_id=tenant_id,
+                conversation_id=conversation_id,
+                messages=messages,
+            )
+
+            if qualification_status.is_qualified:
+                logger.info(
+                    f"Voice call qualified for follow-up SMS: tenant_id={tenant_id}, "
+                    f"conversation_id={conversation_id}, collected={qualification_status.collected_info}"
+                )
+                return True
+
+            # Check 2: Did assistant promise to send info?
+            from app.domain.services.promise_detector import PromiseDetector
+
+            promise_detector = PromiseDetector()
+            for msg in messages:
+                if msg.role == "assistant" and msg.content:
+                    promise = promise_detector.detect_promise(msg.content)
+                    if promise:
+                        logger.info(
+                            f"Voice call promise detected for follow-up SMS: tenant_id={tenant_id}, "
+                            f"conversation_id={conversation_id}, asset_type={promise.asset_type}, "
+                            f"confidence={promise.confidence:.2f}"
+                        )
+                        return True
+
+            # Neither qualified nor promised
+            logger.info(
+                f"Voice call NOT qualified for follow-up SMS: tenant_id={tenant_id}, "
+                f"conversation_id={conversation_id}, missing={qualification_status.missing_requirements}"
+            )
+            return False
+
+        except Exception as e:
+            logger.error(f"Error checking follow-up eligibility: {e}", exc_info=True)
+            # Default to sending follow-up on error to avoid missing leads
+            return True
 

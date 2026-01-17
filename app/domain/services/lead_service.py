@@ -384,7 +384,7 @@ class LeadService:
         if not lead:
             return None
 
-        lead.created_at = occurred_at or datetime.utcnow()
+        lead.updated_at = occurred_at or datetime.utcnow()
         await self.session.commit()
         await self.session.refresh(lead)
         return lead

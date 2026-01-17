@@ -3,15 +3,22 @@
 from collections.abc import AsyncIterator
 
 from app.llm.client import LLMClient
-from app.llm.gemini_client import GeminiClient
+from app.llm.factory import get_llm_client
 
 
 class LLMOrchestrator:
     """Orchestrator for LLM interactions (stub for future tool logic)."""
 
-    def __init__(self, client: LLMClient | None = None) -> None:
-        """Initialize orchestrator with LLM client."""
-        self.client = client or GeminiClient()
+    def __init__(self, client: LLMClient | None = None, mode: str | None = None) -> None:
+        """Initialize orchestrator with LLM client or a mode string.
+
+        Provide either a concrete `client` instance or a `mode` (eg. 'gemini').
+        If neither is provided, the factory selects a default (gemini).
+        """
+        if client is not None:
+            self.client = client
+        else:
+            self.client = get_llm_client(mode)
 
     async def generate(self, prompt: str, context: dict | None = None) -> str:
         """Generate response using the LLM client.

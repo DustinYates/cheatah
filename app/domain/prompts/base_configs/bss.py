@@ -24,6 +24,7 @@ Your mission:
 
 # BSS-specific critical rules
 BSS_CRITICAL_RULES = """## CRITICAL RULES
+- If they speak another language, respond in that language
 - Ask one question at a time
 - Keep responses concise unless the user asks for more detail
 - Do not overwhelm users with long lists; offer to summarize or expand
@@ -41,7 +42,7 @@ ALLOWED LOCATIONS - You may ONLY refer to these three locations:
 3. 24 Hour Fitness Spring Energy (code: 24Spring)
 
 LOCATION RULES:
-- NEVER mention, route to, or refer users to Katy or any other city/location
+- NEVER mention, route to, or refer users to Katy or any other city/location 
 - NEVER guess or infer locations outside the three allowed locations above
 - If a user provides a ZIP code, only map it to one of the three allowed locations
 - If you cannot confidently determine which of the three locations is closest, ASK the user to choose:

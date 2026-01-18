@@ -6,7 +6,7 @@ from typing import Annotated
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import Date, and_, cast, func, select
+from sqlalchemy import Date, String, and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -690,7 +690,7 @@ async def get_conversation_analytics(
     # Get escalations by channel (from metadata) and reason
     escalation_detail_stmt = (
         select(
-            Escalation.escalation_metadata["channel"].astext.label("channel"),
+            cast(Escalation.escalation_metadata["channel"], String).label("channel"),
             Escalation.reason,
             func.count(Escalation.id).label("count"),
         )
@@ -700,7 +700,7 @@ async def get_conversation_analytics(
             Escalation.created_at <= end_datetime,
         )
         .group_by(
-            Escalation.escalation_metadata["channel"].astext,
+            cast(Escalation.escalation_metadata["channel"], String),
             Escalation.reason,
         )
     )

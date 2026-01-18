@@ -16,9 +16,8 @@ from app.api.schemas.tenant import (
 )
 from app.persistence.database import get_db
 from app.persistence.models.contact import Contact
-from app.persistence.models.conversation import Conversation
+from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.lead import Lead
-from app.persistence.models.message import Message
 from app.persistence.models.tenant import Tenant, User
 from app.persistence.repositories.tenant_repository import TenantRepository
 

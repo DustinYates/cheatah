@@ -29,8 +29,13 @@ class Tenant(Base):
     subdomain = Column(String(100), unique=True, nullable=False, index=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     end_date = Column(Date, nullable=True)
     tier = Column(String(50), nullable=True)
+
+    # Soft delete support
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Relationships
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
@@ -76,6 +81,9 @@ class Tenant(Base):
     )
     prompt_config = relationship(
         "TenantPromptConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
+    )
+    widget_events = relationship(
+        "WidgetEvent", back_populates="tenant", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

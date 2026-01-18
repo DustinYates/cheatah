@@ -1,9 +1,12 @@
 """Database connection and session management."""
 
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.pool import Pool
 
 from app.core.debug import debug_log
+from app.core.tenant_context import get_tenant_context
 from app.settings import settings, get_async_database_url
 
 # Get the async-compatible database URL
@@ -34,6 +37,50 @@ async_session_factory = AsyncSessionLocal
 
 # Base class for models
 Base = declarative_base()
+
+
+def _set_tenant_context_sync(dbapi_connection, connection_record):
+    """Set the tenant context on the database connection for RLS.
+
+    This is called synchronously when a connection is checked out from the pool.
+    It sets the PostgreSQL session variable that RLS policies use.
+    """
+    tenant_id = get_tenant_context()
+    cursor = dbapi_connection.cursor()
+    try:
+        if tenant_id is not None:
+            cursor.execute(f"SET app.current_tenant_id = '{tenant_id}'")
+        else:
+            # Reset to empty for global admin operations
+            cursor.execute("SET app.current_tenant_id = ''")
+    finally:
+        cursor.close()
+
+
+def _reset_tenant_context_sync(dbapi_connection, connection_record):
+    """Reset tenant context when connection is returned to pool.
+
+    This ensures connections don't leak tenant context to other requests.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("SET app.current_tenant_id = ''")
+    finally:
+        cursor.close()
+
+
+# Register event listeners for RLS tenant context
+# Only for PostgreSQL (asyncpg) connections
+if "postgresql" in get_async_database_url().lower():
+    @event.listens_for(Pool, "checkout")
+    def on_checkout(dbapi_connection, connection_record, connection_proxy):
+        """Set tenant context when connection is checked out."""
+        _set_tenant_context_sync(dbapi_connection, connection_record)
+
+    @event.listens_for(Pool, "checkin")
+    def on_checkin(dbapi_connection, connection_record):
+        """Reset tenant context when connection is returned."""
+        _reset_tenant_context_sync(dbapi_connection, connection_record)
 
 
 async def get_db() -> AsyncSession:

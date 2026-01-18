@@ -1,5 +1,6 @@
 """Database models."""
 
+from app.persistence.models.audit_log import AuditAction, AuditLog
 from app.persistence.models.call import Call
 from app.persistence.models.call_summary import CallSummary
 from app.persistence.models.contact import Contact
@@ -18,10 +19,13 @@ from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 from app.persistence.models.tenant_widget_config import TenantWidgetConfig
 from app.persistence.models.tenant_customer_service_config import TenantCustomerServiceConfig
 from app.persistence.models.tenant_prompt_config import TenantPromptConfig
+from app.persistence.models.widget_event import WidgetEvent
 from app.persistence.models.zapier_request import ZapierRequest
 from app.persistence.models.jackrabbit_customer import JackrabbitCustomer
 
 __all__ = [
+    "AuditAction",
+    "AuditLog",
     "Call",
     "CallSummary",
     "Tenant",
@@ -47,6 +51,7 @@ __all__ = [
     "NotificationPriority",
     "TenantCustomerServiceConfig",
     "TenantPromptConfig",
+    "WidgetEvent",
     "ZapierRequest",
     "JackrabbitCustomer",
 ]

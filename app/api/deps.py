@@ -1,5 +1,6 @@
 """FastAPI dependencies for auth and tenant resolution."""
 
+import logging
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -9,10 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import decode_access_token
 from app.core.tenant_context import set_tenant_context
 from app.persistence.database import get_db
-from app.persistence.models.tenant import User
+from app.persistence.models.tenant import Tenant, User
+from app.persistence.repositories.tenant_repository import TenantRepository
 from app.persistence.repositories.user_repository import UserRepository
 
+logger = logging.getLogger(__name__)
 security = HTTPBearer()
+
+# Cache for tenant validation to avoid repeated DB queries within same request
+_tenant_cache: dict[int, Tenant | None] = {}
 
 
 def is_global_admin(user: User) -> bool:
@@ -82,23 +88,55 @@ async def get_current_user(
     return user
 
 
+async def validate_tenant_active(
+    db: AsyncSession,
+    tenant_id: int,
+) -> Tenant:
+    """Validate that a tenant exists, is active, and not deleted.
+
+    Args:
+        db: Database session
+        tenant_id: Tenant ID to validate
+
+    Returns:
+        The active Tenant object
+
+    Raises:
+        HTTPException: If tenant is inactive, deleted, or not found
+    """
+    tenant_repo = TenantRepository(db)
+    tenant = await tenant_repo.get_by_id_active(tenant_id)
+
+    if tenant is None:
+        logger.warning(f"Access attempt to inactive/deleted/missing tenant: {tenant_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant is inactive or does not exist",
+        )
+
+    return tenant
+
+
 async def get_current_tenant(
     current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     x_tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
 ) -> int | None:
     """Get current tenant from user context or header override.
 
     Global admins can pass X-Tenant-Id header to impersonate a tenant.
+    Validates that the tenant is active and not deleted.
 
     Args:
         current_user: Current authenticated user
+        db: Database session
         x_tenant_id: Optional tenant ID header for global admin impersonation
 
     Returns:
         Tenant ID or None for global admin without impersonation
 
     Raises:
-        HTTPException: If user has no tenant and is not global admin
+        HTTPException: If user has no tenant and is not global admin, or tenant is inactive
     """
     # If global admin and header provided, use header value
     if is_global_admin(current_user) and x_tenant_id:
@@ -109,12 +147,17 @@ async def get_current_tenant(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid X-Tenant-Id header value",
             )
+        # Validate the impersonated tenant is active
+        await validate_tenant_active(db, tenant_id)
     else:
         tenant_id = current_user.tenant_id
-    
+        # Validate user's tenant is active (if they have one)
+        if tenant_id is not None:
+            await validate_tenant_active(db, tenant_id)
+
     # Set tenant context
     set_tenant_context(tenant_id)
-    
+
     return tenant_id
 
 

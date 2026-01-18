@@ -1,6 +1,8 @@
-"""Middleware for idempotency and tenant context."""
+"""Middleware for idempotency, rate limiting, and tenant context."""
 
 import json
+import logging
+import time
 from typing import Callable
 
 from fastapi import Request, Response
@@ -10,6 +12,153 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.idempotency import generate_idempotency_key
 from app.infrastructure.redis import redis_client
 from app.settings import settings
+
+logger = logging.getLogger(__name__)
+
+
+class TenantRateLimitMiddleware(BaseHTTPMiddleware):
+    """Per-tenant rate limiting middleware.
+
+    Limits requests per tenant to prevent any single tenant from
+    exhausting system resources.
+
+    Rate limits are configurable per tier:
+    - free: 100 requests/minute
+    - basic: 500 requests/minute
+    - pro: 2000 requests/minute
+    - enterprise: 10000 requests/minute
+    """
+
+    TIER_LIMITS = {
+        "free": 100,
+        "basic": 500,
+        "pro": 2000,
+        "enterprise": 10000,
+        None: 500,  # Default for unknown tiers
+    }
+
+    WINDOW_SECONDS = 60
+
+    async def dispatch(
+        self, request: Request, call_next: Callable
+    ) -> Response:
+        """Process request with rate limit check.
+
+        Args:
+            request: FastAPI request
+            call_next: Next middleware/handler
+
+        Returns:
+            Response or 429 if rate limited
+        """
+        # Skip rate limiting if Redis is disabled
+        if not settings.redis_enabled:
+            return await call_next(request)
+
+        # Skip rate limiting for webhooks and health checks
+        path = str(request.url.path)
+        if any(skip in path for skip in ["/sms/", "/voice/", "/health", "/docs", "/openapi"]):
+            return await call_next(request)
+
+        # Extract tenant ID from various sources
+        tenant_id = await self._get_tenant_id(request)
+
+        if tenant_id is None:
+            # No tenant context, skip rate limiting
+            return await call_next(request)
+
+        # Get rate limit for this tenant (could be enhanced to fetch tier from DB)
+        rate_limit = self.TIER_LIMITS.get(None)  # Default limit
+
+        # Check rate limit
+        is_allowed, remaining, reset_time = await self._check_rate_limit(
+            tenant_id, rate_limit
+        )
+
+        if not is_allowed:
+            logger.warning(f"Rate limit exceeded for tenant {tenant_id}")
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "Rate limit exceeded. Please try again later.",
+                    "retry_after": reset_time,
+                },
+                headers={
+                    "X-RateLimit-Limit": str(rate_limit),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": str(reset_time),
+                    "Retry-After": str(reset_time),
+                },
+            )
+
+        # Process request and add rate limit headers to response
+        response = await call_next(request)
+
+        response.headers["X-RateLimit-Limit"] = str(rate_limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(reset_time)
+
+        return response
+
+    async def _get_tenant_id(self, request: Request) -> int | None:
+        """Extract tenant ID from request.
+
+        Checks X-Tenant-Id header first, then falls back to
+        parsing JWT token (if available).
+        """
+        # Check header first (for admin impersonation)
+        tenant_header = request.headers.get("X-Tenant-Id")
+        if tenant_header:
+            try:
+                return int(tenant_header)
+            except (ValueError, TypeError):
+                pass
+
+        # Could add JWT parsing here if needed, but the dependency
+        # layer handles this more reliably
+        return None
+
+    async def _check_rate_limit(
+        self, tenant_id: int, limit: int
+    ) -> tuple[bool, int, int]:
+        """Check if request is within rate limit.
+
+        Uses Redis sliding window counter.
+
+        Args:
+            tenant_id: The tenant ID
+            limit: Maximum requests per window
+
+        Returns:
+            Tuple of (is_allowed, remaining, reset_time_seconds)
+        """
+        await redis_client.connect()
+
+        key = f"ratelimit:tenant:{tenant_id}"
+        now = int(time.time())
+        window_start = now - self.WINDOW_SECONDS
+
+        # Use Redis pipeline for atomic operations
+        pipe = redis_client._redis.pipeline()
+
+        # Remove old entries outside the window
+        pipe.zremrangebyscore(key, 0, window_start)
+        # Count current entries in window
+        pipe.zcard(key)
+        # Add current request
+        pipe.zadd(key, {str(now): now})
+        # Set expiry on the key
+        pipe.expire(key, self.WINDOW_SECONDS * 2)
+
+        results = await pipe.execute()
+        current_count = results[1]
+
+        remaining = max(0, limit - current_count - 1)
+        reset_time = self.WINDOW_SECONDS
+
+        is_allowed = current_count < limit
+
+        return is_allowed, remaining, reset_time
 
 
 class IdempotencyMiddleware(BaseHTTPMiddleware):

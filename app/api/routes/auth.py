@@ -2,14 +2,16 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
 from app.core.auth import create_access_token
 from app.core.password import verify_password, hash_password
 from app.api.deps import get_current_user, is_global_admin
+from app.domain.services.audit_service import AuditService
 from app.persistence.database import get_db
+from app.persistence.models.audit_log import AuditAction
 from app.persistence.models.tenant import User
 from app.persistence.repositories.user_repository import UserRepository
 from app.persistence.repositories.tenant_repository import TenantRepository
@@ -70,18 +72,21 @@ class SignupResponse(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 async def login(
     login_data: LoginRequest,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> LoginResponse:
     """Login endpoint for admin dashboard.
-    
+
     Args:
         login_data: Login credentials
+        request: FastAPI request for audit logging
         db: Database session
-        
+
     Returns:
         JWT access token
     """
     user_repo = UserRepository(db)
+    audit = AuditService(db)
 
     # Find user by email
     user = await user_repo.get_by_email(login_data.email)
@@ -93,13 +98,22 @@ async def login(
     password_valid = verify_password(login_data.password, stored_hash)
 
     if not user or not password_valid:
+        # Log failed login attempt (with email for investigation)
+        await audit.log(
+            action=AuditAction.LOGIN_FAILED,
+            details={"email": login_data.email},
+            request=request,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
-    
+
     # Create access token (sub must be string for JWT compatibility)
     access_token = create_access_token(data={"sub": str(user.id)})
+
+    # Log successful login
+    await audit.log_login(user=user, request=request, success=True)
 
     return LoginResponse(
         access_token=access_token,
@@ -113,6 +127,7 @@ async def login(
 @router.post("/signup", response_model=SignupResponse)
 async def signup(
     signup_data: SignupRequest,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SignupResponse:
     """Public signup endpoint for new users.
@@ -122,11 +137,14 @@ async def signup(
 
     Args:
         signup_data: Signup credentials
+        request: FastAPI request for audit logging
         db: Database session
 
     Returns:
         User info and contact linking status
     """
+    audit = AuditService(db)
+
     # Validate tenant exists
     tenant_repo = TenantRepository(db)
     tenant = await tenant_repo.get_by_subdomain(signup_data.tenant_subdomain)
@@ -159,6 +177,17 @@ async def signup(
     # Auto-link to contact
     link_service = UserContactLinkService(db)
     linked_contact = await link_service.link_user_to_contact_by_email(user)
+
+    # Log user creation
+    await audit.log(
+        action=AuditAction.USER_CREATED,
+        user=user,
+        tenant=tenant,
+        resource_type="user",
+        resource_id=user.id,
+        details={"contact_linked": linked_contact is not None},
+        request=request,
+    )
 
     return SignupResponse(
         user_id=user.id,

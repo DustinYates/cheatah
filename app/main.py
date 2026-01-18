@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from app.api.middleware import IdempotencyMiddleware
+from app.api.middleware import IdempotencyMiddleware, TenantRateLimitMiddleware
 from app.api.routes import api_router
 from app.core.debug import debug_log
 from app.infrastructure.redis import redis_client
@@ -74,6 +74,9 @@ app.add_middleware(
 
 # Add idempotency middleware
 app.add_middleware(IdempotencyMiddleware)
+
+# Add per-tenant rate limiting middleware
+app.add_middleware(TenantRateLimitMiddleware)
 
 # Include API routes
 app.include_router(api_router, prefix=settings.api_v1_prefix)

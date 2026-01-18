@@ -1431,6 +1431,7 @@ async def telnyx_ai_call_complete(
         ]
 
         # Check if link was ALREADY sent during the call (don't send again)
+        # Also check for broken/looped conversations that shouldn't trigger SMS
         already_sent_indicators = [
             "link was sent",
             "link was shared",
@@ -1449,6 +1450,18 @@ async def telnyx_ai_call_complete(
             "link shared",
             "link provided",
             "registration link sent",
+            # Indicators of broken/looped conversations - don't send SMS
+            "repeated message",
+            "series of repeated",
+            "shared multiple times",
+            "link multiple times",
+            "no conversation to summarize",
+            "there is no conversation",
+            "conversation has just begun",
+            "conversation has just started",
+            "no context or details",
+            "identical automated messages",
+            "nothing to summarize",
         ]
         link_already_sent = any(indicator in combined_text for indicator in already_sent_indicators)
 

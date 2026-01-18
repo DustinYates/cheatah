@@ -1,7 +1,7 @@
 """add_prompt_status_and_scope
 
 Revision ID: 0e0a47c4ec9a
-Revises: add_sms_models
+Revises: add_lead_updated_at
 Create Date: 2025-12-13 19:59:03.910560
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '0e0a47c4ec9a'
-down_revision: Union[str, None] = 'add_sms_models'
+down_revision: Union[str, None] = 'add_lead_updated_at'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

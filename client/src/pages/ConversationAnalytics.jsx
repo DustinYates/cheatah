@@ -62,6 +62,18 @@ const CHANNEL_LABELS = {
   voice: 'Voice',
 };
 
+const REASON_LABELS = {
+  low_confidence: 'Bot Uncertainty',
+  explicit_request: 'User Requested',
+  manual: 'Manual',
+  unknown: 'Unknown',
+};
+
+const formatNumber = (num) => {
+  if (!num || num === 0) return '0';
+  return num.toLocaleString();
+};
+
 const parseRangeFromParams = (params, timeZone) => {
   const preset = params.get('range');
   const startValue = params.get('start_date');
@@ -430,6 +442,519 @@ export default function ConversationAnalytics() {
             )}
           </div>
         </section>
+
+        {/* Escalation by Channel */}
+        {data.escalation_by_channel && (
+          <section className="conv-analytics-card">
+            <div className="conv-analytics-card-header">
+              <div>
+                <h2>Escalation by Channel</h2>
+                <p>Escalation rates broken down by communication channel.</p>
+              </div>
+            </div>
+            <div className="channel-metrics">
+              {(() => {
+                const escByChannel = data.escalation_by_channel.by_channel || {};
+                const escChannels = Object.keys(escByChannel);
+                const maxEscRate = Math.max(0.01, ...escChannels.map((ch) => escByChannel[ch]?.rate || 0));
+
+                return escChannels.length === 0 ? (
+                  <p className="no-data-message">No escalation data by channel available</p>
+                ) : (
+                  escChannels.map((channel) => {
+                    const escData = escByChannel[channel];
+                    const width = ((escData?.rate || 0) / maxEscRate) * 100;
+                    return (
+                      <div key={channel} className="channel-row">
+                        <div className="channel-label">{CHANNEL_LABELS[channel] || channel}</div>
+                        <div className="channel-bars">
+                          <div className="channel-bar-row">
+                            <div
+                              className="channel-bar"
+                              style={{
+                                width: `${width}%`,
+                                backgroundColor: CHANNEL_COLORS[channel] || '#666',
+                              }}
+                            />
+                            <span className="channel-value">
+                              {formatPercent(escData?.rate || 0)} ({escData?.count || 0} / {escData?.conversations || 0})
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                );
+              })()}
+            </div>
+            {data.escalation_by_channel.by_reason && Object.keys(data.escalation_by_channel.by_reason).length > 0 && (
+              <div className="escalation-reasons" style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--color-border-light)' }}>
+                <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>By Reason</h3>
+                <div className="reason-list" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {Object.entries(data.escalation_by_channel.by_reason).map(([reason, count]) => (
+                    <span key={reason} className="reason-badge" style={{
+                      padding: '0.25rem 0.75rem',
+                      backgroundColor: 'var(--color-bg-light)',
+                      borderRadius: '1rem',
+                      fontSize: '0.75rem',
+                    }}>
+                      {REASON_LABELS[reason] || formatIntentLabel(reason)}: {count}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {data.escalation_by_channel.avg_messages_before_escalation > 0 && (
+              <div className="escalation-timing" style={{ marginTop: '1rem', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
+                Avg {data.escalation_by_channel.avg_messages_before_escalation} messages before escalation
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Registration Links Sent */}
+        {data.registration_links && (
+          <section className="conv-analytics-card">
+            <div className="conv-analytics-card-header">
+              <div>
+                <h2>Registration Links Sent</h2>
+                <p>Number of registration links sent to customers.</p>
+              </div>
+            </div>
+            <div className="registration-metrics">
+              <div className="reg-metric-row" style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center', marginBottom: '1rem' }}>
+                <div>
+                  <span className="summary-value" style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                    {formatNumber(data.registration_links.total_sent)}
+                  </span>
+                  <span className="summary-label" style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
+                    Total Sent
+                  </span>
+                </div>
+                <div>
+                  <span className="summary-value" style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                    {formatNumber(data.registration_links.unique_leads_sent)}
+                  </span>
+                  <span className="summary-label" style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
+                    Unique Leads
+                  </span>
+                </div>
+              </div>
+              {data.registration_links.by_asset_type && Object.keys(data.registration_links.by_asset_type).length > 0 && (
+                <div className="asset-breakdown" style={{ paddingTop: '1rem', borderTop: '1px solid var(--color-border-light)' }}>
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>By Asset Type</h3>
+                  {Object.entries(data.registration_links.by_asset_type).map(([assetType, count]) => (
+                    <div key={assetType} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', fontSize: '0.875rem' }}>
+                      <span>{formatIntentLabel(assetType)}</span>
+                      <span style={{ fontWeight: 600 }}>{count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Channel Effectiveness Matrix */}
+        {data.channel_effectiveness && (
+          <section className="conv-analytics-card conv-analytics-card-wide">
+            <div className="conv-analytics-card-header">
+              <div>
+                <h2>Channel Effectiveness</h2>
+                <p>Compare performance across communication channels.</p>
+              </div>
+            </div>
+            <div className="channel-matrix" style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
+                    <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem', fontWeight: 600 }}>Channel</th>
+                    <th style={{ textAlign: 'right', padding: '0.75rem 0.5rem', fontWeight: 600 }}>Conversations</th>
+                    <th style={{ textAlign: 'right', padding: '0.75rem 0.5rem', fontWeight: 600 }}>Leads</th>
+                    <th style={{ textAlign: 'right', padding: '0.75rem 0.5rem', fontWeight: 600 }}>Conversion</th>
+                    <th style={{ textAlign: 'right', padding: '0.75rem 0.5rem', fontWeight: 600 }}>Escalation</th>
+                    <th style={{ textAlign: 'right', padding: '0.75rem 0.5rem', fontWeight: 600 }}>Avg Msgs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(data.channel_effectiveness.channels || {}).map(([channel, metrics]) => (
+                    <tr key={channel} style={{ borderBottom: '1px solid var(--color-border-light)' }}>
+                      <td style={{ padding: '0.75rem 0.5rem', fontWeight: 500 }}>
+                        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: CHANNEL_COLORS[channel] || '#666', marginRight: '0.5rem' }}></span>
+                        {CHANNEL_LABELS[channel] || channel}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '0.75rem 0.5rem' }}>{formatNumber(metrics.total_conversations)}</td>
+                      <td style={{ textAlign: 'right', padding: '0.75rem 0.5rem' }}>{formatNumber(metrics.leads_captured)}</td>
+                      <td style={{ textAlign: 'right', padding: '0.75rem 0.5rem', color: metrics.conversion_rate > 0.1 ? 'var(--color-success)' : 'inherit' }}>
+                        {formatPercent(metrics.conversion_rate)}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '0.75rem 0.5rem', color: metrics.escalation_rate > 0.1 ? 'var(--color-warning)' : 'inherit' }}>
+                        {formatPercent(metrics.escalation_rate)}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '0.75rem 0.5rem' }}>{metrics.avg_messages?.toFixed(1) || '0'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {/* AI Value Metrics */}
+        {data.ai_value && (
+          <section className="conv-analytics-card">
+            <div className="conv-analytics-card-header">
+              <div>
+                <h2>AI Performance</h2>
+                <p>Conversations resolved without human intervention.</p>
+              </div>
+            </div>
+            <div className="ai-value-metrics">
+              <div className="ai-value-main" style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                <div className="ai-resolution-circle" style={{
+                  width: '120px',
+                  height: '120px',
+                  borderRadius: '50%',
+                  border: '8px solid var(--color-success)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto',
+                }}>
+                  <span style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-success)' }}>
+                    {formatPercent(data.ai_value.resolution_rate)}
+                  </span>
+                  <span style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)' }}>Resolved by AI</span>
+                </div>
+              </div>
+              <div className="ai-value-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', textAlign: 'center' }}>
+                <div>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 700, display: 'block' }}>
+                    {formatNumber(data.ai_value.conversations_resolved_without_human)}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Resolved Without Human</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 700, display: 'block' }}>
+                    {formatNumber(data.ai_value.leads_captured_automatically)}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Leads Auto-Captured</span>
+                </div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 700, display: 'block', color: 'var(--color-success)' }}>
+                    {formatDuration(data.ai_value.estimated_staff_minutes_saved)}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Est. Staff Time Saved</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Response Time Distribution */}
+        {data.response_time_distribution && (
+          <section className="conv-analytics-card">
+            <div className="conv-analytics-card-header">
+              <div>
+                <h2>Response Time Distribution</h2>
+                <p>Response time percentiles across channels.</p>
+              </div>
+            </div>
+            <div className="rt-distribution">
+              <div className="rt-overall" style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid var(--color-border-light)' }}>
+                <div>
+                  <span style={{ fontSize: '1.5rem', fontWeight: 700, display: 'block' }}>
+                    {formatSeconds(data.response_time_distribution.p50_seconds)}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>P50</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '1.5rem', fontWeight: 700, display: 'block' }}>
+                    {formatSeconds(data.response_time_distribution.p90_seconds)}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>P90</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '1.5rem', fontWeight: 700, display: 'block' }}>
+                    {formatSeconds(data.response_time_distribution.p99_seconds)}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>P99</span>
+                </div>
+              </div>
+              <div className="rt-first-response" style={{ textAlign: 'center', marginBottom: '1rem' }}>
+                <span style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>First Response Avg: </span>
+                <span style={{ fontWeight: 600 }}>{formatSeconds(data.response_time_distribution.first_response_avg_seconds)}</span>
+              </div>
+              {data.response_time_distribution.by_channel && Object.keys(data.response_time_distribution.by_channel).length > 0 && (
+                <div className="rt-by-channel">
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>By Channel</h3>
+                  {Object.entries(data.response_time_distribution.by_channel).map(([channel, metrics]) => (
+                    <div key={channel} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--color-border-light)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: CHANNEL_COLORS[channel] || '#666' }}></span>
+                        {CHANNEL_LABELS[channel] || channel}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                        P50: {formatSeconds(metrics.p50)} | P90: {formatSeconds(metrics.p90)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Phase 2: Drop-Off Analytics */}
+        {data.drop_off && (
+          <section className="conv-analytics-card">
+            <div className="conv-analytics-card-header">
+              <div>
+                <h2>Drop-Off Analytics</h2>
+                <p>Conversations that ended without resolution.</p>
+              </div>
+            </div>
+            <div className="drop-off-metrics">
+              <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center', marginBottom: '1.5rem' }}>
+                <div>
+                  <div style={{
+                    width: '100px',
+                    height: '100px',
+                    borderRadius: '50%',
+                    border: `6px solid ${data.drop_off.drop_off_rate > 0.3 ? 'var(--color-warning)' : 'var(--color-success)'}`,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto',
+                  }}>
+                    <span style={{ fontSize: '1.25rem', fontWeight: 700, color: data.drop_off.drop_off_rate > 0.3 ? 'var(--color-warning)' : 'var(--color-success)' }}>
+                      {formatPercent(data.drop_off.drop_off_rate)}
+                    </span>
+                    <span style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)' }}>Drop-Off</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', textAlign: 'center', paddingTop: '1rem', borderTop: '1px solid var(--color-border-light)' }}>
+                <div>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 700, display: 'block' }}>{formatNumber(data.drop_off.completed_conversations)}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Completed</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 700, display: 'block', color: 'var(--color-warning)' }}>{formatNumber(data.drop_off.dropped_conversations)}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Dropped</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 700, display: 'block' }}>{data.drop_off.avg_messages_before_dropoff}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Avg Msgs Before</span>
+                </div>
+              </div>
+              {data.drop_off.avg_time_to_dropoff_minutes > 0 && (
+                <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+                  Avg time to drop-off: {formatDuration(data.drop_off.avg_time_to_dropoff_minutes)}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Phase 2: Pushback Detection */}
+        {data.pushback && (
+          <section className="conv-analytics-card">
+            <div className="conv-analytics-card-header">
+              <div>
+                <h2>User Friction Signals</h2>
+                <p>Detected frustration and impatience in conversations.</p>
+              </div>
+            </div>
+            <div className="pushback-metrics">
+              <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center', marginBottom: '1.5rem' }}>
+                <div>
+                  <span style={{ fontSize: '2rem', fontWeight: 700, color: data.pushback.pushback_rate > 0.1 ? 'var(--color-warning)' : 'var(--color-text-primary)' }}>
+                    {formatPercent(data.pushback.pushback_rate)}
+                  </span>
+                  <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>Pushback Rate</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '2rem', fontWeight: 700 }}>{formatNumber(data.pushback.conversations_with_pushback)}</span>
+                  <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>Conversations</span>
+                </div>
+              </div>
+              {data.pushback.by_type && Object.keys(data.pushback.by_type).length > 0 && (
+                <div style={{ paddingTop: '1rem', borderTop: '1px solid var(--color-border-light)' }}>
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>By Type</h3>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    {Object.entries(data.pushback.by_type).map(([type, count]) => (
+                      <span key={type} style={{
+                        padding: '0.25rem 0.75rem',
+                        backgroundColor: type === 'frustration' ? 'var(--color-error-bg)' : 'var(--color-warning-bg)',
+                        borderRadius: '1rem',
+                        fontSize: '0.75rem',
+                        border: `1px solid ${type === 'frustration' ? 'var(--color-error-border)' : 'var(--color-warning-border)'}`,
+                      }}>
+                        {formatIntentLabel(type)}: {count}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {data.pushback.common_triggers && data.pushback.common_triggers.length > 0 && (
+                <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--color-border-light)' }}>
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Common Phrases</h3>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                    "{data.pushback.common_triggers.slice(0, 5).join('", "')}"
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Phase 2: Repetition Signals */}
+        {data.repetition && (
+          <section className="conv-analytics-card">
+            <div className="conv-analytics-card-header">
+              <div>
+                <h2>Conversation Confusion</h2>
+                <p>Repeated questions and clarification requests.</p>
+              </div>
+            </div>
+            <div className="repetition-metrics">
+              <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center', marginBottom: '1.5rem' }}>
+                <div>
+                  <span style={{ fontSize: '2rem', fontWeight: 700, color: data.repetition.repetition_rate > 0.15 ? 'var(--color-warning)' : 'var(--color-text-primary)' }}>
+                    {formatPercent(data.repetition.repetition_rate)}
+                  </span>
+                  <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>Repetition Rate</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '2rem', fontWeight: 700 }}>{(data.repetition.avg_repetition_score * 100).toFixed(0)}%</span>
+                  <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>Friction Score</span>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', textAlign: 'center', paddingTop: '1rem', borderTop: '1px solid var(--color-border-light)' }}>
+                <div>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 700, display: 'block' }}>{formatNumber(data.repetition.total_repeated_questions)}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Repeated Questions</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 700, display: 'block' }}>{formatNumber(data.repetition.total_user_clarifications)}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>User Clarifications</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 700, display: 'block' }}>{formatNumber(data.repetition.total_bot_clarifications)}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Bot Clarifications</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Phase 2: Demand Intelligence */}
+        {data.demand && (Object.keys(data.demand.requests_by_location).length > 0 || Object.keys(data.demand.requests_by_class_level).length > 0) && (
+          <section className="conv-analytics-card conv-analytics-card-wide">
+            <div className="conv-analytics-card-header">
+              <div>
+                <h2>Demand Intelligence</h2>
+                <p>Location and class demand patterns.</p>
+              </div>
+            </div>
+            <div className="demand-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
+              {/* Location Demand */}
+              {Object.keys(data.demand.requests_by_location).length > 0 && (
+                <div>
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>By Location</h3>
+                  {(() => {
+                    const locations = data.demand.requests_by_location;
+                    const maxLoc = Math.max(1, ...Object.values(locations));
+                    return Object.entries(locations).map(([loc, count]) => (
+                      <div key={loc} style={{ marginBottom: '0.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.875rem' }}>
+                          <span>{loc}</span>
+                          <span style={{ fontWeight: 600 }}>{count}</span>
+                        </div>
+                        <div style={{ height: '6px', backgroundColor: 'var(--color-bg-light)', borderRadius: '3px' }}>
+                          <div style={{ height: '100%', width: `${(count / maxLoc) * 100}%`, backgroundColor: 'var(--color-primary)', borderRadius: '3px' }}></div>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              )}
+
+              {/* Class Level Demand */}
+              {Object.keys(data.demand.requests_by_class_level).length > 0 && (
+                <div>
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>By Class Level</h3>
+                  {(() => {
+                    const classes = data.demand.requests_by_class_level;
+                    const maxClass = Math.max(1, ...Object.values(classes));
+                    return Object.entries(classes).map(([cls, count]) => (
+                      <div key={cls} style={{ marginBottom: '0.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.875rem' }}>
+                          <span>{cls}</span>
+                          <span style={{ fontWeight: 600 }}>{count}</span>
+                        </div>
+                        <div style={{ height: '6px', backgroundColor: 'var(--color-bg-light)', borderRadius: '3px' }}>
+                          <div style={{ height: '100%', width: `${(count / maxClass) * 100}%`, backgroundColor: '#4f6fd9', borderRadius: '3px' }}></div>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              )}
+
+              {/* Adult vs Child Split */}
+              {(data.demand.adult_vs_child.adult > 0 || data.demand.adult_vs_child.child > 0) && (
+                <div>
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>Adult vs Child</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', height: '24px', borderRadius: '4px', overflow: 'hidden' }}>
+                        {(() => {
+                          const total = data.demand.adult_vs_child.adult + data.demand.adult_vs_child.child;
+                          const adultPct = total > 0 ? (data.demand.adult_vs_child.adult / total) * 100 : 50;
+                          return (
+                            <>
+                              <div style={{ width: `${adultPct}%`, backgroundColor: '#4f6fd9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <span style={{ fontSize: '0.625rem', color: 'white', fontWeight: 600 }}>{data.demand.adult_vs_child.adult}</span>
+                              </div>
+                              <div style={{ width: `${100 - adultPct}%`, backgroundColor: '#c0842b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <span style={{ fontSize: '0.625rem', color: 'white', fontWeight: 600 }}>{data.demand.adult_vs_child.child}</span>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                        <span>Adult</span>
+                        <span>Child</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Time of Day */}
+              {Object.keys(data.demand.by_hour_of_day).length > 0 && (
+                <div>
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>Peak Hours</h3>
+                  {(() => {
+                    const hours = data.demand.by_hour_of_day;
+                    const sortedHours = Object.entries(hours).sort((a, b) => b[1] - a[1]).slice(0, 5);
+                    return sortedHours.map(([hour, count]) => (
+                      <div key={hour} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', fontSize: '0.875rem' }}>
+                        <span>{parseInt(hour) === 0 ? '12 AM' : parseInt(hour) < 12 ? `${hour} AM` : parseInt(hour) === 12 ? '12 PM' : `${parseInt(hour) - 12} PM`}</span>
+                        <span style={{ fontWeight: 600 }}>{count} requests</span>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

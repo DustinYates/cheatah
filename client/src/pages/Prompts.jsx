@@ -79,6 +79,7 @@ function CollapsibleSection({ title, badge, helperText, defaultOpen = false, chi
 const CHANNEL_TABS = [
   { key: 'web', label: 'Web Chat', icon: '💬', description: 'Website chatbot prompt' },
   { key: 'voice', label: 'Voice', icon: '📞', description: 'Phone/voice bot prompt' },
+  { key: 'voice_es', label: 'Voice (Spanish)', icon: '📞', description: 'Spanish phone/voice bot prompt' },
   { key: 'sms', label: 'SMS', icon: '📱', description: 'Text message bot prompt' },
 ];
 
@@ -541,7 +542,7 @@ export default function Prompts() {
   const [masterSaving, setMasterSaving] = useState(false);
   const [masterSavedAt, setMasterSavedAt] = useState('');
   const [generatedPrompts, setGeneratedPrompts] = useState(null);
-  const [archivedPrompts, setArchivedPrompts] = useState({ web: '', voice: '', sms: '' });
+  const [archivedPrompts, setArchivedPrompts] = useState({ web: '', voice: '', voice_es: '', sms: '' });
   const [activeArchiveChannel, setActiveArchiveChannel] = useState('web');
   const [archiveSaving, setArchiveSaving] = useState(false);
   const [archiveSavedAt, setArchiveSavedAt] = useState('');
@@ -846,6 +847,65 @@ Speech style:
 - Offer to send details via SMS/email for anything with links/addresses.
 - Keep lists to max 3 items; otherwise summarize and offer details via SMS.`;
 
+  const buildVoiceEsPrompt = (context) => `FUENTE_AUTORITATIVA:
+- El Prompt del Sistema de Asistente de Voz tiene la mayor precedencia. Si existe algun conflicto, sigue este prompt de voz sobre otras configuraciones.
+
+Canal: Voz (Telefono / IVR / Voz con IA)
+Objetivo principal: Habla natural, cero ambiguedad, cero carga cognitiva.
+
+Restricciones estrictas (criticas):
+- Nunca leas ni deletrees direcciones completas en voz alta. Refiere a ubicaciones solo por nombre; ofrece enviar detalles de ubicacion por texto/correo.
+- Nunca digas URLs. El enlace de registro es INSEGURO-PARA-VOZ; genera internamente y envia solo por SMS/correo si el llamante lo solicita explicitamente (nunca hablado).
+- Nunca apiles preguntas; una a la vez. Nunca des listas densas (mas de 3 elementos).
+- Nunca digas las palabras "diagonal", "punto", "guion", "guion bajo", "porcentaje", "dos puntos".
+- Nunca menciones sistemas internos ni inventes enlaces. Sin emojis.
+- Sin ofertas proactivas de texto/correo. Solo recolecta contacto si el llamante pide explicitamente recibir informacion fuera de la llamada; de lo contrario, mantente en la llamada.
+- Sin numeracion de pasos ni lenguaje de "siguiente paso". Maximo un signo de interrogacion por mensaje/turno.
+
+Comportamientos de flujo requeridos:
+- Confirma comprension despues de pasos clave; narra cambios de paso ("Pasando al paso de inscripcion.").
+- Pregunta primero por el nivel de clase. Pregunta por el codigo postal solo despues de confirmar el nivel, unicamente para recomendar la ubicacion mas cercana.
+- Usa solo frases seguras para voz.
+
+Manejo de correo electronico:
+- Permitido para captura. Deletrea letra por letra, di "arroba" para @ y "punto" para ., confirma precision antes de continuar.
+- Despues de dos confirmaciones fallidas, solicita numero de telefono en su lugar.
+
+Enlace de registro:
+- plantilla_enlace: "INSEGURO-PARA-VOZ"
+- regla_uso: "Genera internamente; nunca hables; envia solo por SMS o correo si el llamante lo solicita explicitamente."
+
+Autoridad de colocacion de nivel:
+- autoridad: "PROMPT_DE_VOZ"
+- regla: "Usa la logica completa de colocacion multi-edad definida en el Prompt del Sistema de Asistente de Voz."
+
+Autoridad de matricula:
+- autoridad_calculo: "PROMPT_DE_VOZ"
+- reglas_salida:
+  - Solo di el total mensual final, en habla natural para dolares.
+  - No leas tablas a menos que se solicite explicitamente.
+
+Seguridad de voz (nunca):
+- Reservar una clase
+- Confirmar inscripcion
+- Inventar enlaces
+- Mencionar sistemas internos
+- Usar emojis
+- Apilar preguntas
+- Decir URLs o direcciones completas
+
+Regla de precios:
+- Los precios deben verbalizarse (ej., "doscientos sesenta y seis dolares"), no mostrarse.
+- Al dar precios, mantenlo corto y separado de otras solicitudes; un concepto por turno.
+
+Contexto del inquilino (convierte a respuestas seguras para voz; resume direcciones/enlaces en lugar de leerlos):
+${context}
+
+Estilo de habla:
+- Una pregunta a la vez, confirmaciones cortas ("Entendido.", "De acuerdo.").
+- Ofrece enviar detalles por SMS/correo para cualquier cosa con enlaces/direcciones.
+- Mantén las listas a maximo 3 elementos; de lo contrario, resume y ofrece detalles por SMS.`;
+
   const buildSmsPrompt = (context) => `Channel: SMS / Text Messaging
 Primary goal: Brevity, clarity, low interruption.
 
@@ -892,6 +952,7 @@ Message style:
     const newPrompts = {
       web: buildWebPrompt(context),
       voice: buildVoicePrompt(context),
+      voice_es: buildVoiceEsPrompt(context),
       sms: buildSmsPrompt(context),
     };
     setGeneratedPrompts(newPrompts);
@@ -1339,10 +1400,11 @@ Message style:
         setArchivedPrompts({
           web: parsed.web || '',
           voice: parsed.voice || '',
+          voice_es: parsed.voice_es || '',
           sms: parsed.sms || '',
         });
       } else {
-        setArchivedPrompts({ web: '', voice: '', sms: '' });
+        setArchivedPrompts({ web: '', voice: '', voice_es: '', sms: '' });
       }
 
       const rawMaster = localStorage.getItem(masterStorageKey);
@@ -1353,7 +1415,7 @@ Message style:
       }
     } catch (err) {
       console.error('Failed to load archived prompts', err);
-      setArchivedPrompts({ web: '', voice: '', sms: '' });
+      setArchivedPrompts({ web: '', voice: '', voice_es: '', sms: '' });
       setMasterPrompt('');
     }
   }, [archiveStorageKey, masterStorageKey]);

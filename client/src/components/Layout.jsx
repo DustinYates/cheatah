@@ -97,6 +97,9 @@ export default function Layout() {
                 <li>
                   <NavLink to="/analytics/conversations">Conversations</NavLink>
                 </li>
+                <li>
+                  <NavLink to="/analytics/widget">Widget</NavLink>
+                </li>
               </ul>
             )}
           </li>

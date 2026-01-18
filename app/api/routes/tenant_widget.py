@@ -1,9 +1,10 @@
 """Tenant widget customization endpoints."""
 
 import logging
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,8 +16,9 @@ from app.infrastructure.widget_asset_storage import (
     WidgetAssetStorageError,
 )
 from app.persistence.database import get_db
-from app.persistence.models.tenant import User
+from app.persistence.models.tenant import Tenant, User
 from app.persistence.models.tenant_widget_config import TenantWidgetConfig
+from app.persistence.models.widget_event import WidgetEvent
 
 logger = logging.getLogger(__name__)
 
@@ -373,3 +375,133 @@ async def upload_widget_asset(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to upload asset",
         )
+
+
+# Widget Events Tracking Models
+
+class WidgetEventItem(BaseModel):
+    """Single widget event."""
+    event_type: str
+    session_id: str | None = None
+    event_data: dict | None = None
+    client_timestamp: str | None = None  # ISO format
+
+
+class WidgetEventRequest(BaseModel):
+    """Request to track widget events."""
+    tenant_id: int
+    visitor_id: str
+    events: list[WidgetEventItem]
+
+
+class WidgetEventResponse(BaseModel):
+    """Response confirming events received."""
+    received: int
+    visitor_id: str
+
+
+def _detect_device_type(user_agent: str) -> str:
+    """Detect device type from user agent string."""
+    ua_lower = user_agent.lower()
+    if "mobile" in ua_lower or "android" in ua_lower and "tablet" not in ua_lower:
+        if "ipad" in ua_lower:
+            return "tablet"
+        return "mobile"
+    if "tablet" in ua_lower or "ipad" in ua_lower:
+        return "tablet"
+    return "desktop"
+
+
+async def _store_widget_events(
+    tenant_id: int,
+    visitor_id: str,
+    events: list[WidgetEventItem],
+    user_agent: str,
+    device_type: str,
+) -> None:
+    """Store widget events in database (runs in background)."""
+    from app.persistence.database import async_session_factory
+
+    async with async_session_factory() as db:
+        for event in events:
+            # Parse client timestamp if provided
+            client_ts = None
+            if event.client_timestamp:
+                try:
+                    client_ts = datetime.fromisoformat(
+                        event.client_timestamp.replace('Z', '+00:00')
+                    )
+                except ValueError:
+                    pass  # Ignore invalid timestamps
+
+            widget_event = WidgetEvent(
+                tenant_id=tenant_id,
+                event_type=event.event_type,
+                visitor_id=visitor_id,
+                session_id=event.session_id,
+                event_data=event.event_data,
+                user_agent=user_agent,
+                device_type=device_type,
+                client_timestamp=client_ts,
+            )
+            db.add(widget_event)
+
+        await db.commit()
+
+
+@router.post("/events", response_model=WidgetEventResponse)
+async def track_widget_events(
+    request_data: WidgetEventRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> WidgetEventResponse:
+    """Track widget engagement events (public endpoint for widget).
+
+    This endpoint does NOT require authentication and is called by the widget
+    running on third-party customer websites. Events are batched for efficiency.
+    """
+    # Extract device info from User-Agent
+    user_agent = request.headers.get("user-agent", "")[:500]
+    device_type = _detect_device_type(user_agent)
+
+    # Validate tenant exists
+    tenant_result = await db.execute(
+        select(Tenant.id).where(Tenant.id == request_data.tenant_id)
+    )
+    if not tenant_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid tenant",
+        )
+
+    # Validate events
+    if not request_data.events:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No events provided",
+        )
+
+    # Limit batch size to prevent abuse
+    if len(request_data.events) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Too many events in batch (max 100)",
+        )
+
+    # Process events in background to minimize latency
+    background_tasks.add_task(
+        _store_widget_events,
+        tenant_id=request_data.tenant_id,
+        visitor_id=request_data.visitor_id,
+        events=request_data.events,
+        user_agent=user_agent,
+        device_type=device_type,
+    )
+
+    logger.debug(f"Queued {len(request_data.events)} widget events for tenant {request_data.tenant_id}")
+
+    return WidgetEventResponse(
+        received=len(request_data.events),
+        visitor_id=request_data.visitor_id,
+    )

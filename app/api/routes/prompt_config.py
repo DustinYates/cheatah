@@ -361,9 +361,11 @@ class AllChannelPromptsResponse(BaseModel):
 
     web_prompt: str | None
     voice_prompt: str | None
+    voice_es_prompt: str | None
     sms_prompt: str | None
     has_web: bool
     has_voice: bool
+    has_voice_es: bool
     has_sms: bool
 
 
@@ -389,9 +391,11 @@ async def get_all_channel_prompts(
     return AllChannelPromptsResponse(
         web_prompt=prompts.get("web_prompt"),
         voice_prompt=prompts.get("voice_prompt"),
+        voice_es_prompt=prompts.get("voice_es_prompt"),
         sms_prompt=prompts.get("sms_prompt"),
         has_web=prompts.get("web_prompt") is not None,
         has_voice=prompts.get("voice_prompt") is not None,
+        has_voice_es=prompts.get("voice_es_prompt") is not None,
         has_sms=prompts.get("sms_prompt") is not None,
     )
 
@@ -414,10 +418,10 @@ async def get_channel_prompt(
             detail="Tenant ID required",
         )
 
-    if channel not in ["web", "voice", "sms", "chat"]:
+    if channel not in ["web", "voice", "voice_es", "sms", "chat"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid channel. Must be one of: web, voice, sms",
+            detail="Invalid channel. Must be one of: web, voice, voice_es, sms",
         )
 
     prompt_service = PromptService(db)
@@ -453,10 +457,10 @@ async def set_channel_prompt(
             detail="Tenant ID required",
         )
 
-    if channel not in ["web", "voice", "sms", "chat"]:
+    if channel not in ["web", "voice", "voice_es", "sms", "chat"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid channel. Must be one of: web, voice, sms",
+            detail="Invalid channel. Must be one of: web, voice, voice_es, sms",
         )
 
     if not request.prompt or not request.prompt.strip():
@@ -504,16 +508,17 @@ async def delete_channel_prompt(
             detail="Tenant ID required",
         )
 
-    if channel not in ["web", "voice", "sms", "chat"]:
+    if channel not in ["web", "voice", "voice_es", "sms", "chat"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid channel. Must be one of: web, voice, sms",
+            detail="Invalid channel. Must be one of: web, voice, voice_es, sms",
         )
 
     prompt_key_map = {
         "web": "web_prompt",
         "chat": "web_prompt",
         "voice": "voice_prompt",
+        "voice_es": "voice_es_prompt",
         "sms": "sms_prompt",
     }
     prompt_key = prompt_key_map.get(channel)

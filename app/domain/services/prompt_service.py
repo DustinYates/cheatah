@@ -782,6 +782,7 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
             "web": "web_prompt",
             "chat": "web_prompt",
             "voice": "voice_prompt",
+            "voice_es": "voice_es_prompt",
             "sms": "sms_prompt",
         }
         prompt_key = prompt_key_map.get(channel)
@@ -804,6 +805,7 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
             "web": "web_prompt",
             "chat": "web_prompt",
             "voice": "voice_prompt",
+            "voice_es": "voice_es_prompt",
             "sms": "sms_prompt",
         }
         prompt_key = prompt_key_map.get(channel)
@@ -843,15 +845,16 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
             tenant_id: Tenant ID
 
         Returns:
-            Dict with keys: web_prompt, voice_prompt, sms_prompt
+            Dict with keys: web_prompt, voice_prompt, voice_es_prompt, sms_prompt
         """
         config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
         if not config_record or not config_record.config_json:
-            return {"web_prompt": None, "voice_prompt": None, "sms_prompt": None}
+            return {"web_prompt": None, "voice_prompt": None, "voice_es_prompt": None, "sms_prompt": None}
 
         return {
             "web_prompt": config_record.config_json.get("web_prompt"),
             "voice_prompt": config_record.config_json.get("voice_prompt"),
+            "voice_es_prompt": config_record.config_json.get("voice_es_prompt"),
             "sms_prompt": config_record.config_json.get("sms_prompt"),
         }
 

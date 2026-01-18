@@ -73,6 +73,10 @@
   border: 1px solid var(--color-border-light);
 }
 
+.conv-analytics-card-wide {
+  grid-column: 1 / -1;
+}
+
 .conv-analytics-card-header {
   display: flex;
   align-items: center;

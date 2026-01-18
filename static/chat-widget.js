@@ -39,6 +39,13 @@
     pendingEscalationMessage: null, // Store message while waiting for contact info
     userMessageCount: 0, // Track user messages for GA4 analytics
 
+    // Widget Analytics Tracking
+    analyticsQueue: [],
+    analyticsFlushInterval: null,
+    visitorId: null,
+    pageLoadTime: null,
+    wasAutoOpened: false,
+
     // GTM dataLayer event helper (ES5 compatible)
     pushDataLayerEvent: function(eventName, additionalData) {
       var eventData = {
@@ -77,13 +84,202 @@
       return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     },
 
+    // Initialize or restore visitor ID (persistent across sessions)
+    initVisitorId: function() {
+      var key = 'cc_visitor_id';
+      var storedId = null;
+      try {
+        storedId = localStorage.getItem(key);
+      } catch (e) {
+        // localStorage may be disabled
+      }
+      if (storedId) {
+        this.visitorId = storedId;
+      } else {
+        // Generate UUID-like ID
+        this.visitorId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          var r = Math.random() * 16 | 0;
+          var v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+        try {
+          localStorage.setItem(key, this.visitorId);
+        } catch (e) {
+          // localStorage may be disabled
+        }
+      }
+    },
+
+    // Track analytics event (batched for efficiency)
+    trackEvent: function(eventType, eventData) {
+      if (!this.config || !this.visitorId) return;
+
+      var event = {
+        event_type: eventType,
+        session_id: this.sessionId || null,
+        event_data: eventData || {},
+        client_timestamp: new Date().toISOString()
+      };
+
+      this.analyticsQueue.push(event);
+
+      // Flush immediately for important events
+      var immediateEvents = ['widget_open', 'first_message', 'lead_collected'];
+      if (immediateEvents.indexOf(eventType) !== -1) {
+        this.flushAnalytics();
+      }
+    },
+
+    // Flush analytics queue to server
+    flushAnalytics: function() {
+      var self = this;
+      if (this.analyticsQueue.length === 0 || !this.config) return;
+
+      var events = this.analyticsQueue.slice();
+      this.analyticsQueue = [];
+
+      var payload = {
+        tenant_id: this.config.tenantId,
+        visitor_id: this.visitorId,
+        events: events
+      };
+
+      var url = this.config.apiUrl + '/widget/events';
+      var data = JSON.stringify(payload);
+
+      // Use sendBeacon for reliability (especially on page unload)
+      if (navigator.sendBeacon) {
+        try {
+          navigator.sendBeacon(url, new Blob([data], { type: 'application/json' }));
+        } catch (e) {
+          // Fall back to fetch
+          this.sendAnalyticsFetch(url, data, events);
+        }
+      } else {
+        this.sendAnalyticsFetch(url, data, events);
+      }
+    },
+
+    // Fallback fetch for analytics
+    sendAnalyticsFetch: function(url, data, events) {
+      var self = this;
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data,
+        keepalive: true
+      }).catch(function() {
+        // Re-queue on failure (but limit to avoid infinite growth)
+        if (self.analyticsQueue.length < 50) {
+          self.analyticsQueue = events.concat(self.analyticsQueue);
+        }
+      });
+    },
+
+    // Start analytics flush interval
+    startAnalyticsInterval: function() {
+      var self = this;
+      if (this.analyticsFlushInterval) return;
+
+      // Flush every 10 seconds
+      this.analyticsFlushInterval = setInterval(function() {
+        self.flushAnalytics();
+      }, 10000);
+
+      // Flush on page unload
+      window.addEventListener('beforeunload', function() {
+        self.flushAnalytics();
+      });
+
+      // Also flush on visibility change (tab hidden)
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden') {
+          self.flushAnalytics();
+        }
+      });
+    },
+
+    // Track impression and viewport visibility
+    trackImpression: function() {
+      var self = this;
+
+      // Track page impression
+      this.trackEvent('impression', {
+        page_url: window.location.href,
+        referrer: document.referrer || '',
+        viewport_width: window.innerWidth,
+        viewport_height: window.innerHeight
+      });
+
+      // Track viewport visibility using IntersectionObserver
+      var toggle = document.getElementById('cc-toggle');
+      if (!toggle || typeof IntersectionObserver === 'undefined') return;
+
+      var startTime = Date.now();
+      var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) {
+            var timeToView = Date.now() - startTime;
+            var rect = entry.boundingClientRect;
+            var wasAboveFold = rect.top < window.innerHeight && rect.top >= 0;
+
+            self.trackEvent('viewport_visible', {
+              time_to_first_view_ms: timeToView,
+              was_above_fold: wasAboveFold
+            });
+
+            observer.disconnect();
+          }
+        });
+      }, { threshold: 0.5 });
+
+      observer.observe(toggle);
+    },
+
+    // Track hover/focus events on the launcher
+    trackHoverFocus: function() {
+      var self = this;
+      var toggle = document.getElementById('cc-toggle');
+      if (!toggle) return;
+
+      var hoverStartTime = null;
+
+      toggle.addEventListener('mouseenter', function() {
+        hoverStartTime = Date.now();
+      });
+
+      toggle.addEventListener('mouseleave', function() {
+        if (hoverStartTime) {
+          var duration = Date.now() - hoverStartTime;
+          // Only track if hover lasted > 500ms (filters out quick pass-overs)
+          if (duration > 500) {
+            self.trackEvent('hover', { duration_ms: duration });
+          }
+          hoverStartTime = null;
+        }
+      });
+
+      toggle.addEventListener('focus', function() {
+        self.trackEvent('focus', {});
+      });
+    },
+
     init: function(config) {
       // Default to top so new messages keep the start of responses visible
       this.config = Object.assign({ scrollBehavior: 'top' }, config);
+      this.pageLoadTime = Date.now();
+      this.initVisitorId();
       this.createWidget();
       this.attachEventListeners();
       this.fetchSettings();
       this.restoreSession(); // Restore previous session on init
+      this.startAnalyticsInterval();
+      // Track impression after widget is created (defer to allow DOM to settle)
+      var self = this;
+      setTimeout(function() {
+        self.trackImpression();
+        self.trackHoverFocus();
+      }, 100);
     },
 
     // Restore session from sessionStorage (clears when tab closes)
@@ -1469,6 +1665,20 @@
         this.isMinimized = false;
         this.saveSession(); // Persist open state
 
+        // Track widget open analytics
+        var timeOnPage = this.pageLoadTime ? Date.now() - this.pageLoadTime : 0;
+        this.trackEvent('widget_open', {
+          trigger: options.autoOpen ? 'auto' : 'click',
+          time_on_page_ms: timeOnPage
+        });
+        if (options.autoOpen) {
+          this.trackEvent('auto_open', {});
+          this.wasAutoOpened = true;
+        } else {
+          this.trackEvent('manual_open', {});
+          this.wasAutoOpened = false;
+        }
+
         // Track chat opened event for GA4
         this.pushDataLayerEvent('chat_button_opened');
         document.getElementById('cc-message-input').focus();
@@ -1503,9 +1713,16 @@
     closeWidget: function() {
       const container = document.querySelector('.cc-widget-container');
       const toggle = document.getElementById('cc-toggle');
+
+      // Track auto-open dismiss if widget was auto-opened and closed without interaction
+      if (this.wasAutoOpened && this.userMessageCount === 0) {
+        this.trackEvent('auto_open_dismiss', {});
+      }
+
       container.style.display = 'none';
       toggle.style.display = 'block';
       this.isOpen = false;
+      this.wasAutoOpened = false;
       this.saveSession(); // Persist closed state
     },
 
@@ -1794,6 +2011,10 @@
       this.userMessageCount++;
       if (this.userMessageCount === 1) {
         this.pushDataLayerEvent('chat_first_message_sent', {
+          session_id: this.sessionId
+        });
+        // Track first message for widget analytics
+        this.trackEvent('first_message', {
           session_id: this.sessionId
         });
       } else if (this.userMessageCount === 2) {

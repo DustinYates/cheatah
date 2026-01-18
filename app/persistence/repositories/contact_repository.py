@@ -115,6 +115,25 @@ class ContactRepository(BaseRepository[Contact]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_lead_id(self, tenant_id: int, lead_id: int) -> Contact | None:
+        """Get contact linked to a specific lead.
+
+        Args:
+            tenant_id: Tenant ID
+            lead_id: Lead ID to find contact for
+
+        Returns:
+            Contact or None if not found
+        """
+        stmt = select(Contact).where(
+            Contact.tenant_id == tenant_id,
+            Contact.lead_id == lead_id,
+            Contact.deleted_at.is_(None),
+            Contact.merged_into_contact_id.is_(None),
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_all_by_email(
         self, tenant_id: int, email: str
     ) -> list[Contact]:

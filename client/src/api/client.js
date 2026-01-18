@@ -184,6 +184,11 @@ class ApiClient {
     return this.request(`/analytics/conversations${query ? `?${query}` : ''}`);
   }
 
+  async getWidgetAnalytics(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/analytics/widget${query ? `?${query}` : ''}`);
+  }
+
   async revealTelephonyCredential(field) {
     return this.request('/admin/telephony/credentials/reveal', {
       method: 'POST',

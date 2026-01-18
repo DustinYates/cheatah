@@ -12,12 +12,16 @@ from sqlalchemy.orm import aliased
 
 from app.api.deps import require_tenant_context
 from app.persistence.database import get_db
+from app.domain.services.pushback_detector import PushbackDetector
+from app.domain.services.repetition_detector import RepetitionDetector
 from app.persistence.models.call import Call
 from app.persistence.models.call_summary import CallSummary
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.escalation import Escalation
+from app.persistence.models.lead import Lead
 from app.persistence.models.tenant import Tenant
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
+from app.persistence.models.widget_event import WidgetEvent
 
 router = APIRouter()
 
@@ -294,6 +298,117 @@ class ResponseTimeMetrics(BaseModel):
     by_channel: dict[str, float]
 
 
+class ResponseTimeDistribution(BaseModel):
+    """Response time metrics with percentiles."""
+
+    avg_response_time_seconds: float
+    p50_seconds: float
+    p90_seconds: float
+    p99_seconds: float
+    first_response_avg_seconds: float
+    by_channel: dict[str, dict]  # {channel: {avg, p50, p90, p99, first_response}}
+
+
+class EscalationChannelDetail(BaseModel):
+    """Escalation metrics for a single channel."""
+
+    count: int
+    rate: float
+    conversations: int
+
+
+class EscalationByChannelMetrics(BaseModel):
+    """Escalation metrics broken down by channel and reason."""
+
+    total_conversations: int
+    total_escalations: int
+    escalation_rate: float
+    by_channel: dict[str, EscalationChannelDetail]  # {channel: {count, rate, conversations}}
+    by_reason: dict[str, int]  # {reason: count}
+    avg_messages_before_escalation: float
+    escalation_timing: dict[str, float]  # {early: %, mid: %, late: %}
+
+
+class RegistrationLinksMetrics(BaseModel):
+    """Registration link send metrics."""
+
+    total_sent: int
+    unique_leads_sent: int
+    by_asset_type: dict[str, int]  # {registration_link: X, pricing: Y}
+
+
+class ChannelEffectiveness(BaseModel):
+    """Effectiveness metrics for a single channel."""
+
+    total_conversations: int
+    leads_captured: int
+    conversion_rate: float
+    escalation_rate: float
+    avg_messages: float
+    avg_duration_minutes: float
+
+
+class ChannelEffectivenessMatrix(BaseModel):
+    """Channel effectiveness comparison matrix."""
+
+    channels: dict[str, ChannelEffectiveness]
+
+
+class AIValueMetrics(BaseModel):
+    """Metrics showing AI value/impact."""
+
+    conversations_resolved_without_human: int
+    resolution_rate: float  # % resolved without escalation
+    estimated_staff_minutes_saved: float
+    leads_captured_automatically: int
+
+
+# Phase 2 Models
+
+
+class DropOffMetrics(BaseModel):
+    """Drop-off analytics metrics."""
+
+    total_conversations: int
+    completed_conversations: int  # With lead or link sent
+    dropped_conversations: int
+    drop_off_rate: float
+    by_exit_topic: dict[str, int]  # {pricing: X, location: Y, contact: Z}
+    avg_messages_before_dropoff: float
+    avg_time_to_dropoff_minutes: float
+
+
+class PushbackMetrics(BaseModel):
+    """User pushback/frustration metrics."""
+
+    total_pushback_signals: int
+    conversations_with_pushback: int
+    pushback_rate: float  # % of conversations with pushback
+    by_type: dict[str, int]  # {impatience: X, frustration: Y, ...}
+    common_triggers: list[str]  # Most common trigger phrases
+
+
+class RepetitionMetrics(BaseModel):
+    """Repetition and confusion signal metrics."""
+
+    conversations_with_repetition: int
+    repetition_rate: float
+    total_repeated_questions: int
+    total_user_clarifications: int
+    total_bot_clarifications: int
+    avg_repetition_score: float  # 0-1 friction score
+
+
+class DemandMetrics(BaseModel):
+    """Location and class demand intelligence (BSS-specific)."""
+
+    requests_by_location: dict[str, int]
+    location_mention_rate: float
+    requests_by_class_level: dict[str, int]
+    adult_vs_child: dict[str, int]  # {adult: X, child: Y}
+    by_hour_of_day: dict[int, int]  # {hour: count}
+
+
 class ConversationAnalyticsResponse(BaseModel):
     """Response model for conversation analytics."""
 
@@ -304,6 +419,17 @@ class ConversationAnalyticsResponse(BaseModel):
     escalation_metrics: EscalationMetrics
     intent_distribution: list[IntentDistribution]
     response_times: ResponseTimeMetrics
+    # Phase 1 metrics
+    escalation_by_channel: EscalationByChannelMetrics | None = None
+    response_time_distribution: ResponseTimeDistribution | None = None
+    registration_links: RegistrationLinksMetrics | None = None
+    channel_effectiveness: ChannelEffectivenessMatrix | None = None
+    ai_value: AIValueMetrics | None = None
+    # Phase 2 metrics
+    drop_off: DropOffMetrics | None = None
+    pushback: PushbackMetrics | None = None
+    repetition: RepetitionMetrics | None = None
+    demand: DemandMetrics | None = None
 
 
 @router.get("/conversations", response_model=ConversationAnalyticsResponse)
@@ -544,6 +670,666 @@ async def get_conversation_analytics(
         by_channel=response_by_channel,
     )
 
+    # Query 5: Escalation by channel and reason
+    # Get conversations per channel for rate calculation
+    conv_per_channel_stmt = (
+        select(
+            Conversation.channel,
+            func.count(Conversation.id).label("count"),
+        )
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.created_at >= start_datetime,
+            Conversation.created_at <= end_datetime,
+        )
+        .group_by(Conversation.channel)
+    )
+    conv_per_channel_result = await db.execute(conv_per_channel_stmt)
+    conv_per_channel = {row.channel: row.count for row in conv_per_channel_result}
+
+    # Get escalations by channel (from metadata) and reason
+    escalation_detail_stmt = (
+        select(
+            Escalation.escalation_metadata["channel"].astext.label("channel"),
+            Escalation.reason,
+            func.count(Escalation.id).label("count"),
+        )
+        .where(
+            Escalation.tenant_id == tenant_id,
+            Escalation.created_at >= start_datetime,
+            Escalation.created_at <= end_datetime,
+        )
+        .group_by(
+            Escalation.escalation_metadata["channel"].astext,
+            Escalation.reason,
+        )
+    )
+    escalation_detail_result = await db.execute(escalation_detail_stmt)
+
+    escalation_by_channel: dict[str, dict] = {}
+    escalation_by_reason: dict[str, int] = {}
+
+    for row in escalation_detail_result:
+        channel = row.channel or "unknown"
+        reason = row.reason or "unknown"
+        count = int(row.count or 0)
+
+        # Aggregate by channel
+        if channel not in escalation_by_channel:
+            escalation_by_channel[channel] = {"count": 0}
+        escalation_by_channel[channel]["count"] += count
+
+        # Aggregate by reason
+        escalation_by_reason[reason] = escalation_by_reason.get(reason, 0) + count
+
+    # Calculate rates per channel
+    for channel, data in escalation_by_channel.items():
+        channel_convs = conv_per_channel.get(channel, 0)
+        data["conversations"] = channel_convs
+        data["rate"] = round(data["count"] / channel_convs, 3) if channel_convs > 0 else 0
+
+    # Query 6: Messages before escalation and timing distribution
+    escalation_timing_stmt = (
+        select(
+            Escalation.id,
+            func.count(Message.id).label("messages_before"),
+        )
+        .select_from(Escalation)
+        .outerjoin(Conversation, Conversation.id == Escalation.conversation_id)
+        .outerjoin(
+            Message,
+            and_(
+                Message.conversation_id == Conversation.id,
+                Message.created_at < Escalation.created_at,
+            ),
+        )
+        .where(
+            Escalation.tenant_id == tenant_id,
+            Escalation.created_at >= start_datetime,
+            Escalation.created_at <= end_datetime,
+        )
+        .group_by(Escalation.id)
+    )
+    escalation_timing_result = await db.execute(escalation_timing_stmt)
+
+    timing_data = list(escalation_timing_result)
+    total_msgs_before = sum(row.messages_before or 0 for row in timing_data)
+    escalation_count_for_timing = len(timing_data)
+    avg_messages_before = (
+        round(total_msgs_before / escalation_count_for_timing, 1)
+        if escalation_count_for_timing > 0
+        else 0
+    )
+
+    # Calculate timing distribution (early: 0-3 msgs, mid: 4-7 msgs, late: 8+ msgs)
+    early_count = sum(1 for row in timing_data if (row.messages_before or 0) <= 3)
+    mid_count = sum(1 for row in timing_data if 4 <= (row.messages_before or 0) <= 7)
+    late_count = sum(1 for row in timing_data if (row.messages_before or 0) >= 8)
+
+    timing_total = early_count + mid_count + late_count
+    escalation_timing = {
+        "early": round(early_count / timing_total * 100, 1) if timing_total > 0 else 0,
+        "mid": round(mid_count / timing_total * 100, 1) if timing_total > 0 else 0,
+        "late": round(late_count / timing_total * 100, 1) if timing_total > 0 else 0,
+    }
+
+    escalation_by_channel_metrics = EscalationByChannelMetrics(
+        total_conversations=total_conversations,
+        total_escalations=total_escalations,
+        escalation_rate=escalation_rate,
+        by_channel={
+            ch: EscalationChannelDetail(
+                count=data["count"],
+                rate=data["rate"],
+                conversations=data["conversations"],
+            )
+            for ch, data in escalation_by_channel.items()
+        },
+        by_reason=escalation_by_reason,
+        avg_messages_before_escalation=avg_messages_before,
+        escalation_timing=escalation_timing,
+    )
+
+    # Query 7: Registration links sent
+    # Count leads with sms_sent_for_assets in extra_data
+    links_sent_stmt = (
+        select(
+            Lead.id,
+            Lead.extra_data,
+        )
+        .where(
+            Lead.tenant_id == tenant_id,
+            Lead.created_at >= start_datetime,
+            Lead.created_at <= end_datetime,
+            Lead.extra_data.isnot(None),
+        )
+    )
+    links_sent_result = await db.execute(links_sent_stmt)
+
+    total_links_sent = 0
+    unique_leads_with_links = 0
+    links_by_asset_type: dict[str, int] = {}
+
+    for row in links_sent_result:
+        extra_data = row.extra_data or {}
+        sent_assets = extra_data.get("sms_sent_for_assets", [])
+        if sent_assets:
+            unique_leads_with_links += 1
+            for asset in sent_assets:
+                total_links_sent += 1
+                asset_type = asset if isinstance(asset, str) else str(asset)
+                links_by_asset_type[asset_type] = links_by_asset_type.get(asset_type, 0) + 1
+
+    registration_links_metrics = RegistrationLinksMetrics(
+        total_sent=total_links_sent,
+        unique_leads_sent=unique_leads_with_links,
+        by_asset_type=links_by_asset_type,
+    )
+
+    # Query 8: Channel effectiveness matrix
+    # Join conversations with leads to get conversion rates
+    channel_effectiveness_stmt = (
+        select(
+            Conversation.channel,
+            func.count(func.distinct(Conversation.id)).label("total_conversations"),
+            func.count(func.distinct(Lead.id)).label("leads_captured"),
+        )
+        .select_from(Conversation)
+        .outerjoin(Lead, Lead.conversation_id == Conversation.id)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.created_at >= start_datetime,
+            Conversation.created_at <= end_datetime,
+        )
+        .group_by(Conversation.channel)
+    )
+    channel_eff_result = await db.execute(channel_effectiveness_stmt)
+
+    channel_effectiveness_data: dict[str, ChannelEffectiveness] = {}
+
+    for row in channel_eff_result:
+        channel = row.channel or "unknown"
+        total_convs = int(row.total_conversations or 0)
+        leads = int(row.leads_captured or 0)
+        conversion_rate = round(leads / total_convs, 3) if total_convs > 0 else 0
+
+        # Get escalation rate for this channel
+        channel_esc_data = escalation_by_channel.get(channel, {"count": 0, "conversations": 0})
+        channel_esc_rate = channel_esc_data.get("rate", 0)
+
+        # Get avg messages and duration for this channel from earlier calculation
+        channel_metrics = by_channel.get(channel)
+        avg_msgs = channel_metrics.avg_messages if channel_metrics else 0
+        avg_dur = channel_metrics.avg_duration_minutes if channel_metrics else 0
+
+        channel_effectiveness_data[channel] = ChannelEffectiveness(
+            total_conversations=total_convs,
+            leads_captured=leads,
+            conversion_rate=conversion_rate,
+            escalation_rate=channel_esc_rate,
+            avg_messages=avg_msgs,
+            avg_duration_minutes=avg_dur,
+        )
+
+    channel_effectiveness_matrix = ChannelEffectivenessMatrix(
+        channels=channel_effectiveness_data,
+    )
+
+    # Query 9: AI Value metrics
+    # Count conversations without escalations
+    resolved_without_human_stmt = (
+        select(func.count(func.distinct(Conversation.id)))
+        .select_from(Conversation)
+        .outerjoin(Escalation, Escalation.conversation_id == Conversation.id)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.created_at >= start_datetime,
+            Conversation.created_at <= end_datetime,
+            Escalation.id.is_(None),
+        )
+    )
+    resolved_result = await db.execute(resolved_without_human_stmt)
+    resolved_without_human = resolved_result.scalar() or 0
+
+    resolution_rate = (
+        round(resolved_without_human / total_conversations, 3)
+        if total_conversations > 0
+        else 0
+    )
+
+    # Estimate staff minutes saved (avg_duration * resolved_count)
+    # Using avg_duration calculated earlier (in minutes)
+    estimated_minutes_saved = round(avg_duration * resolved_without_human, 1)
+
+    # Count leads captured without escalation
+    leads_auto_stmt = (
+        select(func.count(func.distinct(Lead.id)))
+        .select_from(Lead)
+        .join(Conversation, Conversation.id == Lead.conversation_id)
+        .outerjoin(Escalation, Escalation.conversation_id == Conversation.id)
+        .where(
+            Lead.tenant_id == tenant_id,
+            Lead.created_at >= start_datetime,
+            Lead.created_at <= end_datetime,
+            Escalation.id.is_(None),
+        )
+    )
+    leads_auto_result = await db.execute(leads_auto_stmt)
+    leads_captured_auto = leads_auto_result.scalar() or 0
+
+    ai_value_metrics = AIValueMetrics(
+        conversations_resolved_without_human=resolved_without_human,
+        resolution_rate=resolution_rate,
+        estimated_staff_minutes_saved=estimated_minutes_saved,
+        leads_captured_automatically=leads_captured_auto,
+    )
+
+    # Query 10: Response time distribution with percentiles
+    # Note: percentile_cont requires PostgreSQL - we'll compute it in Python for compatibility
+    all_response_times_stmt = (
+        select(
+            Conversation.channel,
+            func.extract(
+                "epoch",
+                AssistantMessage.created_at - UserMessage.created_at,
+            ).label("response_seconds"),
+            UserMessage.sequence_number.label("seq_num"),
+        )
+        .select_from(UserMessage)
+        .join(Conversation, Conversation.id == UserMessage.conversation_id)
+        .join(
+            AssistantMessage,
+            and_(
+                AssistantMessage.conversation_id == UserMessage.conversation_id,
+                AssistantMessage.sequence_number == UserMessage.sequence_number + 1,
+                AssistantMessage.role == "assistant",
+            ),
+        )
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.created_at >= start_datetime,
+            Conversation.created_at <= end_datetime,
+            UserMessage.role == "user",
+        )
+    )
+    all_rt_result = await db.execute(all_response_times_stmt)
+
+    rt_by_channel: dict[str, list[float]] = {}
+    first_response_by_channel: dict[str, list[float]] = {}
+
+    for row in all_rt_result:
+        channel = row.channel or "unknown"
+        rt = float(row.response_seconds or 0)
+        seq_num = int(row.seq_num or 0)
+
+        if channel not in rt_by_channel:
+            rt_by_channel[channel] = []
+            first_response_by_channel[channel] = []
+
+        rt_by_channel[channel].append(rt)
+
+        # First response is sequence_number == 0 (first user message)
+        if seq_num == 0:
+            first_response_by_channel[channel].append(rt)
+
+    def calc_percentile(values: list[float], pct: float) -> float:
+        if not values:
+            return 0.0
+        sorted_vals = sorted(values)
+        idx = int(len(sorted_vals) * pct)
+        idx = min(idx, len(sorted_vals) - 1)
+        return round(sorted_vals[idx], 1)
+
+    all_rts = [rt for rts in rt_by_channel.values() for rt in rts]
+    all_first_rts = [rt for rts in first_response_by_channel.values() for rt in rts]
+
+    rt_distribution_by_channel: dict[str, dict] = {}
+    for channel, rts in rt_by_channel.items():
+        first_rts = first_response_by_channel.get(channel, [])
+        rt_distribution_by_channel[channel] = {
+            "avg": round(sum(rts) / len(rts), 1) if rts else 0,
+            "p50": calc_percentile(rts, 0.5),
+            "p90": calc_percentile(rts, 0.9),
+            "p99": calc_percentile(rts, 0.99),
+            "first_response": round(sum(first_rts) / len(first_rts), 1) if first_rts else 0,
+        }
+
+    response_time_distribution = ResponseTimeDistribution(
+        avg_response_time_seconds=round(sum(all_rts) / len(all_rts), 1) if all_rts else 0,
+        p50_seconds=calc_percentile(all_rts, 0.5),
+        p90_seconds=calc_percentile(all_rts, 0.9),
+        p99_seconds=calc_percentile(all_rts, 0.99),
+        first_response_avg_seconds=round(sum(all_first_rts) / len(all_first_rts), 1) if all_first_rts else 0,
+        by_channel=rt_distribution_by_channel,
+    )
+
+    # ============================================================
+    # Phase 2 Analytics
+    # ============================================================
+
+    # Query 11: Drop-off analytics
+    # A conversation is "completed" if it has a lead or registration link sent
+    # A conversation is "dropped" if it has neither and no recent activity
+
+    # Get conversations with their outcomes
+    conv_outcome_stmt = (
+        select(
+            Conversation.id,
+            Conversation.created_at,
+            func.count(Message.id).label("message_count"),
+            func.max(Message.created_at).label("last_message_at"),
+            func.min(Message.created_at).label("first_message_at"),
+        )
+        .select_from(Conversation)
+        .outerjoin(Message, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.created_at >= start_datetime,
+            Conversation.created_at <= end_datetime,
+        )
+        .group_by(Conversation.id)
+    )
+    conv_outcome_result = await db.execute(conv_outcome_stmt)
+    conv_outcomes = list(conv_outcome_result)
+
+    # Get conversation IDs with leads
+    conv_with_leads_stmt = (
+        select(func.distinct(Lead.conversation_id))
+        .where(
+            Lead.tenant_id == tenant_id,
+            Lead.conversation_id.isnot(None),
+            Lead.created_at >= start_datetime,
+            Lead.created_at <= end_datetime,
+        )
+    )
+    conv_with_leads_result = await db.execute(conv_with_leads_stmt)
+    conv_ids_with_leads = {row[0] for row in conv_with_leads_result}
+
+    # Get conversation IDs with registration links sent
+    conv_with_links_stmt = (
+        select(func.distinct(Lead.conversation_id))
+        .where(
+            Lead.tenant_id == tenant_id,
+            Lead.conversation_id.isnot(None),
+            Lead.extra_data.isnot(None),
+            Lead.created_at >= start_datetime,
+            Lead.created_at <= end_datetime,
+        )
+    )
+    conv_with_links_result = await db.execute(conv_with_links_stmt)
+    conv_ids_with_links = {row[0] for row in conv_with_links_result if row[0]}
+
+    # Get conversation IDs with escalations
+    conv_with_esc_stmt = (
+        select(func.distinct(Escalation.conversation_id))
+        .where(
+            Escalation.tenant_id == tenant_id,
+            Escalation.conversation_id.isnot(None),
+            Escalation.created_at >= start_datetime,
+            Escalation.created_at <= end_datetime,
+        )
+    )
+    conv_with_esc_result = await db.execute(conv_with_esc_stmt)
+    conv_ids_with_esc = {row[0] for row in conv_with_esc_result if row[0]}
+
+    completed_conv_ids = conv_ids_with_leads | conv_ids_with_links | conv_ids_with_esc
+    completed_count = len(completed_conv_ids)
+    dropped_count = 0
+    drop_off_messages = []
+    drop_off_durations = []
+
+    for row in conv_outcomes:
+        if row.id not in completed_conv_ids and row.message_count and row.message_count > 0:
+            dropped_count += 1
+            drop_off_messages.append(row.message_count)
+            if row.last_message_at and row.first_message_at:
+                duration_seconds = (row.last_message_at - row.first_message_at).total_seconds()
+                drop_off_durations.append(duration_seconds / 60)  # Convert to minutes
+
+    drop_off_rate = round(dropped_count / total_conversations, 3) if total_conversations > 0 else 0
+    avg_msgs_before_dropoff = round(sum(drop_off_messages) / len(drop_off_messages), 1) if drop_off_messages else 0
+    avg_time_to_dropoff = round(sum(drop_off_durations) / len(drop_off_durations), 1) if drop_off_durations else 0
+
+    drop_off_metrics = DropOffMetrics(
+        total_conversations=total_conversations,
+        completed_conversations=completed_count,
+        dropped_conversations=dropped_count,
+        drop_off_rate=drop_off_rate,
+        by_exit_topic={},  # Would require message content analysis - simplified for now
+        avg_messages_before_dropoff=avg_msgs_before_dropoff,
+        avg_time_to_dropoff_minutes=avg_time_to_dropoff,
+    )
+
+    # Query 12: Pushback detection
+    # Fetch user messages and analyze for pushback signals
+    pushback_detector = PushbackDetector()
+
+    user_messages_stmt = (
+        select(
+            Message.conversation_id,
+            Message.content,
+        )
+        .select_from(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.created_at >= start_datetime,
+            Conversation.created_at <= end_datetime,
+            Message.role == "user",
+            Message.content.isnot(None),
+        )
+    )
+    user_messages_result = await db.execute(user_messages_stmt)
+
+    pushback_by_type: dict[str, int] = {}
+    pushback_triggers: list[str] = []
+    conversations_with_pushback: set[int] = set()
+    total_pushback_signals = 0
+
+    for row in user_messages_result:
+        signal = pushback_detector.detect(row.content)
+        if signal:
+            total_pushback_signals += 1
+            conversations_with_pushback.add(row.conversation_id)
+            pushback_by_type[signal.pushback_type] = pushback_by_type.get(signal.pushback_type, 0) + 1
+            if signal.trigger_phrase not in pushback_triggers:
+                pushback_triggers.append(signal.trigger_phrase)
+
+    pushback_rate = round(len(conversations_with_pushback) / total_conversations, 3) if total_conversations > 0 else 0
+
+    # Limit to top 10 common triggers
+    common_triggers = pushback_triggers[:10]
+
+    pushback_metrics = PushbackMetrics(
+        total_pushback_signals=total_pushback_signals,
+        conversations_with_pushback=len(conversations_with_pushback),
+        pushback_rate=pushback_rate,
+        by_type=pushback_by_type,
+        common_triggers=common_triggers,
+    )
+
+    # Query 13: Repetition signals
+    # Group messages by conversation for analysis
+    repetition_detector = RepetitionDetector()
+
+    conv_messages_stmt = (
+        select(
+            Message.conversation_id,
+            Message.role,
+            Message.content,
+            Message.sequence_number,
+        )
+        .select_from(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.created_at >= start_datetime,
+            Conversation.created_at <= end_datetime,
+            Message.content.isnot(None),
+        )
+        .order_by(Message.conversation_id, Message.sequence_number)
+    )
+    conv_messages_result = await db.execute(conv_messages_stmt)
+
+    # Group messages by conversation
+    messages_by_conv: dict[int, list[dict]] = {}
+    for row in conv_messages_result:
+        if row.conversation_id not in messages_by_conv:
+            messages_by_conv[row.conversation_id] = []
+        messages_by_conv[row.conversation_id].append({
+            "role": row.role,
+            "content": row.content,
+        })
+
+    conversations_with_repetition = 0
+    total_repeated_questions = 0
+    total_user_clarifications = 0
+    total_bot_clarifications = 0
+    repetition_scores = []
+
+    for conv_id, messages in messages_by_conv.items():
+        analysis = repetition_detector.analyze_conversation(messages)
+        if analysis.has_repetitions:
+            conversations_with_repetition += 1
+        total_repeated_questions += analysis.repeated_question_count
+        total_user_clarifications += analysis.clarification_count
+        total_bot_clarifications += analysis.bot_clarification_count
+        repetition_scores.append(repetition_detector.get_repetition_score(analysis))
+
+    repetition_rate = round(conversations_with_repetition / total_conversations, 3) if total_conversations > 0 else 0
+    avg_repetition_score = round(sum(repetition_scores) / len(repetition_scores), 3) if repetition_scores else 0
+
+    repetition_metrics = RepetitionMetrics(
+        conversations_with_repetition=conversations_with_repetition,
+        repetition_rate=repetition_rate,
+        total_repeated_questions=total_repeated_questions,
+        total_user_clarifications=total_user_clarifications,
+        total_bot_clarifications=total_bot_clarifications,
+        avg_repetition_score=avg_repetition_score,
+    )
+
+    # Query 14: Demand intelligence (BSS-specific)
+    # Extract location and class mentions from call summaries and messages
+
+    # Location patterns for BSS
+    location_patterns = {
+        "LAFCypress": r"(?:la\s*f\s*)?cypress|lafcypress",
+        "LALANG": r"la\s*lang|langley|lalang",
+        "24Spring": r"24\s*spring|spring\s*24|24spring",
+    }
+
+    # Class level patterns
+    class_patterns = {
+        "Little Snappers": r"little\s*snapper|snapper",
+        "Turtle": r"turtle\s*\d*|turtle\s*level",
+        "Level 1": r"level\s*1|lvl\s*1",
+        "Level 2": r"level\s*2|lvl\s*2",
+        "Level 3": r"level\s*3|lvl\s*3",
+        "Adult": r"adult\s*(?:class|level|swim)?|grown\s*up",
+    }
+
+    import re
+
+    requests_by_location: dict[str, int] = {}
+    requests_by_class: dict[str, int] = {}
+    adult_vs_child = {"adult": 0, "child": 0}
+    by_hour: dict[int, int] = {}
+
+    # Analyze call summaries for demand data
+    call_demand_stmt = (
+        select(
+            CallSummary.extracted_fields,
+            Call.started_at,
+        )
+        .select_from(CallSummary)
+        .join(Call, Call.id == CallSummary.call_id)
+        .where(
+            Call.tenant_id == tenant_id,
+            func.coalesce(Call.started_at, Call.created_at) >= start_datetime,
+            func.coalesce(Call.started_at, Call.created_at) <= end_datetime,
+        )
+    )
+    call_demand_result = await db.execute(call_demand_stmt)
+
+    location_mentions = 0
+
+    for row in call_demand_result:
+        # Track time of day
+        if row.started_at:
+            hour = row.started_at.hour
+            by_hour[hour] = by_hour.get(hour, 0) + 1
+
+        # Check extracted fields for location/class mentions
+        extracted = row.extracted_fields or {}
+        reason = str(extracted.get("reason", "")).lower()
+
+        # Check for location mentions
+        for loc_name, pattern in location_patterns.items():
+            if re.search(pattern, reason, re.IGNORECASE):
+                requests_by_location[loc_name] = requests_by_location.get(loc_name, 0) + 1
+                location_mentions += 1
+
+        # Check for class mentions
+        for class_name, pattern in class_patterns.items():
+            if re.search(pattern, reason, re.IGNORECASE):
+                requests_by_class[class_name] = requests_by_class.get(class_name, 0) + 1
+                if "adult" in class_name.lower():
+                    adult_vs_child["adult"] += 1
+                else:
+                    adult_vs_child["child"] += 1
+
+    # Also analyze SMS/chat message content for demand signals
+    demand_messages_stmt = (
+        select(
+            Message.content,
+            Message.created_at,
+        )
+        .select_from(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.created_at >= start_datetime,
+            Conversation.created_at <= end_datetime,
+            Message.role == "user",
+            Message.content.isnot(None),
+        )
+    )
+    demand_messages_result = await db.execute(demand_messages_stmt)
+
+    for row in demand_messages_result:
+        content = row.content.lower() if row.content else ""
+
+        # Track time of day
+        if row.created_at:
+            hour = row.created_at.hour
+            by_hour[hour] = by_hour.get(hour, 0) + 1
+
+        # Check for location mentions
+        for loc_name, pattern in location_patterns.items():
+            if re.search(pattern, content, re.IGNORECASE):
+                requests_by_location[loc_name] = requests_by_location.get(loc_name, 0) + 1
+                location_mentions += 1
+
+        # Check for class mentions
+        for class_name, pattern in class_patterns.items():
+            if re.search(pattern, content, re.IGNORECASE):
+                requests_by_class[class_name] = requests_by_class.get(class_name, 0) + 1
+                if "adult" in class_name.lower():
+                    adult_vs_child["adult"] += 1
+                else:
+                    adult_vs_child["child"] += 1
+
+    total_messages_analyzed = sum(by_hour.values()) if by_hour else 0
+    location_mention_rate = round(location_mentions / total_messages_analyzed, 3) if total_messages_analyzed > 0 else 0
+
+    demand_metrics = DemandMetrics(
+        requests_by_location=requests_by_location,
+        location_mention_rate=location_mention_rate,
+        requests_by_class_level=requests_by_class,
+        adult_vs_child=adult_vs_child,
+        by_hour_of_day=by_hour,
+    )
+
     return ConversationAnalyticsResponse(
         start_date=range_start.isoformat(),
         end_date=range_end.isoformat(),
@@ -552,4 +1338,214 @@ async def get_conversation_analytics(
         escalation_metrics=escalation_metrics,
         intent_distribution=intent_distribution,
         response_times=response_times,
+        # Phase 1 metrics
+        escalation_by_channel=escalation_by_channel_metrics,
+        response_time_distribution=response_time_distribution,
+        registration_links=registration_links_metrics,
+        channel_effectiveness=channel_effectiveness_matrix,
+        ai_value=ai_value_metrics,
+        # Phase 2 metrics
+        drop_off=drop_off_metrics,
+        pushback=pushback_metrics,
+        repetition=repetition_metrics,
+        demand=demand_metrics,
+    )
+
+
+# Widget Analytics Models
+
+
+class VisibilityMetrics(BaseModel):
+    """Widget visibility metrics."""
+
+    impressions: int
+    render_attempts: int
+    render_successes: int
+    render_success_rate: float
+    above_fold_views: int
+    above_fold_rate: float
+    avg_time_to_first_view_ms: float
+
+
+class AttentionMetrics(BaseModel):
+    """Widget attention capture metrics."""
+
+    widget_opens: int
+    open_rate: float
+    manual_opens: int
+    manual_open_rate: float
+    auto_opens: int
+    auto_open_dismiss_count: int
+    auto_open_dismiss_rate: float
+    hover_count: int
+    hover_rate: float
+
+
+class WidgetAnalyticsResponse(BaseModel):
+    """Widget analytics metrics response."""
+
+    start_date: str
+    end_date: str
+    timezone: str
+    visibility: VisibilityMetrics
+    attention: AttentionMetrics
+
+
+@router.get("/widget", response_model=WidgetAnalyticsResponse)
+async def get_widget_analytics(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    start_date: Annotated[str | None, Query()] = None,
+    end_date: Annotated[str | None, Query()] = None,
+    timezone: Annotated[str | None, Query()] = None,
+) -> WidgetAnalyticsResponse:
+    """Get widget engagement analytics including visibility and attention metrics."""
+    # Get tenant info
+    tenant_result = await db.execute(
+        select(Tenant.created_at).where(Tenant.id == tenant_id)
+    )
+    tenant_created_at = tenant_result.scalar_one_or_none()
+    if not tenant_created_at:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found",
+        )
+
+    # Resolve timezone
+    sms_config_result = await db.execute(
+        select(TenantSmsConfig.timezone).where(TenantSmsConfig.tenant_id == tenant_id)
+    )
+    tenant_timezone = sms_config_result.scalar_one_or_none()
+    requested_timezone = _resolve_timezone(timezone)
+    effective_timezone = (
+        _resolve_timezone(tenant_timezone) if tenant_timezone else requested_timezone
+    )
+
+    # Parse date range
+    tenant_start_date = tenant_created_at.date()
+    today = datetime.utcnow().date()
+    parsed_start = _normalize_date(start_date)
+    parsed_end = _normalize_date(end_date)
+
+    if parsed_start is None and parsed_end is None:
+        parsed_end = today
+        parsed_start = parsed_end - timedelta(days=29)  # Default to 30 days
+    elif parsed_start is None and parsed_end is not None:
+        parsed_start = parsed_end - timedelta(days=29)
+    elif parsed_end is None and parsed_start is not None:
+        parsed_end = today
+
+    range_start = parsed_start or tenant_start_date
+    range_end = parsed_end or today
+
+    if range_start < tenant_start_date:
+        range_start = tenant_start_date
+    if range_end > today:
+        range_end = today
+    if range_start > range_end:
+        range_start = range_end
+
+    # Convert to UTC datetime range
+    tz = pytz.timezone(effective_timezone)
+    start_local = tz.localize(datetime.combine(range_start, time.min))
+    end_local = tz.localize(datetime.combine(range_end, time.max))
+    start_datetime = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
+    end_datetime = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
+
+    # Helper function to count events by type
+    async def count_events(event_type: str) -> int:
+        stmt = (
+            select(func.count(WidgetEvent.id))
+            .where(
+                WidgetEvent.tenant_id == tenant_id,
+                WidgetEvent.event_type == event_type,
+                WidgetEvent.created_at >= start_datetime,
+                WidgetEvent.created_at <= end_datetime,
+            )
+        )
+        result = await db.execute(stmt)
+        return result.scalar() or 0
+
+    # Count basic events
+    impressions = await count_events("impression")
+    render_successes = await count_events("render_success")
+    render_failures = await count_events("render_failure")
+    widget_opens = await count_events("widget_open")
+    manual_opens = await count_events("manual_open")
+    auto_opens = await count_events("auto_open")
+    auto_open_dismissals = await count_events("auto_open_dismiss")
+    hover_count = await count_events("hover")
+    focus_count = await count_events("focus")
+
+    # Total hover/focus events
+    total_hover_focus = hover_count + focus_count
+
+    # Calculate render attempts (successes + failures, or use impressions if no render events)
+    render_attempts = render_successes + render_failures
+    if render_attempts == 0:
+        render_attempts = impressions  # Fallback: assume all impressions were render attempts
+
+    # Query viewport_visible events for above-fold and time-to-view data
+    viewport_stmt = (
+        select(WidgetEvent.event_data)
+        .where(
+            WidgetEvent.tenant_id == tenant_id,
+            WidgetEvent.event_type == "viewport_visible",
+            WidgetEvent.created_at >= start_datetime,
+            WidgetEvent.created_at <= end_datetime,
+        )
+    )
+    viewport_result = await db.execute(viewport_stmt)
+
+    above_fold_count = 0
+    total_viewport_events = 0
+    total_time_to_view = 0.0
+
+    for row in viewport_result:
+        total_viewport_events += 1
+        event_data = row.event_data or {}
+        if event_data.get("was_above_fold"):
+            above_fold_count += 1
+        time_to_view = event_data.get("time_to_first_view_ms")
+        if time_to_view is not None:
+            total_time_to_view += float(time_to_view)
+
+    # Calculate rates
+    render_success_rate = render_successes / render_attempts if render_attempts > 0 else 0
+    above_fold_rate = above_fold_count / total_viewport_events if total_viewport_events > 0 else 0
+    avg_time_to_first_view = total_time_to_view / total_viewport_events if total_viewport_events > 0 else 0
+
+    open_rate = widget_opens / impressions if impressions > 0 else 0
+    manual_open_rate = manual_opens / impressions if impressions > 0 else 0
+    auto_open_dismiss_rate = auto_open_dismissals / auto_opens if auto_opens > 0 else 0
+    hover_rate = total_hover_focus / impressions if impressions > 0 else 0
+
+    visibility_metrics = VisibilityMetrics(
+        impressions=impressions,
+        render_attempts=render_attempts,
+        render_successes=render_successes if render_successes > 0 else impressions,
+        render_success_rate=round(render_success_rate, 3) if render_successes > 0 else 1.0,
+        above_fold_views=above_fold_count,
+        above_fold_rate=round(above_fold_rate, 3),
+        avg_time_to_first_view_ms=round(avg_time_to_first_view, 1),
+    )
+
+    attention_metrics = AttentionMetrics(
+        widget_opens=widget_opens,
+        open_rate=round(open_rate, 3),
+        manual_opens=manual_opens,
+        manual_open_rate=round(manual_open_rate, 3),
+        auto_opens=auto_opens,
+        auto_open_dismiss_count=auto_open_dismissals,
+        auto_open_dismiss_rate=round(auto_open_dismiss_rate, 3),
+        hover_count=total_hover_focus,
+        hover_rate=round(hover_rate, 3),
+    )
+
+    return WidgetAnalyticsResponse(
+        start_date=range_start.isoformat(),
+        end_date=range_end.isoformat(),
+        timezone=effective_timezone,
+        visibility=visibility_metrics,
+        attention=attention_metrics,
     )

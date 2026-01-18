@@ -1,0 +1,201 @@
+.widget-analytics-page {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.widget-analytics-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.widget-analytics-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+.widget-analytics-title h1 {
+  margin: 0;
+}
+
+.widget-analytics-subtitle {
+  margin-top: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.widget-analytics-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--spacing-md);
+  background: var(--color-bg-white);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border-light);
+}
+
+.widget-analytics-summary div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-height: 56px;
+  justify-content: center;
+}
+
+.widget-analytics-summary .summary-value {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.widget-analytics-summary .summary-label {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.widget-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.widget-analytics-card {
+  background: var(--color-bg-white);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border-light);
+}
+
+.widget-analytics-card-wide {
+  grid-column: 1 / -1;
+}
+
+.widget-analytics-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.widget-analytics-card-header h2 {
+  margin: 0 0 2px;
+  font-size: 1rem;
+}
+
+.widget-analytics-card-header p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+/* Metric rows */
+.metric-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.metric-row:last-child {
+  border-bottom: none;
+}
+
+.metric-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.metric-value {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+/* Funnel visualization */
+.funnel-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+}
+
+.funnel-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.funnel-bar {
+  height: 32px;
+  background: linear-gradient(90deg, #e2e8f0 0%, #cbd5e1 100%);
+  border-radius: var(--radius-sm);
+  transition: width 0.5s ease;
+}
+
+.funnel-bar-primary {
+  background: linear-gradient(90deg, var(--color-primary, #4f6fd9) 0%, #3f5fc9 100%);
+}
+
+.funnel-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+}
+
+.funnel-count {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.funnel-name {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* No data message */
+.no-data-message {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  padding: var(--spacing-md);
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .widget-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .widget-analytics-summary {
+    width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .widget-analytics-summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .widget-analytics-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

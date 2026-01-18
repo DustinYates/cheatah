@@ -10,6 +10,7 @@ import ContactDetail from './pages/ContactDetail';
 import Calls from './pages/Calls';
 import Plots from './pages/Plots';
 import ConversationAnalytics from './pages/ConversationAnalytics';
+import WidgetAnalytics from './pages/WidgetAnalytics';
 import Onboarding from './pages/Onboarding';
 import BusinessProfile from './pages/BusinessProfile';
 import WidgetSettings from './pages/WidgetSettings';
@@ -46,6 +47,7 @@ function App() {
             <Route path="calls" element={<Calls />} />
             <Route path="analytics/usage" element={<Plots />} />
             <Route path="analytics/conversations" element={<ConversationAnalytics />} />
+            <Route path="analytics/widget" element={<WidgetAnalytics />} />
             <Route path="analytics/plots" element={<Navigate to="/analytics/usage" replace />} />
 
             {/* Settings routes */}

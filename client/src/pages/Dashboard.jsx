@@ -180,10 +180,14 @@ export default function Dashboard() {
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [leadsLimit, setLeadsLimit] = useState(() => {
+    const saved = localStorage.getItem('dashboard_leads_limit');
+    return saved ? parseInt(saved, 10) : 50;
+  });
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [leadsLimit]);
 
   useEffect(() => {
     if (openActionMenuId === null) return;
@@ -204,7 +208,7 @@ export default function Dashboard() {
     setError('');
     try {
       const [leadsResult, callsResult] = await Promise.allSettled([
-        api.getLeads({ limit: 50 }),
+        api.getLeads({ limit: leadsLimit }),
         api.getCalls({ page: 1, page_size: 5 }),
       ]);
 
@@ -233,6 +237,11 @@ export default function Dashboard() {
       setLoading(false);
       setCallsLoading(false);
     }
+  };
+
+  const handleLimitChange = (newLimit) => {
+    setLeadsLimit(newLimit);
+    localStorage.setItem('dashboard_leads_limit', newLimit.toString());
   };
 
   const handleVerify = async (leadId) => {
@@ -535,6 +544,18 @@ export default function Dashboard() {
           <div className="card-header">
             <h2>Recent Leads</h2>
             <div className="card-header__actions">
+              <div className="leads-limit-selector">
+                <span className="leads-limit-label">Show:</span>
+                <select
+                  className="leads-limit-select"
+                  value={leadsLimit}
+                  onChange={(e) => handleLimitChange(parseInt(e.target.value, 10))}
+                >
+                  <option value={10}>10</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
               {selectedLeadIds.size > 0 && (
                 <button
                   className="btn btn--danger btn--sm"

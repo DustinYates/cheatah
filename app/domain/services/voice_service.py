@@ -1581,8 +1581,14 @@ Write a professional summary (2-3 sentences):"""
                 lead_id = lead.id
                 logger.info(f"Created and auto-verified lead from voice call: lead_id={lead_id}")
             
-            # If no existing contact but we have a phone number, create one
-            # Voice calls always have a phone number from caller ID
+            # Check if capture_lead already created a contact via _check_and_auto_convert
+            if not contact_id and lead_id:
+                lead_contact = await self.contact_repo.get_by_lead_id(tenant_id, lead_id)
+                if lead_contact:
+                    contact_id = lead_contact.id
+                    logger.info(f"Using contact created by lead capture: contact_id={contact_id}")
+
+            # Only create contact directly if still no contact and we have phone
             if not contact_id and phone:
                 from app.persistence.models.contact import Contact
                 contact = Contact(

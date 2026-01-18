@@ -3,11 +3,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_tenant_context
 from app.persistence.models.contact import Contact
+from app.persistence.models.lead import Lead
+from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.tenant import User
 from app.persistence.repositories.contact_repository import ContactRepository
 from app.domain.services.contact_merge_service import ContactMergeService
@@ -27,6 +29,7 @@ class ContactResponse(BaseModel):
     lead_id: int | None
     merged_into_contact_id: int | None
     created_at: str
+    last_contacted: str | None = None
 
     class Config:
         from_attributes = True
@@ -129,7 +132,10 @@ class CombinedHistoryResponse(BaseModel):
     aliases: list[ContactAliasResponse]
 
 
-def _contact_to_response(contact: Contact) -> ContactResponse:
+def _contact_to_response(
+    contact: Contact,
+    last_contacted: str | None = None,
+) -> ContactResponse:
     """Convert a Contact model to ContactResponse."""
     return ContactResponse(
         id=contact.id,
@@ -141,6 +147,7 @@ def _contact_to_response(contact: Contact) -> ContactResponse:
         lead_id=contact.lead_id,
         merged_into_contact_id=contact.merged_into_contact_id,
         created_at=contact.created_at.isoformat() if contact.created_at else "",
+        last_contacted=last_contacted,
     )
 
 
@@ -156,25 +163,53 @@ async def list_contacts(
 ) -> ContactListResponse:
     """List all contacts for the tenant with pagination."""
     repo = ContactRepository(db)
-    
+
     # Calculate offset from page
     offset = (page - 1) * page_size
-    
+
     # Get contacts using list_by_tenant
     contacts = await repo.list_by_tenant(
         tenant_id=tenant_id,
         skip=offset,
         limit=page_size,
     )
-    
+
+    # Query last contacted dates for all contacts in a single efficient query
+    # This joins Contact -> Lead -> Conversation -> Message to find the max message timestamp
+    contact_ids = [c.id for c in contacts]
+    last_contacted_map: dict[int, str | None] = {}
+
+    if contact_ids:
+        # Subquery to get the max message created_at for each contact
+        last_contacted_query = (
+            select(
+                Contact.id.label("contact_id"),
+                func.max(Message.created_at).label("last_contacted"),
+            )
+            .select_from(Contact)
+            .outerjoin(Lead, Contact.lead_id == Lead.id)
+            .outerjoin(Conversation, Lead.conversation_id == Conversation.id)
+            .outerjoin(Message, Message.conversation_id == Conversation.id)
+            .where(Contact.id.in_(contact_ids))
+            .group_by(Contact.id)
+        )
+
+        result = await db.execute(last_contacted_query)
+        for row in result:
+            if row.last_contacted:
+                last_contacted_map[row.contact_id] = row.last_contacted.isoformat()
+
     # For now, estimate total as we don't have a count method
     # If we get a full page, there might be more
     total = offset + len(contacts)
     if len(contacts) == page_size:
         total += 1  # Indicate there might be more
-    
+
     return ContactListResponse(
-        items=[_contact_to_response(c) for c in contacts],
+        items=[
+            _contact_to_response(c, last_contacted=last_contacted_map.get(c.id))
+            for c in contacts
+        ],
         total=total,
         page=page,
         page_size=page_size,

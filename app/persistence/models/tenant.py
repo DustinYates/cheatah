@@ -38,7 +38,14 @@ class Tenant(Base):
     deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Relationships
-    users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
+    # Note: foreign_keys specified due to deleted_by also referencing users table
+    users = relationship(
+        "User",
+        back_populates="tenant",
+        cascade="all, delete-orphan",
+        foreign_keys="User.tenant_id"
+    )
+    deleted_by_user = relationship("User", foreign_keys=[deleted_by])
     conversations = relationship(
         "Conversation", back_populates="tenant", cascade="all, delete-orphan"
     )
@@ -143,7 +150,8 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    tenant = relationship("Tenant", back_populates="users")
+    # Note: foreign_keys specified due to Tenant.deleted_by also referencing users table
+    tenant = relationship("Tenant", back_populates="users", foreign_keys=[tenant_id])
     contact = relationship("Contact", foreign_keys=[contact_id])
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 

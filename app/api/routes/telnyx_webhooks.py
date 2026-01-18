@@ -1467,11 +1467,29 @@ async def telnyx_ai_call_complete(
 
         is_registration_request = any(kw in combined_text for kw in registration_keywords)
 
+        # =============================================================
+        # DEDUPLICATION: Check if we've already sent SMS for this call
+        # =============================================================
+        # Telnyx sends multiple events per call (conversation.ended, insights.generated, retries)
+        # Use database-backed dedup since Redis may be disabled
+        sms_already_sent_for_call = False
+        if lead and call:
+            lead_extra = lead.extra_data or {}
+            sent_call_ids = lead_extra.get("registration_sms_sent_call_ids", [])
+            if call.id in sent_call_ids or str(call.id) in sent_call_ids:
+                sms_already_sent_for_call = True
+                logger.info(
+                    f"Skipping registration SMS - already sent for call_id={call.id}: "
+                    f"tenant_id={tenant_id}, phone={from_number}"
+                )
+
         if link_already_sent:
             logger.info(
                 f"Skipping registration SMS - link already sent during call: "
                 f"tenant_id={tenant_id}, phone={from_number}"
             )
+        elif sms_already_sent_for_call:
+            pass  # Already logged above
         elif is_registration_request and from_number:
             logger.info(
                 f"Registration request detected from Telnyx AI - "
@@ -1509,6 +1527,21 @@ async def telnyx_ai_call_complete(
                     f"Registration SMS fulfillment result - tenant_id={tenant_id}, "
                     f"status={result.get('status')}, phone={from_number}"
                 )
+
+                # Track that we sent SMS for this call (database-backed dedup)
+                if result.get("status") == "sent" and lead and call:
+                    try:
+                        lead_extra = lead.extra_data or {}
+                        sent_call_ids = lead_extra.get("registration_sms_sent_call_ids", [])
+                        if call.id not in sent_call_ids:
+                            sent_call_ids.append(call.id)
+                            lead_extra["registration_sms_sent_call_ids"] = sent_call_ids
+                            lead.extra_data = lead_extra
+                            flag_modified(lead, "extra_data")
+                            await db.commit()
+                            logger.info(f"Marked call_id={call.id} as having SMS sent for lead_id={lead.id}")
+                    except Exception as track_err:
+                        logger.warning(f"Failed to track SMS sent for call_id={call.id}: {track_err}")
             except Exception as e:
                 logger.error(f"Failed to auto-send registration SMS: {e}", exc_info=True)
 

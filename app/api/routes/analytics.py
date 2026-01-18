@@ -1256,9 +1256,11 @@ async def get_conversation_analytics(
     location_mentions = 0
 
     for row in call_demand_result:
-        # Track time of day
+        # Track time of day (convert UTC to tenant timezone)
         if row.started_at:
-            hour = row.started_at.hour
+            utc_dt = pytz.UTC.localize(row.started_at)
+            local_dt = utc_dt.astimezone(tz)
+            hour = local_dt.hour
             by_hour[hour] = by_hour.get(hour, 0) + 1
 
         # Check extracted fields for location/class mentions
@@ -1301,9 +1303,11 @@ async def get_conversation_analytics(
     for row in demand_messages_result:
         content = row.content.lower() if row.content else ""
 
-        # Track time of day
+        # Track time of day (convert UTC to tenant timezone)
         if row.created_at:
-            hour = row.created_at.hour
+            utc_dt = pytz.UTC.localize(row.created_at)
+            local_dt = utc_dt.astimezone(tz)
+            hour = local_dt.hour
             by_hour[hour] = by_hour.get(hour, 0) + 1
 
         # Check for location mentions

@@ -688,9 +688,11 @@ async def get_conversation_analytics(
     conv_per_channel = {row.channel: row.count for row in conv_per_channel_result}
 
     # Get escalations by channel (from metadata) and reason
+    # Define cast expression once to avoid PostgreSQL GROUP BY parameter mismatch
+    channel_cast_expr = cast(Escalation.escalation_metadata["channel"], String)
     escalation_detail_stmt = (
         select(
-            cast(Escalation.escalation_metadata["channel"], String).label("channel"),
+            channel_cast_expr.label("channel"),
             Escalation.reason,
             func.count(Escalation.id).label("count"),
         )
@@ -700,7 +702,7 @@ async def get_conversation_analytics(
             Escalation.created_at <= end_datetime,
         )
         .group_by(
-            cast(Escalation.escalation_metadata["channel"], String),
+            channel_cast_expr,
             Escalation.reason,
         )
     )

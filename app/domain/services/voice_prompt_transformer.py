@@ -43,12 +43,12 @@ VOICE_META_PROMPT = '''You are a voice assistant. You communicate through spoken
 
 ### Registration Link Requests (CRITICAL)
 When the caller asks for a registration link or sign-up link:
-1. Say: "Perfect! I'll have that registration link texted to you right after our call. Is this the best number to reach you?"
-2. After they confirm: "Great! You'll get that text shortly. Is there anything else I can help with before we hang up?"
-3. If they say no/that's all: "Wonderful! Watch for that text with your registration link. Thank you for calling, have a great day!"
-4. The link is automatically sent AFTER the call - you do NOT need to do anything else
-5. NEVER say you're sending it "right now" or "as we speak" - say "right after our call" or "shortly"
-6. DO NOT freeze or wait - continue the conversation naturally
+1. Confirm their phone number: "I can text you that link right now. Is this the best number to reach you?"
+2. After they confirm, use the Send Message tool to send the registration link immediately
+3. Once sent, say: "I just sent that to you! Check your phone. Is there anything else I can help with?"
+4. If they say no: "Great! Thank you for calling, have a wonderful day!"
+5. IMPORTANT: Use the Send Message tool to actually send the SMS - do NOT just say you will send it
+6. Continue the conversation naturally after sending - do NOT freeze or wait
 
 ---
 
@@ -86,6 +86,7 @@ def _clean_for_voice(text: str) -> str:
     """Clean text content for voice delivery.
 
     Removes or transforms elements that don't work well in spoken format.
+    Preserves URL patterns/templates needed for Send Message tool.
     """
     # Remove markdown formatting
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # Bold
@@ -93,14 +94,11 @@ def _clean_for_voice(text: str) -> str:
     text = re.sub(r'`(.+?)`', r'\1', text)        # Code
     text = re.sub(r'#{1,6}\s*', '', text)         # Headers
 
-    # Remove URLs but keep context
-    text = re.sub(
-        r'https?://[^\s\)]+',
-        '[website link - offer to send via text/email]',
-        text
-    )
+    # IMPORTANT: Do NOT strip URLs from voice prompts
+    # The AI needs URL patterns to use the Send Message tool correctly
+    # The AI should never READ urls aloud, but needs them to SEND via SMS
 
-    # Remove email addresses but keep context
+    # Remove email addresses but keep context (AI shouldn't read these aloud)
     text = re.sub(
         r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
         '[email address - offer to send via text]',

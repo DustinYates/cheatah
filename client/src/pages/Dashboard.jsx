@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import LeadDetailsModal from '../components/LeadDetailsModal';
@@ -170,8 +171,10 @@ const StatusBadge = ({ status, label, variant = 'pill' }) => (
 );
 
 export default function Dashboard() {
+  const { user, selectedTenantId, selectTenant } = useAuth();
   const [leads, setLeads] = useState([]);
   const [calls, setCalls] = useState([]);
+  const [tenantsOverview, setTenantsOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [callsLoading, setCallsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -185,9 +188,30 @@ export default function Dashboard() {
     return saved ? parseInt(saved, 10) : 50;
   });
 
+  // Check if master admin with no tenant selected
+  const isMasterAdminView = user?.is_global_admin && !selectedTenantId;
+
   useEffect(() => {
-    fetchData();
-  }, [leadsLimit]);
+    if (isMasterAdminView) {
+      fetchTenantsOverview();
+    } else {
+      fetchData();
+    }
+  }, [leadsLimit, isMasterAdminView, selectedTenantId]);
+
+  const fetchTenantsOverview = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api.getTenantsOverview();
+      setTenantsOverview(data);
+    } catch (err) {
+      console.error('Failed to fetch tenants overview:', err);
+      setError('Failed to load tenants overview');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (openActionMenuId === null) return;
@@ -403,8 +427,95 @@ export default function Dashboard() {
     return <LoadingState message="Loading dashboard..." fullPage />;
   }
 
-  if (error && leads.length === 0) {
-    return <ErrorState message={error} onRetry={fetchData} />;
+  if (error && !tenantsOverview && leads.length === 0) {
+    return <ErrorState message={error} onRetry={isMasterAdminView ? fetchTenantsOverview : fetchData} />;
+  }
+
+  // Format relative time for last activity
+  const formatLastActivity = (isoString) => {
+    if (!isoString) return 'No activity';
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  // Master Admin Tenant Overview
+  if (isMasterAdminView && tenantsOverview) {
+    return (
+      <div className="dashboard">
+        <div className="dashboard-header">
+          <div className="dashboard-header__title">
+            <h1>Master Admin Dashboard</h1>
+            <span className="dashboard-header__subtitle">All tenants overview</span>
+          </div>
+        </div>
+
+        {/* Summary Stats */}
+        <div className="tenant-overview-summary">
+          <div className="summary-stat">
+            <span className="summary-stat__value">{tenantsOverview.total_tenants}</span>
+            <span className="summary-stat__label">Total Tenants</span>
+          </div>
+          <div className="summary-stat">
+            <span className="summary-stat__value summary-stat__value--success">{tenantsOverview.active_tenants}</span>
+            <span className="summary-stat__label">Active</span>
+          </div>
+          <div className="summary-stat">
+            <span className="summary-stat__value summary-stat__value--muted">{tenantsOverview.total_tenants - tenantsOverview.active_tenants}</span>
+            <span className="summary-stat__label">Inactive</span>
+          </div>
+        </div>
+
+        {/* Tenant Cards */}
+        <div className="tenant-overview-grid">
+          {tenantsOverview.tenants.map((tenant) => (
+            <div
+              key={tenant.id}
+              className={`tenant-card ${!tenant.is_active ? 'tenant-card--inactive' : ''}`}
+              onClick={() => selectTenant(tenant.id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === 'Enter' && selectTenant(tenant.id)}
+            >
+              <div className="tenant-card__header">
+                <h3 className="tenant-card__name">{tenant.name}</h3>
+                <span className={`tenant-card__status ${tenant.is_active ? 'tenant-card__status--active' : 'tenant-card__status--inactive'}`}>
+                  {tenant.is_active ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+              <div className="tenant-card__subdomain">{tenant.subdomain}</div>
+              {tenant.tier && <div className="tenant-card__tier">{tenant.tier}</div>}
+              <div className="tenant-card__stats">
+                <div className="tenant-card__stat">
+                  <span className="tenant-card__stat-value">{tenant.total_conversations}</span>
+                  <span className="tenant-card__stat-label">Conversations</span>
+                </div>
+                <div className="tenant-card__stat">
+                  <span className="tenant-card__stat-value">{tenant.total_leads}</span>
+                  <span className="tenant-card__stat-label">Leads</span>
+                </div>
+                <div className="tenant-card__stat">
+                  <span className="tenant-card__stat-value">{tenant.total_contacts}</span>
+                  <span className="tenant-card__stat-label">Contacts</span>
+                </div>
+              </div>
+              <div className="tenant-card__activity">
+                Last activity: {formatLastActivity(tenant.last_activity)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   const getRowClassName = (lead) => {

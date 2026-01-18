@@ -67,3 +67,25 @@ class EmbedCodeResponse(BaseModel):
     api_url: str
     has_published_prompt: bool
     warning: str | None = None
+
+
+class TenantOverviewStats(BaseModel):
+    """Stats for a single tenant in the overview."""
+
+    id: int
+    name: str
+    subdomain: str
+    is_active: bool
+    tier: str | None
+    total_conversations: int = 0
+    total_leads: int = 0
+    total_contacts: int = 0
+    last_activity: str | None = None
+
+
+class TenantsOverviewResponse(BaseModel):
+    """Response for master admin tenant overview."""
+
+    tenants: list[TenantOverviewStats]
+    total_tenants: int
+    active_tenants: int

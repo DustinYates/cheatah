@@ -277,9 +277,18 @@
   width: 100px;
 }
 
+.col-last-contacted {
+  width: 110px;
+}
+
 .col-actions {
   width: 100px;
   text-align: center;
+}
+
+.contact-text-muted {
+  color: #d1d5db;
+  font-size: 12px;
 }
 
 /* Action Buttons */
@@ -517,7 +526,9 @@
   }
 
   .contacts-table th.col-added,
-  .contacts-table td.col-added {
+  .contacts-table td.col-added,
+  .contacts-table th.col-last-contacted,
+  .contacts-table td.col-last-contacted {
     display: none;
   }
 

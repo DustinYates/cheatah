@@ -230,6 +230,7 @@ export default function Contacts() {
                 <th className="col-phone">Phone</th>
                 <th className="col-email">Email</th>
                 <th className="col-added">Added</th>
+                <th className="col-last-contacted">Last Contacted</th>
                 <th className="col-actions">Actions</th>
               </tr>
             </thead>
@@ -270,6 +271,15 @@ export default function Contacts() {
                       <span className="contact-date">
                         {formatDateTimeParts(contact.created_at).date}
                       </span>
+                    </td>
+                    <td className="col-last-contacted">
+                      {contact.last_contacted ? (
+                        <span className="contact-date" title={formatDateTimeParts(contact.last_contacted).time}>
+                          {formatDateTimeParts(contact.last_contacted).date}
+                        </span>
+                      ) : (
+                        <span className="contact-text-muted">-</span>
+                      )}
                     </td>
                     <td className="col-actions">
                       <div className="action-buttons">

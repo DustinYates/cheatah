@@ -14,6 +14,7 @@ from app.domain.services.prompt_service import PromptService
 from app.domain.services.sms_service import SmsService
 from app.domain.services.voice_prompt_transformer import transform_chat_to_voice
 from app.infrastructure.cloud_tasks import CloudTasksClient
+from app.infrastructure.redis import redis_client
 from app.persistence.database import get_db
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_voice_config import TenantVoiceConfig
@@ -1293,6 +1294,7 @@ async def telnyx_ai_call_complete(
         # For now, we'll create a lead with the information
 
         # Create or update Lead from caller
+        lead = None
         if from_number:
             normalized_from = _normalize_phone(from_number)
 
@@ -1496,7 +1498,26 @@ async def telnyx_ai_call_complete(
         # Telnyx sends multiple events per call (conversation.ended, insights.generated, retries)
         # Use database-backed dedup with "claim before send" to prevent race conditions
         sms_already_sent_for_call = False
-        if lead and call and is_registration_request and from_number:
+        normalized_from_for_dedup = _normalize_phone(from_number) if from_number else None
+        redis_dedup_key = (
+            f"registration_sms:{tenant_id}:{normalized_from_for_dedup}"
+            if normalized_from_for_dedup
+            else None
+        )
+
+        # Fast-path dedup via Redis (works even if lead is missing)
+        if is_registration_request and redis_dedup_key:
+            try:
+                await redis_client.connect()
+                if await redis_client.exists(redis_dedup_key):
+                    sms_already_sent_for_call = True
+                    logger.info(
+                        f"Skipping registration SMS - redis dedup hit: {redis_dedup_key}"
+                    )
+            except Exception as e:
+                logger.warning(f"Redis dedup check failed for {redis_dedup_key}: {e}")
+
+        if lead and call and is_registration_request and from_number and not sms_already_sent_for_call:
             # Refresh lead from DB to get latest data (in case another event updated it)
             await db.refresh(lead)
             lead_extra = lead.extra_data or {}
@@ -1568,6 +1589,13 @@ async def telnyx_ai_call_complete(
                     f"status={result.get('status')}, phone={from_number}, call_id={call.id if call else 'none'}"
                 )
                 # Note: Dedup tracking now happens BEFORE send (claim-before-send pattern)
+                # Also set Redis dedup to catch retries when lead is missing or not refreshed yet
+                if result.get("status") == "sent" and redis_dedup_key:
+                    try:
+                        await redis_client.set(redis_dedup_key, "1", ttl=7200)
+                        logger.info(f"Set Redis registration dedup key: {redis_dedup_key}")
+                    except Exception as e:
+                        logger.warning(f"Failed to set Redis registration dedup key {redis_dedup_key}: {e}")
             except Exception as e:
                 logger.error(f"Failed to auto-send registration SMS: {e}", exc_info=True)
 

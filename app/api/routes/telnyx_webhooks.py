@@ -1430,9 +1430,36 @@ async def telnyx_ai_call_complete(
             "enrollment", "registration link", "registration info",
         ]
 
+        # Check if link was ALREADY sent during the call (don't send again)
+        already_sent_indicators = [
+            "link was sent",
+            "link was shared",
+            "link was provided",
+            "sent the link",
+            "sent a link",
+            "sent registration",
+            "sent the registration",
+            "provided the link",
+            "provided a link",
+            "received a link",
+            "sent to the user",
+            "sent to their phone",
+            "sent to your phone",
+            "texted the link",
+            "link shared",
+            "link provided",
+            "registration link sent",
+        ]
+        link_already_sent = any(indicator in combined_text for indicator in already_sent_indicators)
+
         is_registration_request = any(kw in combined_text for kw in registration_keywords)
 
-        if is_registration_request and from_number:
+        if link_already_sent:
+            logger.info(
+                f"Skipping registration SMS - link already sent during call: "
+                f"tenant_id={tenant_id}, phone={from_number}"
+            )
+        elif is_registration_request and from_number:
             logger.info(
                 f"Registration request detected from Telnyx AI - "
                 f"tenant_id={tenant_id}, phone={from_number}, summary={summary[:100] if summary else 'none'}"

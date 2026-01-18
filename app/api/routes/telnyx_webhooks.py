@@ -1337,11 +1337,17 @@ async def telnyx_ai_call_complete(
                 logger.info(f"Existing lead extra_data BEFORE: {lead.extra_data}")
                 existing_data = dict(lead.extra_data) if lead.extra_data else {}
                 voice_calls = list(existing_data.get("voice_calls", []))
-                voice_calls.append(call_data)
-                existing_data["voice_calls"] = voice_calls
-                lead.extra_data = existing_data
-                flag_modified(lead, "extra_data")
-                logger.info(f"Lead extra_data AFTER update: {lead.extra_data}")
+
+                # DEDUP: Check if this call.id already exists in voice_calls
+                existing_call_ids = {vc.get("call_id") for vc in voice_calls if isinstance(vc, dict)}
+                if call.id not in existing_call_ids:
+                    voice_calls.append(call_data)
+                    existing_data["voice_calls"] = voice_calls
+                    lead.extra_data = existing_data
+                    flag_modified(lead, "extra_data")
+                    logger.info(f"Added call_id={call.id} to voice_calls for lead {lead.id}")
+                else:
+                    logger.info(f"Skipping duplicate voice_call entry for call_id={call.id}, lead_id={lead.id}")
                 # Stack names/emails if we got new info that's different
                 if caller_name:
                     if not lead.name:
@@ -1468,20 +1474,54 @@ async def telnyx_ai_call_complete(
         is_registration_request = any(kw in combined_text for kw in registration_keywords)
 
         # =============================================================
+        # EVENT TYPE FILTER: Only auto-send SMS on specific event types
+        # =============================================================
+        # Telnyx sends multiple events: conversation.ended, insights.generated, retries
+        # Only trigger auto-send on the primary end-of-call event to reduce duplicates
+        allowed_sms_events = [
+            "call.conversation.ended",
+            "conversation.ended",
+        ]
+        is_allowed_sms_event = event_type in allowed_sms_events
+        if is_registration_request and not is_allowed_sms_event:
+            logger.info(
+                f"Skipping registration SMS - event_type={event_type} not in allowed events: "
+                f"tenant_id={tenant_id}, phone={from_number}"
+            )
+            is_registration_request = False  # Disable SMS for non-allowed events
+
+        # =============================================================
         # DEDUPLICATION: Check if we've already sent SMS for this call
         # =============================================================
         # Telnyx sends multiple events per call (conversation.ended, insights.generated, retries)
-        # Use database-backed dedup since Redis may be disabled
+        # Use database-backed dedup with "claim before send" to prevent race conditions
         sms_already_sent_for_call = False
-        if lead and call:
+        if lead and call and is_registration_request and from_number:
+            # Refresh lead from DB to get latest data (in case another event updated it)
+            await db.refresh(lead)
             lead_extra = lead.extra_data or {}
             sent_call_ids = lead_extra.get("registration_sms_sent_call_ids", [])
+
             if call.id in sent_call_ids or str(call.id) in sent_call_ids:
                 sms_already_sent_for_call = True
                 logger.info(
                     f"Skipping registration SMS - already sent for call_id={call.id}: "
                     f"tenant_id={tenant_id}, phone={from_number}"
                 )
+            else:
+                # CLAIM: Mark this call as "SMS being sent" BEFORE actually sending
+                # This prevents race conditions where multiple events try to send simultaneously
+                try:
+                    sent_call_ids.append(call.id)
+                    lead_extra["registration_sms_sent_call_ids"] = sent_call_ids
+                    lead.extra_data = lead_extra
+                    flag_modified(lead, "extra_data")
+                    await db.commit()
+                    logger.info(f"Claimed SMS send for call_id={call.id}, lead_id={lead.id}")
+                except Exception as claim_err:
+                    # If claim fails (e.g., another event already claimed), skip SMS
+                    logger.warning(f"Failed to claim SMS send for call_id={call.id}: {claim_err}")
+                    sms_already_sent_for_call = True
 
         if link_already_sent:
             logger.info(
@@ -1525,23 +1565,9 @@ async def telnyx_ai_call_complete(
 
                 logger.info(
                     f"Registration SMS fulfillment result - tenant_id={tenant_id}, "
-                    f"status={result.get('status')}, phone={from_number}"
+                    f"status={result.get('status')}, phone={from_number}, call_id={call.id if call else 'none'}"
                 )
-
-                # Track that we sent SMS for this call (database-backed dedup)
-                if result.get("status") == "sent" and lead and call:
-                    try:
-                        lead_extra = lead.extra_data or {}
-                        sent_call_ids = lead_extra.get("registration_sms_sent_call_ids", [])
-                        if call.id not in sent_call_ids:
-                            sent_call_ids.append(call.id)
-                            lead_extra["registration_sms_sent_call_ids"] = sent_call_ids
-                            lead.extra_data = lead_extra
-                            flag_modified(lead, "extra_data")
-                            await db.commit()
-                            logger.info(f"Marked call_id={call.id} as having SMS sent for lead_id={lead.id}")
-                    except Exception as track_err:
-                        logger.warning(f"Failed to track SMS sent for call_id={call.id}: {track_err}")
+                # Note: Dedup tracking now happens BEFORE send (claim-before-send pattern)
             except Exception as e:
                 logger.error(f"Failed to auto-send registration SMS: {e}", exc_info=True)
 

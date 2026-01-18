@@ -57,14 +57,41 @@ class PromiseFulfillmentService:
         # Normalize phone for dedup key
         phone_normalized = "".join(c for c in phone if c.isdigit())[-10:]
         dedup_key = f"promise_sent:{tenant_id}:{phone_normalized}:{promise.asset_type}"
+
+        # Primary dedup: Redis (if enabled)
         if await redis_client.exists(dedup_key):
             logger.info(
-                f"Skipping duplicate promise fulfillment - key={dedup_key}"
+                f"Skipping duplicate promise fulfillment (Redis) - key={dedup_key}"
             )
             return {
                 "status": "skipped",
                 "reason": "already_sent_recently",
             }
+
+        # Fallback dedup: DB-backed check via Lead.extra_data
+        # This handles cases where Redis is disabled or unavailable
+        try:
+            stmt = select(Lead).where(
+                Lead.tenant_id == tenant_id,
+                Lead.phone.like(f"%{phone_normalized}"),
+            ).order_by(Lead.created_at.desc()).limit(1)
+            lead_result = await self.session.execute(stmt)
+            existing_lead = lead_result.scalar_one_or_none()
+
+            if existing_lead and existing_lead.extra_data:
+                extra = existing_lead.extra_data
+                sms_sent_assets = extra.get("sms_sent_for_assets", [])
+                if promise.asset_type in sms_sent_assets:
+                    logger.info(
+                        f"Skipping duplicate promise fulfillment (DB) - "
+                        f"asset_type={promise.asset_type} already sent to lead_id={existing_lead.id}"
+                    )
+                    return {
+                        "status": "skipped",
+                        "reason": "already_sent_to_lead",
+                    }
+        except Exception as db_check_err:
+            logger.warning(f"DB dedup check failed, proceeding: {db_check_err}")
 
         # Get sendable assets config from tenant prompt config
         sendable_assets = await self._get_sendable_assets(tenant_id)
@@ -115,7 +142,7 @@ class PromiseFulfillmentService:
             logger.info(f"Set dedup key with TTL {DEDUP_TTL_SECONDS}s: {dedup_key}")
 
         # Track fulfillment in lead metadata if lead exists
-        await self._track_fulfillment(tenant_id, conversation_id, promise, result)
+        await self._track_fulfillment(tenant_id, conversation_id, promise, result, phone)
 
         return result
 
@@ -256,6 +283,7 @@ class PromiseFulfillmentService:
         conversation_id: int,
         promise: DetectedPromise,
         result: dict[str, Any],
+        phone: str | None = None,
     ) -> None:
         """Track promise fulfillment in lead metadata.
 
@@ -264,6 +292,7 @@ class PromiseFulfillmentService:
             conversation_id: Conversation ID
             promise: The promise that was fulfilled
             result: The fulfillment result
+            phone: Phone number (optional, for fallback lookup)
         """
         try:
             # Find lead for this conversation
@@ -273,6 +302,16 @@ class PromiseFulfillmentService:
             )
             lead_result = await self.session.execute(stmt)
             lead = lead_result.scalar_one_or_none()
+
+            # Fallback: Find lead by phone if conversation lookup fails
+            if not lead and phone:
+                phone_normalized = "".join(c for c in phone if c.isdigit())[-10:]
+                stmt = select(Lead).where(
+                    Lead.tenant_id == tenant_id,
+                    Lead.phone.like(f"%{phone_normalized}"),
+                ).order_by(Lead.created_at.desc()).limit(1)
+                lead_result = await self.session.execute(stmt)
+                lead = lead_result.scalar_one_or_none()
 
             if lead:
                 # Update lead metadata
@@ -287,10 +326,18 @@ class PromiseFulfillmentService:
                     "fulfilled_at": datetime.now(timezone.utc).isoformat(),
                 }
 
+                # Track sent assets for DB-backed deduplication
+                # This is used when Redis is unavailable
+                if result.get("status") == "sent":
+                    sms_sent_assets = extra_data.get("sms_sent_for_assets", [])
+                    if promise.asset_type not in sms_sent_assets:
+                        sms_sent_assets.append(promise.asset_type)
+                        extra_data["sms_sent_for_assets"] = sms_sent_assets
+
                 lead.extra_data = extra_data
                 await self.session.commit()
 
-                logger.info(f"Tracked promise fulfillment in lead {lead.id}")
+                logger.info(f"Tracked promise fulfillment in lead {lead.id}, asset_type={promise.asset_type}")
 
         except Exception as e:
             logger.error(f"Failed to track promise fulfillment: {e}", exc_info=True)

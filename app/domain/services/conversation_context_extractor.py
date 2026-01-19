@@ -103,6 +103,25 @@ def extract_context_from_messages(messages: list[Message]) -> ConversationContex
     Returns:
         ConversationContext with extracted location and level info
     """
+    # First, try to find an existing URL in assistant messages (most reliable)
+    for msg in reversed(messages):  # Check most recent first
+        role = msg.role if hasattr(msg, "role") else ""
+        content = msg.content if hasattr(msg, "content") else str(msg)
+        if role == "assistant" and content:
+            url = extract_url_from_ai_response(content)
+            if url:
+                logger.info(f"Found URL in conversation history: {url}")
+                # Extract location and level from the URL itself
+                loc_match = re.search(r'loc=([^&]+)', url)
+                type_match = re.search(r'type=([^&\s]+)', url)
+                return ConversationContext(
+                    location_code=loc_match.group(1) if loc_match else None,
+                    location_name=None,
+                    level_name=type_match.group(1).replace('%20', ' ') if type_match else None,
+                    level_type_code=type_match.group(1) if type_match else None,
+                    registration_url=url,
+                )
+
     # Combine all message content for searching
     all_text = ""
     for msg in messages:

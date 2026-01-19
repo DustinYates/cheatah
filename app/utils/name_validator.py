@@ -65,6 +65,16 @@ NON_SURNAME_SUFFIXES = {
     # Short words that are never surnames
     "um", "uh", "hmm", "ah", "oh", "eh",
     "i", "we", "my", "me",
+    # Topic/business words that get incorrectly concatenated with names
+    # e.g., "Tarnisha Pricing" from separate messages about pricing
+    "pricing", "prices", "price", "cost", "costs", "rate", "rates", "fee", "fees",
+    "schedule", "schedules", "scheduling", "availability", "hours", "times",
+    "registration", "registrations", "enrollment", "enroll",
+    "information", "info", "details",
+    "class", "classes", "lesson", "lessons", "session", "sessions",
+    "program", "programs", "level", "levels",
+    "swimming", "swim", "location", "locations",
+    "payment", "payments", "question", "questions",
 }
 
 # Patterns that indicate non-name content

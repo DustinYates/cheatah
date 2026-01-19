@@ -409,6 +409,8 @@ class ChatService:
                                 promise=pending.to_detected_promise(),
                                 phone=customer_phone,
                                 name=customer_name,
+                                messages=messages,
+                                ai_response=llm_response,
                             )
                             await self.pending_promise_service.mark_promise_fulfilled(
                                 existing_lead, pending.asset_type, fulfillment_result
@@ -468,6 +470,8 @@ class ChatService:
                             promise=promise,
                             phone=customer_phone,
                             name=customer_name,
+                            messages=messages,
+                            ai_response=llm_response,
                         )
                         logger.info(
                             f"User request fulfillment result - tenant_id={tenant_id}, "
@@ -553,6 +557,8 @@ class ChatService:
                             promise=promise,
                             phone=customer_phone,
                             name=customer_name,
+                            messages=messages,
+                            ai_response=llm_response,
                         )
                         logger.info(
                             f"Promise fulfillment result - tenant_id={tenant_id}, "
@@ -894,6 +900,10 @@ NAME EXTRACTION RULES (IMPORTANT):
 - CRITICAL: Do NOT include pronouns (he, she, they, him, her, them) as part of the name!
   * If one message says "Ashley" and the next says "He loves to swim", the name is ONLY "Ashley", NOT "Ashley He"
   * Pronouns at the start of messages refer to someone being discussed, not the user's last name
+- CRITICAL: Do NOT combine topic/inquiry words from one message with names from another message!
+  * If user first asks "Pricing for adult swim lessons" and later says "Tarnisha", the name is ONLY "Tarnisha", NOT "Tarnisha Pricing"
+  * Words like pricing, schedule, registration, classes, lessons, information are NEVER part of a person's name
+  * Only extract words that are clearly stated as part of someone's name in the same statement
 
 GENERAL RULES:
 - Only extract information explicitly stated by the user

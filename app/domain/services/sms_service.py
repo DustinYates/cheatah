@@ -773,6 +773,8 @@ Respond with ONLY valid JSON, no explanation:
                     promise=promise,
                     phone=phone,
                     name=name,
+                    messages=messages,
+                    ai_response=ai_response,
                 )
                 logger.info(
                     f"User request fulfillment result - tenant_id={tenant_id}, "
@@ -811,6 +813,8 @@ Respond with ONLY valid JSON, no explanation:
                     promise=ai_promise,
                     phone=phone,
                     name=name,
+                    messages=messages,
+                    ai_response=ai_response,
                 )
                 logger.info(
                     f"AI promise fulfillment result - tenant_id={tenant_id}, "

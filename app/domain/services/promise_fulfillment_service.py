@@ -9,9 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.promise_detector import DetectedPromise
+from app.domain.services.conversation_context_extractor import (
+    extract_context_from_messages,
+    extract_url_from_ai_response,
+)
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 from app.persistence.models.lead import Lead
+from app.persistence.models.conversation import Message
 from app.infrastructure.telephony.telnyx_provider import TelnyxSmsProvider
 from app.infrastructure.redis import redis_client
 
@@ -35,6 +40,8 @@ class PromiseFulfillmentService:
         promise: DetectedPromise,
         phone: str,
         name: str | None = None,
+        messages: list[Message] | None = None,
+        ai_response: str | None = None,
     ) -> dict[str, Any]:
         """Fulfill a detected promise by sending SMS with the promised content.
 
@@ -44,6 +51,8 @@ class PromiseFulfillmentService:
             promise: The detected promise details
             phone: Customer's phone number
             name: Customer's name (optional, for personalization)
+            messages: Conversation messages (for extracting dynamic URL context)
+            ai_response: The AI response that contained the promise (for URL extraction)
 
         Returns:
             Result dictionary with status and details
@@ -130,8 +139,35 @@ class PromiseFulfillmentService:
                 "error": "No SMS template configured for this asset",
             }
 
-        # Compose the message
-        message = self._compose_message(sms_template, asset_config, name)
+        # Try to get dynamic URL from conversation context
+        dynamic_url = None
+
+        # First, try to extract URL directly from AI response (it often includes full URL)
+        if ai_response:
+            dynamic_url = extract_url_from_ai_response(ai_response)
+            if dynamic_url:
+                logger.info(f"Using URL extracted from AI response: {dynamic_url}")
+
+        # If no URL in AI response, try to build from conversation context
+        if not dynamic_url and messages:
+            context = extract_context_from_messages(messages)
+            if context.registration_url:
+                dynamic_url = context.registration_url
+                logger.info(
+                    f"Built dynamic URL from context - location={context.location_code}, "
+                    f"level={context.level_name}, url={dynamic_url}"
+                )
+
+        # Use dynamic URL if available, otherwise fall back to static config
+        url_to_send = dynamic_url or asset_config.get("url", "")
+
+        # For registration links, send ONLY the URL (no extra text)
+        if dynamic_url and promise.asset_type in ("registration_link", "info"):
+            message = url_to_send
+            logger.info(f"Sending plain URL only: {message}")
+        else:
+            # Compose the message using template
+            message = self._compose_message(sms_template, asset_config, name, url_to_send)
 
         # Send SMS
         result = await self._send_sms(tenant_id, phone, message)
@@ -173,6 +209,7 @@ class PromiseFulfillmentService:
         template: str,
         asset_config: dict[str, Any],
         name: str | None,
+        url: str | None = None,
     ) -> str:
         """Compose the SMS message from template.
 
@@ -180,6 +217,7 @@ class PromiseFulfillmentService:
             template: SMS template with placeholders
             asset_config: Asset configuration with URL etc.
             name: Customer's name for personalization
+            url: URL to use (if provided, overrides asset_config URL)
 
         Returns:
             Composed message string
@@ -187,7 +225,7 @@ class PromiseFulfillmentService:
         # Replace placeholders
         message = template
         message = message.replace("{name}", name or "there")
-        message = message.replace("{url}", asset_config.get("url", ""))
+        message = message.replace("{url}", url or asset_config.get("url", ""))
 
         # Truncate to SMS limit if needed
         if len(message) > 160:

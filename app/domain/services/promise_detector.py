@@ -94,11 +94,14 @@ class PromiseDetector:
         ],
     }
 
-    def detect_promise(self, ai_response: str) -> DetectedPromise | None:
+    def detect_promise(
+        self, ai_response: str, conversation_context: str | None = None
+    ) -> DetectedPromise | None:
         """Detect if AI response contains a promise to send information.
 
         Args:
             ai_response: The AI's response text
+            conversation_context: Optional full conversation text to help classify asset type
 
         Returns:
             DetectedPromise if a promise was found, None otherwise
@@ -107,6 +110,10 @@ class PromiseDetector:
             return None
 
         response_lower = ai_response.lower()
+        # Include conversation context for asset type classification
+        context_for_classification = response_lower
+        if conversation_context:
+            context_for_classification = conversation_context.lower() + " " + response_lower
 
         # Check if response contains any promise patterns
         promise_match = None
@@ -119,14 +126,27 @@ class PromiseDetector:
         if not promise_match:
             return None
 
-        # Determine the asset type from surrounding context
-        asset_type = self._identify_asset_type(response_lower)
+        # Determine the asset type from surrounding context (including conversation history)
+        asset_type = self._identify_asset_type(context_for_classification)
         if not asset_type:
             # Default to "info" if we detected a promise but can't identify the asset
             asset_type = "info"
 
         # Calculate confidence based on pattern match quality
-        confidence = self._calculate_confidence(response_lower, promise_match, asset_type)
+        # Use full context for confidence calculation if available
+        confidence = self._calculate_confidence(context_for_classification, promise_match, asset_type)
+
+        # Boost confidence if we're using conversation context and found a registration URL
+        if conversation_context and asset_type == "registration_link":
+            if "britishswimschool.com" in conversation_context.lower():
+                confidence = max(confidence, 0.75)  # Ensure high confidence when URL is in context
+
+        # Boost confidence significantly if a phone number is in the conversation
+        # If someone provides a phone number, they definitely want to receive a text
+        phone_pattern = r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b'
+        if conversation_context and re.search(phone_pattern, conversation_context):
+            confidence = max(confidence, 0.85)  # High confidence when phone number provided
+            logger.info("Phone number detected in conversation - boosting confidence to 0.85")
 
         logger.info(
             f"Promise detected: asset_type={asset_type}, confidence={confidence:.2f}, "

@@ -4,7 +4,6 @@ import base64
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from app.settings import settings
 
@@ -44,44 +43,6 @@ class GmailPushNotification:
             raise ValueError(f"Invalid Gmail push notification format: {e}") from e
 
 
-class PubSubPublisher:
-    """Pub/Sub publisher for async job processing."""
-
-    async def publish(self, topic: str, message: dict[str, Any]) -> str:
-        """Publish a message to a topic.
-
-        Args:
-            topic: Topic name
-            message: Message dictionary
-
-        Returns:
-            Message ID (stub)
-
-        Note:
-            This is a skeleton implementation. Real publishing will be
-            implemented in later phases.
-        """
-        # Stub: Just return a placeholder message ID
-        return f"msg_{topic}_{hash(str(message))}"
-
-
-class PubSubWorker:
-    """Pub/Sub worker for processing push notifications."""
-
-    async def process_message(self, message: dict[str, Any]) -> None:
-        """Process a message from a subscription.
-
-        Args:
-            message: Message dictionary
-
-        Note:
-            This is a skeleton implementation. Real message processing
-            will be implemented in later phases.
-        """
-        # Stub: No-op
-        pass
-
-
 def verify_pubsub_token(token: str | None) -> bool:
     """Verify Pub/Sub push notification token.
     
@@ -116,9 +77,4 @@ def get_gmail_pubsub_topic() -> str | None:
         # Otherwise, build full path
         return f"projects/{settings.gcp_project_id}/topics/{settings.gmail_pubsub_topic}"
     return None
-
-
-# Global instances
-pubsub_publisher = PubSubPublisher()
-pubsub_worker = PubSubWorker()
 

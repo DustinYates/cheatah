@@ -422,31 +422,35 @@ async def _store_widget_events(
     """Store widget events in database (runs in background)."""
     from app.persistence.database import async_session_factory
 
-    async with async_session_factory() as db:
-        for event in events:
-            # Parse client timestamp if provided
-            client_ts = None
-            if event.client_timestamp:
-                try:
-                    client_ts = datetime.fromisoformat(
-                        event.client_timestamp.replace('Z', '+00:00')
-                    )
-                except ValueError:
-                    pass  # Ignore invalid timestamps
+    try:
+        async with async_session_factory() as db:
+            for event in events:
+                # Parse client timestamp if provided
+                client_ts = None
+                if event.client_timestamp:
+                    try:
+                        client_ts = datetime.fromisoformat(
+                            event.client_timestamp.replace('Z', '+00:00')
+                        )
+                    except ValueError:
+                        pass  # Ignore invalid timestamps
 
-            widget_event = WidgetEvent(
-                tenant_id=tenant_id,
-                event_type=event.event_type,
-                visitor_id=visitor_id,
-                session_id=event.session_id,
-                event_data=event.event_data,
-                user_agent=user_agent,
-                device_type=device_type,
-                client_timestamp=client_ts,
-            )
-            db.add(widget_event)
+                widget_event = WidgetEvent(
+                    tenant_id=tenant_id,
+                    event_type=event.event_type,
+                    visitor_id=visitor_id,
+                    session_id=event.session_id,
+                    event_data=event.event_data,
+                    user_agent=user_agent,
+                    device_type=device_type,
+                    client_timestamp=client_ts,
+                )
+                db.add(widget_event)
 
-        await db.commit()
+            await db.commit()
+            logger.info(f"Stored {len(events)} widget events for tenant {tenant_id}")
+    except Exception as e:
+        logger.error(f"Failed to store widget events for tenant {tenant_id}: {e}", exc_info=True)
 
 
 @router.post("/events", response_model=WidgetEventResponse)
@@ -499,7 +503,7 @@ async def track_widget_events(
         device_type=device_type,
     )
 
-    logger.debug(f"Queued {len(request_data.events)} widget events for tenant {request_data.tenant_id}")
+    logger.info(f"Received {len(request_data.events)} widget events for tenant {request_data.tenant_id}, visitor {request_data.visitor_id}")
 
     return WidgetEventResponse(
         received=len(request_data.events),

@@ -18,7 +18,7 @@ from app.settings import settings
 router = APIRouter()
 
 # Default API base URL for embed code if not configured
-DEFAULT_API_BASE_URL = "https://chattercheatah-900139201687.us-central1.run.app"
+DEFAULT_API_BASE_URL = "https://chattercheetah-900139201687.us-central1.run.app"
 
 
 @router.get("/me", response_model=TenantResponse)

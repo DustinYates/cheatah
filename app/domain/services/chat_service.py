@@ -253,6 +253,12 @@ class ChatService:
             tenant_id, conversation.id, "assistant", llm_response
         )
 
+        # Refresh messages to include current turn (user message + assistant response)
+        # This is needed for qualification checks that analyze the full conversation
+        messages = await self.conversation_service.get_conversation_history(
+            tenant_id, conversation.id
+        )
+
         # Always try to extract contact info from conversation
         # This ensures we capture newly provided information even if a lead already exists
         logger.debug(
@@ -487,7 +493,11 @@ class ChatService:
         # AI PROMISE DETECTION: Check for AI promises to text info
         # (runs regardless of phone availability)
         # ============================================================
-        promise = self.promise_detector.detect_promise(llm_response)
+        # Build conversation context for better promise classification
+        conversation_context = " ".join(
+            msg.content for msg in messages if msg.content
+        )
+        promise = self.promise_detector.detect_promise(llm_response, conversation_context)
         if promise and promise.confidence >= 0.6:
             logger.info(
                 f"AI promise detected - tenant_id={tenant_id}, "

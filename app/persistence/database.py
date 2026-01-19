@@ -16,11 +16,15 @@ async_database_url = get_async_database_url()
 debug_log("database.py:9", "Creating async engine", {"database_url_prefix": async_database_url[:50] + "..." if len(async_database_url) > 50 else async_database_url, "url_uses_asyncpg": "postgresql+asyncpg" in async_database_url.lower()})
 # #endregion
 
-# Create async engine
+# Create async engine with conservative pool settings for Supabase Pooler
 engine = create_async_engine(
     async_database_url,
     echo=False,
     future=True,
+    pool_size=3,  # Small pool for Supabase session mode limits
+    max_overflow=2,  # Allow only 2 extra connections
+    pool_recycle=300,  # Recycle connections every 5 minutes
+    pool_pre_ping=True,  # Verify connections are alive
 )
 
 # Create async session factory

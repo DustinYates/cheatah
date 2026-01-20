@@ -443,6 +443,136 @@ export default function ConversationAnalytics() {
           </div>
         </section>
 
+        {/* Phone Call Statistics by Language */}
+        {data.phone_call_statistics && data.phone_call_statistics.total_calls > 0 && (
+          <section className="conv-analytics-card">
+            <div className="conv-analytics-card-header">
+              <div>
+                <h2>Phone Call Statistics</h2>
+                <p>Call volume and duration by language (Spanish vs English).</p>
+              </div>
+            </div>
+            <div className="phone-call-stats">
+              {/* Summary Row */}
+              <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center', marginBottom: '1.5rem' }}>
+                <div>
+                  <span style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                    {formatNumber(data.phone_call_statistics.total_calls)}
+                  </span>
+                  <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
+                    Total Calls
+                  </span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                    {formatDuration(data.phone_call_statistics.total_minutes)}
+                  </span>
+                  <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
+                    Total Duration
+                  </span>
+                </div>
+              </div>
+
+              {/* Language Distribution Bar */}
+              {Object.keys(data.phone_call_statistics.by_language).length > 0 && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>Language Distribution</h3>
+                  <div style={{ display: 'flex', height: '32px', borderRadius: '4px', overflow: 'hidden' }}>
+                    {(() => {
+                      const byLang = data.phone_call_statistics.by_language;
+                      const langDist = data.phone_call_statistics.language_distribution || {};
+                      const LANG_COLORS = {
+                        english: '#3f8f66',
+                        spanish: '#c0842b',
+                        unknown: '#888888',
+                      };
+                      const LANG_LABELS = {
+                        english: 'English',
+                        spanish: 'Spanish',
+                        unknown: 'Unknown',
+                      };
+                      return Object.entries(byLang).map(([lang, stats]) => {
+                        const pct = langDist[lang] || 0;
+                        if (pct === 0) return null;
+                        return (
+                          <div
+                            key={lang}
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor: LANG_COLORS[lang] || '#666',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minWidth: pct > 5 ? 'auto' : '0',
+                            }}
+                            title={`${LANG_LABELS[lang] || lang}: ${stats.call_count} calls (${pct}%)`}
+                          >
+                            {pct >= 15 && (
+                              <span style={{ fontSize: '0.75rem', color: 'white', fontWeight: 600 }}>
+                                {LANG_LABELS[lang] || lang} {pct}%
+                              </span>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                    {Object.entries(data.phone_call_statistics.by_language).map(([lang, stats]) => {
+                      const LANG_COLORS = { english: '#3f8f66', spanish: '#c0842b', unknown: '#888888' };
+                      const LANG_LABELS = { english: 'English', spanish: 'Spanish', unknown: 'Unknown' };
+                      return (
+                        <span key={lang} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: LANG_COLORS[lang] || '#666' }}></span>
+                          {LANG_LABELS[lang] || lang}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Detailed Stats by Language */}
+              {Object.keys(data.phone_call_statistics.by_language).length > 0 && (
+                <div style={{ paddingTop: '1rem', borderTop: '1px solid var(--color-border-light)' }}>
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>By Language</h3>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <th style={{ textAlign: 'left', padding: '0.5rem 0.25rem', fontWeight: 600 }}>Language</th>
+                        <th style={{ textAlign: 'right', padding: '0.5rem 0.25rem', fontWeight: 600 }}>Calls</th>
+                        <th style={{ textAlign: 'right', padding: '0.5rem 0.25rem', fontWeight: 600 }}>Duration</th>
+                        <th style={{ textAlign: 'right', padding: '0.5rem 0.25rem', fontWeight: 600 }}>Avg Call</th>
+                        <th style={{ textAlign: 'right', padding: '0.5rem 0.25rem', fontWeight: 600 }}>Leads</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(data.phone_call_statistics.by_language).map(([lang, stats]) => {
+                        const LANG_COLORS = { english: '#3f8f66', spanish: '#c0842b', unknown: '#888888' };
+                        const LANG_LABELS = { english: 'English', spanish: 'Spanish', unknown: 'Unknown' };
+                        return (
+                          <tr key={lang} style={{ borderBottom: '1px solid var(--color-border-light)' }}>
+                            <td style={{ padding: '0.5rem 0.25rem', fontWeight: 500 }}>
+                              <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: LANG_COLORS[lang] || '#666', marginRight: '0.5rem' }}></span>
+                              {LANG_LABELS[lang] || lang}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '0.5rem 0.25rem' }}>{formatNumber(stats.call_count)}</td>
+                            <td style={{ textAlign: 'right', padding: '0.5rem 0.25rem' }}>{formatDuration(stats.total_minutes)}</td>
+                            <td style={{ textAlign: 'right', padding: '0.5rem 0.25rem' }}>{formatDuration(stats.avg_duration_minutes)}</td>
+                            <td style={{ textAlign: 'right', padding: '0.5rem 0.25rem', color: stats.leads_generated > 0 ? 'var(--color-success)' : 'inherit' }}>
+                              {formatNumber(stats.leads_generated)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
         {/* Escalation by Channel */}
         {data.escalation_by_channel && (
           <section className="conv-analytics-card">

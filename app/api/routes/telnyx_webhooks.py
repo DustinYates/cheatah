@@ -204,6 +204,75 @@ def _normalize_phone(phone: str) -> str:
     return normalized
 
 
+async def _detect_language_from_phone(
+    to_number: str,
+    db: AsyncSession,
+) -> str | None:
+    """Detect call language based on which phone number received the call.
+
+    The voice_phone_number field is used for Spanish lines, while telnyx_phone_number
+    is typically the English line.
+
+    Args:
+        to_number: The phone number that received the call
+        db: Database session
+
+    Returns:
+        'spanish', 'english', or None if unable to determine
+    """
+    if not to_number:
+        return None
+
+    normalized_to = _normalize_phone(to_number)
+
+    # Check if this number matches the voice_phone_number (Spanish line)
+    stmt = select(TenantSmsConfig).where(
+        TenantSmsConfig.voice_phone_number == normalized_to
+    )
+    result = await db.execute(stmt)
+    config = result.scalar_one_or_none()
+
+    if config:
+        logger.info(f"Call to voice_phone_number {to_number} detected as Spanish")
+        return "spanish"
+
+    # Also try without normalization
+    if not config:
+        stmt = select(TenantSmsConfig).where(
+            TenantSmsConfig.voice_phone_number == to_number
+        )
+        result = await db.execute(stmt)
+        config = result.scalar_one_or_none()
+        if config:
+            logger.info(f"Call to voice_phone_number {to_number} detected as Spanish (unnormalized)")
+            return "spanish"
+
+    # Check if this number matches the telnyx_phone_number (English line)
+    stmt = select(TenantSmsConfig).where(
+        TenantSmsConfig.telnyx_phone_number == normalized_to
+    )
+    result = await db.execute(stmt)
+    config = result.scalar_one_or_none()
+
+    if config:
+        logger.info(f"Call to telnyx_phone_number {to_number} detected as English")
+        return "english"
+
+    # Also try without normalization
+    stmt = select(TenantSmsConfig).where(
+        TenantSmsConfig.telnyx_phone_number == to_number
+    )
+    result = await db.execute(stmt)
+    config = result.scalar_one_or_none()
+
+    if config:
+        logger.info(f"Call to telnyx_phone_number {to_number} detected as English (unnormalized)")
+        return "english"
+
+    logger.info(f"Could not determine language for phone number {to_number}")
+    return None
+
+
 def _get_fallback_prompt() -> str:
     """Return a fallback prompt when tenant cannot be identified or prompt fails."""
     return """You are a voice assistant for a local business. You communicate through spoken conversation only.
@@ -1302,7 +1371,13 @@ async def telnyx_ai_call_complete(
                 call.started_at = actual_start
             if actual_end != now and (not call.ended_at or call.ended_at == call.started_at):
                 call.ended_at = actual_end
+            # Detect and set language if not already set
+            if not call.language and to_number:
+                call.language = await _detect_language_from_phone(to_number, db)
         else:
+            # Detect language from phone number routing
+            detected_language = await _detect_language_from_phone(to_number, db) if to_number else None
+
             # Create new Call record
             call = Call(
                 tenant_id=tenant_id,
@@ -1315,10 +1390,11 @@ async def telnyx_ai_call_complete(
                 recording_url=recording_url or None,
                 started_at=actual_start,
                 ended_at=actual_end,
+                language=detected_language,
             )
             db.add(call)
             await db.flush()  # Get the call ID
-            logger.info(f"Created new Call record: id={call.id}")
+            logger.info(f"Created new Call record: id={call.id}, language={detected_language}")
 
         # Store transcript and summary in call metadata or separate table
         # For now, we'll create a lead with the information
@@ -1527,7 +1603,42 @@ async def telnyx_ai_call_complete(
             "no hay conversación",
             "nada que resumir",
         ]
-        link_already_sent = any(indicator in combined_text for indicator in already_sent_indicators)
+        link_indicator_matched = any(indicator in combined_text for indicator in already_sent_indicators)
+
+        # Check if URL was properly formatted (has ?loc= and &type= parameters)
+        # If AI sent just the base URL without parameters, we should still send the correct one
+        url_was_properly_formatted = False
+        if link_indicator_matched:
+            # Look for URLs in the combined text (summary + caller_intent + transcript would have the URL)
+            import re
+            url_pattern = r'https://britishswimschool\.com/cypress-spring/register/[^\s\)\"\'<>]*'
+            found_urls = re.findall(url_pattern, combined_text)
+
+            # Also check in transcript if available
+            full_text = f"{combined_text} {transcript or ''}".lower()
+            all_urls = re.findall(url_pattern, full_text)
+
+            for url in all_urls:
+                # Check if URL has proper parameters
+                if '?loc=' in url and '&type=' in url:
+                    url_was_properly_formatted = True
+                    logger.info(f"[SMS-DEBUG] Found properly formatted URL in conversation: {url}")
+                    break
+                elif '?loc=' in url:
+                    # Has location but no type - still consider it acceptable
+                    url_was_properly_formatted = True
+                    logger.info(f"[SMS-DEBUG] Found URL with location only (acceptable): {url}")
+                    break
+
+            if not url_was_properly_formatted and all_urls:
+                logger.warning(
+                    f"[SMS-DEBUG] Link was sent but URL was NOT properly formatted! "
+                    f"URLs found: {all_urls[:3]}. Will send correct URL post-call."
+                )
+
+        # Only skip post-call SMS if the in-call link was PROPERLY formatted
+        # If AI sent bad URL (no params), we need to send the correct one
+        link_already_sent = link_indicator_matched and url_was_properly_formatted
 
         is_registration_request = any(kw in combined_text for kw in registration_keywords)
 
@@ -1537,7 +1648,9 @@ async def telnyx_ai_call_complete(
         logger.info(
             f"[SMS-DEBUG] Keyword matching - "
             f"matched_registration_keywords={matched_reg_keywords}, "
-            f"matched_sent_indicators={matched_sent_indicators}"
+            f"matched_sent_indicators={matched_sent_indicators}, "
+            f"link_indicator_matched={link_indicator_matched}, "
+            f"url_was_properly_formatted={url_was_properly_formatted}"
         )
 
         # [SMS-DEBUG] Log registration detection for transfer debugging
@@ -1657,12 +1770,14 @@ async def telnyx_ai_call_complete(
                 )
 
                 # Fulfill the promise (send SMS with registration info)
-                # Pass summary and transcript so dynamic URL can be built from context
-                ai_response_text = f"{summary or ''}\n{transcript or ''}"
+                # Pass summary, caller_intent, and transcript so dynamic URL can be built from context
+                # IMPORTANT: caller_intent contains the location/level details needed for URL building
+                ai_response_text = f"{summary or ''}\n{caller_intent or ''}\n{transcript or ''}"
                 logger.info("=" * 60)
                 logger.info("SENDING POST-CALL REGISTRATION SMS")
                 logger.info(f"Tenant: {tenant_id}, Phone: {from_number}, Name: {caller_name}")
                 logger.info(f"Summary (first 200 chars): {(summary or 'NONE')[:200]}")
+                logger.info(f"Caller Intent (first 200 chars): {(caller_intent or 'NONE')[:200]}")
                 logger.info(f"Transcript (first 200 chars): {(transcript or 'NONE')[:200]}")
                 logger.info("=" * 60)
 

@@ -31,6 +31,9 @@ class Call(Base):
     recording_sid = Column(String(255), nullable=True)
     recording_url = Column(Text, nullable=True)
     
+    # Language tracking (detected from phone number routing)
+    language = Column(String(20), nullable=True)  # 'english', 'spanish', or None if unknown
+
     # Handoff tracking (Phase 2)
     handoff_attempted = Column(Boolean, default=False, nullable=False)
     handoff_number = Column(String(50), nullable=True)  # Number transferred to

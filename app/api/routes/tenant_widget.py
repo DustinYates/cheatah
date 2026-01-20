@@ -425,13 +425,15 @@ async def _store_widget_events(
     try:
         async with async_session_factory() as db:
             for event in events:
-                # Parse client timestamp if provided
+                # Parse client timestamp if provided (convert to naive UTC for DB)
                 client_ts = None
                 if event.client_timestamp:
                     try:
-                        client_ts = datetime.fromisoformat(
+                        parsed_ts = datetime.fromisoformat(
                             event.client_timestamp.replace('Z', '+00:00')
                         )
+                        # Convert to naive datetime (strip timezone info) for DB column
+                        client_ts = parsed_ts.replace(tzinfo=None)
                     except ValueError:
                         pass  # Ignore invalid timestamps
 

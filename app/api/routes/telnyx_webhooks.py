@@ -410,29 +410,40 @@ async def _get_tenant_from_telnyx_number(
     Returns:
         Tenant ID or None if not found
     """
+    from sqlalchemy import or_
+
     # Normalize phone number
     normalized = _normalize_phone(phone_number)
 
-    # Try to find tenant by Telnyx phone number
+    # Try to find tenant by Telnyx phone number OR voice phone number (for Spanish line etc.)
     stmt = select(TenantSmsConfig).where(
-        TenantSmsConfig.telnyx_phone_number == normalized
+        or_(
+            TenantSmsConfig.telnyx_phone_number == normalized,
+            TenantSmsConfig.voice_phone_number == normalized,
+        )
     )
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
 
     if config:
+        logger.info(f"Found tenant {config.tenant_id} for phone {phone_number}")
         return config.tenant_id
 
     # Also try without normalization
     stmt = select(TenantSmsConfig).where(
-        TenantSmsConfig.telnyx_phone_number == phone_number
+        or_(
+            TenantSmsConfig.telnyx_phone_number == phone_number,
+            TenantSmsConfig.voice_phone_number == phone_number,
+        )
     )
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
 
     if config:
+        logger.info(f"Found tenant {config.tenant_id} for phone {phone_number} (unnormalized)")
         return config.tenant_id
 
+    logger.warning(f"No tenant found for phone {phone_number}")
     return None
 
 

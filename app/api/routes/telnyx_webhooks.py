@@ -1652,16 +1652,45 @@ async def telnyx_ai_call_complete(
                     f"Registration SMS fulfillment result - tenant_id={tenant_id}, "
                     f"status={result.get('status')}, phone={from_number}, call_id={call.id if call else 'none'}"
                 )
-                # Note: Dedup tracking now happens BEFORE send (claim-before-send pattern)
-                # Also set Redis dedup to catch retries when lead is missing or not refreshed yet
+                # Set Redis dedup on success to catch retries when lead is missing
                 if result.get("status") == "sent" and redis_dedup_key:
                     try:
                         await redis_client.set(redis_dedup_key, "1", ttl=7200)
                         logger.info(f"Set Redis registration dedup key: {redis_dedup_key}")
                     except Exception as e:
                         logger.warning(f"Failed to set Redis registration dedup key {redis_dedup_key}: {e}")
+                elif result.get("status") != "sent" and lead and call:
+                    # ROLLBACK: If send failed, remove claim so retry is possible
+                    try:
+                        await db.refresh(lead)
+                        lead_extra = lead.extra_data or {}
+                        sent_call_ids = lead_extra.get("registration_sms_sent_call_ids", [])
+                        if call.id in sent_call_ids:
+                            sent_call_ids.remove(call.id)
+                            lead_extra["registration_sms_sent_call_ids"] = sent_call_ids
+                            lead.extra_data = lead_extra
+                            flag_modified(lead, "extra_data")
+                            await db.commit()
+                            logger.info(f"Rolled back SMS claim for call_id={call.id} after failed send")
+                    except Exception as rollback_err:
+                        logger.warning(f"Failed to rollback SMS claim for call_id={call.id}: {rollback_err}")
             except Exception as e:
                 logger.error(f"Failed to auto-send registration SMS: {e}", exc_info=True)
+                # ROLLBACK: On exception, also try to remove claim
+                if lead and call:
+                    try:
+                        await db.refresh(lead)
+                        lead_extra = lead.extra_data or {}
+                        sent_call_ids = lead_extra.get("registration_sms_sent_call_ids", [])
+                        if call.id in sent_call_ids:
+                            sent_call_ids.remove(call.id)
+                            lead_extra["registration_sms_sent_call_ids"] = sent_call_ids
+                            lead.extra_data = lead_extra
+                            flag_modified(lead, "extra_data")
+                            await db.commit()
+                            logger.info(f"Rolled back SMS claim for call_id={call.id} after exception")
+                    except Exception as rollback_err:
+                        logger.warning(f"Failed to rollback SMS claim for call_id={call.id}: {rollback_err}")
 
         return JSONResponse(content={
             "status": "ok",

@@ -203,12 +203,25 @@
     trackImpression: function() {
       var self = this;
 
+      // Build settings snapshot for A/B testing analysis
+      var settingsSnapshot = null;
+      if (this.settings) {
+        settingsSnapshot = {
+          open_behavior: (this.settings.behavior && this.settings.behavior.openBehavior) || 'click',
+          auto_open_delay: (this.settings.behavior && this.settings.behavior.autoOpenDelay) || 0,
+          attention_animation: (this.settings.attention && this.settings.attention.attentionAnimation) || 'none',
+          launcher_visibility: (this.settings.motion && this.settings.motion.launcherVisibility) || 'immediate',
+          position: (this.settings.layout && this.settings.layout.position) || 'bottom-right'
+        };
+      }
+
       // Track page impression
       this.trackEvent('impression', {
         page_url: window.location.href,
         referrer: document.referrer || '',
         viewport_width: window.innerWidth,
-        viewport_height: window.innerHeight
+        viewport_height: window.innerHeight,
+        settings_snapshot: settingsSnapshot
       });
 
       // Track viewport visibility using IntersectionObserver

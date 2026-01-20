@@ -148,6 +148,20 @@ export default function WidgetAnalytics() {
     deps: [selectedTenantId, range.startDate, range.endDate, timeZone],
   });
 
+  // Fetch widget settings to show auto-open indicator
+  const fetchSettings = useCallback(async () => {
+    return api.getWidgetSettings();
+  }, []);
+
+  const { data: widgetSettings } = useFetchData(fetchSettings, {
+    defaultValue: null,
+    immediate: !needsTenant,
+    deps: [selectedTenantId],
+  });
+
+  const isAutoOpenEnabled = widgetSettings?.behavior?.openBehavior === 'auto';
+  const autoOpenDelay = widgetSettings?.behavior?.autoOpenDelay || 0;
+
   useEffect(() => {
     if (!data?.timezone || data.timezone === timeZone) return;
     const aligned = alignRangeToTimeZone(range, timeZone, data.timezone);
@@ -257,21 +271,33 @@ export default function WidgetAnalytics() {
           </div>
           <div className="metric-rows">
             <div className="metric-row">
-              <span className="metric-label">Widget Impressions</span>
+              <span className="metric-label">
+                Widget Impressions
+                <span className="info-icon" title="Times the widget loaded on a page">i</span>
+              </span>
               <span className="metric-value">{formatNumber(data.visibility.impressions)}</span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Render Success Rate</span>
+              <span className="metric-label">
+                Render Success Rate
+                <span className="info-icon" title="Percentage of impressions that rendered without errors">i</span>
+              </span>
               <span className="metric-value">{formatPercent(data.visibility.render_success_rate)}</span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Above-the-Fold Views</span>
+              <span className="metric-label">
+                Above-the-Fold Views
+                <span className="info-icon" title="Widget visible without scrolling">i</span>
+              </span>
               <span className="metric-value">
                 {formatNumber(data.visibility.above_fold_views)} ({formatPercent(data.visibility.above_fold_rate)})
               </span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Avg Time to First View</span>
+              <span className="metric-label">
+                Avg Time to First View
+                <span className="info-icon" title="Average time until widget first became visible">i</span>
+              </span>
               <span className="metric-value">{formatTime(data.visibility.avg_time_to_first_view_ms)}</span>
             </div>
           </div>
@@ -285,31 +311,54 @@ export default function WidgetAnalytics() {
               <p>How effectively the widget captures visitor attention.</p>
             </div>
           </div>
+          {isAutoOpenEnabled && (
+            <div className="auto-open-indicator">
+              <span className="auto-open-badge">Auto-Open Enabled</span>
+              <span className="auto-open-detail">
+                Widget opens automatically after {autoOpenDelay}s
+              </span>
+            </div>
+          )}
           <div className="metric-rows">
             <div className="metric-row">
-              <span className="metric-label">Widget Opens</span>
+              <span className="metric-label">
+                Widget Opens
+                <span className="info-icon" title="Total times the chat was opened">i</span>
+              </span>
               <span className="metric-value">
                 {formatNumber(data.attention.widget_opens)} ({formatPercent(data.attention.open_rate)})
               </span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Manual Opens</span>
+              <span className="metric-label">
+                Manual Opens
+                <span className="info-icon" title="User clicked to open (not auto-opened)">i</span>
+              </span>
               <span className="metric-value">
                 {formatNumber(data.attention.manual_opens)} ({formatPercent(data.attention.manual_open_rate)})
               </span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Auto-Opens</span>
+              <span className="metric-label">
+                Auto-Opens
+                <span className="info-icon" title="Widget opened automatically based on settings">i</span>
+              </span>
               <span className="metric-value">{formatNumber(data.attention.auto_opens)}</span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Auto-Open Dismiss Rate</span>
+              <span className="metric-label">
+                Auto-Open Dismiss Rate
+                <span className="info-icon" title="Percentage of auto-opens that were immediately closed">i</span>
+              </span>
               <span className="metric-value">
                 {formatNumber(data.attention.auto_open_dismiss_count)} ({formatPercent(data.attention.auto_open_dismiss_rate)})
               </span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Hover/Focus Events</span>
+              <span className="metric-label">
+                Hover/Focus Events
+                <span className="info-icon" title="User hovered or focused on widget without opening">i</span>
+              </span>
               <span className="metric-value">
                 {formatNumber(data.attention.hover_count)} ({formatPercent(data.attention.hover_rate)})
               </span>

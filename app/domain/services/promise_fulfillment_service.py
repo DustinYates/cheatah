@@ -166,6 +166,10 @@ class PromiseFulfillmentService:
 
         # Use dynamic URL if available, otherwise fall back to static config
         url_to_send = dynamic_url or asset_config.get("url", "")
+        if dynamic_url:
+            logger.info(f"Using dynamic URL: {url_to_send}")
+        else:
+            logger.warning(f"No dynamic URL found, using fallback: {url_to_send}")
 
         # Always use the template to compose the message (provides better context)
         message = self._compose_message(sms_template, asset_config, name, url_to_send)
@@ -245,6 +249,13 @@ class PromiseFulfillmentService:
             Built registration URL or None if not enough context
         """
         from app.utils.registration_url_builder import build_registration_url
+
+        # Log input for debugging
+        logger.info(f"_build_url_from_text input (first 500 chars): {text[:500] if text else 'EMPTY'}")
+
+        if not text:
+            logger.info("_build_url_from_text: No text provided")
+            return None
 
         text_lower = text.lower()
 

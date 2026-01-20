@@ -17,14 +17,16 @@ debug_log("database.py:9", "Creating async engine", {"database_url_prefix": asyn
 # #endregion
 
 # Create async engine with conservative pool settings for Supabase Pooler
+# Note: Supabase Pooler in Session mode has strict limits (typically 10-15 connections)
 engine = create_async_engine(
     async_database_url,
     echo=False,
     future=True,
-    pool_size=3,  # Small pool for Supabase session mode limits
-    max_overflow=2,  # Allow only 2 extra connections
-    pool_recycle=300,  # Recycle connections every 5 minutes
+    pool_size=2,  # Minimal pool for Supabase session mode limits
+    max_overflow=3,  # Allow 3 extra connections under load
+    pool_recycle=180,  # Recycle connections every 3 minutes (faster turnover)
     pool_pre_ping=True,  # Verify connections are alive
+    pool_timeout=10,  # Fail fast if no connection available in 10 seconds
 )
 
 # Create async session factory
@@ -49,16 +51,22 @@ def _set_tenant_context_sync(dbapi_connection, connection_record):
     This is called synchronously when a connection is checked out from the pool.
     It sets the PostgreSQL session variable that RLS policies use.
     """
-    tenant_id = get_tenant_context()
-    cursor = dbapi_connection.cursor()
+    if dbapi_connection is None:
+        return  # Connection not available, skip RLS setup
+
     try:
-        if tenant_id is not None:
-            cursor.execute(f"SET app.current_tenant_id = '{tenant_id}'")
-        else:
-            # Reset to empty for global admin operations
-            cursor.execute("SET app.current_tenant_id = ''")
-    finally:
-        cursor.close()
+        tenant_id = get_tenant_context()
+        cursor = dbapi_connection.cursor()
+        try:
+            if tenant_id is not None:
+                cursor.execute(f"SET app.current_tenant_id = '{tenant_id}'")
+            else:
+                # Reset to empty for global admin operations
+                cursor.execute("SET app.current_tenant_id = ''")
+        finally:
+            cursor.close()
+    except Exception:
+        pass  # Silently ignore RLS errors to not break connection checkout
 
 
 def _reset_tenant_context_sync(dbapi_connection, connection_record):
@@ -66,11 +74,17 @@ def _reset_tenant_context_sync(dbapi_connection, connection_record):
 
     This ensures connections don't leak tenant context to other requests.
     """
-    cursor = dbapi_connection.cursor()
+    if dbapi_connection is None:
+        return  # Connection not available, skip reset
+
     try:
-        cursor.execute("SET app.current_tenant_id = ''")
-    finally:
-        cursor.close()
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("SET app.current_tenant_id = ''")
+        finally:
+            cursor.close()
+    except Exception:
+        pass  # Silently ignore errors during checkin
 
 
 # Register event listeners for RLS tenant context

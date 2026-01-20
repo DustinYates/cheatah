@@ -596,6 +596,16 @@ async def telnyx_ai_call_complete(
         )
         logger.info(f"Telnyx assistant_id: {assistant_id}")
 
+        # [SMS-DEBUG] Log all potential phone number sources for transfer debugging
+        logger.info(
+            f"[SMS-DEBUG] Phone number sources - "
+            f"body.From={body.get('From')}, body.Caller={body.get('Caller')}, "
+            f"metadata.from={metadata.get('from')}, metadata.telnyx_end_user_target={metadata.get('telnyx_end_user_target')}, "
+            f"payload.from={payload.get('from') if isinstance(payload, dict) else 'N/A'}, "
+            f"conversation.end_user_target={conversation.get('end_user_target')}, "
+            f"conversation.from={conversation.get('from')}"
+        )
+
         # Phone numbers - TeXML uses PascalCase: From, To
         from_number = (
             body.get("From")  # TeXML PascalCase
@@ -1434,13 +1444,20 @@ async def telnyx_ai_call_complete(
         # This handles both voice calls AND SMS chat via Telnyx AI Assistant
         combined_text = f"{summary or ''} {caller_intent or ''}".lower()
         registration_keywords = [
+            # English
             "registration", "register", "sign up", "signup", "enroll",
             "enrollment", "registration link", "registration info",
+            # Spanish
+            "registro", "registrarse", "registrar", "inscripción", "inscribir",
+            "enlace de registro", "información de registro", "enlace de inscripción",
+            "solicitar registro", "solicitar información", "enviar enlace",
+            "mandar enlace", "link de registro",
         ]
 
         # Check if link was ALREADY sent during the call (don't send again)
         # Also check for broken/looped conversations that shouldn't trigger SMS
         already_sent_indicators = [
+            # English
             "link was sent",
             "link was shared",
             "link was provided",
@@ -1458,6 +1475,20 @@ async def telnyx_ai_call_complete(
             "link shared",
             "link provided",
             "registration link sent",
+            # Spanish
+            "enlace fue enviado",
+            "enlace enviado",
+            "ya se envió",
+            "ya envié",
+            "se envió el enlace",
+            "le envié el enlace",
+            "le mandé el enlace",
+            "enlace compartido",
+            "enlace proporcionado",
+            "información enviada",
+            "mensaje enviado",
+            "recibió el enlace",
+            "ya tiene el enlace",
             # Indicators of broken/looped conversations - don't send SMS
             "repeated message",
             "series of repeated",
@@ -1470,10 +1501,32 @@ async def telnyx_ai_call_complete(
             "no context or details",
             "identical automated messages",
             "nothing to summarize",
+            # Spanish broken conversation indicators
+            "mensaje repetido",
+            "mensajes repetidos",
+            "no hay conversación",
+            "nada que resumir",
         ]
         link_already_sent = any(indicator in combined_text for indicator in already_sent_indicators)
 
         is_registration_request = any(kw in combined_text for kw in registration_keywords)
+
+        # [SMS-DEBUG] Log which keywords matched for debugging
+        matched_reg_keywords = [kw for kw in registration_keywords if kw in combined_text]
+        matched_sent_indicators = [ind for ind in already_sent_indicators if ind in combined_text]
+        logger.info(
+            f"[SMS-DEBUG] Keyword matching - "
+            f"matched_registration_keywords={matched_reg_keywords}, "
+            f"matched_sent_indicators={matched_sent_indicators}"
+        )
+
+        # [SMS-DEBUG] Log registration detection for transfer debugging
+        logger.info(
+            f"[SMS-DEBUG] Telnyx registration check - tenant_id={tenant_id}, "
+            f"is_registration_request={is_registration_request}, link_already_sent={link_already_sent}, "
+            f"from_number={from_number}, event_type={event_type}, "
+            f"combined_text_preview={combined_text[:200] if combined_text else 'empty'}"
+        )
 
         # =============================================================
         # EVENT TYPE FILTER: Only auto-send SMS on specific event types
@@ -1483,6 +1536,7 @@ async def telnyx_ai_call_complete(
         allowed_sms_events = [
             "call.conversation.ended",
             "conversation.ended",
+            "conversation_insight_result",  # Insights webhook - needed for transfers
         ]
         is_allowed_sms_event = event_type in allowed_sms_events
         if is_registration_request and not is_allowed_sms_event:
@@ -1544,6 +1598,14 @@ async def telnyx_ai_call_complete(
                     logger.warning(f"Failed to claim SMS send for call_id={call.id}: {claim_err}")
                     sms_already_sent_for_call = True
 
+        # [SMS-DEBUG] Log final SMS decision
+        logger.info(
+            f"[SMS-DEBUG] SMS decision - tenant_id={tenant_id}, "
+            f"link_already_sent={link_already_sent}, sms_already_sent_for_call={sms_already_sent_for_call}, "
+            f"is_registration_request={is_registration_request}, has_phone={bool(from_number)}, "
+            f"will_send={is_registration_request and from_number and not link_already_sent and not sms_already_sent_for_call}"
+        )
+
         if link_already_sent:
             logger.info(
                 f"Skipping registration SMS - link already sent during call: "
@@ -1575,6 +1637,7 @@ async def telnyx_ai_call_complete(
                 )
 
                 # Fulfill the promise (send SMS with registration info)
+                # Pass summary and transcript so dynamic URL can be built from context
                 fulfillment_service = PromiseFulfillmentService(db)
                 result = await fulfillment_service.fulfill_promise(
                     tenant_id=tenant_id,
@@ -1582,6 +1645,7 @@ async def telnyx_ai_call_complete(
                     promise=promise,
                     phone=from_number,
                     name=caller_name,
+                    ai_response=f"{summary or ''}\n{transcript or ''}",  # Include both for URL extraction
                 )
 
                 logger.info(

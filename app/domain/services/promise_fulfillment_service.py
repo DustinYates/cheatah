@@ -148,26 +148,28 @@ class PromiseFulfillmentService:
             if dynamic_url:
                 logger.info(f"Using URL extracted from AI response: {dynamic_url}")
 
-        # If no URL in AI response, try to build from conversation context
+        # If no URL in AI response, try to build from conversation context (messages)
         if not dynamic_url and messages:
             context = extract_context_from_messages(messages)
             if context.registration_url:
                 dynamic_url = context.registration_url
                 logger.info(
-                    f"Built dynamic URL from context - location={context.location_code}, "
+                    f"Built dynamic URL from messages - location={context.location_code}, "
                     f"level={context.level_name}, url={dynamic_url}"
                 )
+
+        # If still no URL, try to extract location/level from ai_response text and build URL
+        if not dynamic_url and ai_response:
+            dynamic_url = self._build_url_from_text(ai_response)
+            if dynamic_url:
+                logger.info(f"Built dynamic URL from ai_response text: {dynamic_url}")
 
         # Use dynamic URL if available, otherwise fall back to static config
         url_to_send = dynamic_url or asset_config.get("url", "")
 
-        # For registration links, send ONLY the URL (no extra text)
-        if dynamic_url and promise.asset_type in ("registration_link", "info"):
-            message = url_to_send
-            logger.info(f"Sending plain URL only: {message}")
-        else:
-            # Compose the message using template
-            message = self._compose_message(sms_template, asset_config, name, url_to_send)
+        # Always use the template to compose the message (provides better context)
+        message = self._compose_message(sms_template, asset_config, name, url_to_send)
+        logger.info(f"Composed SMS using template - length={len(message)}")
 
         # Send SMS
         result = await self._send_sms(tenant_id, phone, message)
@@ -233,6 +235,89 @@ class PromiseFulfillmentService:
 
         return message
 
+    def _build_url_from_text(self, text: str) -> str | None:
+        """Build registration URL by extracting location and level from text.
+
+        Args:
+            text: Text to search for location and level mentions
+
+        Returns:
+            Built registration URL or None if not enough context
+        """
+        from app.utils.registration_url_builder import build_registration_url
+
+        text_lower = text.lower()
+
+        # Location mappings - order matters (longer matches first)
+        location_patterns = [
+            ("la fitness langham creek", "LALANG"),
+            ("langham creek", "LALANG"),
+            ("langham", "LALANG"),
+            ("la fitness cypress", "LAFCypress"),
+            ("cypress", "LAFCypress"),
+            ("24 hour fitness spring", "24Spring"),
+            ("24 hour fitness in spring", "24Spring"),
+            ("24 hr fitness in spring", "24Spring"),
+            ("24 hour spring", "24Spring"),
+            ("24 hr spring", "24Spring"),
+            ("spring", "24Spring"),
+        ]
+
+        # Level mappings - order matters (longer matches first)
+        level_patterns = [
+            ("young adult level 3", "Young Adult 3"),
+            ("young adult level 2", "Young Adult 2"),
+            ("young adult level 1", "Young Adult 1"),
+            ("young adult 3", "Young Adult 3"),
+            ("young adult 2", "Young Adult 2"),
+            ("young adult 1", "Young Adult 1"),
+            ("adult level 3", "Adult Level 3"),
+            ("adult level 2", "Adult Level 2"),
+            ("adult level 1", "Adult Level 1"),
+            ("adult 3", "Adult Level 3"),
+            ("adult 2", "Adult Level 2"),
+            ("adult 1", "Adult Level 1"),
+            ("shark 2", "Shark 2"),
+            ("shark 1", "Shark 1"),
+            ("turtle 2", "Turtle 2"),
+            ("turtle 1", "Turtle 1"),
+            ("barracuda", "Barracuda"),
+            ("dolphin", "Dolphin"),
+            ("tadpole", "Tadpole"),
+            ("swimboree", "Swimboree"),
+            ("seahorse", "Seahorse"),
+            ("starfish", "Starfish"),
+            ("minnow", "Minnow"),
+        ]
+
+        # Find location
+        location_code = None
+        for pattern, code in location_patterns:
+            if pattern in text_lower:
+                location_code = code
+                logger.info(f"Found location '{pattern}' -> {code}")
+                break
+
+        # Find level
+        level_name = None
+        for pattern, name in level_patterns:
+            if pattern in text_lower:
+                level_name = name
+                logger.info(f"Found level '{pattern}' -> {name}")
+                break
+
+        # Build URL if we have at least location
+        if location_code:
+            try:
+                url = build_registration_url(location_code, level_name)
+                logger.info(f"Built URL: location={location_code}, level={level_name}, url={url}")
+                return url
+            except Exception as e:
+                logger.warning(f"Failed to build URL: {e}")
+
+        logger.info(f"Could not build URL - location={location_code}, level={level_name}")
+        return None
+
     async def _send_sms(
         self,
         tenant_id: int,
@@ -249,12 +334,21 @@ class PromiseFulfillmentService:
         Returns:
             Result dictionary
         """
+        # [SMS-DEBUG] Log input parameters for debugging transfer issues
+        logger.info(
+            f"[SMS-DEBUG] _send_sms called - tenant_id={tenant_id}, "
+            f"to_phone={to_phone}, message_length={len(message)}"
+        )
+
         # Get tenant SMS config
         stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
         result = await self.session.execute(stmt)
         sms_config = result.scalar_one_or_none()
 
         if not sms_config:
+            logger.warning(
+                f"[SMS-DEBUG] No SMS config found for tenant {tenant_id}"
+            )
             return {
                 "status": "not_configured",
                 "error": "Tenant SMS not configured",
@@ -283,6 +377,12 @@ class PromiseFulfillmentService:
             else:
                 formatted_phone = f"+{digits}"
 
+        # [SMS-DEBUG] Log formatted phone and from number before send
+        logger.info(
+            f"[SMS-DEBUG] Attempting SMS send - tenant_id={tenant_id}, "
+            f"from={from_number}, to={formatted_phone}, has_profile={bool(messaging_profile_id)}"
+        )
+
         # Send SMS
         try:
             telnyx_provider = TelnyxSmsProvider(
@@ -309,7 +409,11 @@ class PromiseFulfillmentService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to send promise fulfillment SMS: {e}", exc_info=True)
+            logger.error(
+                f"[SMS-DEBUG] Failed to send promise fulfillment SMS - "
+                f"tenant_id={tenant_id}, to={formatted_phone}, error={e}",
+                exc_info=True
+            )
             return {
                 "status": "error",
                 "error": str(e),

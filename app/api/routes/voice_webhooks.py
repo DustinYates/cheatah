@@ -1161,9 +1161,23 @@ async def _check_and_fulfill_promise(
         from app.domain.services.promise_detector import PromiseDetector
         from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
 
+        # [SMS-DEBUG] Log initial parameters for debugging transfer issues
+        logger.info(
+            f"[SMS-DEBUG] Starting promise check - call_sid={call_sid}, "
+            f"tenant_id={tenant_id}, conversation_id={conversation_id}, "
+            f"ai_response_length={len(ai_response) if ai_response else 0}"
+        )
+
         # Detect if AI made a promise
         detector = PromiseDetector()
         promise = detector.detect_promise(ai_response)
+
+        # [SMS-DEBUG] Log promise detection result
+        logger.info(
+            f"[SMS-DEBUG] Promise detection result - call_sid={call_sid}, "
+            f"found={bool(promise)}, type={promise.asset_type if promise else 'N/A'}, "
+            f"confidence={promise.confidence if promise else 0:.2f}"
+        )
 
         if not promise:
             return
@@ -1176,11 +1190,18 @@ async def _check_and_fulfill_promise(
         # Get caller phone and name
         call = await _get_call_by_sid(call_sid, db)
         if not call:
-            logger.warning(f"Could not find call for promise fulfillment: {call_sid}")
+            logger.warning(f"[SMS-DEBUG] Could not find call for promise fulfillment: {call_sid}")
             return
 
         caller_phone = call.from_number
         caller_name = await _extract_caller_name_from_conversation(db, conversation_id)
+
+        # [SMS-DEBUG] Log caller info for debugging transfer issues
+        logger.info(
+            f"[SMS-DEBUG] Caller info retrieved - call_sid={call_sid}, "
+            f"caller_phone={caller_phone}, caller_name={caller_name or 'Unknown'}, "
+            f"has_phone={bool(caller_phone)}"
+        )
 
         # Handle email promises separately - alert tenant instead of fulfilling
         if promise.asset_type == "email_promise":

@@ -75,6 +75,11 @@ NON_SURNAME_SUFFIXES = {
     "program", "programs", "level", "levels",
     "swimming", "swim", "location", "locations",
     "payment", "payments", "question", "questions",
+    # Common adjectives/state descriptors that get incorrectly captured as surnames
+    # e.g., "Jamiyah Comfortable" from "I'm comfortable floating"
+    "comfortable", "interested", "able", "available", "ready", "happy", "excited",
+    "nervous", "afraid", "good", "great", "fine", "doing", "feeling", "trying",
+    "learning", "starting", "new", "beginner", "intermediate", "advanced", "experienced",
 }
 
 # Patterns that indicate non-name content

@@ -787,6 +787,11 @@ class ChatService:
             # Common verbs that follow names in requests like "im ralph give me the schedule"
             'give', 'send', 'tell', 'show', 'get', 'need', 'want', 'can', 'could', 'would', 'will',
             'let', 'help', 'just', 'now', 'looking', 'interested', 'calling', 'texting', 'asking',
+            # Common adjectives/state descriptors that users say after "I'm" (e.g., "I'm comfortable floating")
+            'comfortable', 'able', 'available', 'ready', 'happy', 'excited', 'nervous', 'afraid',
+            'good', 'great', 'fine', 'okay', 'doing', 'feeling', 'trying', 'learning', 'starting',
+            'new', 'beginner', 'intermediate', 'advanced', 'experienced', 'not', 'very', 'really',
+            'currently', 'also', 'actually', 'already', 'still', 'completely', 'totally', 'mostly',
         }
 
         # Pattern 0: Name stated first, like "scott, im 68" or "john, i need help"
@@ -836,8 +841,17 @@ class ChatService:
                 common_words = {'hey', 'hello', 'going', 'doing', 'good', 'nice', 'thank', 'thanks',
                                'pretty', 'sounds', 'looks', 'what', 'whats', 'how', 'who', 'where',
                                'when', 'why', 'can', 'could', 'would', 'will', 'should'}
+                # Words that are never last names - adjectives/state descriptors that follow "I'm"
+                # e.g., "I'm comfortable floating" should not make "Comfortable" a last name
+                non_surname_words = {'comfortable', 'interested', 'able', 'available', 'ready',
+                                    'happy', 'excited', 'nervous', 'afraid', 'new', 'fine', 'great',
+                                    'looking', 'trying', 'learning', 'starting', 'calling', 'texting',
+                                    'beginner', 'intermediate', 'advanced', 'experienced'}
                 words = name.lower().split()
-                if not (words[0] in common_words and words[1] in common_words):
+                # Skip if both words are common, OR if the second word is a non-surname word
+                if (words[0] in common_words and words[1] in common_words) or words[1] in non_surname_words:
+                    pass  # Skip this match
+                else:
                     return (name, False)  # False = not an explicit introduction
 
         return (None, False)
@@ -858,10 +872,12 @@ class ChatService:
             and 'name_is_explicit' bool indicating if name came from explicit introduction
         """
         # First, try regex extraction from the current message as a quick fallback
+        # Use " | " as separator to prevent regex patterns from matching across message boundaries
+        # e.g., without this, "Jamiyah" + " " + "Comfortable floating" would match as "Jamiyah Comfortable"
         all_text = current_user_message
         for msg in messages:
             if msg.role == "user":
-                all_text += " " + msg.content
+                all_text += " | " + msg.content
 
         regex_email = self._extract_email_regex(all_text)
         regex_phone = self._extract_phone_regex(all_text)

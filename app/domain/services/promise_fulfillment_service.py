@@ -303,6 +303,9 @@ class PromiseFulfillmentService:
             ("estrella de mar", "Starfish"),
             ("renacuajo", "Tadpole"),
             ("pececillo", "Minnow"),
+            ("delfín", "Dolphin"),
+            ("delfin", "Dolphin"),
+            ("barracuda", "Barracuda"),
             # English patterns continued
             ("shark 2", "Shark 2"),
             ("shark 1", "Shark 1"),
@@ -313,6 +316,8 @@ class PromiseFulfillmentService:
             ("seahorse", "Seahorse"),
             ("starfish", "Starfish"),
             ("minnow", "Minnow"),
+            ("dolphin", "Dolphin"),
+            ("barracuda", "Barracuda"),
         ]
 
         # Find location

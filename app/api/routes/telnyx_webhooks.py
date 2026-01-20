@@ -564,6 +564,11 @@ async def telnyx_ai_call_complete(
         body_str = json.dumps(body)[:3000] if isinstance(body, dict) else str(body)[:500]
         logger.info(f"Telnyx AI webhook payload: {body_str}")
 
+        # ========== CALL WEBHOOK RECEIVED ==========
+        logger.info("=" * 60)
+        logger.info("TELNYX AI CALL WEBHOOK RECEIVED")
+        logger.info("=" * 60)
+
         # Telnyx webhooks typically have: {data: {event_type: ..., payload: {...}}}
         # But Insights webhooks have: {event_type: ..., payload: {metadata: {to, from, ...}, results: [...]}}
         data = body.get("data", body)
@@ -652,6 +657,10 @@ async def telnyx_ai_call_complete(
             or conversation.get("to")
             or ""
         )
+
+        # ========== PHONE NUMBERS EXTRACTED ==========
+        logger.info(f"CALL PHONE NUMBERS: from={from_number}, to={to_number}")
+        logger.info(f"EVENT TYPE: {event_type}")
 
         # Duration - log available fields to help debug missing duration
         logger.info(f"Telnyx duration debug - payload keys: {list(payload.keys()) if isinstance(payload, dict) else 'not dict'}")
@@ -1649,6 +1658,14 @@ async def telnyx_ai_call_complete(
 
                 # Fulfill the promise (send SMS with registration info)
                 # Pass summary and transcript so dynamic URL can be built from context
+                ai_response_text = f"{summary or ''}\n{transcript or ''}"
+                logger.info("=" * 60)
+                logger.info("SENDING POST-CALL REGISTRATION SMS")
+                logger.info(f"Tenant: {tenant_id}, Phone: {from_number}, Name: {caller_name}")
+                logger.info(f"Summary (first 200 chars): {(summary or 'NONE')[:200]}")
+                logger.info(f"Transcript (first 200 chars): {(transcript or 'NONE')[:200]}")
+                logger.info("=" * 60)
+
                 fulfillment_service = PromiseFulfillmentService(db)
                 result = await fulfillment_service.fulfill_promise(
                     tenant_id=tenant_id,
@@ -1656,7 +1673,7 @@ async def telnyx_ai_call_complete(
                     promise=promise,
                     phone=from_number,
                     name=caller_name,
-                    ai_response=f"{summary or ''}\n{transcript or ''}",  # Include both for URL extraction
+                    ai_response=ai_response_text,  # Include both for URL extraction
                 )
 
                 logger.info(

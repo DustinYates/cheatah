@@ -264,7 +264,9 @@ class PromiseFulfillmentService:
         ]
 
         # Level mappings - order matters (longer matches first)
+        # Includes both English and Spanish variants
         level_patterns = [
+            # English patterns
             ("young adult level 3", "Young Adult 3"),
             ("young adult level 2", "Young Adult 2"),
             ("young adult level 1", "Young Adult 1"),
@@ -277,6 +279,31 @@ class PromiseFulfillmentService:
             ("adult 3", "Adult Level 3"),
             ("adult 2", "Adult Level 2"),
             ("adult 1", "Adult Level 1"),
+            # Spanish patterns - "Adulto Nivel X" or "Nivel Adulto X"
+            ("adulto nivel 3", "Adult Level 3"),
+            ("adulto nivel 2", "Adult Level 2"),
+            ("adulto nivel 1", "Adult Level 1"),
+            ("nivel adulto 3", "Adult Level 3"),
+            ("nivel adulto 2", "Adult Level 2"),
+            ("nivel adulto 1", "Adult Level 1"),
+            ("joven adulto 3", "Young Adult 3"),
+            ("joven adulto 2", "Young Adult 2"),
+            ("joven adulto 1", "Young Adult 1"),
+            ("adulto joven 3", "Young Adult 3"),
+            ("adulto joven 2", "Young Adult 2"),
+            ("adulto joven 1", "Young Adult 1"),
+            # Spanish level names (tiburón, tortuga, etc.)
+            ("tiburón 2", "Shark 2"),
+            ("tiburon 2", "Shark 2"),
+            ("tiburón 1", "Shark 1"),
+            ("tiburon 1", "Shark 1"),
+            ("tortuga 2", "Turtle 2"),
+            ("tortuga 1", "Turtle 1"),
+            ("delfín", "Dolphin"),
+            ("delfin", "Dolphin"),
+            ("caballito de mar", "Seahorse"),
+            ("estrella de mar", "Starfish"),
+            # English patterns continued
             ("shark 2", "Shark 2"),
             ("shark 1", "Shark 1"),
             ("turtle 2", "Turtle 2"),

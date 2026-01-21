@@ -43,6 +43,12 @@ _BOT_GREETING_NAME_PATTERN = re.compile(
     r"(?:nice to meet you|great to meet you|hello|hi there|hey there|thanks|thank you),?\s+([A-Z][a-z]+)",
     re.IGNORECASE
 )
+# Pattern to detect when assistant asked for user's name
+_NAME_REQUEST_PATTERN = re.compile(
+    r"(?:who am i (?:chatting|speaking|talking) with|what(?:'s| is) your name|may i (?:have|get) your name|"
+    r"(?:and )?your name(?: is)?|who(?:'s| is) this|what should i call you)",
+    re.IGNORECASE
+)
 
 
 @dataclass
@@ -893,8 +899,30 @@ class ChatService:
             f"Regex extraction results - name={regex_name}, email={regex_email}, phone={regex_phone}"
         )
 
-        # Fallback: Extract name from bot's greeting response (e.g., "Nice to meet you, Dustin")
-        # This is very reliable since the bot only greets by name when it recognized the name
+        # Fallback 1: Check if assistant asked for name and user responded with a name-like word
+        # This is the most reliable fallback - we detect the Q&A pattern directly
+        name_after_request = None
+        # Find the last assistant message before the current user message
+        last_assistant_msg = None
+        for msg in reversed(messages):
+            if msg.role == "assistant":
+                last_assistant_msg = msg.content
+                break
+
+        if last_assistant_msg and _NAME_REQUEST_PATTERN.search(last_assistant_msg):
+            # Assistant asked for name - check if current user message looks like a name
+            # A name response is typically 1-2 words, all letters, not a common phrase
+            user_response = current_user_message.strip()
+            words = user_response.split()
+            if len(words) <= 2 and all(w.isalpha() for w in words):
+                # Validate as a name
+                validated = validate_name(user_response, require_explicit=True)
+                if validated:
+                    name_after_request = validated
+                    logger.info(f"Extracted name from Q&A pattern: assistant asked for name, user replied '{name_after_request}'")
+
+        # Fallback 2: Extract name from bot's greeting response (e.g., "Nice to meet you, Dustin")
+        # This is reliable since the bot only greets by name when it recognized the name
         bot_greeting_name = None
         for msg in messages:
             if msg.role == "assistant":
@@ -961,9 +989,13 @@ GENERAL RULES:
 Respond with ONLY a valid JSON object in this exact format, no other text:
 {{"name": null, "email": null, "phone": null}}""".format("\n".join(recent_messages))
 
-        # Use bot_greeting_name as fallback if regex didn't find a name
-        fallback_name = regex_name or bot_greeting_name
-        fallback_name_is_explicit = name_is_explicit if regex_name else (True if bot_greeting_name else False)
+        # Use fallbacks if regex didn't find a name
+        # Priority: regex_name -> name_after_request -> bot_greeting_name
+        fallback_name = regex_name or name_after_request or bot_greeting_name
+        fallback_name_is_explicit = (
+            name_is_explicit if regex_name
+            else (True if name_after_request or bot_greeting_name else False)
+        )
         result = {"name": fallback_name, "email": regex_email, "phone": regex_phone, "name_is_explicit": fallback_name_is_explicit}
         
         try:
@@ -1022,13 +1054,18 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             # only extracts names when users clearly state their name in conversation.
             # This allows LLM-extracted names to override previously captured (possibly
             # incorrect) names like generic placeholders or misextracted text.
-            # Fallback chain: LLM name -> regex name -> bot greeting name
+            # Fallback chain: LLM name -> regex name -> name_after_request -> bot greeting name
             if llm_name and llm_name != "null":
                 final_name = llm_name
                 final_name_is_explicit = True
             elif regex_name:
                 final_name = regex_name
                 final_name_is_explicit = name_is_explicit
+            elif name_after_request:
+                # Assistant asked for name, user replied with what looks like a name
+                final_name = name_after_request
+                final_name_is_explicit = True
+                logger.info(f"Using Q&A pattern fallback for name: '{name_after_request}'")
             elif bot_greeting_name:
                 # Bot greeted user by name, so we know this is their name
                 final_name = bot_greeting_name
@@ -1040,7 +1077,8 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
 
             logger.info(
                 f"Name extraction result: llm_name={llm_name}, regex_name={regex_name}, "
-                f"bot_greeting_name={bot_greeting_name}, final_name={final_name}, is_explicit={final_name_is_explicit}"
+                f"name_after_request={name_after_request}, bot_greeting_name={bot_greeting_name}, "
+                f"final_name={final_name}, is_explicit={final_name_is_explicit}"
             )
 
             result = {

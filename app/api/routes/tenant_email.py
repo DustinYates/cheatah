@@ -455,7 +455,9 @@ async def refresh_gmail_watch(
             token_expires_at=config.gmail_token_expires_at,
         )
 
+        logger.info(f"[GMAIL_WATCH] Setting up watch for tenant {tenant_id}, topic={topic}")
         watch_result = gmail_client.watch_mailbox(topic)
+        logger.info(f"[GMAIL_WATCH] Watch result: history_id={watch_result.get('history_id')}, expiration={watch_result.get('expiration')}")
 
         # Update config
         await config_repo.create_or_update(
@@ -472,7 +474,8 @@ async def refresh_gmail_watch(
             token_expires_at=token_info["token_expires_at"],
         )
 
-        return {"status": "ok", "message": "Gmail watch refreshed"}
+        logger.info(f"[GMAIL_WATCH] Watch refreshed successfully for tenant {tenant_id}")
+        return {"status": "ok", "message": "Gmail watch refreshed", "history_id": watch_result.get("history_id")}
 
     except Exception as e:
         logger.error(f"Failed to refresh Gmail watch: {e}")

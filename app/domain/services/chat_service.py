@@ -918,9 +918,11 @@ NAME EXTRACTION RULES (IMPORTANT):
   * Direct introductions: "I'm John", "my name is Sarah", "I am Mike", "this is Jane"
   * Casual introductions: "im ralph", "im John Anthony", "John here", "it's Sarah"
   * Name first with comma: "scott, im 68 years old", "john, I need help", "sarah, can you help me"
-  * Names stated alone when asked: If asked "what's your name?" and they reply "John Anthony", extract "John Anthony"
+  * Names stated alone when asked: If the assistant asks for the user's name in ANY way (e.g., "what's your name?", "who am I chatting with?", "who am I speaking with?", "may I have your name?", "and your name is?", "who is this?") and the user's next message is just a single word or two words that look like a name, extract it as their name.
+  * Single-word name responses: If user responds with just "John" or "Sarah" or "dustin" after being asked for their name, that IS their name - extract it.
   * Names in context: "You can call me Mike", "My friends call me Sam"
 - Extract the COMPLETE name including first and last name if provided
+- Names can be lowercase (e.g., "dustin" or "sarah") - users often type without capitalization in chat
 - Do NOT extract business names, product names, or other non-person names
 - If multiple names are mentioned, extract the most recent or most clearly stated one
 - CRITICAL: Do NOT include pronouns (he, she, they, him, her, them) as part of the name!

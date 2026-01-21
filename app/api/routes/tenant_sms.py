@@ -18,6 +18,12 @@ router = APIRouter()
 
 # Request/Response Models
 
+class SubjectTemplate(BaseModel):
+    """Template for a specific email subject prefix."""
+    message: str
+    delay_minutes: int = 5
+
+
 class SmsSettingsResponse(BaseModel):
     """SMS settings visible to tenant."""
     is_enabled: bool
@@ -30,11 +36,12 @@ class SmsSettingsResponse(BaseModel):
     business_hours: dict | None
     # Follow-up settings
     followup_enabled: bool
-    followup_delay_minutes: int
+    followup_delay_minutes: int  # Default delay (used when no subject-specific template matches)
     followup_sources: list[str]
     followup_initial_message: str | None
-    # Subject-specific templates for email follow-ups (maps subject prefix to SMS message)
-    followup_subject_templates: dict[str, str] | None
+    # Subject-specific templates for email follow-ups
+    # Maps subject prefix to {message, delay_minutes}
+    followup_subject_templates: dict[str, SubjectTemplate] | None
 
 
 class UpdateSmsSettingsRequest(BaseModel):
@@ -48,12 +55,12 @@ class UpdateSmsSettingsRequest(BaseModel):
     business_hours: dict | None = None
     # Follow-up settings
     followup_enabled: bool = False
-    followup_delay_minutes: int = 5
+    followup_delay_minutes: int = 5  # Default delay (used when no subject-specific template matches)
     followup_sources: list[str] = ["email", "voice_call", "sms"]
     followup_initial_message: str | None = None
     # Subject-specific templates for email follow-ups
-    # Maps email subject prefix to SMS message template (supports {first_name} and {name} placeholders)
-    followup_subject_templates: dict[str, str] | None = None
+    # Maps email subject prefix to {message, delay_minutes}
+    followup_subject_templates: dict[str, SubjectTemplate] | None = None
 
 
 class InitiateOutreachRequest(BaseModel):

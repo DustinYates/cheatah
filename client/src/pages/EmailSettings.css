@@ -527,6 +527,15 @@
   font-size: var(--font-size-sm);
 }
 
+.template-delay {
+  padding: 2px 8px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: var(--radius-sm);
+  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+}
+
 .template-actions {
   display: flex;
   align-items: center;
@@ -591,6 +600,49 @@
 
 .template-form-group {
   margin-bottom: var(--spacing-md);
+}
+
+.template-form-row {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: flex-start;
+}
+
+.template-form-group-message {
+  flex: 1;
+}
+
+.template-form-group-delay {
+  width: 100px;
+  flex-shrink: 0;
+}
+
+.delay-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.template-delay-input {
+  width: 60px;
+  padding: 10px var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+  text-align: center;
+}
+
+.template-delay-input:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.15);
+}
+
+.delay-unit {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .template-form-group label {

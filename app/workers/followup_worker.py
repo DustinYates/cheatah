@@ -187,12 +187,18 @@ def _generate_initial_message(lead: Lead, sms_config: TenantSmsConfig) -> str:
     email_subject = lead.extra_data.get("email_subject", "") if lead.extra_data else ""
     if email_subject and sms_config.settings:
         subject_templates = sms_config.settings.get("followup_subject_templates", {})
-        for prefix, template in subject_templates.items():
+        for prefix, template_data in subject_templates.items():
             if email_subject.lower().startswith(prefix.lower()):
-                message = template.replace("{name}", lead_name or "there")
-                message = message.replace("{first_name}", first_name or "there")
-                logger.info(f"Using subject-specific template for prefix: {prefix}")
-                return message
+                # Support both old format (string) and new format (dict with message/delay)
+                if isinstance(template_data, dict):
+                    template = template_data.get("message", "")
+                else:
+                    template = template_data  # Legacy string format
+                if template:
+                    message = template.replace("{name}", lead_name or "there")
+                    message = message.replace("{first_name}", first_name or "there")
+                    logger.info(f"Using subject-specific template for prefix: {prefix}")
+                    return message
 
     # Check for global custom template in settings
     custom_template = None

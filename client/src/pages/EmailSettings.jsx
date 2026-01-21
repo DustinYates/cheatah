@@ -28,9 +28,11 @@ export default function EmailSettings() {
   const [followupDefaultMessage, setFollowupDefaultMessage] = useState('');
 
   // Subject-specific SMS templates state
+  // Templates are now { subject: { message, delay_minutes } }
   const [subjectTemplates, setSubjectTemplates] = useState({});
   const [newTemplateSubject, setNewTemplateSubject] = useState('');
   const [newTemplateMessage, setNewTemplateMessage] = useState('');
+  const [newTemplateDelay, setNewTemplateDelay] = useState(5);
   const [editingTemplate, setEditingTemplate] = useState(null);
   const templateSubjectInputRef = useRef(null);
 
@@ -105,16 +107,29 @@ export default function EmailSettings() {
   };
 
   // Subject template handlers
+  // Helper to get message from template (handles both old string format and new object format)
+  const getTemplateMessage = (templateData) => {
+    if (typeof templateData === 'string') return templateData;
+    return templateData?.message || '';
+  };
+
+  // Helper to get delay from template (handles both old string format and new object format)
+  const getTemplateDelay = (templateData) => {
+    if (typeof templateData === 'string') return followupDelayMinutes; // Fall back to global delay
+    return templateData?.delay_minutes ?? followupDelayMinutes;
+  };
+
   const handleAddTemplate = () => {
     const subject = newTemplateSubject.trim();
     const message = newTemplateMessage.trim();
     if (subject && message) {
       setSubjectTemplates(prev => ({
         ...prev,
-        [subject]: message,
+        [subject]: { message, delay_minutes: newTemplateDelay },
       }));
       setNewTemplateSubject('');
       setNewTemplateMessage('');
+      setNewTemplateDelay(5);
       // Auto-focus subject input for adding multiple templates quickly
       setTimeout(() => templateSubjectInputRef.current?.focus(), 0);
     }
@@ -131,7 +146,8 @@ export default function EmailSettings() {
   const handleEditTemplate = (subject) => {
     setEditingTemplate(subject);
     setNewTemplateSubject(subject);
-    setNewTemplateMessage(subjectTemplates[subject]);
+    setNewTemplateMessage(getTemplateMessage(subjectTemplates[subject]));
+    setNewTemplateDelay(getTemplateDelay(subjectTemplates[subject]));
   };
 
   const handleSaveEditTemplate = () => {
@@ -144,11 +160,12 @@ export default function EmailSettings() {
         if (editingTemplate && editingTemplate !== subject) {
           delete updated[editingTemplate];
         }
-        updated[subject] = message;
+        updated[subject] = { message, delay_minutes: newTemplateDelay };
         return updated;
       });
       setNewTemplateSubject('');
       setNewTemplateMessage('');
+      setNewTemplateDelay(5);
       setEditingTemplate(null);
     }
   };
@@ -156,6 +173,7 @@ export default function EmailSettings() {
   const handleCancelEditTemplate = () => {
     setNewTemplateSubject('');
     setNewTemplateMessage('');
+    setNewTemplateDelay(5);
     setEditingTemplate(null);
   };
 
@@ -514,10 +532,11 @@ export default function EmailSettings() {
                 </div>
               ) : (
                 <div className="template-list">
-                  {Object.entries(subjectTemplates).map(([subject, message]) => (
+                  {Object.entries(subjectTemplates).map(([subject, templateData]) => (
                     <div key={subject} className="template-item">
                       <div className="template-header">
                         <span className="template-subject">Subject: "{subject}"</span>
+                        <span className="template-delay">Wait: {getTemplateDelay(templateData)} min</span>
                         <div className="template-actions">
                           <button
                             type="button"
@@ -537,7 +556,7 @@ export default function EmailSettings() {
                           </button>
                         </div>
                       </div>
-                      <div className="template-message">{message}</div>
+                      <div className="template-message">{getTemplateMessage(templateData)}</div>
                     </div>
                   ))}
                 </div>
@@ -557,19 +576,36 @@ export default function EmailSettings() {
                     className="template-input"
                   />
                 </div>
-                <div className="template-form-group">
-                  <label htmlFor="template-message">SMS Message</label>
-                  <textarea
-                    id="template-message"
-                    value={newTemplateMessage}
-                    onChange={(e) => setNewTemplateMessage(e.target.value)}
-                    placeholder="Hi, {first_name}. Thank you for reaching out..."
-                    className="template-textarea"
-                    rows={3}
-                  />
-                  <small className="template-help">
-                    Use {'{first_name}'} or {'{name}'} as placeholders for the lead's name.
-                  </small>
+                <div className="template-form-row">
+                  <div className="template-form-group template-form-group-message">
+                    <label htmlFor="template-message">SMS Message</label>
+                    <textarea
+                      id="template-message"
+                      value={newTemplateMessage}
+                      onChange={(e) => setNewTemplateMessage(e.target.value)}
+                      placeholder="Hi, {first_name}. Thank you for reaching out..."
+                      className="template-textarea"
+                      rows={3}
+                    />
+                    <small className="template-help">
+                      Use {'{first_name}'} or {'{name}'} as placeholders for the lead's name.
+                    </small>
+                  </div>
+                  <div className="template-form-group template-form-group-delay">
+                    <label htmlFor="template-delay">Wait Time</label>
+                    <div className="delay-input-wrapper">
+                      <input
+                        id="template-delay"
+                        type="number"
+                        min="0"
+                        max="60"
+                        value={newTemplateDelay}
+                        onChange={(e) => setNewTemplateDelay(parseInt(e.target.value, 10) || 0)}
+                        className="template-delay-input"
+                      />
+                      <span className="delay-unit">min</span>
+                    </div>
+                  </div>
                 </div>
                 <div className="template-form-actions">
                   {editingTemplate ? (
@@ -620,9 +656,10 @@ export default function EmailSettings() {
               const pendingSubject = newTemplateSubject.trim();
               const pendingMessage = newTemplateMessage.trim();
               if (pendingSubject && pendingMessage) {
-                templatesToSave[pendingSubject] = pendingMessage;
+                templatesToSave[pendingSubject] = { message: pendingMessage, delay_minutes: newTemplateDelay };
                 setNewTemplateSubject('');
                 setNewTemplateMessage('');
+                setNewTemplateDelay(5);
                 setEditingTemplate(null);
                 setSubjectTemplates(templatesToSave);
               }

@@ -138,11 +138,29 @@ class FollowUpService:
         if not await self.should_schedule_followup(tenant_id, lead):
             return None
 
-        # Get delay from config
+        # Get delay from config (check for subject-specific delay first)
         config = await self._get_sms_config(tenant_id)
         delay_minutes = self.DEFAULT_DELAY_MINUTES
         if config and config.settings:
-            delay_minutes = config.settings.get("followup_delay_minutes", self.DEFAULT_DELAY_MINUTES)
+            # Check for subject-specific delay based on email subject
+            email_subject = lead.extra_data.get("email_subject", "") if lead.extra_data else ""
+            subject_templates = config.settings.get("followup_subject_templates", {})
+
+            subject_specific_delay = None
+            if email_subject and subject_templates:
+                for prefix, template_data in subject_templates.items():
+                    if email_subject.lower().startswith(prefix.lower()):
+                        # Support both old format (string) and new format (dict with message/delay)
+                        if isinstance(template_data, dict):
+                            subject_specific_delay = template_data.get("delay_minutes")
+                        break
+
+            if subject_specific_delay is not None:
+                delay_minutes = subject_specific_delay
+                logger.info(f"Using subject-specific delay of {delay_minutes} minutes for lead {lead_id}")
+            else:
+                # Fall back to global delay setting
+                delay_minutes = config.settings.get("followup_delay_minutes", self.DEFAULT_DELAY_MINUTES)
 
         # Build worker URL
         worker_base_url = settings.cloud_tasks_worker_url

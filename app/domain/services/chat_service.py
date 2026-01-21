@@ -902,15 +902,18 @@ class ChatService:
         # Fallback 1: Check if assistant asked for name and user responded with a name-like word
         # This is the most reliable fallback - we detect the Q&A pattern directly
         name_after_request = None
-        # Find the last assistant message before the current user message
-        last_assistant_msg = None
-        for msg in reversed(messages):
-            if msg.role == "assistant":
-                last_assistant_msg = msg.content
+        # Find the assistant message that asked for a name (look through recent messages)
+        # Note: messages may include the NEW response, so we need to check all assistant messages
+        # for a name request, not just the last one
+        assistant_asked_for_name = False
+        for msg in messages:
+            if msg.role == "assistant" and _NAME_REQUEST_PATTERN.search(msg.content):
+                assistant_asked_for_name = True
+                logger.debug(f"Found name request in assistant message: {msg.content[:100]}...")
                 break
 
-        if last_assistant_msg and _NAME_REQUEST_PATTERN.search(last_assistant_msg):
-            # Assistant asked for name - check if current user message looks like a name
+        if assistant_asked_for_name:
+            # Assistant asked for name at some point - check if current user message looks like a name
             # A name response is typically 1-2 words, all letters, not a common phrase
             user_response = current_user_message.strip()
             words = user_response.split()

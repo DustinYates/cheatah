@@ -14,13 +14,6 @@ const defaultBusinessHours = {
   sunday: { start: '', end: '', closed: true },
 };
 
-const timezoneOptions = [
-  { value: 'America/New_York', label: 'Eastern Time', abbr: 'ET' },
-  { value: 'America/Chicago', label: 'Central Time', abbr: 'CT' },
-  { value: 'America/Denver', label: 'Mountain Time', abbr: 'MT' },
-  { value: 'America/Los_Angeles', label: 'Pacific Time', abbr: 'PT' },
-];
-
 const dayLabels = [
   { key: 'monday', label: 'Mon', fullLabel: 'Monday' },
   { key: 'tuesday', label: 'Tue', fullLabel: 'Tuesday' },
@@ -30,14 +23,6 @@ const dayLabels = [
   { key: 'saturday', label: 'Sat', fullLabel: 'Saturday' },
   { key: 'sunday', label: 'Sun', fullLabel: 'Sunday' },
 ];
-
-const formatTime12h = (time24) => {
-  if (!time24) return '';
-  const [hours, minutes] = time24.split(':').map(Number);
-  const period = hours >= 12 ? 'pm' : 'am';
-  const hours12 = hours % 12 || 12;
-  return `${hours12}:${minutes.toString().padStart(2, '0')}${period}`;
-};
 
 const normalizeBusinessHours = (hours) => {
   if (!hours) return defaultBusinessHours;
@@ -223,65 +208,6 @@ export default function SmsSettings() {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const updateBusinessHours = (day, field, value) => {
-    setSettings(prev => ({
-      ...prev,
-      business_hours: {
-        ...prev.business_hours,
-        [day]: {
-          ...prev.business_hours[day],
-          [field]: value,
-        },
-      },
-    }));
-  };
-
-  const toggleDayClosed = (day) => {
-    setSettings(prev => ({
-      ...prev,
-      business_hours: {
-        ...prev.business_hours,
-        [day]: {
-          ...prev.business_hours[day],
-          closed: !prev.business_hours[day].closed,
-        },
-      },
-    }));
-  };
-
-
-  // Generate availability summary
-  const availabilitySummary = useMemo(() => {
-    if (!settings.business_hours_enabled) return null;
-
-    const tz = timezoneOptions.find(t => t.value === settings.timezone);
-    const tzAbbr = tz?.abbr || 'CT';
-
-    const openDays = dayLabels.filter(d => !settings.business_hours[d.key]?.closed);
-    if (openDays.length === 0) return `All days closed (${tzAbbr})`;
-
-    // Check if all open days have same hours
-    const firstDay = openDays[0];
-    const firstHours = settings.business_hours[firstDay.key];
-    const allSameHours = openDays.every(d => {
-      const h = settings.business_hours[d.key];
-      return h.start === firstHours.start && h.end === firstHours.end;
-    });
-
-    if (allSameHours && openDays.length > 0) {
-      const timeRange = `${formatTime12h(firstHours.start)}–${formatTime12h(firstHours.end)}`;
-      if (openDays.length === 5 && !settings.business_hours.saturday?.closed === false && !settings.business_hours.sunday?.closed === false) {
-        return `Mon–Fri ${timeRange} ${tzAbbr}; Sat/Sun closed`;
-      }
-      const dayRange = openDays.length === 1
-        ? openDays[0].label
-        : `${openDays[0].label}–${openDays[openDays.length - 1].label}`;
-      return `${dayRange} ${timeRange} ${tzAbbr}`;
-    }
-
-    return `Custom schedule (${tzAbbr})`;
-  }, [settings.business_hours_enabled, settings.business_hours, settings.timezone]);
-
   const needsTenant = user?.is_global_admin && !selectedTenantId;
 
   if (needsTenant) {
@@ -322,9 +248,6 @@ export default function SmsSettings() {
       </div>
     );
   }
-
-  const smsEnabled = settings.is_enabled && !!settings.phone_number;
-  const showAfterHours = settings.business_hours_enabled;
 
   return (
     <div className="sms-page">
@@ -412,219 +335,6 @@ export default function SmsSettings() {
           </div>
         </section>
 
-        {/* Card B: Availability */}
-        <section className={`sms-card ${!smsEnabled ? 'sms-card--disabled' : ''}`}>
-          <div className="sms-card__header">
-            <h2 className="sms-card__title">Availability</h2>
-            {!smsEnabled && <span className="sms-card__badge">SMS Off</span>}
-          </div>
-          <div className="sms-card__body">
-            <div className="sms-field sms-field--toggle">
-              <label className="sms-toggle" htmlFor="business-hours-enabled">
-                <input
-                  id="business-hours-enabled"
-                  type="checkbox"
-                  checked={settings.business_hours_enabled}
-                  onChange={(e) => updateSetting('business_hours_enabled', e.target.checked)}
-                  disabled={!smsEnabled}
-                  className="sms-toggle__input"
-                />
-                <span className="sms-toggle__switch" />
-                <span className="sms-toggle__label">Use Business Hours</span>
-              </label>
-              <p className="sms-field__description">
-                Restrict auto-responses to specific hours. Outside these hours, after-hours behavior applies.
-              </p>
-            </div>
-
-            {settings.business_hours_enabled && (
-              <>
-                <div className="sms-field sms-field--row">
-                  <label className="sms-field__label" htmlFor="timezone">Timezone</label>
-                  <select
-                    id="timezone"
-                    className="sms-select"
-                    value={settings.timezone}
-                    onChange={(e) => updateSetting('timezone', e.target.value)}
-                    disabled={!smsEnabled}
-                  >
-                    {timezoneOptions.map(tz => (
-                      <option key={tz.value} value={tz.value}>{tz.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {availabilitySummary && (
-                  <div className="sms-summary">
-                    <span className="sms-summary__icon">🕐</span>
-                    <span className="sms-summary__text">{availabilitySummary}</span>
-                  </div>
-                )}
-
-                <div className="sms-schedule">
-                  <div className="sms-schedule__header">
-                    <span className="sms-schedule__col">Day</span>
-                    <span className="sms-schedule__col">Hours</span>
-                    <span className="sms-schedule__col sms-schedule__col--status">Status</span>
-                  </div>
-                  {dayLabels.map(day => {
-                    const dayData = settings.business_hours[day.key];
-                    const isClosed = dayData?.closed;
-                    return (
-                      <div key={day.key} className={`sms-schedule__row ${isClosed ? 'sms-schedule__row--closed' : ''}`}>
-                        <span className="sms-schedule__day">{day.fullLabel}</span>
-                        <div className="sms-schedule__times">
-                          {isClosed ? (
-                            <span className="sms-schedule__closed-label">Closed</span>
-                          ) : (
-                            <>
-                              <input
-                                type="time"
-                                className="sms-time-input"
-                                value={dayData?.start || '09:00'}
-                                onChange={(e) => updateBusinessHours(day.key, 'start', e.target.value)}
-                                disabled={!smsEnabled}
-                                aria-label={`${day.fullLabel} start time`}
-                              />
-                              <span className="sms-schedule__sep">to</span>
-                              <input
-                                type="time"
-                                className="sms-time-input"
-                                value={dayData?.end || '17:00'}
-                                onChange={(e) => updateBusinessHours(day.key, 'end', e.target.value)}
-                                disabled={!smsEnabled}
-                                aria-label={`${day.fullLabel} end time`}
-                              />
-                            </>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          className={`sms-closed-toggle ${isClosed ? 'sms-closed-toggle--active' : ''}`}
-                          onClick={() => toggleDayClosed(day.key)}
-                          disabled={!smsEnabled}
-                          aria-pressed={isClosed}
-                        >
-                          {isClosed ? 'Closed' : 'Open'}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-        </section>
-
-        {/* Card C: After-Hours Behavior */}
-        {showAfterHours && (
-          <section className={`sms-card ${!smsEnabled ? 'sms-card--disabled' : ''}`}>
-            <div className="sms-card__header">
-              <h2 className="sms-card__title">After-Hours Behavior</h2>
-              {!smsEnabled && <span className="sms-card__badge">SMS Off</span>}
-            </div>
-            <div className="sms-card__body">
-              <p className="sms-card__description">
-                What should happen when someone texts outside business hours?
-              </p>
-
-              <div className="sms-radio-group">
-                <label className="sms-radio">
-                  <input
-                    type="radio"
-                    name="after-hours-behavior"
-                    checked={settings.auto_reply_enabled}
-                    onChange={() => updateSetting('auto_reply_enabled', true)}
-                    disabled={!smsEnabled}
-                    className="sms-radio__input"
-                  />
-                  <span className="sms-radio__mark" />
-                  <span className="sms-radio__content">
-                    <span className="sms-radio__label">Auto-reply with after-hours message</span>
-                    <span className="sms-radio__description">Send an automated response letting them know you're closed.</span>
-                  </span>
-                </label>
-
-                <label className="sms-radio">
-                  <input
-                    type="radio"
-                    name="after-hours-behavior"
-                    checked={!settings.auto_reply_enabled}
-                    onChange={() => updateSetting('auto_reply_enabled', false)}
-                    disabled={!smsEnabled}
-                    className="sms-radio__input"
-                  />
-                  <span className="sms-radio__mark" />
-                  <span className="sms-radio__content">
-                    <span className="sms-radio__label">Do not auto-reply</span>
-                    <span className="sms-radio__description">Messages are logged but no automatic response is sent.</span>
-                  </span>
-                </label>
-              </div>
-
-              {settings.auto_reply_enabled && (
-                <div className="sms-field sms-field--textarea">
-                  <label className="sms-field__label" htmlFor="after-hours-message">
-                    After-Hours Message
-                  </label>
-                  <div className="sms-textarea-wrapper">
-                    <textarea
-                      id="after-hours-message"
-                      className="sms-textarea"
-                      value={settings.auto_reply_message || ''}
-                      onChange={(e) => updateSetting('auto_reply_message', e.target.value)}
-                      placeholder="We're currently outside business hours. We'll respond when we're back."
-                      disabled={!smsEnabled}
-                      maxLength={500}
-                      rows={3}
-                    />
-                    <span className="sms-textarea__count">
-                      {(settings.auto_reply_message || '').length}/500
-                    </span>
-                  </div>
-                  <p className="sms-field__hint">
-                    Tip: Use {'{name}'} or {'{first_name}'} for personalization.
-                  </p>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* Card D: Testing */}
-        <section className={`sms-card ${!smsEnabled ? 'sms-card--disabled' : ''}`}>
-          <div className="sms-card__header">
-            <h2 className="sms-card__title">Test SMS</h2>
-            {!smsEnabled && <span className="sms-card__badge">SMS Off</span>}
-          </div>
-          <div className="sms-card__body">
-            <p className="sms-card__description">
-              This message is sent when you manually initiate a conversation from the dashboard.
-              It's not used for inbound messages or automation.
-            </p>
-
-            <div className="sms-field sms-field--textarea">
-              <label className="sms-field__label" htmlFor="initial-message">
-                Initiate Message
-              </label>
-              <div className="sms-textarea-wrapper">
-                <textarea
-                  id="initial-message"
-                  className="sms-textarea"
-                  value={settings.initial_outreach_message || ''}
-                  onChange={(e) => updateSetting('initial_outreach_message', e.target.value)}
-                  placeholder="Hi! Thanks for reaching out..."
-                  disabled={!smsEnabled}
-                  maxLength={500}
-                  rows={3}
-                />
-                <span className="sms-textarea__count">
-                  {(settings.initial_outreach_message || '').length}/500
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
 
       {/* Bottom Save Button (always visible) */}

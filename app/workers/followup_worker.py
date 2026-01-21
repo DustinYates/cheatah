@@ -178,15 +178,26 @@ async def process_followup_task(
 def _generate_initial_message(lead: Lead, sms_config: TenantSmsConfig) -> str:
     """Generate the initial follow-up message.
 
-    Uses custom template if configured, otherwise generates contextual message.
+    Uses subject-specific template if available, then custom template, otherwise contextual message.
     """
-    # Check for custom template in settings
+    lead_name = lead.name or ""
+    first_name = lead_name.split()[0] if lead_name else ""
+
+    # Check for subject-specific template first (for email leads)
+    email_subject = lead.extra_data.get("email_subject", "") if lead.extra_data else ""
+    if email_subject and sms_config.settings:
+        subject_templates = sms_config.settings.get("followup_subject_templates", {})
+        for prefix, template in subject_templates.items():
+            if email_subject.lower().startswith(prefix.lower()):
+                message = template.replace("{name}", lead_name or "there")
+                message = message.replace("{first_name}", first_name or "there")
+                logger.info(f"Using subject-specific template for prefix: {prefix}")
+                return message
+
+    # Check for global custom template in settings
     custom_template = None
     if sms_config.settings:
         custom_template = sms_config.settings.get("followup_initial_message")
-
-    lead_name = lead.name or ""
-    first_name = lead_name.split()[0] if lead_name else ""
 
     if custom_template:
         # Template variable substitution

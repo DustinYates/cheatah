@@ -111,7 +111,7 @@
     },
 
     // Track analytics event (batched for efficiency)
-    trackEvent: function(eventType, eventData) {
+    trackEvent: function(eventType, eventData, settingsSnapshot) {
       if (!this.config || !this.visitorId) return;
 
       var event = {
@@ -120,6 +120,11 @@
         event_data: eventData || {},
         client_timestamp: new Date().toISOString()
       };
+
+      // Add settings snapshot if provided (for A/B testing)
+      if (settingsSnapshot) {
+        event.settings_snapshot = settingsSnapshot;
+      }
 
       this.analyticsQueue.push(event);
 
@@ -203,26 +208,45 @@
     trackImpression: function() {
       var self = this;
 
-      // Build settings snapshot for A/B testing analysis
+      // Build comprehensive settings snapshot for A/B testing analysis
       var settingsSnapshot = null;
       if (this.settings) {
         settingsSnapshot = {
+          // Behavior settings
           open_behavior: (this.settings.behavior && this.settings.behavior.openBehavior) || 'click',
           auto_open_delay: (this.settings.behavior && this.settings.behavior.autoOpenDelay) || 0,
+          // Attention settings
           attention_animation: (this.settings.attention && this.settings.attention.attentionAnimation) || 'none',
+          unread_dot: (this.settings.attention && this.settings.attention.unreadDot) || false,
+          // Motion settings
           launcher_visibility: (this.settings.motion && this.settings.motion.launcherVisibility) || 'immediate',
-          position: (this.settings.layout && this.settings.layout.position) || 'bottom-right'
+          entry_animation: (this.settings.motion && this.settings.motion.entryAnimation) || 'none',
+          // Layout/appearance settings
+          position: (this.settings.layout && this.settings.layout.position) || 'bottom-right',
+          border_radius: (this.settings.layout && this.settings.layout.borderRadius) || '10px',
+          // Icon settings
+          icon_type: (this.settings.icon && this.settings.icon.type) || 'emoji',
+          icon_shape: (this.settings.icon && this.settings.icon.shape) || 'circle',
+          icon_size: (this.settings.icon && this.settings.icon.size) || 'medium',
+          show_label: (this.settings.icon && this.settings.icon.showLabel) || false,
+          // Colors (key branding)
+          primary_color: (this.settings.colors && this.settings.colors.primary) || '#007bff',
+          // Copy/messaging settings
+          launcher_prompts_enabled: (this.settings.copy && this.settings.copy.launcherPromptsEnabled) || false,
+          greeting_enabled: (this.settings.copy && this.settings.copy.greetingEnabled) || false,
+          // Social proof
+          show_response_time: (this.settings.socialProof && this.settings.socialProof.showResponseTime) || false,
+          show_avatar: (this.settings.socialProof && this.settings.socialProof.showAvatar) || false
         };
       }
 
-      // Track page impression
+      // Track page impression with settings snapshot as separate field for A/B testing
       this.trackEvent('impression', {
         page_url: window.location.href,
         referrer: document.referrer || '',
         viewport_width: window.innerWidth,
-        viewport_height: window.innerHeight,
-        settings_snapshot: settingsSnapshot
-      });
+        viewport_height: window.innerHeight
+      }, settingsSnapshot);
 
       // Track viewport visibility using IntersectionObserver
       var toggle = document.getElementById('cc-toggle');

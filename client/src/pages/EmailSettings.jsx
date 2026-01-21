@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
@@ -22,8 +22,19 @@ export default function EmailSettings() {
   });
   const [newPrefix, setNewPrefix] = useState('');
 
+  // Subject-specific SMS templates state
+  const [subjectTemplates, setSubjectTemplates] = useState({});
+  const [newTemplateSubject, setNewTemplateSubject] = useState('');
+  const [newTemplateMessage, setNewTemplateMessage] = useState('');
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const templateSubjectInputRef = useRef(null);
+
   const fetchSettings = useCallback(() => api.getEmailSettings(), []);
   const { data: settings, loading, error, refetch } = useFetchData(fetchSettings);
+
+  // Fetch SMS settings for subject templates
+  const fetchSmsSettings = useCallback(() => api.getSmsSettings(), []);
+  const { data: smsSettings, loading: smsLoading, refetch: refetchSms } = useFetchData(fetchSmsSettings);
 
   // Check for OAuth callback params
   useEffect(() => {
@@ -51,6 +62,13 @@ export default function EmailSettings() {
     }
   }, [settings]);
 
+  // Initialize subject templates from SMS settings
+  useEffect(() => {
+    if (smsSettings?.followup_subject_templates) {
+      setSubjectTemplates(smsSettings.followup_subject_templates);
+    }
+  }, [smsSettings]);
+
   const handleAddPrefix = () => {
     const trimmed = newPrefix.trim();
     if (trimmed && !formData.lead_capture_subject_prefixes.includes(trimmed)) {
@@ -76,6 +94,61 @@ export default function EmailSettings() {
     }
   };
 
+  // Subject template handlers
+  const handleAddTemplate = () => {
+    const subject = newTemplateSubject.trim();
+    const message = newTemplateMessage.trim();
+    if (subject && message) {
+      setSubjectTemplates(prev => ({
+        ...prev,
+        [subject]: message,
+      }));
+      setNewTemplateSubject('');
+      setNewTemplateMessage('');
+      // Auto-focus subject input for adding multiple templates quickly
+      setTimeout(() => templateSubjectInputRef.current?.focus(), 0);
+    }
+  };
+
+  const handleRemoveTemplate = (subject) => {
+    setSubjectTemplates(prev => {
+      const updated = { ...prev };
+      delete updated[subject];
+      return updated;
+    });
+  };
+
+  const handleEditTemplate = (subject) => {
+    setEditingTemplate(subject);
+    setNewTemplateSubject(subject);
+    setNewTemplateMessage(subjectTemplates[subject]);
+  };
+
+  const handleSaveEditTemplate = () => {
+    const subject = newTemplateSubject.trim();
+    const message = newTemplateMessage.trim();
+    if (subject && message) {
+      setSubjectTemplates(prev => {
+        const updated = { ...prev };
+        // If subject changed, remove old key
+        if (editingTemplate && editingTemplate !== subject) {
+          delete updated[editingTemplate];
+        }
+        updated[subject] = message;
+        return updated;
+      });
+      setNewTemplateSubject('');
+      setNewTemplateMessage('');
+      setEditingTemplate(null);
+    }
+  };
+
+  const handleCancelEditTemplate = () => {
+    setNewTemplateSubject('');
+    setNewTemplateMessage('');
+    setEditingTemplate(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -83,7 +156,18 @@ export default function EmailSettings() {
     setSaving(true);
 
     try {
+      // Save email settings
       await api.updateEmailSettings(formData);
+
+      // Save SMS subject templates if there are any configured
+      if (Object.keys(subjectTemplates).length > 0 || smsSettings?.followup_subject_templates) {
+        await api.updateSmsSettings({
+          ...smsSettings,
+          followup_subject_templates: Object.keys(subjectTemplates).length > 0 ? subjectTemplates : null,
+        });
+        refetchSms();
+      }
+
       setSuccess('Settings updated successfully');
       refetch();
     } catch (err) {
@@ -331,9 +415,118 @@ export default function EmailSettings() {
                 </button>
               </div>
               <small>
-                Emails with subjects starting with these prefixes (case-insensitive) will create leads. 
+                Emails with subjects starting with these prefixes (case-insensitive) will create leads.
                 Examples: "Email Capture from Booking Page", "Get In Touch Form Submission"
               </small>
+            </div>
+          </section>
+
+          {/* Subject-Specific SMS Templates Section */}
+          <section className="settings-section">
+            <h2>SMS Follow-up Templates</h2>
+            <p className="section-description">
+              Configure custom SMS messages based on which email subject triggered the lead.
+              When a lead is captured from an email, the follow-up SMS will use the template
+              that matches the email subject prefix.
+            </p>
+
+            <div className="form-group">
+              <label>Subject-Specific Templates</label>
+
+              {Object.keys(subjectTemplates).length === 0 ? (
+                <div className="template-empty">
+                  No subject-specific templates configured. Default follow-up messages will be used.
+                </div>
+              ) : (
+                <div className="template-list">
+                  {Object.entries(subjectTemplates).map(([subject, message]) => (
+                    <div key={subject} className="template-item">
+                      <div className="template-header">
+                        <span className="template-subject">Subject: "{subject}"</span>
+                        <div className="template-actions">
+                          <button
+                            type="button"
+                            className="template-edit"
+                            onClick={() => handleEditTemplate(subject)}
+                            title="Edit template"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="template-remove"
+                            onClick={() => handleRemoveTemplate(subject)}
+                            title="Remove template"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                      <div className="template-message">{message}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="template-add-form">
+                <h4>{editingTemplate ? 'Edit Template' : 'Add New Template'}</h4>
+                <div className="template-form-group">
+                  <label htmlFor="template-subject">Subject Prefix</label>
+                  <input
+                    ref={templateSubjectInputRef}
+                    id="template-subject"
+                    type="text"
+                    value={newTemplateSubject}
+                    onChange={(e) => setNewTemplateSubject(e.target.value)}
+                    placeholder="e.g., Get In Touch"
+                    className="template-input"
+                  />
+                </div>
+                <div className="template-form-group">
+                  <label htmlFor="template-message">SMS Message</label>
+                  <textarea
+                    id="template-message"
+                    value={newTemplateMessage}
+                    onChange={(e) => setNewTemplateMessage(e.target.value)}
+                    placeholder="Hi, {first_name}. Thank you for reaching out..."
+                    className="template-textarea"
+                    rows={3}
+                  />
+                  <small className="template-help">
+                    Use {'{first_name}'} or {'{name}'} as placeholders for the lead's name.
+                  </small>
+                </div>
+                <div className="template-form-actions">
+                  {editingTemplate ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={handleCancelEditTemplate}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={handleSaveEditTemplate}
+                        disabled={!newTemplateSubject.trim() || !newTemplateMessage.trim()}
+                      >
+                        Save Changes
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={handleAddTemplate}
+                      disabled={!newTemplateSubject.trim() || !newTemplateMessage.trim()}
+                    >
+                      Add Template
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </section>
 

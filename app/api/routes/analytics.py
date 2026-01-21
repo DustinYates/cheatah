@@ -1357,83 +1357,89 @@ async def get_conversation_analytics(
     )
 
     # Query 15: Phone call statistics by language (Spanish vs English)
-    call_timestamp = func.coalesce(Call.started_at, Call.created_at)
-    duration_seconds = func.coalesce(
-        func.nullif(Call.duration, 0),
-        func.extract("epoch", Call.ended_at - Call.started_at),
-        0,
-    )
-
-    # Get call stats grouped by language
-    call_lang_stmt = (
-        select(
-            func.coalesce(Call.language, "unknown").label("language"),
-            func.count(Call.id).label("call_count"),
-            func.sum(duration_seconds).label("total_seconds"),
+    # Wrapped in try-except to handle case where language column doesn't exist yet
+    phone_call_stats: PhoneCallStatistics | None = None
+    try:
+        call_timestamp = func.coalesce(Call.started_at, Call.created_at)
+        duration_seconds = func.coalesce(
+            func.nullif(Call.duration, 0),
+            func.extract("epoch", Call.ended_at - Call.started_at),
+            0,
         )
-        .where(
-            Call.tenant_id == tenant_id,
-            call_timestamp >= start_datetime,
-            call_timestamp <= end_datetime,
+
+        # Get call stats grouped by language
+        call_lang_stmt = (
+            select(
+                func.coalesce(Call.language, "unknown").label("language"),
+                func.count(Call.id).label("call_count"),
+                func.sum(duration_seconds).label("total_seconds"),
+            )
+            .where(
+                Call.tenant_id == tenant_id,
+                call_timestamp >= start_datetime,
+                call_timestamp <= end_datetime,
+            )
+            .group_by(func.coalesce(Call.language, "unknown"))
         )
-        .group_by(func.coalesce(Call.language, "unknown"))
-    )
-    call_lang_result = await db.execute(call_lang_stmt)
+        call_lang_result = await db.execute(call_lang_stmt)
 
-    # Get leads generated from calls by language
-    call_leads_stmt = (
-        select(
-            func.coalesce(Call.language, "unknown").label("language"),
-            func.count(func.distinct(CallSummary.lead_id)).label("lead_count"),
+        # Get leads generated from calls by language
+        call_leads_stmt = (
+            select(
+                func.coalesce(Call.language, "unknown").label("language"),
+                func.count(func.distinct(CallSummary.lead_id)).label("lead_count"),
+            )
+            .select_from(Call)
+            .join(CallSummary, CallSummary.call_id == Call.id)
+            .where(
+                Call.tenant_id == tenant_id,
+                call_timestamp >= start_datetime,
+                call_timestamp <= end_datetime,
+                CallSummary.lead_id.isnot(None),
+            )
+            .group_by(func.coalesce(Call.language, "unknown"))
         )
-        .select_from(Call)
-        .join(CallSummary, CallSummary.call_id == Call.id)
-        .where(
-            Call.tenant_id == tenant_id,
-            call_timestamp >= start_datetime,
-            call_timestamp <= end_datetime,
-            CallSummary.lead_id.isnot(None),
+        call_leads_result = await db.execute(call_leads_stmt)
+
+        # Build language-to-leads map
+        leads_by_language = {row.language: row.lead_count for row in call_leads_result}
+
+        # Build phone call statistics
+        by_language: dict[str, PhoneCallLanguageStats] = {}
+        total_calls = 0
+        total_minutes = 0.0
+
+        for row in call_lang_result:
+            lang = row.language
+            count = int(row.call_count or 0)
+            seconds = float(row.total_seconds or 0)
+            minutes = round(seconds / 60, 2)
+            leads = leads_by_language.get(lang, 0)
+
+            by_language[lang] = PhoneCallLanguageStats(
+                call_count=count,
+                total_minutes=minutes,
+                avg_duration_minutes=round(minutes / count, 2) if count > 0 else 0,
+                leads_generated=leads,
+            )
+            total_calls += count
+            total_minutes += minutes
+
+        # Calculate language distribution percentages
+        language_distribution: dict[str, float] = {}
+        if total_calls > 0:
+            for lang, stats in by_language.items():
+                language_distribution[lang] = round((stats.call_count / total_calls) * 100, 1)
+
+        phone_call_stats = PhoneCallStatistics(
+            total_calls=total_calls,
+            total_minutes=round(total_minutes, 2),
+            by_language=by_language,
+            language_distribution=language_distribution,
         )
-        .group_by(func.coalesce(Call.language, "unknown"))
-    )
-    call_leads_result = await db.execute(call_leads_stmt)
-
-    # Build language-to-leads map
-    leads_by_language = {row.language: row.lead_count for row in call_leads_result}
-
-    # Build phone call statistics
-    by_language: dict[str, PhoneCallLanguageStats] = {}
-    total_calls = 0
-    total_minutes = 0.0
-
-    for row in call_lang_result:
-        lang = row.language
-        count = int(row.call_count or 0)
-        seconds = float(row.total_seconds or 0)
-        minutes = round(seconds / 60, 2)
-        leads = leads_by_language.get(lang, 0)
-
-        by_language[lang] = PhoneCallLanguageStats(
-            call_count=count,
-            total_minutes=minutes,
-            avg_duration_minutes=round(minutes / count, 2) if count > 0 else 0,
-            leads_generated=leads,
-        )
-        total_calls += count
-        total_minutes += minutes
-
-    # Calculate language distribution percentages
-    language_distribution: dict[str, float] = {}
-    if total_calls > 0:
-        for lang, stats in by_language.items():
-            language_distribution[lang] = round((stats.call_count / total_calls) * 100, 1)
-
-    phone_call_stats = PhoneCallStatistics(
-        total_calls=total_calls,
-        total_minutes=round(total_minutes, 2),
-        by_language=by_language,
-        language_distribution=language_distribution,
-    )
+    except Exception:
+        # Language column may not exist yet - return None for phone_call_statistics
+        phone_call_stats = None
 
     return ConversationAnalyticsResponse(
         start_date=range_start.isoformat(),

@@ -169,6 +169,18 @@ class PromiseFulfillmentService:
         if dynamic_url:
             logger.info(f"Using dynamic URL: {url_to_send}")
         else:
+            # Check if fallback URL has location parameter - if not, skip sending
+            # to avoid sending incomplete registration links
+            if "?loc=" not in url_to_send and promise.asset_type == "registration_link":
+                logger.warning(
+                    f"No dynamic URL found and fallback URL missing location parameter. "
+                    f"Skipping SMS to avoid incomplete link. fallback={url_to_send}"
+                )
+                return {
+                    "status": "skipped",
+                    "reason": "no_location_in_url",
+                    "error": "Could not determine location for registration link",
+                }
             logger.warning(f"No dynamic URL found, using fallback: {url_to_send}")
 
         # Always use the template to compose the message (provides better context)

@@ -385,6 +385,7 @@ class WidgetEventItem(BaseModel):
     session_id: str | None = None
     event_data: dict | None = None
     client_timestamp: str | None = None  # ISO format
+    settings_snapshot: dict | None = None  # Widget settings for A/B testing (on impression events)
 
 
 class WidgetEventRequest(BaseModel):
@@ -446,6 +447,7 @@ async def _store_widget_events(
                     user_agent=user_agent,
                     device_type=device_type,
                     client_timestamp=client_ts,
+                    settings_snapshot=event.settings_snapshot,
                 )
                 db.add(widget_event)
 

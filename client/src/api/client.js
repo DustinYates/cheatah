@@ -751,6 +751,18 @@ class ApiClient {
     });
   }
 
+  // SMS settings methods (tenant-facing)
+  async getSmsSettings() {
+    return this.request('/tenant-sms/settings');
+  }
+
+  async updateSmsSettings(data) {
+    return this.request('/tenant-sms/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
   async getEmailConversations(params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/email/conversations${query ? `?${query}` : ''}`);

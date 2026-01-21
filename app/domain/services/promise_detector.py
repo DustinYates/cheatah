@@ -19,8 +19,8 @@ class DetectedPromise:
 class PromiseDetector:
     """Detects when AI promises to send information via SMS."""
 
-    # Patterns that indicate a promise to send something
-    PROMISE_PATTERNS = [
+    # Patterns that indicate a promise to send something (English)
+    PROMISE_PATTERNS_EN = [
         # Direct promise patterns
         r"(?:i'll|i will|let me|i can|i'm going to)\s+(?:text|sms|send)\s+(?:you|that)",
         r"(?:i'd be happy to|happy to|glad to|i'd love to)\s+(?:text|sms|send)\s+(?:you|that)",
@@ -50,9 +50,38 @@ class PromiseDetector:
         r"(?:i'll|i will)\s+(?:get|send)\s+(?:that|this)\s+(?:to\s+)?(?:your\s+)?(?:email|inbox)",
     ]
 
-    # Keywords that identify what type of asset is being promised
+    # Spanish patterns for promise detection
+    PROMISE_PATTERNS_ES = [
+        # Direct promise patterns - "I can/will send you"
+        r"(?:puedo|voy a|te voy a|le voy a)\s+(?:enviar|mandar|textear)",
+        r"(?:te|le)\s+(?:envío|envio|mando)\s+(?:el|la|un|una|ese|esa|esto|eso)",
+        r"(?:te|le)\s+(?:envío|envio|mando)\s+(?:ahora|ya|enseguida)",
+        # "enviándote" / "mandándote" patterns
+        r"(?:enviándote|enviandote|mandándote|mandandote)\s+(?:el|la|un|una)",
+        # "I just sent it" patterns
+        r"(?:te|le)\s+(?:lo|la)\s+(?:acabo de|acabe de)\s+(?:enviar|mandar)",
+        r"(?:ya|acabo de)\s+(?:enviarte|enviarlo|enviarle|mandarte|mandarlo|mandarle)",
+        # "let me send you" patterns
+        r"(?:déjame|dejame|permíteme|permiteme)\s+(?:enviarte|mandarte)",
+        # Registration-specific Spanish patterns
+        r"(?:te|le)\s+(?:envío|envio|mando)\s+(?:el\s+)?(?:enlace|link)\s+(?:de\s+)?(?:registro|inscripción|inscripcion)",
+        r"(?:puedo|voy a)\s+(?:enviarte|mandarte)\s+(?:el\s+)?(?:enlace|link)",
+        # "I'll text you" variations
+        r"(?:te|le)\s+(?:envío|envio|mando)\s+(?:un\s+)?(?:mensaje|texto|sms)",
+        # Implicit promise patterns - "you will receive"
+        r"(?:vas a|va a)\s+(?:recibir)\s+(?:un|una|el|la)",
+        r"(?:recibirás|recibiras|recibirá|recibira)\s+(?:un|una|el|la)",
+        # "I'm sending" patterns
+        r"(?:estoy|le estoy|te estoy)\s+(?:enviando|mandando)",
+    ]
+
+    # Combined patterns (checked in order)
+    PROMISE_PATTERNS = PROMISE_PATTERNS_EN + PROMISE_PATTERNS_ES
+
+    # Keywords that identify what type of asset is being promised (English + Spanish)
     ASSET_KEYWORDS = {
         "registration_link": [
+            # English
             "registration",
             "register",
             "sign up",
@@ -60,16 +89,31 @@ class PromiseDetector:
             "enroll",
             "enrollment",
             "link",
+            # Spanish
+            "registro",
+            "registrar",
+            "inscripción",
+            "inscripcion",
+            "inscribir",
+            "enlace",
         ],
         "schedule": [
+            # English
             "schedule",
             "class times",
             "hours",
             "timetable",
             "calendar",
             "availability",
+            # Spanish
+            "horario",
+            "horarios",
+            "disponibilidad",
+            "calendario",
+            "clases",
         ],
         "pricing": [
+            # English
             "pricing",
             "prices",
             "rates",
@@ -78,19 +122,40 @@ class PromiseDetector:
             "fee",
             "fees",
             "package",
+            # Spanish
+            "precios",
+            "precio",
+            "costo",
+            "costos",
+            "tarifa",
+            "tarifas",
+            "paquete",
+            "paquetes",
         ],
         "info": [
+            # English
             "information",
             "details",
             "brochure",
             "info",
             "more about",
             "learn more",
+            # Spanish
+            "información",
+            "informacion",
+            "detalles",
+            "folleto",
+            "más sobre",
+            "mas sobre",
         ],
         "email_promise": [
             "email",
             "e-mail",
             "inbox",
+            # Spanish
+            "correo",
+            "correo electrónico",
+            "correo electronico",
         ],
     }
 
@@ -199,10 +264,18 @@ class PromiseDetector:
         """
         confidence = 0.5  # Base confidence for pattern match
 
-        # Boost confidence for explicit promise patterns
+        # Boost confidence for explicit promise patterns (English)
         if "i'll send" in text or "i will send" in text:
             confidence += 0.2
         if "i'd be happy to" in text or "happy to text" in text or "glad to text" in text:
+            confidence += 0.2
+
+        # Boost confidence for explicit promise patterns (Spanish)
+        if "te envío" in text or "te envio" in text or "te mando" in text:
+            confidence += 0.2
+        if "puedo enviarte" in text or "voy a enviarte" in text:
+            confidence += 0.2
+        if "te lo acabo de enviar" in text or "ya te lo envié" in text or "ya te lo envie" in text:
             confidence += 0.2
 
         # Boost confidence for multiple asset keywords
@@ -213,8 +286,12 @@ class PromiseDetector:
         )
         confidence += min(keyword_count * 0.1, 0.2)
 
-        # Boost confidence if "you" is mentioned (direct address)
+        # Boost confidence if "you" is mentioned (direct address) - English
         if "send you" in text or "text you" in text:
+            confidence += 0.1
+
+        # Boost confidence for Spanish direct address patterns
+        if "enviarte" in text or "mandarte" in text:
             confidence += 0.1
 
         return min(confidence, 1.0)

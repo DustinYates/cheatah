@@ -311,15 +311,16 @@ export default function WidgetAnalytics() {
               <p>How effectively the widget captures visitor attention.</p>
             </div>
           </div>
-          {isAutoOpenEnabled && (
-            <div className="auto-open-indicator">
-              <span className="auto-open-badge">Auto-Open Enabled</span>
-              <span className="auto-open-detail">
-                Widget opens automatically after {autoOpenDelay}s
+          <div className="metric-rows">
+            <div className="metric-row">
+              <span className="metric-label">
+                Auto-Open Status
+                <span className="info-icon" title="Whether the widget opens automatically after a delay">i</span>
+              </span>
+              <span className="metric-value">
+                {isAutoOpenEnabled ? `Enabled (${autoOpenDelay}s delay)` : 'Disabled'}
               </span>
             </div>
-          )}
-          <div className="metric-rows">
             <div className="metric-row">
               <span className="metric-label">
                 Widget Opens

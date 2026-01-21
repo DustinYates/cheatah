@@ -213,7 +213,8 @@ class EmailService:
         if extracted_info and should_capture_lead:
             print(f"[LEAD_CAPTURE] Subject matches prefix, attempting to create lead", flush=True)
             # Build metadata for lead (include additional fields and parsing metadata)
-            metadata = {"source": "email"}
+            # Include email_subject so follow-up worker can use subject-specific SMS templates
+            metadata = {"source": "email", "email_subject": subject}
             if extracted_info.get("additional_fields"):
                 metadata.update(extracted_info["additional_fields"])
             if extracted_info.get("metadata"):

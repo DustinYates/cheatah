@@ -38,6 +38,11 @@ class WidgetEvent(Base):
     #   - widget_open: { trigger: 'click' | 'auto', time_on_page_ms }
     #   - hover: { duration_ms }
 
+    # Widget settings snapshot for A/B testing analysis
+    # Only populated on impression events to track which settings were active
+    settings_snapshot = Column(JSON, nullable=True)
+    # Examples: { colors: {...}, behavior: {...}, icon: {...}, attention: {...} }
+
     # Device/browser info
     user_agent = Column(String(500), nullable=True)
     device_type = Column(String(20), nullable=True)  # desktop, mobile, tablet

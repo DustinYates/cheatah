@@ -33,6 +33,8 @@ class SmsSettingsResponse(BaseModel):
     followup_delay_minutes: int
     followup_sources: list[str]
     followup_initial_message: str | None
+    # Subject-specific templates for email follow-ups (maps subject prefix to SMS message)
+    followup_subject_templates: dict[str, str] | None
 
 
 class UpdateSmsSettingsRequest(BaseModel):
@@ -49,6 +51,9 @@ class UpdateSmsSettingsRequest(BaseModel):
     followup_delay_minutes: int = 5
     followup_sources: list[str] = ["email", "voice_call", "sms"]
     followup_initial_message: str | None = None
+    # Subject-specific templates for email follow-ups
+    # Maps email subject prefix to SMS message template (supports {first_name} and {name} placeholders)
+    followup_subject_templates: dict[str, str] | None = None
 
 
 class InitiateOutreachRequest(BaseModel):
@@ -108,6 +113,7 @@ async def get_sms_settings(
             followup_delay_minutes=5,
             followup_sources=["email", "voice_call", "sms"],
             followup_initial_message=None,
+            followup_subject_templates=None,
         )
 
     # Extract follow-up settings from config.settings JSON
@@ -126,6 +132,7 @@ async def get_sms_settings(
         followup_delay_minutes=settings_json.get("followup_delay_minutes", 5),
         followup_sources=settings_json.get("followup_sources", ["email", "voice_call", "sms"]),
         followup_initial_message=settings_json.get("followup_initial_message"),
+        followup_subject_templates=settings_json.get("followup_subject_templates"),
     )
 
 
@@ -154,6 +161,7 @@ async def update_sms_settings(
         "followup_delay_minutes": settings_data.followup_delay_minutes,
         "followup_sources": settings_data.followup_sources,
         "followup_initial_message": settings_data.followup_initial_message,
+        "followup_subject_templates": settings_data.followup_subject_templates,
     }
 
     if not config:
@@ -207,6 +215,7 @@ async def update_sms_settings(
         followup_delay_minutes=settings_json.get("followup_delay_minutes", 5),
         followup_sources=settings_json.get("followup_sources", ["email", "voice_call", "sms"]),
         followup_initial_message=settings_json.get("followup_initial_message"),
+        followup_subject_templates=settings_json.get("followup_subject_templates"),
     )
 
 

@@ -66,7 +66,14 @@ class TenantEmailConfig(Base):
         "Email Capture from Booking Page",
         "Get In Touch Form Submission",
     ])
-    
+
+    # SendGrid Inbound Parse Configuration
+    # Alternative to Gmail API - uses email forwarding instead of OAuth
+    sendgrid_enabled = Column(Boolean, default=False, nullable=False)
+    sendgrid_parse_address = Column(String(255), nullable=True, unique=True, index=True)
+    sendgrid_webhook_secret = Column(String(255), nullable=True)  # Shared secret for webhook verification
+    email_ingestion_method = Column(String(20), default="gmail", nullable=False)  # 'gmail' or 'sendgrid'
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

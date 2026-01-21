@@ -26,7 +26,7 @@ class EmailNotificationPayload(BaseModel):
 
 class EmailProcessPayload(BaseModel):
     """Payload for direct email processing."""
-    
+
     tenant_id: int
     from_email: str
     to_email: str
@@ -34,6 +34,13 @@ class EmailProcessPayload(BaseModel):
     body: str
     thread_id: str
     message_id: str
+
+
+class SendGridProcessPayload(BaseModel):
+    """Payload for SendGrid Inbound Parse processing."""
+
+    ingestion_log_id: int
+    tenant_id: int
 
 
 @router.post("/process-email-notification")
@@ -250,4 +257,87 @@ async def refresh_gmail_watch(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Watch refresh failed: {str(e)}",
+        )
+
+
+@router.post("/process-sendgrid-email")
+async def process_sendgrid_email_task(
+    request: Request,
+    payload: SendGridProcessPayload,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, Any]:
+    """Process SendGrid Inbound Parse email from Cloud Tasks queue.
+
+    This endpoint is called asynchronously by Cloud Tasks after the
+    SendGrid webhook receives and deduplicates an inbound email.
+
+    Args:
+        request: FastAPI request
+        payload: SendGrid processing payload (ingestion_log_id, tenant_id)
+        db: Database session
+
+    Returns:
+        Processing result
+    """
+    from app.api.routes.sendgrid_webhooks import SendGridInboundPayload, _process_sendgrid_email
+    from app.persistence.models.email_ingestion_log import IngestionStatus
+    from app.persistence.repositories.email_ingestion_repository import EmailIngestionLogRepository
+
+    try:
+        # Validate Cloud Tasks request headers
+        queue_name = request.headers.get("X-CloudTasks-QueueName")
+        task_name = request.headers.get("X-CloudTasks-TaskName")
+
+        logger.info(
+            f"Processing SendGrid email: ingestion_log_id={payload.ingestion_log_id}, "
+            f"tenant_id={payload.tenant_id}, queue={queue_name}, task={task_name}"
+        )
+
+        # Retrieve ingestion log
+        ingestion_repo = EmailIngestionLogRepository(db)
+        ingestion_log = await ingestion_repo.get_by_id(payload.ingestion_log_id)
+
+        if not ingestion_log:
+            logger.error(f"Ingestion log not found: {payload.ingestion_log_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Ingestion log not found",
+            )
+
+        # Skip if already processed or duplicate
+        if ingestion_log.status in (IngestionStatus.PROCESSED.value, IngestionStatus.DUPLICATE.value):
+            logger.info(f"Ingestion log already processed: status={ingestion_log.status}")
+            return {"status": "skipped", "reason": ingestion_log.status}
+
+        # Reconstruct payload from raw_payload
+        raw = ingestion_log.raw_payload or {}
+        sendgrid_payload = SendGridInboundPayload(
+            from_email=raw.get("from", ""),
+            to=raw.get("to", ""),
+            subject=raw.get("subject", ""),
+            text=raw.get("text"),
+            html=raw.get("html"),
+            headers=raw.get("headers", ""),
+            envelope="{}",
+            sender_ip=raw.get("sender_ip"),
+        )
+
+        # Process the email
+        result = await _process_sendgrid_email(db, payload.tenant_id, sendgrid_payload, ingestion_log)
+
+        logger.info(
+            f"SendGrid email processed: ingestion_log_id={payload.ingestion_log_id}, "
+            f"result={result}"
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing SendGrid email: {e}", exc_info=True)
+        # Return error so Cloud Tasks can retry
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"SendGrid email processing failed: {str(e)}",
         )

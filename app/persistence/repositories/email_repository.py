@@ -52,14 +52,31 @@ class TenantEmailConfigRepository(BaseRepository[TenantEmailConfig]):
 
     async def get_by_email(self, email: str) -> TenantEmailConfig | None:
         """Get email config by Gmail address.
-        
+
         Args:
             email: Gmail email address
-            
+
         Returns:
             TenantEmailConfig or None
         """
         stmt = select(TenantEmailConfig).where(TenantEmailConfig.gmail_email == email)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_sendgrid_parse_address(self, parse_address: str) -> TenantEmailConfig | None:
+        """Get email config by SendGrid Inbound Parse address.
+
+        Used to resolve tenant from the 'to' field in SendGrid webhook payloads.
+
+        Args:
+            parse_address: SendGrid parse address (e.g., leads-abc123@parse.yourdomain.com)
+
+        Returns:
+            TenantEmailConfig or None
+        """
+        stmt = select(TenantEmailConfig).where(
+            TenantEmailConfig.sendgrid_parse_address == parse_address
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

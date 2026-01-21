@@ -40,6 +40,18 @@ class EmailSettingsResponse(BaseModel):
     escalation_rules: dict | None
     watch_active: bool  # Whether Gmail watch is active
     lead_capture_subject_prefixes: list[str] | None  # Email subject prefixes that trigger lead creation
+    # SendGrid Inbound Parse settings
+    sendgrid_enabled: bool = False
+    sendgrid_parse_address: str | None = None
+    email_ingestion_method: str = "gmail"  # 'gmail' or 'sendgrid'
+
+
+class SendGridSetupResponse(BaseModel):
+    """Response from SendGrid setup."""
+    parse_address: str
+    webhook_secret: str
+    webhook_url: str
+    gmail_forwarding_instructions: str
 
 
 class UpdateEmailSettingsRequest(BaseModel):
@@ -106,6 +118,9 @@ async def get_email_settings(
             escalation_rules=None,
             watch_active=False,
             lead_capture_subject_prefixes=DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES,
+            sendgrid_enabled=False,
+            sendgrid_parse_address=None,
+            email_ingestion_method="gmail",
         )
     
     # Check if watch is active (use utcnow() for naive datetime comparison)
@@ -131,6 +146,9 @@ async def get_email_settings(
         escalation_rules=config.escalation_rules,
         watch_active=watch_active,
         lead_capture_subject_prefixes=prefixes,
+        sendgrid_enabled=config.sendgrid_enabled,
+        sendgrid_parse_address=config.sendgrid_parse_address,
+        email_ingestion_method=config.email_ingestion_method or "gmail",
     )
 
 
@@ -208,6 +226,9 @@ async def update_email_settings(
         escalation_rules=config.escalation_rules,
         watch_active=watch_active,
         lead_capture_subject_prefixes=prefixes,
+        sendgrid_enabled=config.sendgrid_enabled,
+        sendgrid_parse_address=config.sendgrid_parse_address,
+        email_ingestion_method=config.email_ingestion_method or "gmail",
     )
 
 
@@ -543,4 +564,176 @@ async def list_email_conversations(
         )
         for conv in conversations
     ]
+
+
+# SendGrid Inbound Parse Configuration Endpoints
+
+import hashlib
+
+
+@router.post("/sendgrid/setup", response_model=SendGridSetupResponse)
+async def setup_sendgrid_inbound(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SendGridSetupResponse:
+    """Generate SendGrid Inbound Parse address and webhook secret for tenant.
+
+    Creates a unique parse address for this tenant and generates a webhook secret.
+    Returns setup instructions for configuring Gmail forwarding.
+    """
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    config_repo = TenantEmailConfigRepository(db)
+    config = await config_repo.get_by_tenant_id(tenant_id)
+
+    # Check if already configured
+    if config and config.sendgrid_parse_address:
+        # Return existing configuration
+        return SendGridSetupResponse(
+            parse_address=config.sendgrid_parse_address,
+            webhook_secret=config.sendgrid_webhook_secret or "",
+            webhook_url=f"{settings.api_base_url}/api/v1/email/sendgrid/inbound",
+            gmail_forwarding_instructions=_get_gmail_forwarding_instructions(
+                config.sendgrid_parse_address,
+                config.lead_capture_subject_prefixes,
+            ),
+        )
+
+    # Generate unique parse address
+    tenant_hash = hashlib.sha256(f"{tenant_id}-{secrets.token_hex(8)}".encode()).hexdigest()[:12]
+    parse_domain = settings.sendgrid_inbound_parse_domain or "parse.yourdomain.com"
+    parse_address = f"leads-{tenant_hash}@{parse_domain}"
+
+    # Generate webhook secret
+    webhook_secret = secrets.token_urlsafe(32)
+
+    # Get existing prefixes or defaults
+    from app.persistence.models.tenant_email_config import DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
+    prefixes = DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
+    if config and config.lead_capture_subject_prefixes:
+        prefixes = config.lead_capture_subject_prefixes
+
+    # Save configuration
+    await config_repo.create_or_update(
+        tenant_id=tenant_id,
+        sendgrid_parse_address=parse_address,
+        sendgrid_webhook_secret=webhook_secret,
+    )
+
+    logger.info(f"SendGrid Inbound Parse configured for tenant {tenant_id}: {parse_address}")
+
+    return SendGridSetupResponse(
+        parse_address=parse_address,
+        webhook_secret=webhook_secret,
+        webhook_url=f"{settings.api_base_url}/api/v1/email/sendgrid/inbound",
+        gmail_forwarding_instructions=_get_gmail_forwarding_instructions(parse_address, prefixes),
+    )
+
+
+@router.put("/sendgrid/enable")
+async def enable_sendgrid_inbound(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    enabled: bool = True,
+) -> dict[str, bool | str]:
+    """Enable or disable SendGrid Inbound Parse for tenant.
+
+    When enabled, sets the email_ingestion_method to 'sendgrid'.
+    When disabled, reverts to 'gmail'.
+    """
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    config_repo = TenantEmailConfigRepository(db)
+    config = await config_repo.get_by_tenant_id(tenant_id)
+
+    if enabled and (not config or not config.sendgrid_parse_address):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SendGrid not configured. Call /sendgrid/setup first.",
+        )
+
+    # Update configuration
+    await config_repo.create_or_update(
+        tenant_id=tenant_id,
+        sendgrid_enabled=enabled,
+        email_ingestion_method="sendgrid" if enabled else "gmail",
+    )
+
+    logger.info(f"SendGrid Inbound Parse {'enabled' if enabled else 'disabled'} for tenant {tenant_id}")
+
+    return {
+        "sendgrid_enabled": enabled,
+        "email_ingestion_method": "sendgrid" if enabled else "gmail",
+    }
+
+
+@router.delete("/sendgrid/disconnect")
+async def disconnect_sendgrid(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    """Remove SendGrid Inbound Parse configuration for tenant.
+
+    Clears parse address and webhook secret, reverts to Gmail ingestion.
+    """
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    config_repo = TenantEmailConfigRepository(db)
+
+    # Clear SendGrid configuration
+    await config_repo.create_or_update(
+        tenant_id=tenant_id,
+        sendgrid_enabled=False,
+        sendgrid_parse_address=None,
+        sendgrid_webhook_secret=None,
+        email_ingestion_method="gmail",
+    )
+
+    logger.info(f"SendGrid Inbound Parse disconnected for tenant {tenant_id}")
+
+    return {"status": "ok", "message": "SendGrid configuration removed"}
+
+
+def _get_gmail_forwarding_instructions(parse_address: str, prefixes: list[str] | None) -> str:
+    """Generate Gmail forwarding setup instructions."""
+    prefix_list = prefixes or ["Email Capture from Booking Page", "Get In Touch Form Submission"]
+    prefix_str = ", ".join([f'"{p}"' for p in prefix_list])
+
+    return f"""Gmail Forwarding Setup Instructions:
+
+1. Open Gmail Settings (gear icon) > See all settings > Filters and Blocked Addresses
+
+2. Click "Create a new filter"
+
+3. In the "Subject" field, enter keywords to match your lead emails:
+   - Current configured prefixes: {prefix_str}
+   - Example: subject:(Email Capture OR Get In Touch)
+
+4. Click "Create filter"
+
+5. Check "Forward it to:" and add: {parse_address}
+   - If this is your first forwarding address, Gmail will send a confirmation email
+   - Check your SendGrid Inbound Parse logs for the confirmation link
+
+6. Optionally check "Apply the label" to organize forwarded emails
+
+7. Click "Create filter"
+
+Note: Gmail will send a confirmation email to verify the forwarding address.
+You must click the confirmation link before forwarding will work."""
 

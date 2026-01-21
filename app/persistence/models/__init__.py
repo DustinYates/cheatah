@@ -13,6 +13,7 @@ from app.persistence.models.notification import Notification, NotificationPriori
 from app.persistence.models.prompt import PromptBundle, PromptSection
 from app.persistence.models.sms_opt_in import SmsOptIn
 from app.persistence.models.tenant import Tenant, TenantBusinessProfile, User
+from app.persistence.models.email_ingestion_log import EmailIngestionLog, IngestionStatus
 from app.persistence.models.tenant_email_config import EmailConversation, TenantEmailConfig
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_voice_config import TenantVoiceConfig
@@ -38,6 +39,8 @@ __all__ = [
     "ContactAlias",
     "ContactMergeLog",
     "EmailConversation",
+    "EmailIngestionLog",
+    "IngestionStatus",
     "PromptBundle",
     "PromptSection",
     "TenantEmailConfig",

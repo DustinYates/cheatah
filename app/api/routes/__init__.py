@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, email_webhooks, escalation_settings, leads, profile, prompts, prompt_config, prompt_interview, sendable_assets, sms_webhooks, telnyx_webhooks, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, voice_webhooks, zapier_webhooks
+from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, email_webhooks, escalation_settings, leads, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, sms_webhooks, telnyx_webhooks, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, voice_webhooks, zapier_webhooks
 
 api_router = APIRouter()
 
@@ -12,6 +12,7 @@ api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(sms_webhooks.router, prefix="/sms", tags=["sms-webhooks"])
 api_router.include_router(voice_webhooks.router, prefix="/voice", tags=["voice-webhooks"])
 api_router.include_router(email_webhooks.router, prefix="/email", tags=["email-webhooks"])
+api_router.include_router(sendgrid_webhooks.router, prefix="/email/sendgrid", tags=["sendgrid-webhooks"])
 
 # Customer service webhooks (public - Twilio/Zapier callbacks)
 api_router.include_router(customer_service_sms_webhooks.router, prefix="/customer-service/sms", tags=["customer-service-sms"])

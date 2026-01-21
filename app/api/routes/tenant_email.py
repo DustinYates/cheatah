@@ -316,8 +316,8 @@ async def oauth_callback(
             code=code,
             redirect_uri=redirect_uri,
         )
-        
-        # Store tokens in config
+
+        # Store tokens in config and enable email processing
         config_repo = TenantEmailConfigRepository(db)
         config = await config_repo.create_or_update(
             tenant_id=tenant_id,
@@ -325,6 +325,7 @@ async def oauth_callback(
             gmail_refresh_token=token_data["refresh_token"],
             gmail_access_token=token_data["access_token"],
             gmail_token_expires_at=token_data["token_expires_at"],
+            is_enabled=True,  # Enable email processing when connecting Gmail
         )
         
         # Setup Gmail watch for push notifications

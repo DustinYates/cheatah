@@ -388,6 +388,14 @@
   justify-content: center;
 }
 
+/* Arrow between inbound and outbound channels */
+.source-arrow {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0 2px;
+  font-weight: 500;
+}
+
 /* Follow-up Indicator - Circle showing follow-up status */
 .followup-indicator {
   display: inline-block;

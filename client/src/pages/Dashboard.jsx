@@ -560,95 +560,85 @@ export default function Dashboard() {
     return 'lead-row';
   };
 
-  const getSourceIcons = (lead) => {
-    // Collect ALL sources the lead has interacted through
-    // Shows: inbound channel → outbound AI response channel
-    const sources = [];
-    const seen = new Set();
+  const getSourceFlow = (lead) => {
+    // Returns { inbound: [...], outbound: [...] } to show flow: inbound → outbound
+    const inbound = [];
+    const outbound = [];
+    const seenInbound = new Set();
+    const seenOutbound = new Set();
 
-    // Helper to add source if not seen
-    const addSource = (icon, title, key) => {
-      if (!seen.has(key)) {
-        sources.push({ icon, title, key });
-        seen.add(key);
-      }
-    };
-
-    // Check the primary source field FIRST (inbound channel)
-    const source = lead.extra_data?.source;
-    if (source) {
-      switch (source) {
+    // Helper to get icon for a source type
+    const getIcon = (sourceType) => {
+      switch (sourceType) {
         case 'email':
-          addSource(<EnvelopeIcon />, 'Email', 'email');
-          break;
+          return { icon: <EnvelopeIcon />, title: 'Email', key: 'email' };
         case 'chatbot':
         case 'web_chat':
         case 'web_chat_lead':
-          addSource(<RobotIcon />, 'Chatbot', 'chatbot');
-          break;
+          return { icon: <RobotIcon />, title: 'Chatbot', key: 'chatbot' };
         case 'voice_call':
         case 'phone':
         case 'call':
-          addSource('📞', 'Phone Call', 'call');
-          break;
+          return { icon: '📞', title: 'Phone Call', key: 'call' };
         case 'sms':
         case 'text':
-          addSource(<TextBubbleIcon />, 'Text Message', 'sms');
-          break;
+          return { icon: <TextBubbleIcon />, title: 'Text Message', key: 'sms' };
         default:
-          break;
+          return null;
       }
+    };
+
+    // Add inbound source
+    const addInbound = (sourceType) => {
+      const iconData = getIcon(sourceType);
+      if (iconData && !seenInbound.has(iconData.key)) {
+        inbound.push(iconData);
+        seenInbound.add(iconData.key);
+      }
+    };
+
+    // Check primary source (inbound)
+    const source = lead.extra_data?.source;
+    if (source) {
+      addInbound(source);
     }
 
-    // Check for voice calls (may be additional to primary source)
-    if (lead.extra_data?.voice_calls?.length > 0) {
-      addSource('📞', 'Phone Call', 'call');
+    // Check for voice calls (inbound)
+    if (lead.extra_data?.voice_calls?.length > 0 && !seenInbound.has('call')) {
+      inbound.push({ icon: '📞', title: 'Phone Call', key: 'call' });
+      seenInbound.add('call');
     }
 
-    // Check for additional sources in the sources array (merged leads)
+    // Check sources array (inbound - for merged leads)
     if (lead.extra_data?.sources) {
       for (const s of lead.extra_data.sources) {
-        switch (s) {
-          case 'email':
-            addSource(<EnvelopeIcon />, 'Email', 'email');
-            break;
-          case 'chatbot':
-          case 'web_chat':
-          case 'web_chat_lead':
-            addSource(<RobotIcon />, 'Chatbot', 'chatbot');
-            break;
-          case 'voice_call':
-          case 'phone':
-          case 'call':
-            addSource('📞', 'Phone Call', 'call');
-            break;
-          case 'sms':
-          case 'text':
-            addSource(<TextBubbleIcon />, 'Text Message', 'sms');
-            break;
-          default:
-            break;
-        }
+        addInbound(s);
       }
     }
 
-    // Check for AI SMS follow-up response (outbound channel)
-    if (lead.extra_data?.followup_sent_at) {
-      addSource(<SmsFollowUpIcon />, 'AI SMS Follow-up Sent', 'sms_followup');
+    // Default inbound to chatbot if none found
+    if (inbound.length === 0) {
+      inbound.push({ icon: <RobotIcon />, title: 'Chatbot', key: 'chatbot' });
     }
 
-    // Default to chatbot if no sources found
-    if (sources.length === 0) {
-      addSource(<RobotIcon />, 'Chatbot', 'chatbot');
+    // Check for AI SMS follow-up (outbound)
+    if (lead.extra_data?.followup_sent_at && !seenOutbound.has('sms_followup')) {
+      outbound.push({ icon: <SmsFollowUpIcon />, title: 'AI SMS Follow-up Sent', key: 'sms_followup' });
+      seenOutbound.add('sms_followup');
     }
 
-    return sources;
+    return { inbound, outbound };
   };
 
-  // Keep backward-compatible single icon function
+  // Keep backward-compatible functions
+  const getSourceIcons = (lead) => {
+    const flow = getSourceFlow(lead);
+    return [...flow.inbound, ...flow.outbound];
+  };
+
   const getSourceIcon = (lead) => {
-    const sources = getSourceIcons(lead);
-    return sources[0];
+    const flow = getSourceFlow(lead);
+    return flow.inbound[0];
   };
 
   const getFollowUpIndicator = (lead) => {
@@ -830,13 +820,29 @@ export default function Dashboard() {
                     </td>
                     <td className="col-source">
                       <div className="source-badges">
-                        {getSourceIcons(lead).map((src) => (
-                          <span key={src.key} className="source-badge" title={src.title}>
-                            <span className="source-icon">
-                              {src.icon}
-                            </span>
-                          </span>
-                        ))}
+                        {(() => {
+                          const flow = getSourceFlow(lead);
+                          return (
+                            <>
+                              {/* Inbound channel(s) */}
+                              {flow.inbound.map((src) => (
+                                <span key={src.key} className="source-badge" title={src.title}>
+                                  <span className="source-icon">{src.icon}</span>
+                                </span>
+                              ))}
+                              {/* Arrow if there's outbound */}
+                              {flow.outbound.length > 0 && (
+                                <span className="source-arrow" title="AI responded via">→</span>
+                              )}
+                              {/* Outbound channel(s) */}
+                              {flow.outbound.map((src) => (
+                                <span key={src.key} className="source-badge" title={src.title}>
+                                  <span className="source-icon">{src.icon}</span>
+                                </span>
+                              ))}
+                            </>
+                          );
+                        })()}
                         <span
                           className={`followup-indicator ${getFollowUpIndicator(lead).className}`}
                           title={getFollowUpIndicator(lead).title}

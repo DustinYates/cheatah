@@ -1108,3 +1108,49 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Master Admin Table Styles */
+.tenant-email {
+  font-size: 12px;
+  color: #64748b;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.phone-numbers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.phone-number {
+  font-size: 12px;
+  color: #334155;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  white-space: nowrap;
+}
+
+.text-muted {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+/* Compact table for more columns */
+.leads-table th,
+.leads-table td {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.leads-table th:first-child,
+.leads-table td:first-child {
+  padding-left: 16px;
+}
+
+.leads-table th:last-child,
+.leads-table td:last-child {
+  padding-right: 16px;
+}

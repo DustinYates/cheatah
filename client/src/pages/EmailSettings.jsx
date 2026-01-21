@@ -421,120 +421,159 @@ export default function EmailSettings() {
             </div>
           </section>
 
-          {/* Subject-Specific SMS Templates Section */}
-          <section className="settings-section">
-            <h2>SMS Follow-up Templates</h2>
-            <p className="section-description">
-              Configure custom SMS messages based on which email subject triggered the lead.
-              When a lead is captured from an email, the follow-up SMS will use the template
-              that matches the email subject prefix.
-            </p>
-
-            <div className="form-group">
-              <label>Subject-Specific Templates</label>
-
-              {Object.keys(subjectTemplates).length === 0 ? (
-                <div className="template-empty">
-                  No subject-specific templates configured. Default follow-up messages will be used.
-                </div>
-              ) : (
-                <div className="template-list">
-                  {Object.entries(subjectTemplates).map(([subject, message]) => (
-                    <div key={subject} className="template-item">
-                      <div className="template-header">
-                        <span className="template-subject">Subject: "{subject}"</span>
-                        <div className="template-actions">
-                          <button
-                            type="button"
-                            className="template-edit"
-                            onClick={() => handleEditTemplate(subject)}
-                            title="Edit template"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="template-remove"
-                            onClick={() => handleRemoveTemplate(subject)}
-                            title="Remove template"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                      <div className="template-message">{message}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="template-add-form">
-                <h4>{editingTemplate ? 'Edit Template' : 'Add New Template'}</h4>
-                <div className="template-form-group">
-                  <label htmlFor="template-subject">Subject Prefix</label>
-                  <input
-                    ref={templateSubjectInputRef}
-                    id="template-subject"
-                    type="text"
-                    value={newTemplateSubject}
-                    onChange={(e) => setNewTemplateSubject(e.target.value)}
-                    placeholder="e.g., Get In Touch"
-                    className="template-input"
-                  />
-                </div>
-                <div className="template-form-group">
-                  <label htmlFor="template-message">SMS Message</label>
-                  <textarea
-                    id="template-message"
-                    value={newTemplateMessage}
-                    onChange={(e) => setNewTemplateMessage(e.target.value)}
-                    placeholder="Hi, {first_name}. Thank you for reaching out..."
-                    className="template-textarea"
-                    rows={3}
-                  />
-                  <small className="template-help">
-                    Use {'{first_name}'} or {'{name}'} as placeholders for the lead's name.
-                  </small>
-                </div>
-                <div className="template-form-actions">
-                  {editingTemplate ? (
-                    <>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={handleCancelEditTemplate}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={handleSaveEditTemplate}
-                        disabled={!newTemplateSubject.trim() || !newTemplateMessage.trim()}
-                      >
-                        Save Changes
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={handleAddTemplate}
-                      disabled={!newTemplateSubject.trim() || !newTemplateMessage.trim()}
-                    >
-                      Add Template
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
-
           <button type="submit" className="save-btn" disabled={saving}>
             {saving ? 'Saving...' : 'Save Settings'}
           </button>
         </form>
       )}
+
+      {/* Subject-Specific SMS Templates Section - Available for all tenants */}
+      <section className="settings-section">
+        <h2>SMS Follow-up Templates</h2>
+        <p className="section-description">
+          Configure custom SMS messages based on lead source or email subject.
+          When a lead is captured, the follow-up SMS will use the template
+          that matches the trigger.
+        </p>
+
+        <div className="form-group">
+          <label>Subject-Specific Templates</label>
+
+          {Object.keys(subjectTemplates).length === 0 ? (
+            <div className="template-empty">
+              No subject-specific templates configured. Default follow-up messages will be used.
+            </div>
+          ) : (
+            <div className="template-list">
+              {Object.entries(subjectTemplates).map(([subject, message]) => (
+                <div key={subject} className="template-item">
+                  <div className="template-header">
+                    <span className="template-subject">Subject: "{subject}"</span>
+                    <div className="template-actions">
+                      <button
+                        type="button"
+                        className="template-edit"
+                        onClick={() => handleEditTemplate(subject)}
+                        title="Edit template"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="template-remove"
+                        onClick={() => handleRemoveTemplate(subject)}
+                        title="Remove template"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                  <div className="template-message">{message}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="template-add-form">
+            <h4>{editingTemplate ? 'Edit Template' : 'Add New Template'}</h4>
+            <div className="template-form-group">
+              <label htmlFor="template-subject">Subject Prefix</label>
+              <input
+                ref={templateSubjectInputRef}
+                id="template-subject"
+                type="text"
+                value={newTemplateSubject}
+                onChange={(e) => setNewTemplateSubject(e.target.value)}
+                placeholder="e.g., Get In Touch"
+                className="template-input"
+              />
+            </div>
+            <div className="template-form-group">
+              <label htmlFor="template-message">SMS Message</label>
+              <textarea
+                id="template-message"
+                value={newTemplateMessage}
+                onChange={(e) => setNewTemplateMessage(e.target.value)}
+                placeholder="Hi, {first_name}. Thank you for reaching out..."
+                className="template-textarea"
+                rows={3}
+              />
+              <small className="template-help">
+                Use {'{first_name}'} or {'{name}'} as placeholders for the lead's name.
+              </small>
+            </div>
+            <div className="template-form-actions">
+              {editingTemplate ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={handleCancelEditTemplate}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleSaveEditTemplate}
+                    disabled={!newTemplateSubject.trim() || !newTemplateMessage.trim()}
+                  >
+                    Save Changes
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleAddTemplate}
+                  disabled={!newTemplateSubject.trim() || !newTemplateMessage.trim()}
+                >
+                  Add Template
+                </button>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="save-btn"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              setFormError('');
+              setSuccess('');
+              try {
+                // Add any pending template from the form first
+                let templatesToSave = { ...subjectTemplates };
+                const pendingSubject = newTemplateSubject.trim();
+                const pendingMessage = newTemplateMessage.trim();
+                if (pendingSubject && pendingMessage) {
+                  templatesToSave[pendingSubject] = pendingMessage;
+                  // Clear the form
+                  setNewTemplateSubject('');
+                  setNewTemplateMessage('');
+                  setEditingTemplate(null);
+                  // Update local state too
+                  setSubjectTemplates(templatesToSave);
+                }
+
+                await api.updateSmsSettings({
+                  ...smsSettings,
+                  followup_subject_templates: Object.keys(templatesToSave).length > 0 ? templatesToSave : null,
+                });
+                refetchSms();
+                setSuccess('SMS templates saved successfully');
+              } catch (err) {
+                setFormError(err.message || 'Failed to save SMS templates');
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving ? 'Saving...' : 'Save SMS Templates'}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

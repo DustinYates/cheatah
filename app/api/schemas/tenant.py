@@ -73,6 +73,7 @@ class TenantOverviewStats(BaseModel):
     """Stats for a single tenant in the overview."""
 
     id: int
+    tenant_number: str | None = None
     name: str
     subdomain: str
     is_active: bool
@@ -81,6 +82,20 @@ class TenantOverviewStats(BaseModel):
     total_leads: int = 0
     total_contacts: int = 0
     last_activity: str | None = None
+    # Gmail status
+    gmail_connected: bool = False
+    gmail_email: str | None = None
+    gmail_watch_active: bool = False
+    # Phone numbers
+    telnyx_phone_numbers: list[str] = []
+    # SMS stats
+    sms_incoming_count: int = 0
+    sms_outgoing_count: int = 0
+    # Call stats
+    call_count: int = 0
+    call_minutes: float = 0.0
+    # Lead sources
+    chatbot_leads_count: int = 0
 
 
 class TenantsOverviewResponse(BaseModel):

@@ -753,11 +753,11 @@ class ApiClient {
 
   // SMS settings methods (tenant-facing)
   async getSmsSettings() {
-    return this.request('/tenant-sms/settings');
+    return this.request('/sms/settings');
   }
 
   async updateSmsSettings(data) {
-    return this.request('/tenant-sms/settings', {
+    return this.request('/sms/settings', {
       method: 'PUT',
       body: JSON.stringify(data),
     });

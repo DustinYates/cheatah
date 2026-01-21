@@ -70,6 +70,7 @@ DEPLOY_CMD="gcloud run deploy ${SERVICE_NAME} \
   --set-secrets=GEMINI_API_KEY=gemini-api-key:latest \
   --set-secrets=GMAIL_CLIENT_ID=gmail-client-id:latest \
   --set-secrets=GMAIL_CLIENT_SECRET=gmail-client-secret:latest \
+  --set-env-vars=GMAIL_OAUTH_REDIRECT_URI=https://${SERVICE_NAME}-900139201687.${REGION}.run.app/api/v1/email/oauth/callback \
   --set-env-vars=GMAIL_PUBSUB_TOPIC=projects/${GCP_PROJECT}/topics/gmail-push-notifications \
   --set-env-vars=GCS_WIDGET_ASSETS_BUCKET=chattercheetah-widget-assets"
 

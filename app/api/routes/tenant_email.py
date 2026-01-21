@@ -280,8 +280,8 @@ async def oauth_callback(
     This endpoint is called by Google after user consent.
     It exchanges the code for tokens and stores them.
     """
-    base_url = settings.frontend_url or "https://chattercheatah-frontend-900139201687.us-central1.run.app"
-    
+    base_url = settings.frontend_url or "https://chattercheatah-900139201687.us-central1.run.app"
+
     # Handle OAuth error from Google
     if error:
         logger.error(f"OAuth error from Google: {error}")
@@ -352,14 +352,14 @@ async def oauth_callback(
         logger.info(f"Gmail connected for tenant {tenant_id}: {token_data['email']}")
         
         # Redirect to frontend settings page
-        base_url = settings.frontend_url or "https://chattercheatah-frontend-900139201687.us-central1.run.app"
+        base_url = settings.frontend_url or "https://chattercheatah-900139201687.us-central1.run.app"
         frontend_url = f"{base_url}/settings/email?connected=true&email={token_data['email']}"
         return RedirectResponse(url=frontend_url, status_code=302)
         
     except GmailAuthError as e:
         logger.error(f"OAuth callback failed: {e}")
         # Redirect to frontend with error
-        base_url = settings.frontend_url or "https://chattercheatah-frontend-900139201687.us-central1.run.app"
+        base_url = settings.frontend_url or "https://chattercheatah-900139201687.us-central1.run.app"
         frontend_url = f"{base_url}/settings/email?error={str(e)}"
         return RedirectResponse(url=frontend_url, status_code=302)
 

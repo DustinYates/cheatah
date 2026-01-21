@@ -475,44 +475,79 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Tenant Cards */}
-        <div className="tenant-overview-grid">
-          {tenantsOverview.tenants.map((tenant) => (
-            <div
-              key={tenant.id}
-              className={`tenant-card ${!tenant.is_active ? 'tenant-card--inactive' : ''}`}
-              onClick={() => selectTenant(tenant.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && selectTenant(tenant.id)}
-            >
-              <div className="tenant-card__header">
-                <h3 className="tenant-card__name">{tenant.name}</h3>
-                <span className={`tenant-card__status ${tenant.is_active ? 'tenant-card__status--active' : 'tenant-card__status--inactive'}`}>
-                  {tenant.is_active ? 'Active' : 'Inactive'}
-                </span>
-              </div>
-              <div className="tenant-card__subdomain">{tenant.subdomain}</div>
-              {tenant.tier && <div className="tenant-card__tier">{tenant.tier}</div>}
-              <div className="tenant-card__stats">
-                <div className="tenant-card__stat">
-                  <span className="tenant-card__stat-value">{tenant.total_conversations}</span>
-                  <span className="tenant-card__stat-label">Conversations</span>
-                </div>
-                <div className="tenant-card__stat">
-                  <span className="tenant-card__stat-value">{tenant.total_leads}</span>
-                  <span className="tenant-card__stat-label">Leads</span>
-                </div>
-                <div className="tenant-card__stat">
-                  <span className="tenant-card__stat-value">{tenant.total_contacts}</span>
-                  <span className="tenant-card__stat-label">Contacts</span>
-                </div>
-              </div>
-              <div className="tenant-card__activity">
-                Last activity: {formatLastActivity(tenant.last_activity)}
-              </div>
-            </div>
-          ))}
+        {/* Tenants Table */}
+        <div className="card">
+          <div className="card-header">
+            <h2>Tenants</h2>
+          </div>
+          <CompactTable containerClassName="leads-table-container" tableClassName="leads-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Email</th>
+                <th>Phone Numbers</th>
+                <th>SMS In</th>
+                <th>SMS Out</th>
+                <th>Calls</th>
+                <th>Call Mins</th>
+                <th>Chatbot Leads</th>
+                <th>Total Leads</th>
+                <th>Last Activity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tenantsOverview.tenants.map((tenant) => (
+                <tr
+                  key={tenant.id}
+                  className="lead-row"
+                  onClick={() => selectTenant(tenant.id)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <td>{tenant.tenant_number || tenant.id}</td>
+                  <td>
+                    <div className="lead-person">
+                      <span className="lead-person__name">{tenant.name}</span>
+                      <span className="lead-person__email">{tenant.subdomain}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span className={`status-badge status-${tenant.is_active ? 'verified' : 'unknown'}`}>
+                      {tenant.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td>
+                    {tenant.gmail_email ? (
+                      <span className="tenant-email" title={tenant.gmail_email}>
+                        {tenant.gmail_email}
+                      </span>
+                    ) : (
+                      <span className="text-muted">-</span>
+                    )}
+                  </td>
+                  <td>
+                    {tenant.telnyx_phone_numbers?.length > 0 ? (
+                      <div className="phone-numbers">
+                        {tenant.telnyx_phone_numbers.map((phone, idx) => (
+                          <span key={idx} className="phone-number">{phone}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted">-</span>
+                    )}
+                  </td>
+                  <td>{tenant.sms_incoming_count || 0}</td>
+                  <td>{tenant.sms_outgoing_count || 0}</td>
+                  <td>{tenant.call_count || 0}</td>
+                  <td>{tenant.call_minutes || 0}</td>
+                  <td>{tenant.chatbot_leads_count || 0}</td>
+                  <td>{tenant.total_leads}</td>
+                  <td>{formatLastActivity(tenant.last_activity)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </CompactTable>
         </div>
       </div>
     );
@@ -525,30 +560,95 @@ export default function Dashboard() {
     return 'lead-row';
   };
 
-  const getSourceIcon = (lead) => {
-    // Check if lead has voice calls first (voice_calls array)
-    if (lead.extra_data?.voice_calls?.length > 0) {
-      return { icon: '📞', title: 'Phone Call' };
+  const getSourceIcons = (lead) => {
+    // Collect ALL sources the lead has interacted through
+    // Shows: inbound channel → outbound AI response channel
+    const sources = [];
+    const seen = new Set();
+
+    // Helper to add source if not seen
+    const addSource = (icon, title, key) => {
+      if (!seen.has(key)) {
+        sources.push({ icon, title, key });
+        seen.add(key);
+      }
+    };
+
+    // Check the primary source field FIRST (inbound channel)
+    const source = lead.extra_data?.source;
+    if (source) {
+      switch (source) {
+        case 'email':
+          addSource(<EnvelopeIcon />, 'Email', 'email');
+          break;
+        case 'chatbot':
+        case 'web_chat':
+        case 'web_chat_lead':
+          addSource(<RobotIcon />, 'Chatbot', 'chatbot');
+          break;
+        case 'voice_call':
+        case 'phone':
+        case 'call':
+          addSource('📞', 'Phone Call', 'call');
+          break;
+        case 'sms':
+        case 'text':
+          addSource(<TextBubbleIcon />, 'Text Message', 'sms');
+          break;
+        default:
+          break;
+      }
     }
 
-    const source = lead.extra_data?.source;
-    switch (source) {
-      case 'chatbot':
-      case 'web_chat':
-      case 'web_chat_lead':
-        return { icon: <RobotIcon />, title: 'Chatbot' };
-      case 'voice_call':
-      case 'phone':
-      case 'call':
-        return { icon: '📞', title: 'Phone Call' };
-      case 'sms':
-      case 'text':
-        return { icon: <TextBubbleIcon />, title: 'Text Message' };
-      case 'email':
-        return { icon: <EnvelopeIcon />, title: 'Email' };
-      default:
-        return { icon: <RobotIcon />, title: 'Chatbot' };
+    // Check for voice calls (may be additional to primary source)
+    if (lead.extra_data?.voice_calls?.length > 0) {
+      addSource('📞', 'Phone Call', 'call');
     }
+
+    // Check for additional sources in the sources array (merged leads)
+    if (lead.extra_data?.sources) {
+      for (const s of lead.extra_data.sources) {
+        switch (s) {
+          case 'email':
+            addSource(<EnvelopeIcon />, 'Email', 'email');
+            break;
+          case 'chatbot':
+          case 'web_chat':
+          case 'web_chat_lead':
+            addSource(<RobotIcon />, 'Chatbot', 'chatbot');
+            break;
+          case 'voice_call':
+          case 'phone':
+          case 'call':
+            addSource('📞', 'Phone Call', 'call');
+            break;
+          case 'sms':
+          case 'text':
+            addSource(<TextBubbleIcon />, 'Text Message', 'sms');
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    // Check for AI SMS follow-up response (outbound channel)
+    if (lead.extra_data?.followup_sent_at) {
+      addSource(<SmsFollowUpIcon />, 'AI SMS Follow-up Sent', 'sms_followup');
+    }
+
+    // Default to chatbot if no sources found
+    if (sources.length === 0) {
+      addSource(<RobotIcon />, 'Chatbot', 'chatbot');
+    }
+
+    return sources;
+  };
+
+  // Keep backward-compatible single icon function
+  const getSourceIcon = (lead) => {
+    const sources = getSourceIcons(lead);
+    return sources[0];
   };
 
   const getFollowUpIndicator = (lead) => {
@@ -730,11 +830,13 @@ export default function Dashboard() {
                     </td>
                     <td className="col-source">
                       <div className="source-badges">
-                        <span className="source-badge" title={getSourceIcon(lead).title}>
-                          <span className="source-icon">
-                            {getSourceIcon(lead).icon}
+                        {getSourceIcons(lead).map((src) => (
+                          <span key={src.key} className="source-badge" title={src.title}>
+                            <span className="source-icon">
+                              {src.icon}
+                            </span>
                           </span>
-                        </span>
+                        ))}
                         <span
                           className={`followup-indicator ${getFollowUpIndicator(lead).className}`}
                           title={getFollowUpIndicator(lead).title}

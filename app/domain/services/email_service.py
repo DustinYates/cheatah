@@ -631,8 +631,8 @@ class EmailService:
             return False
 
         if len(prefixes) == 0:
-            print("[LEAD_CAPTURE] Empty prefix list - skipping capture", flush=True)
-            return False
+            print("[LEAD_CAPTURE] Empty prefix list - capturing ALL emails", flush=True)
+            return True
         
         # Strip common email prefixes (Fwd:, Re:, etc.) before checking
         subject_lower = (subject or "").lower().strip()

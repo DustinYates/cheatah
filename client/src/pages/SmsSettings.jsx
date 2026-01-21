@@ -67,7 +67,7 @@ export default function SmsSettings() {
     business_hours: defaultBusinessHours,
     followup_enabled: false,
     followup_delay_minutes: 5,
-    followup_sources: ['email', 'voice_call', 'sms'],
+    followup_sources: ['email'],
     followup_initial_message: '',
   });
   const [originalSettings, setOriginalSettings] = useState(null);
@@ -119,7 +119,7 @@ export default function SmsSettings() {
           business_hours: defaultBusinessHours,
           followup_enabled: false,
           followup_delay_minutes: 5,
-          followup_sources: ['email', 'voice_call', 'sms'],
+          followup_sources: ['email'],
           followup_initial_message: '',
         };
         setSettings(defaultState);
@@ -141,7 +141,7 @@ export default function SmsSettings() {
           business_hours: defaultBusinessHours,
           followup_enabled: false,
           followup_delay_minutes: 5,
-          followup_sources: ['email', 'voice_call', 'sms'],
+          followup_sources: ['email'],
           followup_initial_message: '',
         };
         setSettings(defaultState);
@@ -188,7 +188,7 @@ export default function SmsSettings() {
           business_hours: apiBusinessHours,
           followup_enabled: settings.followup_enabled,
           followup_delay_minutes: settings.followup_delay_minutes,
-          followup_sources: settings.followup_sources,
+          followup_sources: ['email'], // Email follow-up only
           followup_initial_message: settings.followup_initial_message,
         }),
       });
@@ -249,15 +249,6 @@ export default function SmsSettings() {
     }));
   };
 
-  const toggleFollowupSource = (source) => {
-    setSettings(prev => {
-      const sources = prev.followup_sources || [];
-      const newSources = sources.includes(source)
-        ? sources.filter(s => s !== source)
-        : [...sources, source];
-      return { ...prev, followup_sources: newSources };
-    });
-  };
 
   // Generate availability summary
   const availabilitySummary = useMemo(() => {
@@ -600,10 +591,10 @@ export default function SmsSettings() {
           </section>
         )}
 
-        {/* Card D: Follow-Up Automation */}
+        {/* Card D: Email Lead Follow-Up */}
         <section className={`sms-card ${!smsEnabled ? 'sms-card--disabled' : ''}`}>
           <div className="sms-card__header">
-            <h2 className="sms-card__title">Follow-Up Automation</h2>
+            <h2 className="sms-card__title">Email Lead Follow-Up</h2>
             {!smsEnabled && <span className="sms-card__badge">SMS Off</span>}
           </div>
           <div className="sms-card__body">
@@ -613,15 +604,21 @@ export default function SmsSettings() {
                   id="followup-enabled"
                   type="checkbox"
                   checked={settings.followup_enabled}
-                  onChange={(e) => updateSetting('followup_enabled', e.target.checked)}
+                  onChange={(e) => {
+                    updateSetting('followup_enabled', e.target.checked);
+                    // Always set source to email only
+                    if (e.target.checked) {
+                      updateSetting('followup_sources', ['email']);
+                    }
+                  }}
                   disabled={!smsEnabled}
                   className="sms-toggle__input"
                 />
                 <span className="sms-toggle__switch" />
-                <span className="sms-toggle__label">Send Follow-Up if No Reply</span>
+                <span className="sms-toggle__label">Send SMS Follow-Up for Email Leads</span>
               </label>
               <p className="sms-field__description">
-                Automatically send a follow-up SMS if we don't receive a reply from the lead.
+                When a lead is captured from an email form submission, automatically send them an SMS follow-up.
               </p>
             </div>
 
@@ -629,7 +626,7 @@ export default function SmsSettings() {
               <>
                 <div className="sms-field sms-field--row">
                   <label className="sms-field__label" htmlFor="followup-delay">
-                    Send follow-up after
+                    Send SMS
                   </label>
                   <div className="sms-input-group">
                     <input
@@ -642,37 +639,13 @@ export default function SmsSettings() {
                       min={1}
                       max={60}
                     />
-                    <span className="sms-input-group__suffix">minutes of no reply</span>
-                  </div>
-                </div>
-
-                <div className="sms-field">
-                  <label className="sms-field__label">Apply to leads from</label>
-                  <p className="sms-field__hint" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
-                    Follow-up only applies to new leads created from these sources.
-                  </p>
-                  <div className="sms-chip-group">
-                    {[
-                      { key: 'email', label: 'Email' },
-                      { key: 'voice_call', label: 'Phone Calls' },
-                      { key: 'sms', label: 'SMS' },
-                    ].map(source => (
-                      <button
-                        key={source.key}
-                        type="button"
-                        className={`sms-chip ${settings.followup_sources?.includes(source.key) ? 'sms-chip--active' : ''}`}
-                        onClick={() => toggleFollowupSource(source.key)}
-                        disabled={!smsEnabled}
-                      >
-                        {source.label}
-                      </button>
-                    ))}
+                    <span className="sms-input-group__suffix">minutes after email lead is created</span>
                   </div>
                 </div>
 
                 <div className="sms-field sms-field--textarea">
                   <label className="sms-field__label" htmlFor="followup-message">
-                    Follow-Up Message
+                    Default Follow-Up Message
                   </label>
                   <div className="sms-textarea-wrapper">
                     <textarea
@@ -680,7 +653,7 @@ export default function SmsSettings() {
                       className="sms-textarea"
                       value={settings.followup_initial_message || ''}
                       onChange={(e) => updateSetting('followup_initial_message', e.target.value)}
-                      placeholder="Hi {first_name}, just following up on my earlier message..."
+                      placeholder="Hi {first_name}, thanks for reaching out! How can I help you today?"
                       disabled={!smsEnabled}
                       maxLength={500}
                       rows={3}
@@ -690,7 +663,7 @@ export default function SmsSettings() {
                     </span>
                   </div>
                   <p className="sms-field__hint">
-                    Leave empty to use an AI-generated follow-up based on the conversation.
+                    This is the default message. For subject-specific messages, configure templates in Email Settings.
                   </p>
                 </div>
               </>

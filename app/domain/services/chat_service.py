@@ -37,6 +37,12 @@ _CAPITALIZED_NAME_PATTERN = re.compile(r"([A-Z][a-z]+\s+[A-Z][a-z]+)")
 _DRAFT_PREFIX_PATTERN = re.compile(r'^draft\s+\d+:\s*', re.IGNORECASE)
 _TRAILING_WORD_PATTERN = re.compile(r"([A-Za-z]+)$")
 _LOWERCASE_ENDING_PATTERN = re.compile(r"[a-z]$")
+# Pattern to extract name from bot's greeting response (e.g., "Nice to meet you, Dustin")
+# This is a reliable fallback since the bot only greets by name when it recognized the name
+_BOT_GREETING_NAME_PATTERN = re.compile(
+    r"(?:nice to meet you|great to meet you|hello|hi there|hey there|thanks|thank you),?\s+([A-Z][a-z]+)",
+    re.IGNORECASE
+)
 
 
 @dataclass
@@ -886,7 +892,21 @@ class ChatService:
         logger.debug(
             f"Regex extraction results - name={regex_name}, email={regex_email}, phone={regex_phone}"
         )
-        
+
+        # Fallback: Extract name from bot's greeting response (e.g., "Nice to meet you, Dustin")
+        # This is very reliable since the bot only greets by name when it recognized the name
+        bot_greeting_name = None
+        for msg in messages:
+            if msg.role == "assistant":
+                match = _BOT_GREETING_NAME_PATTERN.search(msg.content)
+                if match:
+                    potential_name = match.group(1).strip()
+                    # Validate it's a real name (not a common word)
+                    validated = validate_name(potential_name, require_explicit=True)
+                    if validated:
+                        bot_greeting_name = validated
+                        logger.info(f"Extracted name from bot greeting: '{bot_greeting_name}'")
+
         # Build conversation text for LLM extraction
         # Include BOTH user and assistant messages for context
         # This is critical for name extraction - the LLM needs to see that
@@ -941,7 +961,10 @@ GENERAL RULES:
 Respond with ONLY a valid JSON object in this exact format, no other text:
 {{"name": null, "email": null, "phone": null}}""".format("\n".join(recent_messages))
 
-        result = {"name": regex_name, "email": regex_email, "phone": regex_phone, "name_is_explicit": name_is_explicit}
+        # Use bot_greeting_name as fallback if regex didn't find a name
+        fallback_name = regex_name or bot_greeting_name
+        fallback_name_is_explicit = name_is_explicit if regex_name else (True if bot_greeting_name else False)
+        result = {"name": fallback_name, "email": regex_email, "phone": regex_phone, "name_is_explicit": fallback_name_is_explicit}
         
         try:
             logger.debug(f"Attempting LLM extraction with prompt length: {len(extraction_prompt)}")
@@ -999,13 +1022,25 @@ Respond with ONLY a valid JSON object in this exact format, no other text:
             # only extracts names when users clearly state their name in conversation.
             # This allows LLM-extracted names to override previously captured (possibly
             # incorrect) names like generic placeholders or misextracted text.
-            final_name = llm_name if llm_name and llm_name != "null" else regex_name
-            # Always mark LLM-extracted names as explicit to allow name updates
-            final_name_is_explicit = True if (llm_name and llm_name != "null") else name_is_explicit
+            # Fallback chain: LLM name -> regex name -> bot greeting name
+            if llm_name and llm_name != "null":
+                final_name = llm_name
+                final_name_is_explicit = True
+            elif regex_name:
+                final_name = regex_name
+                final_name_is_explicit = name_is_explicit
+            elif bot_greeting_name:
+                # Bot greeted user by name, so we know this is their name
+                final_name = bot_greeting_name
+                final_name_is_explicit = True
+                logger.info(f"Using bot greeting fallback for name: '{bot_greeting_name}'")
+            else:
+                final_name = None
+                final_name_is_explicit = False
 
             logger.info(
                 f"Name extraction result: llm_name={llm_name}, regex_name={regex_name}, "
-                f"final_name={final_name}, is_explicit={final_name_is_explicit}"
+                f"bot_greeting_name={bot_greeting_name}, final_name={final_name}, is_explicit={final_name_is_explicit}"
             )
 
             result = {

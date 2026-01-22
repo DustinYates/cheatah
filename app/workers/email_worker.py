@@ -241,9 +241,37 @@ async def refresh_gmail_watch(
                 refreshed += 1
                 
             except Exception as e:
+                error_str = str(e)
                 logger.error(f"Failed to refresh watch for tenant {config.tenant_id}: {e}")
                 failed += 1
-        
+
+                # Send alert for token revocation/expiration
+                if "invalid_grant" in error_str or "Token has been expired or revoked" in error_str:
+                    try:
+                        from app.infrastructure.notifications import NotificationService
+                        from app.persistence.models.notification import NotificationType, NotificationPriority
+
+                        notification_service = NotificationService(db)
+                        await notification_service.notify_admins(
+                            tenant_id=config.tenant_id,
+                            subject="Gmail Connection Expired",
+                            message=(
+                                f"Your Gmail connection for {config.gmail_email} has expired or been revoked. "
+                                f"Please reconnect Gmail in Settings > Email to continue receiving email leads."
+                            ),
+                            methods=["sms", "in_app"],
+                            notification_type=NotificationType.SYSTEM,
+                            priority=NotificationPriority.URGENT,
+                            action_url="/settings/email",
+                            metadata={
+                                "gmail_email": config.gmail_email,
+                                "alert_type": "gmail_token_expired",
+                            },
+                        )
+                        logger.info(f"Sent Gmail token expiration alert for tenant {config.tenant_id}")
+                    except Exception as alert_error:
+                        logger.error(f"Failed to send Gmail alert for tenant {config.tenant_id}: {alert_error}")
+
         logger.info(f"Gmail watch refresh complete: refreshed={refreshed}, failed={failed}")
         
         return {

@@ -44,6 +44,10 @@ class EmailSettingsResponse(BaseModel):
     sendgrid_enabled: bool = False
     sendgrid_parse_address: str | None = None
     email_ingestion_method: str = "gmail"  # 'gmail' or 'sendgrid'
+    # SendGrid Outbound settings
+    sendgrid_outbound_configured: bool = False
+    sendgrid_from_email: str | None = None
+    sendgrid_outbound_using_fallback: bool = False
 
 
 class SendGridSetupResponse(BaseModel):
@@ -106,6 +110,8 @@ async def get_email_settings(
     
     if not config:
         # Return defaults if no config exists
+        # Check if global SendGrid fallback is available for outbound
+        has_global_sendgrid = bool(settings.sendgrid_api_key)
         return EmailSettingsResponse(
             is_enabled=False,
             gmail_email=None,
@@ -121,6 +127,9 @@ async def get_email_settings(
             sendgrid_enabled=False,
             sendgrid_parse_address=None,
             email_ingestion_method="gmail",
+            sendgrid_outbound_configured=has_global_sendgrid,
+            sendgrid_from_email=settings.sendgrid_from_email if has_global_sendgrid else None,
+            sendgrid_outbound_using_fallback=has_global_sendgrid,
         )
     
     # Check if watch is active (use utcnow() for naive datetime comparison)
@@ -133,7 +142,15 @@ async def get_email_settings(
     prefixes = config.lead_capture_subject_prefixes
     if prefixes is None:
         prefixes = DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
-    
+
+    # Determine outbound configuration
+    has_tenant_api_key = bool(config.sendgrid_api_key)
+    has_global_fallback = bool(settings.sendgrid_api_key)
+    outbound_configured = has_tenant_api_key or has_global_fallback
+    outbound_from_email = config.sendgrid_from_email if has_tenant_api_key else (
+        settings.sendgrid_from_email if has_global_fallback else None
+    )
+
     return EmailSettingsResponse(
         is_enabled=config.is_enabled,
         gmail_email=config.gmail_email,
@@ -149,6 +166,9 @@ async def get_email_settings(
         sendgrid_enabled=config.sendgrid_enabled,
         sendgrid_parse_address=config.sendgrid_parse_address,
         email_ingestion_method=config.email_ingestion_method or "gmail",
+        sendgrid_outbound_configured=outbound_configured,
+        sendgrid_from_email=outbound_from_email,
+        sendgrid_outbound_using_fallback=not has_tenant_api_key and has_global_fallback,
     )
 
 
@@ -208,12 +228,20 @@ async def update_email_settings(
     watch_active = False
     if config.watch_expiration:
         watch_active = config.watch_expiration > datetime.utcnow()
-    
+
     # Get lead capture prefixes, fall back to defaults
     prefixes = config.lead_capture_subject_prefixes
     if prefixes is None:
         prefixes = DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES
-    
+
+    # Determine outbound configuration
+    has_tenant_api_key = bool(config.sendgrid_api_key)
+    has_global_fallback = bool(settings.sendgrid_api_key)
+    outbound_configured = has_tenant_api_key or has_global_fallback
+    outbound_from_email = config.sendgrid_from_email if has_tenant_api_key else (
+        settings.sendgrid_from_email if has_global_fallback else None
+    )
+
     return EmailSettingsResponse(
         is_enabled=config.is_enabled,
         gmail_email=config.gmail_email,
@@ -229,6 +257,9 @@ async def update_email_settings(
         sendgrid_enabled=config.sendgrid_enabled,
         sendgrid_parse_address=config.sendgrid_parse_address,
         email_ingestion_method=config.email_ingestion_method or "gmail",
+        sendgrid_outbound_configured=outbound_configured,
+        sendgrid_from_email=outbound_from_email,
+        sendgrid_outbound_using_fallback=not has_tenant_api_key and has_global_fallback,
     )
 
 
@@ -707,6 +738,128 @@ async def disconnect_sendgrid(
     logger.info(f"SendGrid Inbound Parse disconnected for tenant {tenant_id}")
 
     return {"status": "ok", "message": "SendGrid configuration removed"}
+
+
+# ============================================================================
+# SendGrid Outbound Configuration Endpoints
+# ============================================================================
+
+
+class SendGridOutboundConfigRequest(BaseModel):
+    """Request to configure SendGrid outbound credentials."""
+    api_key: str
+    from_email: str
+
+
+class SendGridOutboundConfigResponse(BaseModel):
+    """Response from SendGrid outbound configuration."""
+    configured: bool
+    from_email: str | None
+    has_api_key: bool  # Never expose actual key
+    using_global_fallback: bool
+
+
+@router.post("/sendgrid/outbound/configure", response_model=SendGridOutboundConfigResponse)
+async def configure_sendgrid_outbound(
+    config_data: SendGridOutboundConfigRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SendGridOutboundConfigResponse:
+    """Configure SendGrid outbound email credentials for tenant.
+
+    Sets the tenant's own SendGrid API key and from_email for sending emails.
+    """
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    config_repo = TenantEmailConfigRepository(db)
+    await config_repo.create_or_update(
+        tenant_id=tenant_id,
+        sendgrid_api_key=config_data.api_key,
+        sendgrid_from_email=config_data.from_email,
+    )
+
+    logger.info(f"SendGrid outbound configured for tenant {tenant_id}")
+
+    return SendGridOutboundConfigResponse(
+        configured=True,
+        from_email=config_data.from_email,
+        has_api_key=True,
+        using_global_fallback=False,
+    )
+
+
+@router.get("/sendgrid/outbound/status", response_model=SendGridOutboundConfigResponse)
+async def get_sendgrid_outbound_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SendGridOutboundConfigResponse:
+    """Get SendGrid outbound configuration status for tenant."""
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    config_repo = TenantEmailConfigRepository(db)
+    config = await config_repo.get_by_tenant_id(tenant_id)
+
+    if not config or not config.sendgrid_api_key:
+        # Check if global fallback is available
+        using_global = bool(settings.sendgrid_api_key)
+        return SendGridOutboundConfigResponse(
+            configured=using_global,
+            from_email=settings.sendgrid_from_email if using_global else None,
+            has_api_key=using_global,
+            using_global_fallback=using_global,
+        )
+
+    return SendGridOutboundConfigResponse(
+        configured=True,
+        from_email=config.sendgrid_from_email,
+        has_api_key=True,
+        using_global_fallback=False,
+    )
+
+
+@router.delete("/sendgrid/outbound/disconnect")
+async def disconnect_sendgrid_outbound(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str | bool]:
+    """Remove SendGrid outbound credentials for tenant.
+
+    Reverts to using global fallback credentials if available.
+    """
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    config_repo = TenantEmailConfigRepository(db)
+    await config_repo.create_or_update(
+        tenant_id=tenant_id,
+        sendgrid_api_key=None,
+        sendgrid_from_email=None,
+    )
+
+    logger.info(f"SendGrid outbound disconnected for tenant {tenant_id}")
+
+    # Check if global fallback is available
+    has_fallback = bool(settings.sendgrid_api_key)
+
+    return {
+        "status": "ok",
+        "message": "SendGrid outbound configuration removed",
+        "using_global_fallback": has_fallback,
+    }
 
 
 def _get_gmail_forwarding_instructions(parse_address: str, prefixes: list[str] | None) -> str:

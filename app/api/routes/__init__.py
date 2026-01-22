@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, email_webhooks, escalation_settings, leads, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, sms_webhooks, telnyx_webhooks, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, voice_webhooks, zapier_webhooks
+from app.api import sendgrid_email
 
 api_router = APIRouter()
 
@@ -44,6 +45,9 @@ api_router.include_router(tenant_voice.router, prefix="/voice", tags=["voice"])
 
 # Tenant Email settings (Gmail OAuth)
 api_router.include_router(tenant_email.router, prefix="/email", tags=["email"])
+
+# SendGrid Email sending
+api_router.include_router(sendgrid_email.router, prefix="/sendgrid", tags=["sendgrid-email"])
 
 # Tenant Widget customization
 api_router.include_router(tenant_widget.router, prefix="/widget", tags=["widget"])

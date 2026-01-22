@@ -74,6 +74,10 @@ class TenantEmailConfig(Base):
     sendgrid_webhook_secret = Column(String(255), nullable=True)  # Shared secret for webhook verification
     email_ingestion_method = Column(String(20), default="gmail", nullable=False)  # 'gmail' or 'sendgrid'
 
+    # SendGrid Outbound Configuration (per-tenant credentials for sending emails)
+    sendgrid_api_key = Column(String(255), nullable=True)  # Per-tenant API key
+    sendgrid_from_email = Column(String(255), nullable=True)  # Per-tenant sender email
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

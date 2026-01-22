@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     gmail_oauth_redirect_uri: str | None = None  # OAuth callback URL
     frontend_url: str | None = None  # Frontend URL for OAuth redirects
 
+    # SendGrid (Email sending)
+    sendgrid_api_key: str | None = None
+    sendgrid_from_email: str = "noreply@yourdomain.com"  # Default from email
     # SendGrid Inbound Parse (alternative to Gmail OAuth)
     sendgrid_inbound_parse_domain: str = ""  # e.g., "parse.yourdomain.com"
     sendgrid_default_webhook_secret: str | None = None  # Fallback secret if tenant-specific not set

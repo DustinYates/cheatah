@@ -100,19 +100,6 @@ class FollowUpService:
                 logger.debug(f"Follow-up already scheduled/sent for lead {lead.id}")
                 return False
 
-        # Check if lead already has an active SMS conversation (within last 24 hours)
-        existing_conv = await self.conversation_repo.get_by_phone_number(
-            tenant_id, lead.phone, channel="sms"
-        )
-        print(f"[FOLLOWUP_SHOULD] Existing SMS conversation: {existing_conv is not None}", flush=True)
-        if existing_conv and existing_conv.updated_at:
-            hours_since_update = (datetime.utcnow() - existing_conv.updated_at).total_seconds() / 3600
-            print(f"[FOLLOWUP_SHOULD] Hours since last SMS conversation: {hours_since_update:.2f}", flush=True)
-            if hours_since_update < 24:
-                print(f"[FOLLOWUP_SHOULD] Lead {lead.id} has recent SMS conversation, skipping", flush=True)
-                logger.debug(f"Lead {lead.id} has recent SMS conversation, skipping follow-up")
-                return False
-
         print(f"[FOLLOWUP_SHOULD] All checks passed! Scheduling follow-up for lead {lead.id}", flush=True)
         return True
 

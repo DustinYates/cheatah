@@ -664,14 +664,38 @@ export default function EmailSettings() {
                 setSubjectTemplates(templatesToSave);
               }
 
-              await api.updateSmsSettings({
-                ...smsSettings,
+              // Ensure we have a base settings object even if smsSettings hasn't loaded
+              const baseSettings = smsSettings || {
+                is_enabled: true,
+                auto_reply_enabled: false,
+                auto_reply_message: null,
+                initial_outreach_message: null,
+                business_hours_enabled: false,
+                timezone: 'America/Chicago',
+                business_hours: null,
+              };
+
+              const payload = {
+                ...baseSettings,
                 followup_enabled: followupEnabled,
                 followup_delay_minutes: followupDelayMinutes,
                 followup_sources: ['email'],
                 followup_initial_message: followupDefaultMessage,
                 followup_subject_templates: Object.keys(templatesToSave).length > 0 ? templatesToSave : null,
+              };
+
+              console.log('[EmailSettings] Saving follow-up settings:', {
+                smsSettingsLoaded: !!smsSettings,
+                followupEnabled,
+                followupDelayMinutes,
+                followupDefaultMessage,
+                templatesCount: Object.keys(templatesToSave).length,
+                payload,
               });
+
+              const response = await api.updateSmsSettings(payload);
+              console.log('[EmailSettings] Save response:', response);
+
               refetchSms();
               setSuccess('SMS follow-up settings saved successfully');
             } catch (err) {

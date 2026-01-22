@@ -175,6 +175,8 @@ export default function SmsSettings() {
           followup_delay_minutes: settings.followup_delay_minutes,
           followup_sources: ['email'], // Email follow-up only
           followup_initial_message: settings.followup_initial_message,
+          // Preserve subject templates configured in Email Settings
+          followup_subject_templates: settings.followup_subject_templates,
         }),
       });
 

@@ -24,6 +24,38 @@ class SubjectTemplate(BaseModel):
     delay_minutes: int = 5
 
 
+def normalize_subject_templates(raw_templates: dict | None) -> dict[str, SubjectTemplate] | None:
+    """Normalize subject templates to ensure they match the expected schema.
+
+    Handles both old format (string values) and new format (object with message/delay_minutes).
+    """
+    if not raw_templates:
+        return None
+
+    normalized = {}
+    for subject, template_data in raw_templates.items():
+        try:
+            if isinstance(template_data, str):
+                # Old format: just the message string
+                normalized[subject] = SubjectTemplate(message=template_data, delay_minutes=5)
+            elif isinstance(template_data, dict):
+                # New format: {message, delay_minutes}
+                message = template_data.get("message", "")
+                delay = template_data.get("delay_minutes", 5)
+                # Ensure delay is an int
+                if isinstance(delay, str):
+                    delay = int(delay)
+                normalized[subject] = SubjectTemplate(message=message, delay_minutes=delay)
+            else:
+                # Skip invalid entries
+                continue
+        except (ValueError, TypeError):
+            # Skip entries that can't be parsed
+            continue
+
+    return normalized if normalized else None
+
+
 class SmsSettingsResponse(BaseModel):
     """SMS settings visible to tenant."""
     is_enabled: bool
@@ -139,7 +171,7 @@ async def get_sms_settings(
         followup_delay_minutes=settings_json.get("followup_delay_minutes", 5),
         followup_sources=settings_json.get("followup_sources", ["email", "voice_call", "sms"]),
         followup_initial_message=settings_json.get("followup_initial_message"),
-        followup_subject_templates=settings_json.get("followup_subject_templates"),
+        followup_subject_templates=normalize_subject_templates(settings_json.get("followup_subject_templates")),
     )
 
 
@@ -222,7 +254,7 @@ async def update_sms_settings(
         followup_delay_minutes=settings_json.get("followup_delay_minutes", 5),
         followup_sources=settings_json.get("followup_sources", ["email", "voice_call", "sms"]),
         followup_initial_message=settings_json.get("followup_initial_message"),
-        followup_subject_templates=settings_json.get("followup_subject_templates"),
+        followup_subject_templates=normalize_subject_templates(settings_json.get("followup_subject_templates")),
     )
 
 

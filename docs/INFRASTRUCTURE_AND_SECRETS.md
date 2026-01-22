@@ -109,7 +109,7 @@
 
 ---
 
-## 4. Telephony & Messaging (Telnyx / Twilio / Voxie)
+## 4. Telephony & Messaging (Telnyx / Twilio)
 
 ### Telnyx (Primary - Voice + SMS)
 
@@ -148,20 +148,11 @@
 | **Phone Number** | `tenant_sms_configs.twilio_phone_number` | Per-tenant |
 | **Webhook Base URL** | `TWILIO_WEBHOOK_URL_BASE` env var | Global |
 
-### Voxie (SMS Only)
-
-| Setting | Location | Description |
-|---------|----------|-------------|
-| **API Key** | `tenant_sms_configs.voxie_api_key` | Per-tenant |
-| **Team ID** | `tenant_sms_configs.voxie_team_id` | Per-tenant |
-| **Phone Number** | `tenant_sms_configs.voxie_phone_number` | Per-tenant |
-
 ### Tenant → Phone Number Routing
 
 ```
 tenant_sms_configs.telnyx_phone_number → Tenant ID lookup
 tenant_sms_configs.twilio_phone_number → Tenant ID lookup
-tenant_sms_configs.voxie_phone_number → Tenant ID lookup
 ```
 
 ---
@@ -283,7 +274,6 @@ tenant_sms_configs.voxie_phone_number → Tenant ID lookup
 | `/webhooks/telnyx/ai-insights` | Telnyx | Caller insights (broken) |
 | `/webhooks/twilio/sms` | Twilio | SMS messages |
 | `/webhooks/twilio/status` | Twilio | SMS status |
-| `/webhooks/voxie/sms` | Voxie | SMS messages |
 | `/webhooks/email/gmail-push` | Google Pub/Sub | Gmail notifications |
 | `/webhooks/zapier/customer-lookup-callback` | Zapier | CRM responses |
 | `/webhooks/customer-service/voice` | Telnyx | CS voice calls |

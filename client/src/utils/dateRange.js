@@ -22,7 +22,7 @@ export const DATE_RANGE_PRESETS = [
 ];
 
 export function resolveTimeZone(timeZone) {
-  return timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  return timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Chicago';
 }
 
 export function formatDateForInput(date, timeZone) {

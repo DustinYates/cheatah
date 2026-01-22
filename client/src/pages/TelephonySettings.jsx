@@ -102,10 +102,6 @@ export default function TelephonySettings() {
     telnyx_messaging_profile_id: '',
     telnyx_connection_id: '',
     telnyx_phone_number: '',
-    // Voxie (SMS only)
-    voxie_api_key_prefix: '',
-    voxie_team_id: '',
-    voxie_phone_number: '',
     // Voice
     voice_phone_number: '',
   });
@@ -123,10 +119,6 @@ export default function TelephonySettings() {
     telnyx_messaging_profile_id: '',
     telnyx_connection_id: '',
     telnyx_phone_number: '',
-    // Voxie (SMS only)
-    voxie_api_key: '',
-    voxie_team_id: '',
-    voxie_phone_number: '',
     // Voice
     voice_phone_number: '',
   });
@@ -146,9 +138,6 @@ export default function TelephonySettings() {
     telnyx_messaging_profile_id: '',
     telnyx_connection_id: '',
     telnyx_phone_number: '',
-    voxie_api_key: '',
-    voxie_team_id: '',
-    voxie_phone_number: '',
   });
   const [revealedCredentials, setRevealedCredentials] = useState({});
   const [revealingFields, setRevealingFields] = useState({});
@@ -197,9 +186,6 @@ export default function TelephonySettings() {
       telnyx_messaging_profile_id: '',
       telnyx_connection_id: '',
       telnyx_phone_number: '',
-      voxie_api_key: '',
-      voxie_team_id: '',
-      voxie_phone_number: '',
     });
   };
 
@@ -214,8 +200,6 @@ export default function TelephonySettings() {
       telnyx_messaging_profile_id: data.telnyx_messaging_profile_id || '',
       telnyx_connection_id: data.telnyx_connection_id || '',
       telnyx_phone_number: data.telnyx_phone_number || '',
-      voxie_team_id: data.voxie_team_id || '',
-      voxie_phone_number: data.voxie_phone_number || '',
       voice_phone_number: data.voice_phone_number || '',
     }));
   };
@@ -251,7 +235,6 @@ export default function TelephonySettings() {
         ...prev,
         twilio_auth_token: '',
         telnyx_api_key: '',
-        voxie_api_key: '',
       }));
       resetCredentialDrafts();
       setIsEditingCredentials(false);
@@ -274,9 +257,6 @@ export default function TelephonySettings() {
       payload.twilio_auth_token = effectiveData.twilio_auth_token;
     } else if (formData.provider === 'telnyx') {
       payload.telnyx_api_key = effectiveData.telnyx_api_key;
-    } else if (formData.provider === 'voxie') {
-      payload.voxie_api_key = effectiveData.voxie_api_key;
-      payload.voxie_team_id = effectiveData.voxie_team_id;
     }
 
     try {
@@ -345,7 +325,7 @@ export default function TelephonySettings() {
     setRevealingFields(prev => ({ ...prev, [field]: true }));
     try {
       let value = null;
-      if (field === 'telnyx_api_key' || field === 'twilio_auth_token' || field === 'voxie_api_key') {
+      if (field === 'telnyx_api_key' || field === 'twilio_auth_token') {
         const data = await api.revealTelephonyCredential(field);
         value = data.value;
       } else {
@@ -389,13 +369,6 @@ export default function TelephonySettings() {
         voiceInbound: `${baseUrl}/api/v1/voice/telnyx/inbound`,
         voiceStatus: `${baseUrl}/api/v1/voice/telnyx/status`,
       };
-    } else if (formData.provider === 'voxie') {
-      return {
-        smsInbound: `${baseUrl}/api/v1/voxie/sms/inbound`,
-        smsStatus: `${baseUrl}/api/v1/voxie/sms/status`,
-        voiceInbound: null,
-        voiceStatus: null,
-      };
     }
     return {
       smsInbound: `${baseUrl}/api/v1/sms/inbound`,
@@ -421,8 +394,6 @@ export default function TelephonySettings() {
       return config.has_twilio_auth_token ? 'configured' : null;
     } else if (formData.provider === 'telnyx') {
       return config.telnyx_api_key_prefix ? 'configured' : null;
-    } else if (formData.provider === 'voxie') {
-      return config.voxie_api_key_prefix ? 'configured' : null;
     }
     return null;
   };
@@ -521,23 +492,6 @@ export default function TelephonySettings() {
       configured: Boolean(config.twilio_phone_number),
     },
   ];
-  const voxieCredentials = [
-    {
-      field: 'voxie_api_key',
-      label: 'API Key',
-      configured: Boolean(config.voxie_api_key_prefix),
-    },
-    {
-      field: 'voxie_team_id',
-      label: 'Team ID',
-      configured: Boolean(config.voxie_team_id),
-    },
-    {
-      field: 'voxie_phone_number',
-      label: 'SMS Phone Number',
-      configured: Boolean(config.voxie_phone_number),
-    },
-  ];
 
   return (
     <div className="telephony-container">
@@ -578,17 +532,6 @@ export default function TelephonySettings() {
               <span className="provider-name">Telnyx</span>
               <span className="provider-desc">- SMS & Voice</span>
             </label>
-            <label className="provider-radio-option">
-              <input
-                type="radio"
-                name="provider"
-                value="voxie"
-                checked={formData.provider === 'voxie'}
-                onChange={(e) => setFormData({ ...formData, provider: e.target.value, voice_enabled: false })}
-              />
-              <span className="provider-name">Voxie</span>
-              <span className="provider-desc">- SMS only</span>
-            </label>
           </div>
         </div>
 
@@ -605,15 +548,13 @@ export default function TelephonySettings() {
               />
               <span className="toggle-label">SMS</span>
             </label>
-            <label className={`toggle-item ${formData.provider === 'voxie' ? 'disabled' : ''}`}>
+            <label className="toggle-item">
               <input
                 type="checkbox"
                 checked={formData.voice_enabled}
                 onChange={(e) => setFormData({ ...formData, voice_enabled: e.target.checked })}
-                disabled={formData.provider === 'voxie'}
               />
               <span className="toggle-label">Voice</span>
-              {formData.provider === 'voxie' && <span className="toggle-badge">N/A</span>}
             </label>
           </div>
         </div>
@@ -667,24 +608,6 @@ export default function TelephonySettings() {
         {!isEditingCredentials && formData.provider === 'telnyx' && (
           <div className="credentials-locked">
             {telnyxCredentials.map(credential => (
-              <CredentialField
-                key={credential.field}
-                label={credential.label}
-                field={credential.field}
-                configured={credential.configured}
-                revealedValue={revealedCredentials[credential.field]}
-                isAdmin={isAdmin}
-                onReveal={handleRevealCredential}
-                onCopy={handleCopyCredential}
-                isRevealing={Boolean(revealingFields[credential.field])}
-              />
-            ))}
-          </div>
-        )}
-
-        {!isEditingCredentials && formData.provider === 'voxie' && (
-          <div className="credentials-locked">
-            {voxieCredentials.map(credential => (
               <CredentialField
                 key={credential.field}
                 label={credential.label}
@@ -792,46 +715,6 @@ export default function TelephonySettings() {
           </div>
         )}
 
-        {isEditingCredentials && formData.provider === 'voxie' && (
-          <div className="credentials-inline">
-            <p className="help-text">Enter new values to rotate credentials.</p>
-            <div className="credentials-row">
-              <div className="form-group">
-                <label>API Key</label>
-                <input
-                  type="password"
-                  value={credentialDrafts.voxie_api_key}
-                  onChange={(e) => setCredentialDrafts({ ...credentialDrafts, voxie_api_key: e.target.value })}
-                />
-              </div>
-              <div className="form-group">
-                <label>Team ID</label>
-                <input
-                  type="text"
-                  value={credentialDrafts.voxie_team_id}
-                  onChange={(e) => setCredentialDrafts({ ...credentialDrafts, voxie_team_id: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="form-group">
-              <label>SMS Phone Number</label>
-              <input
-                type="tel"
-                value={credentialDrafts.voxie_phone_number}
-                onChange={(e) => setCredentialDrafts({ ...credentialDrafts, voxie_phone_number: e.target.value })}
-              />
-            </div>
-            <div className="btn-row">
-              <button
-                className="btn btn-secondary"
-                onClick={validateCredentials}
-                disabled={validating || !getEffectiveFormData().voxie_api_key || !getEffectiveFormData().voxie_team_id}
-              >
-                {validating ? 'Testing...' : 'Test Credentials'}
-              </button>
-            </div>
-          </div>
-        )}
       </CollapsibleSection>
 
       {/* Voice Phone Number (if different from SMS) */}
@@ -853,7 +736,7 @@ export default function TelephonySettings() {
       {/* Webhooks Section */}
       <CollapsibleSection title="Webhook URLs" defaultOpen={false}>
         <p className="help-text" style={{ marginTop: 0, marginBottom: '12px' }}>
-          Configure these URLs in your {formData.provider === 'voxie' ? 'Voxie' : formData.provider === 'telnyx' ? 'Telnyx' : 'Twilio'} dashboard
+          Configure these URLs in your {formData.provider === 'telnyx' ? 'Telnyx' : 'Twilio'} dashboard
         </p>
         <div className="webhook-grid">
           <div className="webhook-item">

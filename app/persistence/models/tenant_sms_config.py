@@ -37,11 +37,6 @@ class TenantSmsConfig(Base):
     telnyx_connection_id = Column(String(255), nullable=True)  # Required for Voice/TeXML
     telnyx_phone_number = Column(String(50), nullable=True)  # Tenant's Telnyx phone number
 
-    # Voxie configuration (SMS only)
-    voxie_api_key = Column(String(255), nullable=True)  # Voxie API key
-    voxie_team_id = Column(String(50), nullable=True)  # Voxie Team ID
-    voxie_phone_number = Column(String(50), nullable=True)  # Tenant's Voxie phone number
-
     # Voice configuration
     voice_enabled = Column(Boolean, default=False, nullable=False)
     voice_phone_number = Column(String(50), nullable=True)  # Optional separate voice number

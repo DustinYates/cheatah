@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { HelpCircle } from 'lucide-react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -73,6 +74,13 @@ const formatNumber = (num) => {
   if (!num || num === 0) return '0';
   return num.toLocaleString();
 };
+
+const InfoTooltip = ({ text }) => (
+  <span className="info-tooltip">
+    <HelpCircle size={16} />
+    <span className="info-tooltip-text">{text}</span>
+  </span>
+);
 
 const parseRangeFromParams = (params, timeZone) => {
   const preset = params.get('range');
@@ -690,7 +698,10 @@ export default function ConversationAnalytics() {
           <section className="conv-analytics-card conv-analytics-card-wide">
             <div className="conv-analytics-card-header">
               <div>
-                <h2>Channel Effectiveness</h2>
+                <h2>
+                  Channel Effectiveness
+                  <InfoTooltip text="Compares performance metrics across Web Chat, SMS, and Voice channels. Conversion shows % of conversations that captured leads." />
+                </h2>
                 <p>Compare performance across communication channels.</p>
               </div>
             </div>
@@ -735,7 +746,10 @@ export default function ConversationAnalytics() {
           <section className="conv-analytics-card">
             <div className="conv-analytics-card-header">
               <div>
-                <h2>AI Performance</h2>
+                <h2>
+                  AI Performance
+                  <InfoTooltip text="Measures how well the AI handles conversations without human escalation. Resolution rate shows % resolved by AI alone." />
+                </h2>
                 <p>Conversations resolved without human intervention.</p>
               </div>
             </div>
@@ -787,7 +801,10 @@ export default function ConversationAnalytics() {
           <section className="conv-analytics-card">
             <div className="conv-analytics-card-header">
               <div>
-                <h2>Response Time Distribution</h2>
+                <h2>
+                  Response Time Distribution
+                  <InfoTooltip text="P50, P90, P99 are response time percentiles. P50 means 50% of responses were faster than this time." />
+                </h2>
                 <p>Response time percentiles across channels.</p>
               </div>
             </div>
@@ -841,7 +858,10 @@ export default function ConversationAnalytics() {
           <section className="conv-analytics-card">
             <div className="conv-analytics-card-header">
               <div>
-                <h2>Drop-Off Analytics</h2>
+                <h2>
+                  Drop-Off Analytics
+                  <InfoTooltip text="Tracks conversations where users left without completing their inquiry. Lower drop-off indicates better engagement." />
+                </h2>
                 <p>Conversations that ended without resolution.</p>
               </div>
             </div>
@@ -894,7 +914,10 @@ export default function ConversationAnalytics() {
           <section className="conv-analytics-card">
             <div className="conv-analytics-card-header">
               <div>
-                <h2>User Friction Signals</h2>
+                <h2>
+                  User Friction Signals
+                  <InfoTooltip text="Detects signs of user frustration like complaints or impatience in conversations." />
+                </h2>
                 <p>Detected frustration and impatience in conversations.</p>
               </div>
             </div>
@@ -946,7 +969,10 @@ export default function ConversationAnalytics() {
           <section className="conv-analytics-card">
             <div className="conv-analytics-card-header">
               <div>
-                <h2>Conversation Confusion</h2>
+                <h2>
+                  Conversation Confusion
+                  <InfoTooltip text="Identifies when users or the bot repeated themselves or asked for clarification." />
+                </h2>
                 <p>Repeated questions and clarification requests.</p>
               </div>
             </div>
@@ -986,7 +1012,10 @@ export default function ConversationAnalytics() {
           <section className="conv-analytics-card conv-analytics-card-wide">
             <div className="conv-analytics-card-header">
               <div>
-                <h2>Demand Intelligence</h2>
+                <h2>
+                  Demand Intelligence
+                  <InfoTooltip text="Shows location and class demand patterns. Peak Hours displays the busiest times in Chicago timezone (CST/CDT)." />
+                </h2>
                 <p>Location and class demand patterns.</p>
               </div>
             </div>

@@ -1661,3 +1661,221 @@ async def get_widget_analytics(
         visibility=visibility_metrics,
         attention=attention_metrics,
     )
+
+
+class SettingsVariationMetrics(BaseModel):
+    """Metrics for a specific widget settings configuration."""
+
+    impressions: int
+    widget_opens: int
+    open_rate: float
+    manual_opens: int
+    auto_opens: int
+    first_seen: str
+    last_seen: str
+
+
+class SettingsVariation(BaseModel):
+    """A unique widget settings configuration with its performance metrics."""
+
+    settings_hash: str
+    settings: dict
+    metrics: SettingsVariationMetrics
+
+
+class SettingsSnapshotsResponse(BaseModel):
+    """Response containing all widget settings variations and their metrics."""
+
+    start_date: str
+    end_date: str
+    timezone: str
+    variations: list[SettingsVariation]
+    total_variations: int
+
+
+@router.get("/widget/settings-snapshots", response_model=SettingsSnapshotsResponse)
+async def get_widget_settings_snapshots(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    start_date: Annotated[str | None, Query()] = None,
+    end_date: Annotated[str | None, Query()] = None,
+    timezone: Annotated[str | None, Query()] = None,
+) -> SettingsSnapshotsResponse:
+    """Get unique widget settings configurations and their performance metrics for A/B testing analysis."""
+    # Get tenant info
+    tenant_result = await db.execute(
+        select(Tenant.created_at).where(Tenant.id == tenant_id)
+    )
+    tenant_created_at = tenant_result.scalar_one_or_none()
+    if not tenant_created_at:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found",
+        )
+
+    # Resolve timezone
+    sms_config_result = await db.execute(
+        select(TenantSmsConfig.timezone).where(TenantSmsConfig.tenant_id == tenant_id)
+    )
+    tenant_timezone = sms_config_result.scalar_one_or_none()
+    requested_timezone = _resolve_timezone(timezone)
+    effective_timezone = (
+        _resolve_timezone(tenant_timezone) if tenant_timezone else requested_timezone
+    )
+
+    # Parse date range
+    tenant_start_date = tenant_created_at.date()
+    today = datetime.utcnow().date()
+    parsed_start = _normalize_date(start_date)
+    parsed_end = _normalize_date(end_date)
+
+    if parsed_start is None and parsed_end is None:
+        parsed_end = today
+        parsed_start = parsed_end - timedelta(days=29)
+    elif parsed_start is None and parsed_end is not None:
+        parsed_start = parsed_end - timedelta(days=29)
+    elif parsed_end is None and parsed_start is not None:
+        parsed_end = today
+
+    range_start = parsed_start or tenant_start_date
+    range_end = parsed_end or today
+
+    if range_start < tenant_start_date:
+        range_start = tenant_start_date
+    if range_end > today:
+        range_end = today
+    if range_start > range_end:
+        range_start = range_end
+
+    # Convert to UTC datetime range
+    tz = pytz.timezone(effective_timezone)
+    start_local = tz.localize(datetime.combine(range_start, time.min))
+    end_local = tz.localize(datetime.combine(range_end, time.max))
+    start_datetime = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
+    end_datetime = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
+
+    # Get all impression events with settings snapshots
+    impressions_stmt = (
+        select(
+            WidgetEvent.settings_snapshot,
+            WidgetEvent.visitor_id,
+            WidgetEvent.created_at,
+        )
+        .where(
+            WidgetEvent.tenant_id == tenant_id,
+            WidgetEvent.event_type == "impression",
+            WidgetEvent.created_at >= start_datetime,
+            WidgetEvent.created_at <= end_datetime,
+            WidgetEvent.settings_snapshot.isnot(None),
+        )
+    )
+    impressions_result = await db.execute(impressions_stmt)
+
+    # Group impressions by settings snapshot
+    import hashlib
+    import json
+
+    settings_groups: dict[str, dict] = {}
+
+    for row in impressions_result:
+        settings = row.settings_snapshot
+        if not settings:
+            continue
+
+        # Create a hash of the settings for grouping
+        settings_str = json.dumps(settings, sort_keys=True)
+        settings_hash = hashlib.md5(settings_str.encode()).hexdigest()[:12]
+
+        if settings_hash not in settings_groups:
+            settings_groups[settings_hash] = {
+                "settings": settings,
+                "visitor_ids": set(),
+                "first_seen": row.created_at,
+                "last_seen": row.created_at,
+                "impressions": 0,
+            }
+
+        group = settings_groups[settings_hash]
+        group["visitor_ids"].add(row.visitor_id)
+        group["impressions"] += 1
+        if row.created_at < group["first_seen"]:
+            group["first_seen"] = row.created_at
+        if row.created_at > group["last_seen"]:
+            group["last_seen"] = row.created_at
+
+    # Get open events for each visitor to calculate conversion rates
+    if settings_groups:
+        all_visitor_ids = set()
+        for group in settings_groups.values():
+            all_visitor_ids.update(group["visitor_ids"])
+
+        opens_stmt = (
+            select(
+                WidgetEvent.visitor_id,
+                WidgetEvent.event_type,
+            )
+            .where(
+                WidgetEvent.tenant_id == tenant_id,
+                WidgetEvent.event_type.in_(["widget_open", "manual_open", "auto_open"]),
+                WidgetEvent.created_at >= start_datetime,
+                WidgetEvent.created_at <= end_datetime,
+                WidgetEvent.visitor_id.in_(list(all_visitor_ids)),
+            )
+        )
+        opens_result = await db.execute(opens_stmt)
+
+        # Map visitors to their open events
+        visitor_opens: dict[str, dict] = {}
+        for row in opens_result:
+            if row.visitor_id not in visitor_opens:
+                visitor_opens[row.visitor_id] = {
+                    "widget_open": 0,
+                    "manual_open": 0,
+                    "auto_open": 0,
+                }
+            visitor_opens[row.visitor_id][row.event_type] += 1
+
+        # Calculate metrics for each settings variation
+        variations = []
+        for settings_hash, group in settings_groups.items():
+            widget_opens = 0
+            manual_opens = 0
+            auto_opens = 0
+
+            for visitor_id in group["visitor_ids"]:
+                if visitor_id in visitor_opens:
+                    widget_opens += visitor_opens[visitor_id]["widget_open"]
+                    manual_opens += visitor_opens[visitor_id]["manual_open"]
+                    auto_opens += visitor_opens[visitor_id]["auto_open"]
+
+            impressions = group["impressions"]
+            open_rate = widget_opens / impressions if impressions > 0 else 0
+
+            variations.append(
+                SettingsVariation(
+                    settings_hash=settings_hash,
+                    settings=group["settings"],
+                    metrics=SettingsVariationMetrics(
+                        impressions=impressions,
+                        widget_opens=widget_opens,
+                        open_rate=round(open_rate, 3),
+                        manual_opens=manual_opens,
+                        auto_opens=auto_opens,
+                        first_seen=group["first_seen"].isoformat(),
+                        last_seen=group["last_seen"].isoformat(),
+                    ),
+                )
+            )
+
+        # Sort by impressions descending
+        variations.sort(key=lambda v: v.metrics.impressions, reverse=True)
+    else:
+        variations = []
+
+    return SettingsSnapshotsResponse(
+        start_date=range_start.isoformat(),
+        end_date=range_end.isoformat(),
+        timezone=effective_timezone,
+        variations=variations,
+        total_variations=len(variations),
+    )

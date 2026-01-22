@@ -434,7 +434,11 @@ export default function Dashboard() {
   // Format relative time for last activity
   const formatLastActivity = (isoString) => {
     if (!isoString) return 'No activity';
-    const date = new Date(isoString);
+    // Backend returns UTC timestamps without 'Z' suffix - add it if missing
+    // Check if string already has timezone info (ends with Z or has +/-HH:MM pattern)
+    const hasTimezone = /Z$|[+-]\d{2}:\d{2}$/.test(isoString);
+    const utcString = hasTimezone ? isoString : isoString + 'Z';
+    const date = new Date(utcString);
     const now = new Date();
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / 60000);
@@ -480,21 +484,21 @@ export default function Dashboard() {
           <div className="card-header">
             <h2>Tenants</h2>
           </div>
-          <CompactTable containerClassName="leads-table-container" tableClassName="leads-table">
+          <CompactTable containerClassName="leads-table-container" tableClassName="leads-table master-admin-table">
             <thead>
               <tr>
                 <th>#</th>
                 <th>Name</th>
                 <th>Status</th>
                 <th>Email</th>
-                <th>Phone Numbers</th>
-                <th>SMS In</th>
-                <th>SMS Out</th>
+                <th>Phones</th>
+                <th>In</th>
+                <th>Out</th>
                 <th>Calls</th>
-                <th>Call Mins</th>
-                <th>Chatbot Leads</th>
-                <th>Total Leads</th>
-                <th>Last Activity</th>
+                <th>Mins</th>
+                <th>Bot</th>
+                <th>Leads</th>
+                <th>Activity</th>
               </tr>
             </thead>
             <tbody>

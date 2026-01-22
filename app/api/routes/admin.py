@@ -12,6 +12,8 @@ from app.api.schemas.tenant import (
     AdminTenantUpdate,
     TenantCreate,
     TenantOverviewStats,
+    TenantServiceStatus,
+    TenantServicesOverview,
     TenantsOverviewResponse,
 )
 from app.persistence.database import get_db
@@ -21,6 +23,10 @@ from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.lead import Lead
 from app.persistence.models.tenant import Tenant, User
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
+from app.persistence.models.tenant_voice_config import TenantVoiceConfig
+from app.persistence.models.tenant_widget_config import TenantWidgetConfig
+from app.persistence.models.tenant_customer_service_config import TenantCustomerServiceConfig
+from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 from app.persistence.repositories.tenant_repository import TenantRepository
 
 router = APIRouter()
@@ -146,17 +152,19 @@ async def get_tenants_overview(
             "gmail_watch_active": gmail_watch_active,
         }
 
-    # Query SMS config (Telnyx phone numbers) per tenant
+    # Query SMS config (Telnyx phone numbers and enabled status) per tenant
     sms_config_query = (
         select(
             TenantSmsConfig.tenant_id,
             TenantSmsConfig.telnyx_phone_number,
             TenantSmsConfig.voice_phone_number,
+            TenantSmsConfig.is_enabled,
         )
         .where(TenantSmsConfig.tenant_id.in_(tenant_ids))
     )
     sms_config_result = await db.execute(sms_config_query)
     sms_configs = {}
+    sms_service_status = {}
     for row in sms_config_result:
         phone_numbers = []
         if row.telnyx_phone_number:
@@ -164,6 +172,10 @@ async def get_tenants_overview(
         if row.voice_phone_number and row.voice_phone_number != row.telnyx_phone_number:
             phone_numbers.append(row.voice_phone_number)
         sms_configs[row.tenant_id] = phone_numbers
+        sms_service_status[row.tenant_id] = {
+            "enabled": row.is_enabled or False,
+            "configured": len(phone_numbers) > 0,
+        }
 
     # Query SMS message counts (incoming/outgoing) per tenant
     # Incoming = user messages in SMS conversations
@@ -218,6 +230,77 @@ async def get_tenants_overview(
     chatbot_leads_result = await db.execute(chatbot_leads_query)
     chatbot_leads_counts = {row[0]: row[1] for row in chatbot_leads_result}
 
+    # Query Voice config per tenant
+    voice_config_query = (
+        select(
+            TenantVoiceConfig.tenant_id,
+            TenantVoiceConfig.is_enabled,
+            TenantVoiceConfig.live_transfer_number,
+        )
+        .where(TenantVoiceConfig.tenant_id.in_(tenant_ids))
+    )
+    voice_result = await db.execute(voice_config_query)
+    voice_service_status = {
+        row.tenant_id: {
+            "enabled": row.is_enabled or False,
+            "configured": bool(row.live_transfer_number),
+        }
+        for row in voice_result
+    }
+
+    # Query Widget config per tenant
+    widget_config_query = (
+        select(
+            TenantWidgetConfig.tenant_id,
+            TenantWidgetConfig.settings,
+        )
+        .where(TenantWidgetConfig.tenant_id.in_(tenant_ids))
+    )
+    widget_result = await db.execute(widget_config_query)
+    widget_service_status = {
+        row.tenant_id: {
+            "enabled": row.settings is not None and len(row.settings) > 0,
+            "configured": row.settings is not None and len(row.settings) > 0,
+        }
+        for row in widget_result
+    }
+
+    # Query Customer Service config per tenant
+    cs_config_query = (
+        select(
+            TenantCustomerServiceConfig.tenant_id,
+            TenantCustomerServiceConfig.is_enabled,
+            TenantCustomerServiceConfig.zapier_webhook_url,
+        )
+        .where(TenantCustomerServiceConfig.tenant_id.in_(tenant_ids))
+    )
+    cs_result = await db.execute(cs_config_query)
+    cs_service_status = {
+        row.tenant_id: {
+            "enabled": row.is_enabled or False,
+            "configured": bool(row.zapier_webhook_url),
+        }
+        for row in cs_result
+    }
+
+    # Query Prompt config per tenant
+    prompt_config_query = (
+        select(
+            TenantPromptConfig.tenant_id,
+            TenantPromptConfig.is_active,
+            TenantPromptConfig.validated_at,
+        )
+        .where(TenantPromptConfig.tenant_id.in_(tenant_ids))
+    )
+    prompt_result = await db.execute(prompt_config_query)
+    prompt_service_status = {
+        row.tenant_id: {
+            "enabled": row.is_active or False,
+            "configured": row.validated_at is not None,
+        }
+        for row in prompt_result
+    }
+
     # Build response
     tenant_stats = []
     active_count = 0
@@ -226,6 +309,40 @@ async def get_tenants_overview(
             active_count += 1
         email_info = email_configs.get(tenant.id, {})
         call_info = call_stats.get(tenant.id, {"count": 0, "duration_seconds": 0})
+        # Build services overview for this tenant
+        sms_status = sms_service_status.get(tenant.id, {"enabled": False, "configured": False})
+        voice_status = voice_service_status.get(tenant.id, {"enabled": False, "configured": False})
+        widget_status = widget_service_status.get(tenant.id, {"enabled": False, "configured": False})
+        cs_status = cs_service_status.get(tenant.id, {"enabled": False, "configured": False})
+        prompt_status = prompt_service_status.get(tenant.id, {"enabled": False, "configured": False})
+
+        services_overview = TenantServicesOverview(
+            sms=TenantServiceStatus(
+                enabled=sms_status["enabled"],
+                configured=sms_status["configured"],
+            ),
+            voice=TenantServiceStatus(
+                enabled=voice_status["enabled"],
+                configured=voice_status["configured"],
+            ),
+            email=TenantServiceStatus(
+                enabled=email_info.get("gmail_connected", False),
+                configured=email_info.get("gmail_watch_active", False),
+            ),
+            widget=TenantServiceStatus(
+                enabled=widget_status["enabled"],
+                configured=widget_status["configured"],
+            ),
+            customer_service=TenantServiceStatus(
+                enabled=cs_status["enabled"],
+                configured=cs_status["configured"],
+            ),
+            prompt=TenantServiceStatus(
+                enabled=prompt_status["enabled"],
+                configured=prompt_status["configured"],
+            ),
+        )
+
         tenant_stats.append(
             TenantOverviewStats(
                 id=tenant.id,
@@ -247,6 +364,7 @@ async def get_tenants_overview(
                 call_count=call_info["count"],
                 call_minutes=round(call_info["duration_seconds"] / 60, 1),
                 chatbot_leads_count=chatbot_leads_counts.get(tenant.id, 0),
+                services=services_overview,
             )
         )
 

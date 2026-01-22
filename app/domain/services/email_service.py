@@ -412,8 +412,6 @@ class EmailService:
                 if not self._should_capture_lead_from_subject(subject, email_config):
                     print(f"[EMAIL_SERVICE] SKIPPING email - subject '{subject}' does not match configured prefixes", flush=True)
                     logger.info(f"Skipping email - subject does not match lead capture prefixes: {subject}")
-                    # Mark as read so we don't keep processing it
-                    gmail_client.mark_as_read(message_id)
                     continue
 
                 # Process the inbound email (lead capture decision happens inside based on subject)

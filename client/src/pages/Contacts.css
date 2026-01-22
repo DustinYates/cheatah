@@ -260,25 +260,33 @@
   color: #9ca3af;
 }
 
-/* Column Widths - No Status */
+/* Column Widths */
 .col-name {
-  width: 28%;
+  width: 20%;
+}
+
+.col-customer-name {
+  width: 160px;
 }
 
 .col-phone {
-  width: 140px;
+  width: 130px;
 }
 
 .col-email {
-  width: 220px;
+  width: 180px;
 }
 
 .col-added {
+  width: 90px;
+}
+
+.col-first-contacted {
   width: 100px;
 }
 
 .col-last-contacted {
-  width: 110px;
+  width: 100px;
 }
 
 .col-actions {
@@ -515,6 +523,20 @@
 }
 
 /* Responsive */
+@media (max-width: 1024px) {
+  .contacts-table th.col-first-contacted,
+  .contacts-table td.col-first-contacted {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .contacts-table th.col-customer-name,
+  .contacts-table td.col-customer-name {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
   .contacts-page .page-header {
     flex-direction: column;

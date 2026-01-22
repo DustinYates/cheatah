@@ -1187,3 +1187,69 @@
 .leads-table td:last-child {
   padding-right: 16px;
 }
+
+/* ========================================
+   Service Status Badges (Master Admin)
+   ======================================== */
+
+.services-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.service-badge {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  cursor: default;
+}
+
+.service-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Active and fully configured */
+.service--active {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+/* Enabled but not fully configured */
+.service--partial {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+
+/* Disabled */
+.service--inactive {
+  background: #f1f5f9;
+  color: #94a3b8;
+  border: 1px solid #e2e8f0;
+}
+
+.service-badge:hover {
+  transform: scale(1.1);
+}
+
+/* Compact styling for master admin table */
+.master-admin-table .services-badges {
+  gap: 2px;
+}
+
+.master-admin-table .service-badge {
+  width: 18px;
+  height: 18px;
+}
+
+.master-admin-table .service-badge svg {
+  width: 10px;
+  height: 10px;
+}

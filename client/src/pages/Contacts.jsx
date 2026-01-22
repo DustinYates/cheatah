@@ -54,8 +54,9 @@ export default function Contacts() {
 
   const needsTenant = user?.is_global_admin && !selectedTenantId;
 
-  const filteredContacts = contacts.filter(contact => 
+  const filteredContacts = contacts.filter(contact =>
     (contact.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (contact.customer_name || '').toLowerCase().includes(search.toLowerCase()) ||
     (contact.phone || '').includes(search) ||
     (contact.email || '').toLowerCase().includes(search.toLowerCase())
   );
@@ -227,9 +228,11 @@ export default function Contacts() {
                   </span>
                 </th>
                 <th className="col-name">Name</th>
+                <th className="col-customer-name">Customer Name</th>
                 <th className="col-phone">Phone</th>
                 <th className="col-email">Email</th>
                 <th className="col-added">Added</th>
+                <th className="col-first-contacted">First Contacted</th>
                 <th className="col-last-contacted">Last Contacted</th>
                 <th className="col-actions">Actions</th>
               </tr>
@@ -257,6 +260,11 @@ export default function Contacts() {
                         </span>
                       </div>
                     </td>
+                    <td className="col-customer-name">
+                      <span className="contact-text" title={contact.customer_name || '-'}>
+                        {contact.customer_name || '-'}
+                      </span>
+                    </td>
                     <td className="col-phone">
                       <span className="contact-text contact-phone" title={contact.phone || '-'}>
                         {contact.phone || '-'}
@@ -271,6 +279,15 @@ export default function Contacts() {
                       <span className="contact-date">
                         {formatDateTimeParts(contact.created_at).date}
                       </span>
+                    </td>
+                    <td className="col-first-contacted">
+                      {contact.first_contacted ? (
+                        <span className="contact-date" title={formatDateTimeParts(contact.first_contacted).time}>
+                          {formatDateTimeParts(contact.first_contacted).date}
+                        </span>
+                      ) : (
+                        <span className="contact-text-muted">-</span>
+                      )}
                     </td>
                     <td className="col-last-contacted">
                       {contact.last_contacted ? (

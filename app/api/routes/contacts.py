@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, func, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_tenant_context
@@ -11,6 +11,10 @@ from app.persistence.models.contact import Contact
 from app.persistence.models.lead import Lead
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.tenant import User
+from app.persistence.models.call import Call
+from app.persistence.models.call_summary import CallSummary
+from app.persistence.models.email_ingestion_log import EmailIngestionLog
+from app.persistence.models.jackrabbit_customer import JackrabbitCustomer
 from app.persistence.repositories.contact_repository import ContactRepository
 from app.domain.services.contact_merge_service import ContactMergeService
 
@@ -23,12 +27,14 @@ class ContactResponse(BaseModel):
     id: int
     tenant_id: int
     name: str | None
+    customer_name: str | None = None
     email: str | None
     phone: str | None
     source: str | None
     lead_id: int | None
     merged_into_contact_id: int | None
     created_at: str
+    first_contacted: str | None = None
     last_contacted: str | None = None
 
     class Config:
@@ -132,8 +138,112 @@ class CombinedHistoryResponse(BaseModel):
     aliases: list[ContactAliasResponse]
 
 
+async def _get_customer_names_by_phone(
+    db: AsyncSession,
+    tenant_id: int,
+    phone_numbers: list[str],
+) -> dict[str, str]:
+    """Get customer names from JackrabbitCustomer cache by phone number.
+
+    Returns dict of phone_number -> customer_name
+    """
+    if not phone_numbers:
+        return {}
+
+    stmt = select(
+        JackrabbitCustomer.phone_number,
+        JackrabbitCustomer.name
+    ).where(
+        JackrabbitCustomer.tenant_id == tenant_id,
+        JackrabbitCustomer.phone_number.in_(phone_numbers),
+    )
+    result = await db.execute(stmt)
+    return {row.phone_number: row.name for row in result if row.name}
+
+
+async def _get_contact_communication_timestamps(
+    db: AsyncSession,
+    contact_ids: list[int],
+    tenant_id: int,
+) -> dict[int, tuple[str | None, str | None]]:
+    """Get first and last contacted timestamps for contacts across all channels.
+
+    Returns dict of contact_id -> (first_contacted, last_contacted)
+    """
+    if not contact_ids:
+        return {}
+
+    # Subquery 1: Messages via Lead -> Conversation -> Message
+    messages_query = (
+        select(
+            Contact.id.label("contact_id"),
+            Message.created_at.label("timestamp"),
+        )
+        .select_from(Contact)
+        .join(Lead, Contact.lead_id == Lead.id)
+        .join(Conversation, Lead.conversation_id == Conversation.id)
+        .join(Message, Message.conversation_id == Conversation.id)
+        .where(
+            Contact.id.in_(contact_ids),
+            Message.created_at.isnot(None),
+        )
+    )
+
+    # Subquery 2: Calls via CallSummary -> Call
+    calls_query = (
+        select(
+            CallSummary.contact_id.label("contact_id"),
+            Call.started_at.label("timestamp"),
+        )
+        .select_from(CallSummary)
+        .join(Call, CallSummary.call_id == Call.id)
+        .where(
+            CallSummary.contact_id.in_(contact_ids),
+            Call.started_at.isnot(None),
+        )
+    )
+
+    # Subquery 3: Emails via Lead -> EmailIngestionLog
+    emails_query = (
+        select(
+            Contact.id.label("contact_id"),
+            EmailIngestionLog.received_at.label("timestamp"),
+        )
+        .select_from(Contact)
+        .join(Lead, Contact.lead_id == Lead.id)
+        .join(EmailIngestionLog, EmailIngestionLog.lead_id == Lead.id)
+        .where(
+            Contact.id.in_(contact_ids),
+            EmailIngestionLog.status == "processed",
+            EmailIngestionLog.received_at.isnot(None),
+        )
+    )
+
+    # Combine all subqueries with UNION ALL
+    combined = union_all(messages_query, calls_query, emails_query).subquery()
+
+    # Aggregate to get min and max timestamps per contact
+    final_query = select(
+        combined.c.contact_id,
+        func.min(combined.c.timestamp).label("first_contacted"),
+        func.max(combined.c.timestamp).label("last_contacted"),
+    ).group_by(combined.c.contact_id)
+
+    result = await db.execute(final_query)
+
+    timestamps: dict[int, tuple[str | None, str | None]] = {}
+    for row in result:
+        first = row.first_contacted.isoformat() if row.first_contacted else None
+        last = row.last_contacted.isoformat() if row.last_contacted else None
+        timestamps[row.contact_id] = (first, last)
+
+    return timestamps
+
+
 def _contact_to_response(
     contact: Contact,
+    customer_name: str | None = None,
+    first_contacted: str | None = None,
     last_contacted: str | None = None,
 ) -> ContactResponse:
     """Convert a Contact model to ContactResponse."""
@@ -141,12 +251,14 @@ def _contact_to_response(
         id=contact.id,
         tenant_id=contact.tenant_id,
         name=contact.name,
+        customer_name=customer_name,
         email=contact.email,
         phone=contact.phone,
         source=contact.source,
         lead_id=contact.lead_id,
         merged_into_contact_id=contact.merged_into_contact_id,
         created_at=contact.created_at.isoformat() if contact.created_at else "",
+        first_contacted=first_contacted,
         last_contacted=last_contacted,
     )
 
@@ -174,30 +286,18 @@ async def list_contacts(
         limit=page_size,
     )
 
-    # Query last contacted dates for all contacts in a single efficient query
-    # This joins Contact -> Lead -> Conversation -> Message to find the max message timestamp
     contact_ids = [c.id for c in contacts]
-    last_contacted_map: dict[int, str | None] = {}
+    timestamps_map: dict[int, tuple[str | None, str | None]] = {}
+    customer_names_map: dict[str, str] = {}
 
     if contact_ids:
-        # Subquery to get the max message created_at for each contact
-        last_contacted_query = (
-            select(
-                Contact.id.label("contact_id"),
-                func.max(Message.created_at).label("last_contacted"),
-            )
-            .select_from(Contact)
-            .outerjoin(Lead, Contact.lead_id == Lead.id)
-            .outerjoin(Conversation, Lead.conversation_id == Conversation.id)
-            .outerjoin(Message, Message.conversation_id == Conversation.id)
-            .where(Contact.id.in_(contact_ids))
-            .group_by(Contact.id)
-        )
+        # Get first/last contacted timestamps across all channels (messages, calls, emails)
+        timestamps_map = await _get_contact_communication_timestamps(db, contact_ids, tenant_id)
 
-        result = await db.execute(last_contacted_query)
-        for row in result:
-            if row.last_contacted:
-                last_contacted_map[row.contact_id] = row.last_contacted.isoformat()
+        # Get customer names from Jackrabbit cache by phone number
+        phone_numbers = [c.phone for c in contacts if c.phone]
+        if phone_numbers:
+            customer_names_map = await _get_customer_names_by_phone(db, tenant_id, phone_numbers)
 
     # For now, estimate total as we don't have a count method
     # If we get a full page, there might be more
@@ -207,7 +307,12 @@ async def list_contacts(
 
     return ContactListResponse(
         items=[
-            _contact_to_response(c, last_contacted=last_contacted_map.get(c.id))
+            _contact_to_response(
+                c,
+                customer_name=customer_names_map.get(c.phone) if c.phone else None,
+                first_contacted=timestamps_map.get(c.id, (None, None))[0],
+                last_contacted=timestamps_map.get(c.id, (None, None))[1],
+            )
             for c in contacts
         ],
         total=total,

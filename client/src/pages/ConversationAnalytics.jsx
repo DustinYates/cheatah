@@ -860,7 +860,7 @@ export default function ConversationAnalytics() {
               <div>
                 <h2>
                   Drop-Off Analytics
-                  <InfoTooltip text="Tracks conversations where users left without completing their inquiry. Lower drop-off indicates better engagement." />
+                  <InfoTooltip text="A conversation is 'completed' when it ends with a resolution: lead captured, registration link sent, escalation handled, or explicit goodbye. 'Dropped' means the user stopped responding without any resolution signal. Lower drop-off rates indicate better engagement." />
                 </h2>
                 <p>Conversations that ended without resolution.</p>
               </div>

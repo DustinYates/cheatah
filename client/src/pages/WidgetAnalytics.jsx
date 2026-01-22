@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Download } from 'lucide-react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -288,21 +289,21 @@ export default function WidgetAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Widget Impressions
-                <span className="info-icon" title="Total number of times the chat widget loaded on a page. Each page visit where the widget appears counts as one impression.">i</span>
+                <span className="info-icon" data-tooltip="Total number of times the chat widget loaded on a page. Each page visit where the widget appears counts as one impression.">i</span>
               </span>
               <span className="metric-value">{formatNumber(data.visibility.impressions)}</span>
             </div>
             <div className="metric-row">
               <span className="metric-label">
                 Render Success Rate
-                <span className="info-icon" title="Percentage of widget load attempts that rendered successfully without JavaScript errors. Low rates may indicate script conflicts or browser compatibility issues.">i</span>
+                <span className="info-icon" data-tooltip="Percentage of widget load attempts that rendered successfully without JavaScript errors. Low rates may indicate script conflicts or browser compatibility issues.">i</span>
               </span>
               <span className="metric-value">{formatPercent(data.visibility.render_success_rate)}</span>
             </div>
             <div className="metric-row">
               <span className="metric-label">
                 Above-the-Fold Views
-                <span className="info-icon" title="Number of times the widget was visible without the visitor scrolling. Higher rates mean better initial visibility and more engagement opportunities.">i</span>
+                <span className="info-icon" data-tooltip="Number of times the widget was visible without the visitor scrolling. Higher rates mean better initial visibility and more engagement opportunities.">i</span>
               </span>
               <span className="metric-value">
                 {formatNumber(data.visibility.above_fold_views)} ({formatPercent(data.visibility.above_fold_rate)})
@@ -311,7 +312,7 @@ export default function WidgetAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Avg Time to First View
-                <span className="info-icon" title="Average time from page load until the widget becomes visible in the viewport. Lower times mean faster engagement opportunities.">i</span>
+                <span className="info-icon" data-tooltip="Average time from page load until the widget becomes visible in the viewport. Lower times mean faster engagement opportunities.">i</span>
               </span>
               <span className="metric-value">{formatTime(data.visibility.avg_time_to_first_view_ms)}</span>
             </div>
@@ -330,7 +331,7 @@ export default function WidgetAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Auto-Open Status
-                <span className="info-icon" title="Current setting for automatic widget expansion. When enabled, the widget opens after the specified delay to proactively engage visitors.">i</span>
+                <span className="info-icon" data-tooltip="Current setting for automatic widget expansion. When enabled, the widget opens after the specified delay to proactively engage visitors.">i</span>
               </span>
               <span className="metric-value">
                 {isAutoOpenEnabled ? `Enabled (${autoOpenDelay}s delay)` : 'Disabled'}
@@ -339,7 +340,7 @@ export default function WidgetAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Widget Opens
-                <span className="info-icon" title="Total times the chat window was expanded (both manual clicks and auto-opens combined). The percentage shows your overall engagement rate.">i</span>
+                <span className="info-icon" data-tooltip="Total times the chat window was expanded (both manual clicks and auto-opens combined). The percentage shows your overall engagement rate.">i</span>
               </span>
               <span className="metric-value">
                 {formatNumber(data.attention.widget_opens)} ({formatPercent(data.attention.open_rate)})
@@ -348,7 +349,7 @@ export default function WidgetAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Manual Opens
-                <span className="info-icon" title="Times visitors clicked to open the widget themselves. High manual opens indicate strong visitor intent and interest in engaging.">i</span>
+                <span className="info-icon" data-tooltip="Times visitors clicked to open the widget themselves. High manual opens indicate strong visitor intent and interest in engaging.">i</span>
               </span>
               <span className="metric-value">
                 {formatNumber(data.attention.manual_opens)} ({formatPercent(data.attention.manual_open_rate)})
@@ -357,14 +358,14 @@ export default function WidgetAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Auto-Opens
-                <span className="info-icon" title="Times the widget opened automatically based on your auto-open settings. Compare with dismiss rate to measure auto-open effectiveness.">i</span>
+                <span className="info-icon" data-tooltip="Times the widget opened automatically based on your auto-open settings. Compare with dismiss rate to measure auto-open effectiveness.">i</span>
               </span>
               <span className="metric-value">{formatNumber(data.attention.auto_opens)}</span>
             </div>
             <div className="metric-row">
               <span className="metric-label">
                 Auto-Open Dismiss Rate
-                <span className="info-icon" title="Percentage of auto-opens where visitors immediately closed the widget. High rates may suggest adjusting the auto-open delay or disabling auto-open.">i</span>
+                <span className="info-icon" data-tooltip="Percentage of auto-opens where visitors immediately closed the widget. High rates may suggest adjusting the auto-open delay or disabling auto-open.">i</span>
               </span>
               <span className="metric-value">
                 {formatNumber(data.attention.auto_open_dismiss_count)} ({formatPercent(data.attention.auto_open_dismiss_rate)})
@@ -373,7 +374,7 @@ export default function WidgetAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Hover/Focus Events
-                <span className="info-icon" title="Times visitors showed interest by hovering over or focusing on the widget without opening. High hover with low opens may indicate the widget needs a clearer call-to-action.">i</span>
+                <span className="info-icon" data-tooltip="Times visitors showed interest by hovering over or focusing on the widget without opening. High hover with low opens may indicate the widget needs a clearer call-to-action.">i</span>
               </span>
               <span className="metric-value">
                 {formatNumber(data.attention.hover_count)} ({formatPercent(data.attention.hover_rate)})
@@ -390,6 +391,35 @@ export default function WidgetAnalytics() {
                 <h2>Widget Configuration</h2>
                 <p>Current widget settings that produced these analytics. Change settings to A/B test different configurations.</p>
               </div>
+              <button
+                className="config-download-btn"
+                onClick={() => {
+                  const exportData = {
+                    exportedAt: new Date().toISOString(),
+                    dateRange: {
+                      start: formatDateInTimeZone(range.startDate, 'yyyy-MM-dd', timeZone),
+                      end: formatDateInTimeZone(range.endDate, 'yyyy-MM-dd', timeZone),
+                      timezone: timeZone,
+                    },
+                    settings: widgetSettings,
+                    analytics: data ? {
+                      visibility: data.visibility,
+                      attention: data.attention,
+                    } : null,
+                  };
+                  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `widget-config-${formatDateInTimeZone(new Date(), 'yyyy-MM-dd', timeZone)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                title="Download configuration and stats as JSON"
+              >
+                <Download size={16} />
+                Export
+              </button>
             </div>
             <div className="config-grid">
               <div className="config-section">
@@ -398,21 +428,21 @@ export default function WidgetAnalytics() {
                   <div className="config-item">
                     <span className="config-label">
                       Open Behavior
-                      <span className="info-icon" title="How the widget opens - 'click' requires user action, 'auto' opens automatically after delay.">i</span>
+                      <span className="info-icon" data-tooltip="How the widget opens - 'click' requires user action, 'auto' opens automatically after delay.">i</span>
                     </span>
                     <span className="config-value">{widgetSettings.behavior?.openBehavior || 'click'}</span>
                   </div>
                   <div className="config-item">
                     <span className="config-label">
                       Auto-Open Delay
-                      <span className="info-icon" title="Seconds to wait before auto-opening the widget (when auto-open is enabled).">i</span>
+                      <span className="info-icon" data-tooltip="Seconds to wait before auto-opening the widget (when auto-open is enabled).">i</span>
                     </span>
                     <span className="config-value">{widgetSettings.behavior?.autoOpenDelay || 0}s</span>
                   </div>
                   <div className="config-item">
                     <span className="config-label">
                       Cooldown Period
-                      <span className="info-icon" title="Days before showing auto-open again to the same visitor.">i</span>
+                      <span className="info-icon" data-tooltip="Days before showing auto-open again to the same visitor.">i</span>
                     </span>
                     <span className="config-value">{widgetSettings.behavior?.cooldownDays || 0} days</span>
                   </div>
@@ -424,7 +454,7 @@ export default function WidgetAnalytics() {
                   <div className="config-item">
                     <span className="config-label">
                       Icon Type
-                      <span className="info-icon" title="The launcher button style - emoji, image, or custom icon.">i</span>
+                      <span className="info-icon" data-tooltip="The launcher button style - emoji, image, or custom icon.">i</span>
                     </span>
                     <span className="config-value config-value-icon">
                       {widgetSettings.icon?.type === 'emoji' && widgetSettings.icon?.emoji}
@@ -434,14 +464,14 @@ export default function WidgetAnalytics() {
                   <div className="config-item">
                     <span className="config-label">
                       Icon Size
-                      <span className="info-icon" title="Size of the launcher button - affects visibility and click area.">i</span>
+                      <span className="info-icon" data-tooltip="Size of the launcher button - affects visibility and click area.">i</span>
                     </span>
                     <span className="config-value">{widgetSettings.icon?.size || 'medium'}</span>
                   </div>
                   <div className="config-item">
                     <span className="config-label">
                       Primary Color
-                      <span className="info-icon" title="Main brand color used for the widget header and buttons.">i</span>
+                      <span className="info-icon" data-tooltip="Main brand color used for the widget header and buttons.">i</span>
                     </span>
                     <span className="config-value">
                       <span
@@ -459,21 +489,21 @@ export default function WidgetAnalytics() {
                   <div className="config-item">
                     <span className="config-label">
                       Animation
-                      <span className="info-icon" title="Attention animation to draw visitor eyes to the widget.">i</span>
+                      <span className="info-icon" data-tooltip="Attention animation to draw visitor eyes to the widget.">i</span>
                     </span>
                     <span className="config-value">{widgetSettings.attention?.attentionAnimation || 'none'}</span>
                   </div>
                   <div className="config-item">
                     <span className="config-label">
                       Unread Dot
-                      <span className="info-icon" title="Show a notification dot to simulate an unread message and drive opens.">i</span>
+                      <span className="info-icon" data-tooltip="Show a notification dot to simulate an unread message and drive opens.">i</span>
                     </span>
                     <span className="config-value">{widgetSettings.attention?.unreadDot ? 'Enabled' : 'Disabled'}</span>
                   </div>
                   <div className="config-item">
                     <span className="config-label">
                       Entry Animation
-                      <span className="info-icon" title="How the widget appears when it first loads on the page.">i</span>
+                      <span className="info-icon" data-tooltip="How the widget appears when it first loads on the page.">i</span>
                     </span>
                     <span className="config-value">{widgetSettings.motion?.entryAnimation || 'none'}</span>
                   </div>
@@ -485,21 +515,21 @@ export default function WidgetAnalytics() {
                   <div className="config-item">
                     <span className="config-label">
                       Position
-                      <span className="info-icon" title="Screen corner where the widget appears.">i</span>
+                      <span className="info-icon" data-tooltip="Screen corner where the widget appears.">i</span>
                     </span>
                     <span className="config-value">{widgetSettings.layout?.position || 'bottom-right'}</span>
                   </div>
                   <div className="config-item">
                     <span className="config-label">
                       Launcher Visibility
-                      <span className="info-icon" title="When the launcher button first appears - immediately, on scroll, or after delay.">i</span>
+                      <span className="info-icon" data-tooltip="When the launcher button first appears - immediately, on scroll, or after delay.">i</span>
                     </span>
                     <span className="config-value">{widgetSettings.motion?.launcherVisibility || 'immediate'}</span>
                   </div>
                   <div className="config-item">
                     <span className="config-label">
                       Show on Pages
-                      <span className="info-icon" title="Which pages display the widget (* = all pages).">i</span>
+                      <span className="info-icon" data-tooltip="Which pages display the widget (* = all pages).">i</span>
                     </span>
                     <span className="config-value config-value-truncate">{widgetSettings.behavior?.showOnPages || '*'}</span>
                   </div>
@@ -517,7 +547,7 @@ export default function WidgetAnalytics() {
                 <h2>A/B Testing Results</h2>
                 <p>
                   Compare performance across {snapshotsData.total_variations} different widget configurations used during this period.
-                  <span className="info-icon" title="When you change widget settings, each configuration's performance is tracked separately. Compare open rates to see which settings work best.">i</span>
+                  <span className="info-icon" data-tooltip="When you change widget settings, each configuration's performance is tracked separately. Compare open rates to see which settings work best.">i</span>
                 </p>
               </div>
             </div>

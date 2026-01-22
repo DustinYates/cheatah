@@ -69,6 +69,24 @@ class EmbedCodeResponse(BaseModel):
     warning: str | None = None
 
 
+class TenantServiceStatus(BaseModel):
+    """Status of a single service for a tenant."""
+
+    enabled: bool = False
+    configured: bool = False
+
+
+class TenantServicesOverview(BaseModel):
+    """Overview of all services for a tenant."""
+
+    sms: TenantServiceStatus = TenantServiceStatus()
+    voice: TenantServiceStatus = TenantServiceStatus()
+    email: TenantServiceStatus = TenantServiceStatus()
+    widget: TenantServiceStatus = TenantServiceStatus()
+    customer_service: TenantServiceStatus = TenantServiceStatus()
+    prompt: TenantServiceStatus = TenantServiceStatus()
+
+
 class TenantOverviewStats(BaseModel):
     """Stats for a single tenant in the overview."""
 
@@ -96,6 +114,8 @@ class TenantOverviewStats(BaseModel):
     call_minutes: float = 0.0
     # Lead sources
     chatbot_leads_count: int = 0
+    # Services overview
+    services: TenantServicesOverview | None = None
 
 
 class TenantsOverviewResponse(BaseModel):

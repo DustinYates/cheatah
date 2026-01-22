@@ -140,6 +140,118 @@ const DetailsIcon = () => (
   </svg>
 );
 
+// Service status icons for Master Admin Dashboard
+const SmsServiceIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="5" y="2" width="14" height="20" rx="2" />
+    <line x1="12" y1="18" x2="12" y2="18.01" />
+  </svg>
+);
+
+const VoiceServiceIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" />
+  </svg>
+);
+
+const EmailServiceIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="4" width="20" height="16" rx="2" />
+    <polyline points="2,4 12,13 22,4" />
+  </svg>
+);
+
+const WidgetServiceIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M3 9h18" />
+    <path d="M9 21V9" />
+  </svg>
+);
+
+const CustomerServiceIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 00-3-3.87" />
+    <path d="M16 3.13a4 4 0 010 7.75" />
+  </svg>
+);
+
+const PromptServiceIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+    <path d="M2 17l10 5 10-5" />
+    <path d="M2 12l10 5 10-5" />
+  </svg>
+);
+
+// Service badge component for showing service status
+const ServiceBadge = ({ enabled, configured, icon, title }) => {
+  const statusClass = enabled
+    ? configured
+      ? 'service--active'
+      : 'service--partial'
+    : 'service--inactive';
+  const tooltip = enabled
+    ? configured
+      ? `${title}: Active`
+      : `${title}: Enabled (not configured)`
+    : `${title}: Disabled`;
+
+  return (
+    <span className={`service-badge ${statusClass}`} title={tooltip}>
+      {icon}
+    </span>
+  );
+};
+
+// Services cell component for the tenant table
+const ServicesCell = ({ services }) => {
+  if (!services) return <span className="text-muted">-</span>;
+
+  return (
+    <div className="services-badges">
+      <ServiceBadge
+        enabled={services.sms?.enabled}
+        configured={services.sms?.configured}
+        icon={<SmsServiceIcon />}
+        title="SMS"
+      />
+      <ServiceBadge
+        enabled={services.voice?.enabled}
+        configured={services.voice?.configured}
+        icon={<VoiceServiceIcon />}
+        title="Voice"
+      />
+      <ServiceBadge
+        enabled={services.email?.enabled}
+        configured={services.email?.configured}
+        icon={<EmailServiceIcon />}
+        title="Email"
+      />
+      <ServiceBadge
+        enabled={services.widget?.enabled}
+        configured={services.widget?.configured}
+        icon={<WidgetServiceIcon />}
+        title="Widget"
+      />
+      <ServiceBadge
+        enabled={services.customer_service?.enabled}
+        configured={services.customer_service?.configured}
+        icon={<CustomerServiceIcon />}
+        title="Customer Service"
+      />
+      <ServiceBadge
+        enabled={services.prompt?.enabled}
+        configured={services.prompt?.configured}
+        icon={<PromptServiceIcon />}
+        title="AI Prompt"
+      />
+    </div>
+  );
+};
+
 const CompactTable = ({ containerClassName, tableClassName, children }) => (
   <div className={containerClassName}>
     <table className={tableClassName}>
@@ -490,6 +602,7 @@ export default function Dashboard() {
                 <th>#</th>
                 <th>Name</th>
                 <th>Status</th>
+                <th>Services</th>
                 <th>Email</th>
                 <th>Phones</th>
                 <th>In</th>
@@ -520,6 +633,9 @@ export default function Dashboard() {
                     <span className={`status-badge status-${tenant.is_active ? 'verified' : 'unknown'}`}>
                       {tenant.is_active ? 'Active' : 'Inactive'}
                     </span>
+                  </td>
+                  <td>
+                    <ServicesCell services={tenant.services} />
                   </td>
                   <td>
                     {tenant.gmail_email ? (

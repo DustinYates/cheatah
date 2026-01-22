@@ -180,7 +180,7 @@ class LeadService:
         # Schedule SMS follow-up if conditions are met
         print(f"[FOLLOWUP_CHECK] lead_id={lead.id}, phone={normalized_phone}, metadata={metadata}", flush=True)
         logger.info(f"[FOLLOWUP_CHECK] lead_id={lead.id}, phone={normalized_phone}, metadata={metadata}")
-        if normalized_phone and metadata and metadata.get("source") in ["voice_call", "sms", "email"]:
+        if normalized_phone and metadata and metadata.get("source") in ["voice_call", "sms", "email", "chatbot"]:
             # Check if follow-up should be skipped (voice call not qualified/no promise)
             if metadata.get("skip_followup"):
                 skip_reason = metadata.get("skip_followup_reason", "not qualified")

@@ -23,7 +23,7 @@ class FollowUpService:
     DEFAULT_DELAY_MINUTES = 5
 
     # Sources that trigger follow-up
-    DEFAULT_FOLLOWUP_SOURCES = ["voice_call", "sms", "email"]
+    DEFAULT_FOLLOWUP_SOURCES = ["voice_call", "sms", "email", "chatbot"]
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize follow-up service."""

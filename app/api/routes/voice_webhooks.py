@@ -338,7 +338,6 @@ async def gather_webhook(
         # Check for user request to send information (registration link, schedule, etc.)
         # Run in background to avoid blocking voice response
         asyncio.create_task(_check_and_fulfill_user_request(
-            db=db,
             tenant_id=parsed_tenant_id,
             conversation_id=parsed_conversation_id,
             call_sid=CallSid,
@@ -348,7 +347,6 @@ async def gather_webhook(
         # Check for AI promises to send information (registration link, schedule, etc.)
         # Run in background to avoid blocking voice response
         asyncio.create_task(_check_and_fulfill_promise(
-            db=db,
             tenant_id=parsed_tenant_id,
             conversation_id=parsed_conversation_id,
             call_sid=CallSid,
@@ -521,7 +519,6 @@ async def gather_streaming_webhook(
             
             # Defer DB writes to background
             asyncio.create_task(_store_messages_background(
-                db=db,
                 conversation_id=parsed_conversation_id,
                 call_sid=CallSid,
                 user_content=SpeechResult,
@@ -638,7 +635,6 @@ async def gather_streaming_webhook(
 
         # Check for AI promises to send information (background, don't block TTFA)
         asyncio.create_task(_check_and_fulfill_promise(
-            db=db,
             tenant_id=parsed_tenant_id,
             conversation_id=parsed_conversation_id,
             call_sid=CallSid,
@@ -647,7 +643,6 @@ async def gather_streaming_webhook(
 
         # Defer DB writes to background task (don't block TTFA)
         asyncio.create_task(_store_messages_background(
-            db=db,
             conversation_id=parsed_conversation_id,
             call_sid=CallSid,
             user_content=SpeechResult,
@@ -705,7 +700,6 @@ async def gather_streaming_webhook(
 
 
 async def _store_messages_background(
-    db: AsyncSession,
     conversation_id: int | None,
     call_sid: str,
     user_content: str,
@@ -715,55 +709,61 @@ async def _store_messages_background(
     chunk_count: int,
 ) -> None:
     """Store user and assistant messages in background to avoid blocking TTFA.
-    
+
     This function is meant to be called via asyncio.create_task() so it runs
     after the HTTP response has been sent to Twilio.
+
+    Creates its own database session to avoid connection pool leaks from
+    using the request's dependency-injected session.
     """
     if not conversation_id:
         return
-    
+
+    from app.persistence.database import async_session_factory
+
     try:
-        # Get next sequence number
-        stmt = select(Message).where(
-            Message.conversation_id == conversation_id
-        ).order_by(Message.sequence_number.desc()).limit(1)
-        result = await db.execute(stmt)
-        last_message = result.scalar_one_or_none()
-        next_seq = (last_message.sequence_number + 1) if last_message else 1
-        
-        # Store user message
-        user_message = Message(
-            conversation_id=conversation_id,
-            role="user",
-            content=user_content,
-            sequence_number=next_seq,
-            message_metadata={
-                "call_sid": call_sid,
-                "confidence": confidence,
-                "source": "voice_transcription_streaming_ttfa",
-            },
-        )
-        db.add(user_message)
-        
-        # Store assistant message
-        assistant_message = Message(
-            conversation_id=conversation_id,
-            role="assistant",
-            content=assistant_content,
-            sequence_number=next_seq + 1,
-            message_metadata={
-                "call_sid": call_sid,
-                "intent": intent,
-                "streaming": True,
-                "chunk_count": chunk_count,
-                "ttfa_optimized": True,
-            },
-        )
-        db.add(assistant_message)
-        
-        await db.commit()
-        logger.debug(f"Background stored messages for call {call_sid}")
-        
+        async with async_session_factory() as db:
+            # Get next sequence number
+            stmt = select(Message).where(
+                Message.conversation_id == conversation_id
+            ).order_by(Message.sequence_number.desc()).limit(1)
+            result = await db.execute(stmt)
+            last_message = result.scalar_one_or_none()
+            next_seq = (last_message.sequence_number + 1) if last_message else 1
+
+            # Store user message
+            user_message = Message(
+                conversation_id=conversation_id,
+                role="user",
+                content=user_content,
+                sequence_number=next_seq,
+                message_metadata={
+                    "call_sid": call_sid,
+                    "confidence": confidence,
+                    "source": "voice_transcription_streaming_ttfa",
+                },
+            )
+            db.add(user_message)
+
+            # Store assistant message
+            assistant_message = Message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=assistant_content,
+                sequence_number=next_seq + 1,
+                message_metadata={
+                    "call_sid": call_sid,
+                    "intent": intent,
+                    "streaming": True,
+                    "chunk_count": chunk_count,
+                    "ttfa_optimized": True,
+                },
+            )
+            db.add(assistant_message)
+
+            await db.commit()
+            logger.debug(f"Background stored messages for call {call_sid}")
+
     except Exception as e:
         logger.error(f"Background message storage failed for {call_sid}: {e}", exc_info=True)
 
@@ -1140,7 +1140,6 @@ async def _extract_caller_email_from_conversation(
 
 
 async def _check_and_fulfill_promise(
-    db: AsyncSession,
     tenant_id: int,
     conversation_id: int | None,
     call_sid: str,
@@ -1150,13 +1149,17 @@ async def _check_and_fulfill_promise(
 
     This runs in the background to avoid blocking voice response.
 
+    Creates its own database session to avoid connection pool leaks from
+    using the request's dependency-injected session.
+
     Args:
-        db: Database session
         tenant_id: Tenant ID
         conversation_id: Conversation ID
         call_sid: Twilio call SID
         ai_response: The AI's response text
     """
+    from app.persistence.database import async_session_factory
+
     try:
         from app.domain.services.promise_detector import PromiseDetector
         from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
@@ -1187,83 +1190,83 @@ async def _check_and_fulfill_promise(
             f"asset_type={promise.asset_type}, confidence={promise.confidence:.2f}"
         )
 
-        # Get caller phone and name
-        call = await _get_call_by_sid(call_sid, db)
-        if not call:
-            logger.warning(f"[SMS-DEBUG] Could not find call for promise fulfillment: {call_sid}")
-            return
+        async with async_session_factory() as db:
+            # Get caller phone and name
+            call = await _get_call_by_sid(call_sid, db)
+            if not call:
+                logger.warning(f"[SMS-DEBUG] Could not find call for promise fulfillment: {call_sid}")
+                return
 
-        caller_phone = call.from_number
-        caller_name = await _extract_caller_name_from_conversation(db, conversation_id)
+            caller_phone = call.from_number
+            caller_name = await _extract_caller_name_from_conversation(db, conversation_id)
 
-        # [SMS-DEBUG] Log caller info for debugging transfer issues
-        logger.info(
-            f"[SMS-DEBUG] Caller info retrieved - call_sid={call_sid}, "
-            f"caller_phone={caller_phone}, caller_name={caller_name or 'Unknown'}, "
-            f"has_phone={bool(caller_phone)}"
-        )
+            # [SMS-DEBUG] Log caller info for debugging transfer issues
+            logger.info(
+                f"[SMS-DEBUG] Caller info retrieved - call_sid={call_sid}, "
+                f"caller_phone={caller_phone}, caller_name={caller_name or 'Unknown'}, "
+                f"has_phone={bool(caller_phone)}"
+            )
 
-        # Handle email promises separately - alert tenant instead of fulfilling
-        if promise.asset_type == "email_promise":
-            try:
-                from app.infrastructure.notifications import NotificationService
-                notification_service = NotificationService(db)
+            # Handle email promises separately - alert tenant instead of fulfilling
+            if promise.asset_type == "email_promise":
+                try:
+                    from app.infrastructure.notifications import NotificationService
+                    notification_service = NotificationService(db)
 
-                # Try to get caller email from conversation if available
-                caller_email = await _extract_caller_email_from_conversation(db, conversation_id)
+                    # Try to get caller email from conversation if available
+                    caller_email = await _extract_caller_email_from_conversation(db, conversation_id)
 
-                # Extract topic from the AI response
-                combined_text = promise.original_text.lower() if promise.original_text else ""
-                topic = "information"  # default
-                topic_keywords = {
-                    "registration": ["registration", "register", "sign up", "signup", "enroll"],
-                    "pricing": ["pricing", "price", "cost", "fee", "rate", "tuition"],
-                    "schedule": ["schedule", "class time", "hours", "availability", "when"],
-                    "details": ["details", "information", "info", "brochure"],
-                }
-                for topic_name, keywords in topic_keywords.items():
-                    if any(kw in combined_text for kw in keywords):
-                        topic = topic_name
-                        break
+                    # Extract topic from the AI response
+                    combined_text = promise.original_text.lower() if promise.original_text else ""
+                    topic = "information"  # default
+                    topic_keywords = {
+                        "registration": ["registration", "register", "sign up", "signup", "enroll"],
+                        "pricing": ["pricing", "price", "cost", "fee", "rate", "tuition"],
+                        "schedule": ["schedule", "class time", "hours", "availability", "when"],
+                        "details": ["details", "information", "info", "brochure"],
+                    }
+                    for topic_name, keywords in topic_keywords.items():
+                        if any(kw in combined_text for kw in keywords):
+                            topic = topic_name
+                            break
 
-                await notification_service.notify_email_promise(
-                    tenant_id=tenant_id,
-                    customer_name=caller_name,
-                    customer_phone=caller_phone,
-                    customer_email=caller_email,
-                    conversation_id=conversation_id,
-                    channel="voice",
-                    topic=topic,
-                )
-                logger.info(
-                    f"Email promise alert sent - call_sid={call_sid}, "
-                    f"caller={caller_name or 'Unknown'}, phone={caller_phone}, topic={topic}"
-                )
-            except Exception as e:
-                logger.error(f"Failed to send email promise alert: {e}", exc_info=True)
-            return  # Don't try to fulfill email promises via SMS
+                    await notification_service.notify_email_promise(
+                        tenant_id=tenant_id,
+                        customer_name=caller_name,
+                        customer_phone=caller_phone,
+                        customer_email=caller_email,
+                        conversation_id=conversation_id,
+                        channel="voice",
+                        topic=topic,
+                    )
+                    logger.info(
+                        f"Email promise alert sent - call_sid={call_sid}, "
+                        f"caller={caller_name or 'Unknown'}, phone={caller_phone}, topic={topic}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send email promise alert: {e}", exc_info=True)
+                return  # Don't try to fulfill email promises via SMS
 
-        # Fulfill the promise (for non-email promises)
-        fulfillment_service = PromiseFulfillmentService(db)
-        result = await fulfillment_service.fulfill_promise(
-            tenant_id=tenant_id,
-            conversation_id=conversation_id or 0,
-            promise=promise,
-            phone=caller_phone,
-            name=caller_name,
-        )
+            # Fulfill the promise (for non-email promises)
+            fulfillment_service = PromiseFulfillmentService(db)
+            result = await fulfillment_service.fulfill_promise(
+                tenant_id=tenant_id,
+                conversation_id=conversation_id or 0,
+                promise=promise,
+                phone=caller_phone,
+                name=caller_name,
+            )
 
-        logger.info(
-            f"Promise fulfillment result - call_sid={call_sid}, "
-            f"status={result.get('status')}, asset_type={promise.asset_type}"
-        )
+            logger.info(
+                f"Promise fulfillment result - call_sid={call_sid}, "
+                f"status={result.get('status')}, asset_type={promise.asset_type}"
+            )
 
     except Exception as e:
         logger.error(f"Error in promise fulfillment: {e}", exc_info=True)
 
 
 async def _check_and_fulfill_user_request(
-    db: AsyncSession,
     tenant_id: int,
     conversation_id: int | None,
     call_sid: str,
@@ -1273,13 +1276,17 @@ async def _check_and_fulfill_user_request(
 
     This runs in the background to avoid blocking voice response.
 
+    Creates its own database session to avoid connection pool leaks from
+    using the request's dependency-injected session.
+
     Args:
-        db: Database session
         tenant_id: Tenant ID
         conversation_id: Conversation ID
         call_sid: Twilio call SID
         user_message: The user's transcribed speech
     """
+    from app.persistence.database import async_session_factory
+
     try:
         from app.domain.services.user_request_detector import UserRequestDetector
         from app.domain.services.promise_detector import DetectedPromise
@@ -1297,36 +1304,37 @@ async def _check_and_fulfill_user_request(
             f"asset_type={request.asset_type}, confidence={request.confidence:.2f}"
         )
 
-        # Get caller phone and name
-        call = await _get_call_by_sid(call_sid, db)
-        if not call:
-            logger.warning(f"Could not find call for user request fulfillment: {call_sid}")
-            return
+        async with async_session_factory() as db:
+            # Get caller phone and name
+            call = await _get_call_by_sid(call_sid, db)
+            if not call:
+                logger.warning(f"Could not find call for user request fulfillment: {call_sid}")
+                return
 
-        caller_phone = call.from_number
-        caller_name = await _extract_caller_name_from_conversation(db, conversation_id)
+            caller_phone = call.from_number
+            caller_name = await _extract_caller_name_from_conversation(db, conversation_id)
 
-        # Create a DetectedPromise to use the same fulfillment service
-        promise = DetectedPromise(
-            asset_type=request.asset_type,
-            confidence=request.confidence,
-            original_text=request.original_text,
-        )
+            # Create a DetectedPromise to use the same fulfillment service
+            promise = DetectedPromise(
+                asset_type=request.asset_type,
+                confidence=request.confidence,
+                original_text=request.original_text,
+            )
 
-        # Fulfill the request
-        fulfillment_service = PromiseFulfillmentService(db)
-        result = await fulfillment_service.fulfill_promise(
-            tenant_id=tenant_id,
-            conversation_id=conversation_id or 0,
-            promise=promise,
-            phone=caller_phone,
-            name=caller_name,
-        )
+            # Fulfill the request
+            fulfillment_service = PromiseFulfillmentService(db)
+            result = await fulfillment_service.fulfill_promise(
+                tenant_id=tenant_id,
+                conversation_id=conversation_id or 0,
+                promise=promise,
+                phone=caller_phone,
+                name=caller_name,
+            )
 
-        logger.info(
-            f"User request fulfillment result - call_sid={call_sid}, "
-            f"status={result.get('status')}, asset_type={request.asset_type}"
-        )
+            logger.info(
+                f"User request fulfillment result - call_sid={call_sid}, "
+                f"status={result.get('status')}, asset_type={request.asset_type}"
+            )
 
     except Exception as e:
         logger.error(f"Error in user request fulfillment: {e}", exc_info=True)

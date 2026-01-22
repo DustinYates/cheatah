@@ -227,22 +227,26 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
             except json.JSONDecodeError:
                 body_dict = response_body.decode()
             
-            # Cache response
+            # Cache response (exclude Content-Length as it will be recalculated)
+            headers_to_cache = {
+                k: v for k, v in response.headers.items()
+                if k.lower() != "content-length"
+            }
             await redis_client.set_json(
                 f"idempotency:{idempotency_key}",
                 {
                     "body": body_dict,
                     "status_code": response.status_code,
-                    "headers": dict(response.headers),
+                    "headers": headers_to_cache,
                 },
                 ttl=settings.idempotency_ttl_seconds,
             )
-            
-            # Return new response with body
+
+            # Return new response with body (exclude Content-Length - JSONResponse recalculates it)
             return JSONResponse(
                 content=body_dict,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=headers_to_cache,
             )
         
         return response

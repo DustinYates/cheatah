@@ -265,6 +265,17 @@ class ChatService:
             tenant_id, conversation.id, "assistant", llm_response
         )
 
+        # IMMEDIATE NAME EXTRACTION: If the bot just greeted the user by name,
+        # extract it directly from this response (most reliable method)
+        immediate_name = None
+        greeting_match = _BOT_GREETING_NAME_PATTERN.search(llm_response)
+        if greeting_match:
+            potential_name = greeting_match.group(1).strip()
+            validated = validate_name(potential_name, require_explicit=True)
+            if validated:
+                immediate_name = validated
+                logger.info(f"IMMEDIATE NAME EXTRACTION: Bot greeted user as '{immediate_name}' in response")
+
         # Refresh messages to include current turn (user message + assistant response)
         # This is needed for qualification checks that analyze the full conversation
         messages = await self.conversation_service.get_conversation_history(
@@ -302,6 +313,12 @@ class ChatService:
         extracted_email = extracted_info.get("email")
         extracted_phone = extracted_info.get("phone")
         name_is_explicit = extracted_info.get("name_is_explicit", False)
+
+        # Use immediate name extraction as highest priority (most reliable)
+        if immediate_name and not extracted_name:
+            extracted_name = immediate_name
+            name_is_explicit = True
+            logger.info(f"Using immediate name extraction: '{immediate_name}'")
 
         # If any contact info was extracted, create or update lead
         if extracted_name or extracted_email or extracted_phone:

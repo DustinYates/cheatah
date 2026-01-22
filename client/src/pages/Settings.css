@@ -61,8 +61,14 @@
   justify-content: center;
   margin-left: 6px;
   font-size: 0.9em;
-  cursor: help;
+  cursor: default;
   position: relative;
+  color: var(--color-text-muted);
+  transition: color 0.2s ease;
+}
+
+.settings-form .info-icon:hover {
+  color: var(--color-text-primary);
 }
 
 .settings-form .info-icon[title]:hover::after,

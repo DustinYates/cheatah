@@ -548,11 +548,12 @@ export default function WidgetSettings() {
       <p className="description">Configure your chat widget embed code and customize its appearance.</p>
 
       {/* Embed Code Section */}
-      <div className="embed-code-section">
-        <h2>Website Chat Widget</h2>
-        <p className="description">
-          Copy this code and paste it into your WordPress footer or use a plugin like "Insert Headers and Footers".
-        </p>
+      <details>
+        <summary>Website Chat Widget</summary>
+        <div className="embed-code-section">
+          <p className="description">
+            Copy this code and paste it into your WordPress footer or use a plugin like "Insert Headers and Footers".
+          </p>
 
         {embedLoading && (
           <div className="embed-loading">Loading embed code...</div>
@@ -602,7 +603,8 @@ export default function WidgetSettings() {
 
           </>
         )}
-      </div>
+        </div>
+      </details>
 
       {/* Widget Customization Section */}
       <div className="widget-customization-section">

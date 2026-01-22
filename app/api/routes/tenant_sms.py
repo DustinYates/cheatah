@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_current_tenant
+from app.api.deps import get_current_user, get_current_tenant, is_global_admin
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
@@ -93,6 +93,8 @@ class UpdateSmsSettingsRequest(BaseModel):
     # Subject-specific templates for email follow-ups
     # Maps email subject prefix to {message, delay_minutes}
     followup_subject_templates: dict[str, SubjectTemplate] | None = None
+    # Admin-only: update assigned phone number
+    phone_number: str | None = None
 
 
 class InitiateOutreachRequest(BaseModel):
@@ -192,7 +194,23 @@ async def update_sms_settings(
     stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
-    
+
+    # Handle phone number update (admin-only)
+    phone_number_to_update = None
+    if settings_data.phone_number is not None:
+        if not is_global_admin(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only administrators can update the phone number",
+            )
+        normalized = _normalize_phone_number(settings_data.phone_number)
+        if settings_data.phone_number and not normalized:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid phone number format. Use format: +1XXXXXXXXXX or (XXX) XXX-XXXX",
+            )
+        phone_number_to_update = normalized  # May be None if clearing
+
     # Build settings JSON with follow-up config
     # Convert SubjectTemplate Pydantic objects to dicts for JSON storage
     templates_dict = None
@@ -212,7 +230,7 @@ async def update_sms_settings(
     }
 
     if not config:
-        # Create new config (phone number will be assigned by admin later)
+        # Create new config
         config = TenantSmsConfig(
             tenant_id=tenant_id,
             is_enabled=False,  # Can't enable without phone number
@@ -222,11 +240,17 @@ async def update_sms_settings(
             timezone=settings_data.timezone,
             business_hours=settings_data.business_hours,
             settings=new_settings,
+            twilio_phone_number=phone_number_to_update,  # Admin can set phone on creation
         )
         db.add(config)
     else:
-        # Update existing - only allow enabling if phone number is assigned
-        if settings_data.is_enabled and not (config.twilio_phone_number or config.telnyx_phone_number):
+        # Update phone number if admin provided one
+        if phone_number_to_update is not None:
+            config.twilio_phone_number = phone_number_to_update
+
+        # Only allow enabling if phone number is assigned (or being assigned now)
+        has_phone = config.twilio_phone_number or config.telnyx_phone_number or phone_number_to_update
+        if settings_data.is_enabled and not has_phone:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot enable SMS without an assigned phone number. Contact support.",

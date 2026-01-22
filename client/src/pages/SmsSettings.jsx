@@ -56,6 +56,7 @@ export default function SmsSettings() {
     followup_initial_message: '',
   });
   const [originalSettings, setOriginalSettings] = useState(null);
+  const [phoneNumberDraft, setPhoneNumberDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -63,8 +64,10 @@ export default function SmsSettings() {
 
   const isDirty = useMemo(() => {
     if (!originalSettings) return false;
-    return JSON.stringify(settings) !== JSON.stringify(originalSettings);
-  }, [settings, originalSettings]);
+    const settingsChanged = JSON.stringify(settings) !== JSON.stringify(originalSettings);
+    const phoneChanged = user?.is_global_admin && phoneNumberDraft !== (originalSettings?.phone_number || '');
+    return settingsChanged || phoneChanged;
+  }, [settings, originalSettings, phoneNumberDraft, user?.is_global_admin]);
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
@@ -92,6 +95,7 @@ export default function SmsSettings() {
         };
         setSettings(normalizedSettings);
         setOriginalSettings(normalizedSettings);
+        setPhoneNumberDraft(data.phone_number || '');
       } else if (response.status === 404) {
         const defaultState = {
           is_enabled: false,
@@ -109,6 +113,7 @@ export default function SmsSettings() {
         };
         setSettings(defaultState);
         setOriginalSettings(defaultState);
+        setPhoneNumberDraft('');
       } else {
         const errorData = await response.json().catch(() => ({}));
         setError(errorData.detail || 'Failed to load SMS settings');
@@ -131,6 +136,7 @@ export default function SmsSettings() {
         };
         setSettings(defaultState);
         setOriginalSettings(defaultState);
+        setPhoneNumberDraft('');
       } else {
         setError(err.message || 'Failed to load SMS settings');
       }
@@ -160,24 +166,31 @@ export default function SmsSettings() {
         };
       }
 
+      const payload = {
+        is_enabled: settings.is_enabled,
+        auto_reply_enabled: settings.auto_reply_enabled,
+        auto_reply_message: settings.auto_reply_message,
+        initial_outreach_message: settings.initial_outreach_message,
+        business_hours_enabled: settings.business_hours_enabled,
+        timezone: settings.timezone,
+        business_hours: apiBusinessHours,
+        followup_enabled: settings.followup_enabled,
+        followup_delay_minutes: settings.followup_delay_minutes,
+        followup_sources: ['email'], // Email follow-up only
+        followup_initial_message: settings.followup_initial_message,
+        // Preserve subject templates configured in Email Settings
+        followup_subject_templates: settings.followup_subject_templates,
+      };
+
+      // Include phone_number only if admin and it has changed
+      if (user?.is_global_admin && phoneNumberDraft !== (originalSettings?.phone_number || '')) {
+        payload.phone_number = phoneNumberDraft || null;
+      }
+
       const response = await fetch(`${API_BASE}/sms/settings`, {
         method: 'PUT',
         headers,
-        body: JSON.stringify({
-          is_enabled: settings.is_enabled,
-          auto_reply_enabled: settings.auto_reply_enabled,
-          auto_reply_message: settings.auto_reply_message,
-          initial_outreach_message: settings.initial_outreach_message,
-          business_hours_enabled: settings.business_hours_enabled,
-          timezone: settings.timezone,
-          business_hours: apiBusinessHours,
-          followup_enabled: settings.followup_enabled,
-          followup_delay_minutes: settings.followup_delay_minutes,
-          followup_sources: ['email'], // Email follow-up only
-          followup_initial_message: settings.followup_initial_message,
-          // Preserve subject templates configured in Email Settings
-          followup_subject_templates: settings.followup_subject_templates,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -188,6 +201,7 @@ export default function SmsSettings() {
         };
         setSettings(normalizedSettings);
         setOriginalSettings(normalizedSettings);
+        setPhoneNumberDraft(data.phone_number || '');
         showToast('Settings saved successfully');
       } else {
         const errorData = await response.json();
@@ -203,6 +217,7 @@ export default function SmsSettings() {
   const handleCancel = () => {
     if (originalSettings) {
       setSettings(originalSettings);
+      setPhoneNumberDraft(originalSettings.phone_number || '');
     }
   };
 
@@ -301,16 +316,38 @@ export default function SmsSettings() {
             <div className="sms-field">
               <label className="sms-field__label">Assigned Number</label>
               <div className="sms-field__value">
-                {settings.phone_number ? (
-                  <div className="sms-phone-status">
-                    <span className="sms-phone-number">{settings.phone_number}</span>
-                    <span className="sms-status-badge sms-status-badge--active">Active</span>
+                {user?.is_global_admin ? (
+                  /* Admin: Editable input */
+                  <div className="sms-phone-edit">
+                    <input
+                      type="tel"
+                      className="sms-input sms-input--phone"
+                      value={phoneNumberDraft}
+                      onChange={(e) => setPhoneNumberDraft(e.target.value)}
+                      placeholder="+1 (555) 123-4567"
+                    />
+                    {phoneNumberDraft && (
+                      <span className={`sms-status-badge ${phoneNumberDraft === (originalSettings?.phone_number || '') ? 'sms-status-badge--active' : 'sms-status-badge--modified'}`}>
+                        {phoneNumberDraft === (originalSettings?.phone_number || '') ? 'Active' : 'Modified'}
+                      </span>
+                    )}
+                    <p className="sms-field__hint">
+                      E.164 format preferred (e.g., +15551234567). US numbers can use (555) 123-4567.
+                    </p>
                   </div>
                 ) : (
-                  <div className="sms-phone-status">
-                    <span className="sms-status-badge sms-status-badge--inactive">Not Assigned</span>
-                    <span className="sms-field__hint">Contact support to assign a number.</span>
-                  </div>
+                  /* Non-admin: Read-only display */
+                  settings.phone_number ? (
+                    <div className="sms-phone-status">
+                      <span className="sms-phone-number">{settings.phone_number}</span>
+                      <span className="sms-status-badge sms-status-badge--active">Active</span>
+                    </div>
+                  ) : (
+                    <div className="sms-phone-status">
+                      <span className="sms-status-badge sms-status-badge--inactive">Not Assigned</span>
+                      <span className="sms-field__hint">Contact support to assign a number.</span>
+                    </div>
+                  )
                 )}
               </div>
             </div>
@@ -322,14 +359,14 @@ export default function SmsSettings() {
                   type="checkbox"
                   checked={settings.is_enabled}
                   onChange={(e) => updateSetting('is_enabled', e.target.checked)}
-                  disabled={!settings.phone_number}
+                  disabled={user?.is_global_admin ? !phoneNumberDraft : !settings.phone_number}
                   className="sms-toggle__input"
                 />
                 <span className="sms-toggle__switch" />
                 <span className="sms-toggle__label">SMS Enabled</span>
               </label>
               <p className="sms-field__description">
-                {settings.phone_number
+                {(user?.is_global_admin ? phoneNumberDraft : settings.phone_number)
                   ? 'When enabled, the system can send and receive SMS messages.'
                   : 'Assign a phone number to enable SMS messaging.'}
               </p>
@@ -550,6 +587,36 @@ export default function SmsSettings() {
         .sms-status-badge--inactive {
           background: #fef3c7;
           color: #92400e;
+        }
+        .sms-status-badge--modified {
+          background: #dbeafe;
+          color: #1e40af;
+        }
+
+        /* Admin Phone Edit */
+        .sms-phone-edit {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .sms-input {
+          padding: 0.5rem 0.75rem;
+          font-size: 0.875rem;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+          background: #fff;
+          color: #111;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .sms-input:focus {
+          outline: none;
+          border-color: #4f46e5;
+          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+        }
+        .sms-input--phone {
+          font-size: 1rem;
+          font-family: ui-monospace, monospace;
+          max-width: 280px;
         }
 
         /* Toggle Switch */

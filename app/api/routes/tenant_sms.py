@@ -194,13 +194,21 @@ async def update_sms_settings(
     config = result.scalar_one_or_none()
     
     # Build settings JSON with follow-up config
+    # Convert SubjectTemplate Pydantic objects to dicts for JSON storage
+    templates_dict = None
+    if settings_data.followup_subject_templates:
+        templates_dict = {
+            subject: template.model_dump()
+            for subject, template in settings_data.followup_subject_templates.items()
+        }
+
     new_settings = {
         "initial_outreach_message": settings_data.initial_outreach_message,
         "followup_enabled": settings_data.followup_enabled,
         "followup_delay_minutes": settings_data.followup_delay_minutes,
         "followup_sources": settings_data.followup_sources,
         "followup_initial_message": settings_data.followup_initial_message,
-        "followup_subject_templates": settings_data.followup_subject_templates,
+        "followup_subject_templates": templates_dict,
     }
 
     if not config:

@@ -292,9 +292,10 @@ class ChatService:
             messages, user_message
         )
         
-        logger.debug(
-            f"Extracted contact info: name={extracted_info.get('name')}, "
-            f"email={extracted_info.get('email')}, phone={extracted_info.get('phone')}"
+        logger.info(
+            f"EXTRACTION RESULT: name={extracted_info.get('name')}, "
+            f"email={extracted_info.get('email')}, phone={extracted_info.get('phone')}, "
+            f"name_is_explicit={extracted_info.get('name_is_explicit')}"
         )
         
         extracted_name = extracted_info.get("name")
@@ -906,10 +907,16 @@ class ChatService:
         # Note: messages may include the NEW response, so we need to check all assistant messages
         # for a name request, not just the last one
         assistant_asked_for_name = False
+
+        # Log all messages for debugging
+        logger.info(f"Q&A PATTERN CHECK: current_user_message='{current_user_message}', num_messages={len(messages)}")
+        for i, msg in enumerate(messages):
+            logger.info(f"  Message {i}: role={msg.role}, content={msg.content[:80]}...")
+
         for msg in messages:
             if msg.role == "assistant" and _NAME_REQUEST_PATTERN.search(msg.content):
                 assistant_asked_for_name = True
-                logger.debug(f"Found name request in assistant message: {msg.content[:100]}...")
+                logger.info(f"Q&A PATTERN: Found name request in: {msg.content[:100]}...")
                 break
 
         if assistant_asked_for_name:
@@ -917,12 +924,20 @@ class ChatService:
             # A name response is typically 1-2 words, all letters, not a common phrase
             user_response = current_user_message.strip()
             words = user_response.split()
+            logger.info(f"Q&A PATTERN: Checking if '{user_response}' is a name (words={words}, len={len(words)}, all_alpha={all(w.isalpha() for w in words)})")
             if len(words) <= 2 and all(w.isalpha() for w in words):
                 # Validate as a name
                 validated = validate_name(user_response, require_explicit=True)
+                logger.info(f"Q&A PATTERN: validate_name('{user_response}') returned '{validated}'")
                 if validated:
                     name_after_request = validated
-                    logger.info(f"Extracted name from Q&A pattern: assistant asked for name, user replied '{name_after_request}'")
+                    logger.info(f"Q&A PATTERN SUCCESS: Extracted name '{name_after_request}' from Q&A pattern")
+                else:
+                    logger.info(f"Q&A PATTERN: Name validation failed for '{user_response}'")
+            else:
+                logger.info(f"Q&A PATTERN: User response '{user_response}' doesn't look like a name")
+        else:
+            logger.info("Q&A PATTERN: No name request found in assistant messages")
 
         # Fallback 2: Extract name from bot's greeting response (e.g., "Nice to meet you, Dustin")
         # This is reliable since the bot only greets by name when it recognized the name

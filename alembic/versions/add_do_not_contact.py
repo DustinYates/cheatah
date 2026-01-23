@@ -1,7 +1,7 @@
 """Add do_not_contact table for DNC opt-out management
 
 Revision ID: add_do_not_contact
-Revises: auto_convert_existing_leads
+Revises: encrypt_sensitive_credentials
 Create Date: 2026-01-22
 
 This table tracks phone numbers and emails that have requested
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 
 revision = 'add_do_not_contact'
-down_revision = 'auto_convert_existing_leads'
+down_revision = 'encrypt_sensitive_credentials'
 branch_labels = None
 depends_on = None
 

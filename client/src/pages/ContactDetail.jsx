@@ -42,6 +42,8 @@ export default function ContactDetail() {
   const [selectedCall, setSelectedCall] = useState(null);
   const [emailConversations, setEmailConversations] = useState([]);
   const [loadingEmails, setLoadingEmails] = useState(true);
+  const [dncStatus, setDncStatus] = useState({ is_blocked: false, record: null });
+  const [dncLoading, setDncLoading] = useState(false);
 
   const fetchContact = useCallback(async () => {
     const data = await api.getContact(id, true);
@@ -68,6 +70,53 @@ export default function ContactDetail() {
       fetchEmailConversations();
     }
   }, [id]);
+
+  // Fetch DNC status when contact loads
+  useEffect(() => {
+    if (contact?.phone || contact?.email) {
+      fetchDncStatus();
+    }
+  }, [contact?.phone, contact?.email]);
+
+  const fetchDncStatus = async () => {
+    if (!contact?.phone && !contact?.email) return;
+    try {
+      const params = new URLSearchParams();
+      if (contact.phone) params.append('phone', contact.phone);
+      if (contact.email) params.append('email', contact.email);
+      const data = await api.get(`/dnc/check?${params.toString()}`);
+      setDncStatus(data);
+    } catch (err) {
+      console.error('Failed to fetch DNC status:', err);
+    }
+  };
+
+  const handleToggleDnc = async () => {
+    if (!contact?.phone && !contact?.email) return;
+    setDncLoading(true);
+    try {
+      if (dncStatus.is_blocked) {
+        // Unblock
+        await api.post('/dnc/unblock', {
+          phone: contact.phone,
+          email: contact.email,
+          reason: 'Manually unblocked from contact detail page',
+        });
+      } else {
+        // Block
+        await api.post('/dnc/block', {
+          phone: contact.phone,
+          email: contact.email,
+          reason: 'Manually blocked from contact detail page',
+        });
+      }
+      await fetchDncStatus();
+    } catch (err) {
+      setError(err.message || 'Failed to update DNC status');
+    } finally {
+      setDncLoading(false);
+    }
+  };
 
   const fetchCalls = async () => {
     setLoadingCalls(true);
@@ -215,7 +264,25 @@ export default function ContactDetail() {
           <div className="contact-avatar-large">
             {(contact.name || 'U')[0].toUpperCase()}
           </div>
-          <h2>{contact.name || 'Unknown'}</h2>
+          <h2>
+            {contact.name || 'Unknown'}
+            {dncStatus.is_blocked && (
+              <span className="dnc-badge" title="Do Not Contact">DNC</span>
+            )}
+          </h2>
+          {(contact.phone || contact.email) && (
+            <button
+              className={`dnc-toggle-btn ${dncStatus.is_blocked ? 'blocked' : ''}`}
+              onClick={handleToggleDnc}
+              disabled={dncLoading}
+            >
+              {dncLoading
+                ? 'Updating...'
+                : dncStatus.is_blocked
+                ? 'Remove from DNC List'
+                : 'Add to Do Not Contact'}
+            </button>
+          )}
           <div className="contact-details">
             <div className="detail-row">
               <span className="label">Email:</span>

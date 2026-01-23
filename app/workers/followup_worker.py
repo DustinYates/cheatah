@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.conversation_service import ConversationService
+from app.domain.services.dnc_service import DncService
 from app.domain.services.followup_message_service import FollowUpMessageService
 from app.domain.services.opt_in_service import OptInService
 from app.infrastructure.telephony.factory import TelephonyProviderFactory
@@ -74,6 +75,12 @@ async def process_followup_task(
         if not sms_provider:
             logger.warning(f"Could not get SMS provider for tenant {payload.tenant_id}")
             return {"status": "skipped", "reason": "provider_not_configured"}
+
+        # Check Do Not Contact list - skip if blocked
+        dnc_service = DncService(db)
+        if await dnc_service.is_blocked(payload.tenant_id, phone=payload.phone_number):
+            logger.info(f"DNC block - skipping follow-up for {payload.phone_number}")
+            return {"status": "skipped", "reason": "do_not_contact"}
 
         # Check opt-in status
         opt_in_service = OptInService(db)

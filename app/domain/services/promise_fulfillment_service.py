@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.services.dnc_service import DncService
 from app.domain.services.promise_detector import DetectedPromise
 from app.domain.services.conversation_context_extractor import (
     extract_context_from_messages,
@@ -61,6 +62,12 @@ class PromiseFulfillmentService:
             f"Fulfilling promise - tenant_id={tenant_id}, conversation_id={conversation_id}, "
             f"asset_type={promise.asset_type}, phone={phone}"
         )
+
+        # Check Do Not Contact list - skip if blocked
+        dnc_service = DncService(self.session)
+        if await dnc_service.is_blocked(tenant_id, phone=phone):
+            logger.info(f"DNC block - skipping promise fulfillment for {phone}")
+            return {"status": "skipped", "reason": "do_not_contact"}
 
         # Check for duplicate sends (deduplication by phone number, not conversation)
         # Normalize phone for dedup key

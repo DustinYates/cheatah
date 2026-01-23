@@ -59,6 +59,9 @@ class Tenant(Base):
     sms_opt_ins = relationship(
         "SmsOptIn", back_populates="tenant", cascade="all, delete-orphan"
     )
+    dnc_records = relationship(
+        "DoNotContact", back_populates="tenant", cascade="all, delete-orphan"
+    )
     escalations = relationship(
         "Escalation", back_populates="tenant", cascade="all, delete-orphan"
     )

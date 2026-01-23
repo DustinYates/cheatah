@@ -9,7 +9,9 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.chat_service import ChatService
+from app.domain.services.compliance_handler import ComplianceHandler
 from app.domain.services.conversation_service import ConversationService
+from app.domain.services.dnc_service import DncService
 from app.domain.services.email_body_parser import EmailBodyParser
 from app.domain.services.escalation_service import EscalationService
 from app.domain.services.intent_detector import IntentDetector
@@ -99,7 +101,13 @@ class EmailService:
             return EmailResult(
                 response_message="Email service is not enabled for this tenant.",
             )
-        
+
+        # Check if sender is on Do Not Contact list - if so, silently ignore
+        dnc_service = DncService(self.session)
+        if await dnc_service.is_blocked(tenant_id, email=from_email):
+            logger.info(f"DNC block - silently ignoring email from {from_email}")
+            return EmailResult(response_message="")  # Silent - no response
+
         # Parse sender information
         sender_name, sender_email = GmailClient.parse_email_address(from_email)
 
@@ -164,7 +172,25 @@ class EmailService:
         
         # Truncate body if too long
         processed_body = self._preprocess_email_body(body)
-        
+
+        # Check for DNC request in email body
+        compliance_handler = ComplianceHandler()
+        if compliance_handler.is_dnc_request(processed_body):
+            try:
+                await dnc_service.block(
+                    tenant_id=tenant_id,
+                    email=sender_email,
+                    source_channel="email",
+                    source_message=processed_body[:500],
+                )
+                logger.info(f"DNC block via email - tenant_id={tenant_id}, email={sender_email}")
+            except Exception as e:
+                logger.warning(f"DNC block failed: {e}")
+            return EmailResult(
+                response_message="DNC request received - no further communications will be sent.",
+                thread_id=thread_id,
+            )
+
         # Add user message
         await self.conversation_service.add_message(
             tenant_id, conversation.id, "user", processed_body

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_current_tenant, is_global_admin
+from app.domain.services.dnc_service import DncService
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
@@ -332,7 +333,15 @@ async def initiate_outreach(
             success=False,
             error="Invalid phone number format. Please use format: +1XXXXXXXXXX",
         )
-    
+
+    # Check Do Not Contact list
+    dnc_service = DncService(db)
+    if await dnc_service.is_blocked(tenant_id, phone=phone):
+        return InitiateOutreachResponse(
+            success=False,
+            error="Cannot contact: This phone number is on the Do Not Contact list.",
+        )
+
     # Get or create conversation
     from app.persistence.repositories.conversation_repository import ConversationRepository
     from app.persistence.models.conversation import Conversation, Message

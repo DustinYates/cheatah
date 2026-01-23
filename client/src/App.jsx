@@ -18,6 +18,7 @@ import SmsSettings from './pages/SmsSettings';
 import TelephonySettings from './pages/TelephonySettings';
 import EmailSettings from './pages/EmailSettings';
 import EscalationSettings from './pages/EscalationSettings';
+import DncList from './pages/DncList';
 import ManageTenants from './pages/ManageTenants';
 import PromptWizard from './pages/PromptWizard';
 import PrivacyPolicy from './pages/PrivacyPolicy';
@@ -63,6 +64,7 @@ function App() {
             <Route path="settings/sms" element={<SmsSettings />} />
             <Route path="settings/telephony" element={<TelephonySettings />} />
             <Route path="settings/escalation" element={<EscalationSettings />} />
+            <Route path="settings/dnc" element={<DncList />} />
             <Route path="telephony-settings" element={<Navigate to="/settings/telephony" replace />} />
             <Route path="sms" element={<Navigate to="/settings/sms" replace />} />
             <Route path="settings/profile" element={<BusinessProfile />} />

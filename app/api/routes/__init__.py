@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, email_webhooks, escalation_settings, leads, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, sms_webhooks, telnyx_webhooks, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, voice_webhooks, zapier_webhooks
+from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, dnc, email_webhooks, escalation_settings, leads, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, sms_webhooks, telnyx_webhooks, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, voice_webhooks, zapier_webhooks
 from app.api import sendgrid_email
 
 api_router = APIRouter()
@@ -62,6 +62,9 @@ api_router.include_router(sendable_assets.router, prefix="/sendable-assets", tag
 
 # Escalation Settings (human handoff alerts)
 api_router.include_router(escalation_settings.router, prefix="/escalation", tags=["escalation"])
+
+# Do Not Contact (DNC) list management
+api_router.include_router(dnc.router, prefix="/dnc", tags=["dnc"])
 
 # Audit Logs (tenant admin and global admin access)
 api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit-logs"])

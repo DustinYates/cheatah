@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.chat_service import ChatService
 from app.domain.services.compliance_handler import ComplianceHandler, ComplianceResult
+from app.domain.services.dnc_service import DncService
 from app.domain.services.escalation_service import EscalationService
 from app.domain.services.intent_detector import IntentDetector
 from app.domain.services.opt_in_service import OptInService
@@ -90,6 +91,12 @@ class SmsService:
                 response_message="SMS service is not enabled for this tenant.",
             )
 
+        # Check if sender is on Do Not Contact list - if so, silently ignore
+        dnc_service = DncService(self.session)
+        if await dnc_service.is_blocked(tenant_id, phone=phone_number):
+            logger.info(f"DNC block - silently ignoring SMS from {phone_number}")
+            return SmsResult(response_message="")  # Silent - no response
+
         # Auto opt-in: When someone texts us, they're implicitly opting in
         opt_in_service = OptInService(self.session)
         try:
@@ -103,6 +110,25 @@ class SmsService:
 
         # Check compliance (STOP, HELP, START keywords)
         compliance_result = self.compliance_handler.check_compliance(message_body)
+
+        # Handle DNC request - add to Do Not Contact list (blocks ALL communication)
+        if compliance_result.action == "dnc":
+            try:
+                await dnc_service.block(
+                    tenant_id=tenant_id,
+                    phone=phone_number,
+                    source_channel="sms",
+                    source_message=message_body[:500],  # Truncate for storage
+                )
+                # Also opt out of SMS
+                await opt_in_service.opt_out(tenant_id, phone_number, method="DNC")
+                logger.info(f"DNC block via SMS - tenant_id={tenant_id}, phone={phone_number}")
+            except Exception as e:
+                logger.warning(f"DNC block failed: {e}")
+            return SmsResult(
+                response_message=compliance_result.response_message,
+                opt_in_status_changed=True,
+            )
 
         # Handle STOP keyword - opt out and return immediately
         if compliance_result.action == "stop":

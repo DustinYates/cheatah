@@ -130,6 +130,9 @@ export default function Layout() {
                 <li>
                   <NavLink to="/settings/escalation">Escalations</NavLink>
                 </li>
+                <li>
+                  <NavLink to="/settings/dnc">Do Not Contact</NavLink>
+                </li>
                 {user?.is_global_admin && (
                   <li>
                     <NavLink to="/settings/telephony">Telephony</NavLink>

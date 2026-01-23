@@ -12,6 +12,7 @@ from app.persistence.models.lead import Lead
 from app.persistence.models.notification import Notification, NotificationPriority, NotificationType
 from app.persistence.models.prompt import PromptBundle, PromptSection
 from app.persistence.models.sms_opt_in import SmsOptIn
+from app.persistence.models.do_not_contact import DoNotContact
 from app.persistence.models.tenant import Tenant, TenantBusinessProfile, User
 from app.persistence.models.email_ingestion_log import EmailIngestionLog, IngestionStatus
 from app.persistence.models.tenant_email_config import EmailConversation, TenantEmailConfig
@@ -48,6 +49,7 @@ __all__ = [
     "TenantVoiceConfig",
     "TenantWidgetConfig",
     "SmsOptIn",
+    "DoNotContact",
     "Escalation",
     "Notification",
     "NotificationType",

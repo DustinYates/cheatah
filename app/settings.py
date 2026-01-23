@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 720
 
+    # Field-level encryption (for API keys, tokens, secrets in database)
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    field_encryption_key: str | None = None
+
     # LLM (Gemini) - optional for basic functionality
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3-flash-preview"  # Using Gemini 3 Flash for faster, higher quality voice responses

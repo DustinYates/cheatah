@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, Str
 from sqlalchemy.orm import relationship
 
 from app.persistence.database import Base
+from app.persistence.types import EncryptedString, EncryptedText
 
 if TYPE_CHECKING:
     from app.persistence.models.tenant import Tenant
@@ -25,8 +26,8 @@ class TenantEmailConfig(Base):
     
     # Gmail OAuth credentials
     gmail_email = Column(String(255), nullable=True)  # Connected Gmail address
-    gmail_refresh_token = Column(Text, nullable=True)  # Encrypted refresh token
-    gmail_access_token = Column(Text, nullable=True)  # Current access token (short-lived)
+    gmail_refresh_token = Column(EncryptedText(), nullable=True)  # Encrypted
+    gmail_access_token = Column(EncryptedText(), nullable=True)  # Encrypted
     gmail_token_expires_at = Column(DateTime, nullable=True)  # Access token expiry
     
     # Gmail API watch/sync
@@ -71,11 +72,11 @@ class TenantEmailConfig(Base):
     # Alternative to Gmail API - uses email forwarding instead of OAuth
     sendgrid_enabled = Column(Boolean, default=False, nullable=False)
     sendgrid_parse_address = Column(String(255), nullable=True, unique=True, index=True)
-    sendgrid_webhook_secret = Column(String(255), nullable=True)  # Shared secret for webhook verification
+    sendgrid_webhook_secret = Column(EncryptedString(255), nullable=True)  # Encrypted
     email_ingestion_method = Column(String(20), default="gmail", nullable=False)  # 'gmail' or 'sendgrid'
 
     # SendGrid Outbound Configuration (per-tenant credentials for sending emails)
-    sendgrid_api_key = Column(String(255), nullable=True)  # Per-tenant API key
+    sendgrid_api_key = Column(EncryptedString(255), nullable=True)  # Encrypted
     sendgrid_from_email = Column(String(255), nullable=True)  # Per-tenant sender email
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

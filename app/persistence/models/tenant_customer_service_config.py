@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, Str
 from sqlalchemy.orm import relationship
 
 from app.persistence.database import Base
+from app.persistence.types import EncryptedString
 
 if TYPE_CHECKING:
     from app.persistence.models.tenant import Tenant
@@ -25,7 +26,7 @@ class TenantCustomerServiceConfig(Base):
 
     # Zapier Configuration
     zapier_webhook_url = Column(Text, nullable=True)  # Outbound webhook to Zapier
-    zapier_callback_secret = Column(String(255), nullable=True)  # HMAC secret for callback auth
+    zapier_callback_secret = Column(EncryptedString(255), nullable=True)  # Encrypted
 
     # Lookup Configuration
     customer_lookup_timeout_seconds = Column(Integer, default=30, nullable=False)

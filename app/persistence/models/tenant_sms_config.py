@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, Str
 from sqlalchemy.orm import relationship
 
 from app.persistence.database import Base
+from app.persistence.types import EncryptedString
 
 if TYPE_CHECKING:
     from app.persistence.models.tenant import Tenant
@@ -28,11 +29,11 @@ class TenantSmsConfig(Base):
 
     # Twilio configuration
     twilio_account_sid = Column(String(255), nullable=True)
-    twilio_auth_token = Column(String(255), nullable=True)  # Should be encrypted in production
+    twilio_auth_token = Column(EncryptedString(255), nullable=True)  # Encrypted
     twilio_phone_number = Column(String(50), nullable=True)  # Tenant's Twilio phone number
 
     # Telnyx configuration
-    telnyx_api_key = Column(String(255), nullable=True)  # Telnyx API v2 key
+    telnyx_api_key = Column(EncryptedString(255), nullable=True)  # Encrypted
     telnyx_messaging_profile_id = Column(String(255), nullable=True)  # Required for SMS
     telnyx_connection_id = Column(String(255), nullable=True)  # Required for Voice/TeXML
     telnyx_phone_number = Column(String(50), nullable=True)  # Tenant's Telnyx phone number

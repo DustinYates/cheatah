@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from app.api.middleware import IdempotencyMiddleware, TenantRateLimitMiddleware
+from app.api.middleware import IdempotencyMiddleware, TenantRateLimitMiddleware, SecurityHeadersMiddleware
 from app.api.routes import api_router
 from app.core.debug import debug_log
 from app.infrastructure.redis import redis_client
@@ -63,13 +63,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Configure allowed CORS origins
+ALLOWED_ORIGINS = [
+    "https://chattercheatah-900139201687.us-central1.run.app",
+]
+if settings.environment == "development":
+    ALLOWED_ORIGINS.extend(["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"])
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Tenant-Id", "Idempotency-Key"],
 )
 
 # Add idempotency middleware
@@ -77,6 +84,9 @@ app.add_middleware(IdempotencyMiddleware)
 
 # Add per-tenant rate limiting middleware
 app.add_middleware(TenantRateLimitMiddleware)
+
+# Add security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Include API routes
 app.include_router(api_router, prefix=settings.api_v1_prefix)

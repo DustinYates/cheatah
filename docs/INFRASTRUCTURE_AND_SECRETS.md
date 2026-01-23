@@ -19,10 +19,34 @@
 | `JWT_SECRET_KEY` | JWT token signing key | global | Authentication |
 | `GEMINI_API_KEY` | Google Gemini LLM API key | global | Chat/Voice AI responses |
 | `DATABASE_URL` | Supabase Postgres connection string | global | All data persistence |
+| `FIELD_ENCRYPTION_KEY` | Fernet key for encrypting tenant credentials | global | Database field encryption |
 | `TELNYX_API_KEY` | Telnyx API v2 key (global) | global | Voice transcript fetching |
 | `GMAIL_CLIENT_ID` | Google OAuth client ID | global | Email integration OAuth |
 | `GMAIL_CLIENT_SECRET` | Google OAuth client secret | global | Email integration OAuth |
 | `GOOGLE_MAPS_API_KEY` | Google Maps API key | global | Location services (unused) |
+
+### Field Encryption (Database Credentials)
+
+Tenant API credentials (Twilio tokens, Telnyx keys, Gmail OAuth tokens, etc.) are encrypted at rest in the database using Fernet symmetric encryption.
+
+**Generate a new encryption key:**
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+**Store in GCP Secret Manager:**
+```bash
+echo -n "YOUR_GENERATED_KEY" | gcloud secrets create field-encryption-key --data-file=-
+```
+
+**Encrypted fields:**
+- `tenant_sms_configs.twilio_auth_token`
+- `tenant_sms_configs.telnyx_api_key`
+- `tenant_email_configs.gmail_refresh_token`
+- `tenant_email_configs.gmail_access_token`
+- `tenant_email_configs.sendgrid_webhook_secret`
+- `tenant_email_configs.sendgrid_api_key`
+- `tenant_customer_service_configs.zapier_callback_secret`
 
 ---
 

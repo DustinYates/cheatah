@@ -252,6 +252,41 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
                 status_code=response.status_code,
                 headers=headers_to_cache,
             )
-        
+
+        return response
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Middleware for adding security headers to all responses."""
+
+    async def dispatch(
+        self, request: Request, call_next: Callable
+    ) -> Response:
+        """Add security headers to response.
+
+        Args:
+            request: FastAPI request
+            call_next: Next middleware/handler
+
+        Returns:
+            Response with security headers added
+        """
+        response = await call_next(request)
+
+        # Prevent MIME type sniffing
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+        # Prevent clickjacking (SAMEORIGIN allows chat widget iframe embedding)
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+
+        # Enable HSTS (1 year, include subdomains)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+        # Prevent XSS attacks (legacy header, but still useful for older browsers)
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        # Referrer policy - send origin only
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
         return response
 

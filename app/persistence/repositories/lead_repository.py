@@ -70,30 +70,53 @@ class LeadRepository(BaseRepository[Lead]):
         self, tenant_id: int, email: str | None = None, phone: str | None = None
     ) -> list[Lead]:
         """Find leads with conversations that match email or phone.
-        
+
         Args:
             tenant_id: Tenant ID
             email: Optional email to match
             phone: Optional phone to match
-            
+
         Returns:
             List of leads with conversation_id, ordered by created_at desc
         """
         if not email and not phone:
             return []
-        
+
         conditions = []
         if email:
             conditions.append(Lead.email == email)
         if phone:
             conditions.append(Lead.phone == phone)
-        
+
         stmt = (
             select(Lead)
             .where(
                 Lead.tenant_id == tenant_id,
                 Lead.conversation_id.isnot(None),
                 or_(*conditions)
+            )
+            .order_by(Lead.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_by_contact_id(
+        self, tenant_id: int, contact_id: int
+    ) -> list[Lead]:
+        """Get all leads associated with a contact.
+
+        Args:
+            tenant_id: Tenant ID
+            contact_id: Contact ID
+
+        Returns:
+            List of leads linked to the contact, ordered by created_at desc
+        """
+        stmt = (
+            select(Lead)
+            .where(
+                Lead.tenant_id == tenant_id,
+                Lead.contact_id == contact_id,
             )
             .order_by(Lead.created_at.desc())
         )

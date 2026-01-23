@@ -23,6 +23,7 @@ class Lead(Base):
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True, index=True)
+    contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=True, index=True)
     email = Column(String(255), nullable=True, index=True)
     phone = Column(String(50), nullable=True, index=True)
     name = Column(String(255), nullable=True)
@@ -34,7 +35,7 @@ class Lead(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="leads")
     conversation = relationship("Conversation", back_populates="leads")
-    contact = relationship("Contact", back_populates="lead", uselist=False)
+    contact = relationship("Contact", back_populates="leads", foreign_keys=[contact_id])
     call_summaries = relationship("CallSummary", back_populates="lead")
 
     def __repr__(self) -> str:

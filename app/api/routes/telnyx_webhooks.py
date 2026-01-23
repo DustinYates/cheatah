@@ -596,6 +596,7 @@ async def telnyx_ai_call_complete(
     """
     from app.persistence.models.call import Call
     from app.persistence.models.call_summary import CallSummary
+    from app.persistence.models.contact import Contact
     from app.persistence.models.lead import Lead
     import json
 
@@ -1399,19 +1400,21 @@ async def telnyx_ai_call_complete(
         # Store transcript and summary in call metadata or separate table
         # For now, we'll create a lead with the information
 
-        # Create or update Lead from caller
+        # Create Lead from caller (always create new lead, link to existing contact)
         lead = None
         if from_number:
             normalized_from = _normalize_phone(from_number)
 
-            # Check if contact/lead already exists (get most recent if multiple)
-            existing_lead = await db.execute(
-                select(Lead).where(
-                    Lead.tenant_id == tenant_id,
-                    Lead.phone == normalized_from,
-                ).order_by(Lead.created_at.desc()).limit(1)
+            # Check if contact already exists for this phone number
+            existing_contact_result = await db.execute(
+                select(Contact).where(
+                    Contact.tenant_id == tenant_id,
+                    Contact.phone == normalized_from,
+                    Contact.deleted_at.is_(None),
+                ).order_by(Contact.created_at.desc()).limit(1)
             )
-            lead = existing_lead.scalar_one_or_none()
+            existing_contact = existing_contact_result.scalar_one_or_none()
+            contact_id = existing_contact.id if existing_contact else None
 
             call_data = {
                 "source": "voice_call",
@@ -1424,54 +1427,19 @@ async def telnyx_ai_call_complete(
                 "transcript": transcript[:2000] if transcript else None,
             }
 
-            if not lead:
-                # Create new lead with extracted info
-                # Use phone number as fallback name if no name extracted
-                display_name = caller_name if caller_name else f"Caller {normalized_from}"
-                lead = Lead(
-                    tenant_id=tenant_id,
-                    phone=normalized_from,
-                    name=display_name,
-                    email=caller_email or None,
-                    status="new",
-                    extra_data={"voice_calls": [call_data]},
-                )
-                db.add(lead)
-                logger.info(f"Created new Lead from AI call: phone={normalized_from}, name={caller_name}, email={caller_email}")
-            else:
-                # Update existing lead with call info
-                # Use copy to ensure SQLAlchemy detects the change
-                from sqlalchemy.orm.attributes import flag_modified
-                logger.info(f"Existing lead extra_data BEFORE: {lead.extra_data}")
-                existing_data = dict(lead.extra_data) if lead.extra_data else {}
-                voice_calls = list(existing_data.get("voice_calls", []))
-
-                # DEDUP: Check if this call.id already exists in voice_calls
-                existing_call_ids = {vc.get("call_id") for vc in voice_calls if isinstance(vc, dict)}
-                if call.id not in existing_call_ids:
-                    voice_calls.append(call_data)
-                    existing_data["voice_calls"] = voice_calls
-                    lead.extra_data = existing_data
-                    flag_modified(lead, "extra_data")
-                    logger.info(f"Added call_id={call.id} to voice_calls for lead {lead.id}")
-                else:
-                    logger.info(f"Skipping duplicate voice_call entry for call_id={call.id}, lead_id={lead.id}")
-                # Stack names/emails if we got new info that's different
-                if caller_name:
-                    if not lead.name:
-                        lead.name = caller_name
-                    elif caller_name.lower() not in lead.name.lower():
-                        # Append new name if different from existing
-                        lead.name = f"{lead.name}, {caller_name}"
-                if caller_email:
-                    if not lead.email:
-                        lead.email = caller_email
-                    elif caller_email.lower() not in lead.email.lower():
-                        # Append new email if different from existing
-                        lead.email = f"{lead.email}, {caller_email}"
-                # Update created_at to now so lead appears at top of dashboard
-                lead.created_at = now
-                logger.info(f"Updated existing Lead id={lead.id} with AI call: phone={normalized_from}, name={caller_name}")
+            # Always create new lead for each call (link to existing contact if found)
+            display_name = caller_name if caller_name else f"Caller {normalized_from}"
+            lead = Lead(
+                tenant_id=tenant_id,
+                phone=normalized_from,
+                name=display_name,
+                email=caller_email or None,
+                status="new",
+                extra_data={"voice_calls": [call_data]},
+                contact_id=contact_id,  # Link to existing contact
+            )
+            db.add(lead)
+            logger.info(f"Created new Lead from AI call: phone={normalized_from}, name={caller_name}, email={caller_email}, contact_id={contact_id}")
 
             # Flush to get lead ID
             await db.flush()

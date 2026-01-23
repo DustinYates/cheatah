@@ -41,7 +41,10 @@ class Contact(Base):
 
     # Relationships
     tenant = relationship("Tenant", back_populates="contacts")
-    lead = relationship("Lead", back_populates="contact")
+    # New one-to-many relationship: one contact can have many leads
+    leads = relationship("Lead", back_populates="contact", foreign_keys="Lead.contact_id")
+    # Deprecated: old one-to-one relationship via lead_id (kept for backward compat)
+    _legacy_lead = relationship("Lead", foreign_keys=[lead_id], overlaps="contact,leads")
     
     # Alias relationships
     aliases = relationship(

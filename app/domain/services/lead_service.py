@@ -94,6 +94,7 @@ class LeadService:
         name: str | None = None,
         metadata: dict | None = None,
         skip_dedup: bool = True,
+        contact_id: int | None = None,
     ) -> Lead:
         """Capture a lead (always creates a new lead record).
 
@@ -110,6 +111,7 @@ class LeadService:
             skip_dedup: If True (default), always create a new lead even if one
                        exists with the same email/phone. Each lead is stored
                        independently; contact merging handles deduplication.
+            contact_id: Optional contact ID to link the lead to an existing contact
 
         Returns:
             Created lead
@@ -175,6 +177,7 @@ class LeadService:
                 phone=normalized_phone,
                 name=validated_name,  # Use validated name
                 extra_data=metadata,  # Map metadata parameter to extra_data field
+                contact_id=contact_id,  # Link to existing contact
             )
 
         # Schedule SMS follow-up if conditions are met

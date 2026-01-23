@@ -1512,7 +1512,10 @@ Write a professional summary (2-3 sentences):"""
         conversation_id: int,
         should_send_followup: bool = True,
     ) -> tuple[int | None, int | None]:
-        """Create or update lead and contact from call data.
+        """Create lead and link to contact from call data.
+
+        Each call creates a new lead. Contacts are reused if they exist for the
+        same phone/email, allowing one contact to have multiple leads.
 
         Args:
             tenant_id: Tenant ID
@@ -1526,37 +1529,54 @@ Write a professional summary (2-3 sentences):"""
         """
         contact_id = None
         lead_id = None
-        
+
         try:
-            # Check for existing contact by phone
+            # Step 1: Get or create contact by phone/email
             existing_contact = await self.contact_repo.get_by_email_or_phone(
                 tenant_id,
                 email=extracted_data.email,
                 phone=phone,
             )
-            
+
             if existing_contact:
                 contact_id = existing_contact.id
                 # Update contact name if we have new info
                 if extracted_data.name and not existing_contact.name:
                     existing_contact.name = extracted_data.name
                     await self.session.commit()
-            
-            # Create or update lead
+            elif phone:
+                # Create new contact (without lead_id - relationship is now lead.contact_id)
+                from app.persistence.models.contact import Contact
+                contact = Contact(
+                    tenant_id=tenant_id,
+                    email=extracted_data.email,
+                    phone=phone,
+                    name=extracted_data.name,
+                    source='voice_call',
+                )
+                self.session.add(contact)
+                await self.session.commit()
+                await self.session.refresh(contact)
+                contact_id = contact.id
+                logger.info(f"Created contact from voice call: contact_id={contact_id}, phone={phone}")
+
+            # Step 2: Check if lead already exists for this conversation
             existing_lead = await self.lead_service.get_lead_by_conversation(
                 tenant_id, conversation_id
             )
-            
+
             if existing_lead:
                 lead_id = existing_lead.id
-                # Auto-verify existing leads from voice calls (we have confirmed phone from caller ID)
+                # Auto-verify existing leads from voice calls
                 if existing_lead.status != 'verified':
                     existing_lead.status = 'verified'
-                    await self.session.commit()
-                    logger.info(f"Auto-verified lead from voice call: lead_id={lead_id}")
+                # Link to contact if not already linked
+                if contact_id and not existing_lead.contact_id:
+                    existing_lead.contact_id = contact_id
+                await self.session.commit()
+                logger.info(f"Auto-verified lead from voice call: lead_id={lead_id}, contact_id={contact_id}")
             elif extracted_data.name or extracted_data.email or phone:
-                # Create new lead - auto-verified since we have phone from caller ID
-                # Build metadata with skip_followup flag if not qualified/promised
+                # Step 3: Create new lead with contact_id
                 lead_metadata = {
                     "source": "voice_call",
                     "reason": extracted_data.reason,
@@ -1574,37 +1594,14 @@ Write a professional summary (2-3 sentences):"""
                     phone=phone,
                     name=extracted_data.name,
                     metadata=lead_metadata,
+                    contact_id=contact_id,  # Link lead to contact
                 )
                 # Auto-verify voice call leads since we have confirmed phone from caller ID
                 lead.status = 'verified'
                 await self.session.commit()
                 lead_id = lead.id
-                logger.info(f"Created and auto-verified lead from voice call: lead_id={lead_id}")
-            
-            # Check if capture_lead already created a contact via _check_and_auto_convert
-            if not contact_id and lead_id:
-                lead_contact = await self.contact_repo.get_by_lead_id(tenant_id, lead_id)
-                if lead_contact:
-                    contact_id = lead_contact.id
-                    logger.info(f"Using contact created by lead capture: contact_id={contact_id}")
+                logger.info(f"Created and auto-verified lead from voice call: lead_id={lead_id}, contact_id={contact_id}")
 
-            # Only create contact directly if still no contact and we have phone
-            if not contact_id and phone:
-                from app.persistence.models.contact import Contact
-                contact = Contact(
-                    tenant_id=tenant_id,
-                    lead_id=lead_id,
-                    email=extracted_data.email,
-                    phone=phone,
-                    name=extracted_data.name,
-                    source='voice_call',
-                )
-                self.session.add(contact)
-                await self.session.commit()
-                await self.session.refresh(contact)
-                contact_id = contact.id
-                logger.info(f"Created contact from voice call: contact_id={contact_id}, phone={phone}")
-                
         except Exception as e:
             logger.error(f"Failed to create/update lead/contact: {e}", exc_info=True)
 

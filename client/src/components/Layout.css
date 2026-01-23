@@ -202,6 +202,41 @@
   background: var(--color-bg-light);
   padding: var(--spacing-lg);
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Footer */
+.app-footer {
+  margin-top: auto;
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.footer-links {
+  margin-bottom: var(--spacing-xs);
+}
+
+.footer-links a {
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.footer-links a:hover {
+  color: var(--color-primary);
+}
+
+.footer-divider {
+  margin: 0 var(--spacing-sm);
+  color: var(--color-border);
+}
+
+.footer-copyright {
+  color: var(--color-text-light);
 }
 
 /* Impersonation Banner */

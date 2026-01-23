@@ -1,7 +1,7 @@
 """Add multi-tenancy enhancements: soft delete, audit logs, RLS
 
 Revision ID: add_multitenancy_enhancements
-Revises: 0e0a47c4ec9a_add_prompt_status_and_scope
+Revises: add_widget_events
 Create Date: 2026-01-18
 
 This migration adds:

@@ -3,12 +3,23 @@
 from contextlib import asynccontextmanager
 
 import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+from sentry_sdk.integrations.httpx import HttpxIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+import logging
 
-from app.api.middleware import IdempotencyMiddleware, TenantRateLimitMiddleware, SecurityHeadersMiddleware
+from app.api.middleware import (
+    IdempotencyMiddleware,
+    TenantRateLimitMiddleware,
+    SecurityHeadersMiddleware,
+    RequestContextMiddleware,
+)
 from app.api.routes import api_router
 from app.core.debug import debug_log
 from app.infrastructure.redis import redis_client
@@ -18,7 +29,7 @@ from app.settings import settings
 # Setup logging
 setup_logging()
 
-# Initialize Sentry for error tracking
+# Initialize Sentry for error tracking with explicit integrations
 if settings.sentry_dsn:
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
@@ -26,12 +37,44 @@ if settings.sentry_dsn:
         traces_sample_rate=settings.sentry_traces_sample_rate,
         profiles_sample_rate=settings.sentry_traces_sample_rate,
         enable_tracing=True,
-        # Capture 100% of errors
         sample_rate=1.0,
-        # Add useful context
-        send_default_pii=False,  # Don't send personally identifiable info
-        # Integrations are auto-detected for FastAPI, SQLAlchemy, etc.
+        send_default_pii=False,
+        integrations=[
+            # FastAPI/Starlette for request handling
+            StarletteIntegration(transaction_style="endpoint"),
+            FastApiIntegration(transaction_style="endpoint"),
+            # SQLAlchemy for database error tracking
+            SqlalchemyIntegration(),
+            # HTTPX for external API call tracking (Gemini, Twilio, etc.)
+            HttpxIntegration(),
+            # Logging integration to capture log messages as breadcrumbs
+            LoggingIntegration(
+                level=logging.INFO,
+                event_level=logging.ERROR,
+            ),
+        ],
+        # Add before_send hook for context enrichment
+        before_send=_enrich_sentry_event,
     )
+
+
+def _enrich_sentry_event(event, hint):
+    """Enrich Sentry events with tenant and request context."""
+    from app.core.tenant_context import get_tenant_context
+    from app.api.middleware import get_current_request_id
+
+    # Add tenant context
+    tenant_id = get_tenant_context()
+    if tenant_id:
+        event.setdefault("tags", {})["tenant_id"] = str(tenant_id)
+        event.setdefault("user", {})["tenant_id"] = tenant_id
+
+    # Add request ID for correlation
+    request_id = get_current_request_id()
+    if request_id:
+        event.setdefault("tags", {})["request_id"] = request_id
+
+    return event
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -87,6 +130,10 @@ app.add_middleware(TenantRateLimitMiddleware)
 
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Add request context middleware (runs first, wraps all other middleware)
+# Must be added last so it executes first in the middleware chain
+app.add_middleware(RequestContextMiddleware)
 
 # Include API routes
 app.include_router(api_router, prefix=settings.api_v1_prefix)

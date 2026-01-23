@@ -29,7 +29,6 @@ ACKNOWLEDGEMENT_WORDS = {
     "what", "when", "where", "who", "why", "how",
     # Generic terms
     "name", "email", "phone", "address", "contact",
-    "test", "testing", "demo",
     "unknown", "anonymous", "none", "null", "n/a", "na", "nil",
     # Single letters/very short
     "a", "b", "c", "i", "u", "r", "y", "n",

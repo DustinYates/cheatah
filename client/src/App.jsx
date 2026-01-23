@@ -20,6 +20,8 @@ import EmailSettings from './pages/EmailSettings';
 import EscalationSettings from './pages/EscalationSettings';
 import ManageTenants from './pages/ManageTenants';
 import PromptWizard from './pages/PromptWizard';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
 import './App.css';
 
 function App() {
@@ -28,6 +30,8 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<TermsOfService />} />
           <Route path="/onboarding" element={
             <ProtectedRoute>
               <Onboarding />

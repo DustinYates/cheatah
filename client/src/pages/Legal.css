@@ -1,0 +1,87 @@
+.legal-page {
+  min-height: 100vh;
+  background-color: var(--background-secondary, #f8f9fa);
+  padding: 2rem 1rem;
+}
+
+.legal-container {
+  max-width: 800px;
+  margin: 0 auto;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 2rem 3rem;
+}
+
+.legal-container h1 {
+  font-size: 2rem;
+  color: var(--text-primary, #1a1a2e);
+  margin-bottom: 0.5rem;
+  border-bottom: 2px solid var(--primary, #4f46e5);
+  padding-bottom: 0.75rem;
+}
+
+.legal-container .last-updated {
+  color: var(--text-secondary, #6b7280);
+  font-size: 0.875rem;
+  margin-bottom: 2rem;
+}
+
+.legal-container section {
+  margin-bottom: 2rem;
+}
+
+.legal-container h2 {
+  font-size: 1.25rem;
+  color: var(--text-primary, #1a1a2e);
+  margin-bottom: 1rem;
+  margin-top: 1.5rem;
+}
+
+.legal-container h3 {
+  font-size: 1rem;
+  color: var(--text-primary, #374151);
+  margin-bottom: 0.75rem;
+  margin-top: 1rem;
+}
+
+.legal-container p {
+  color: var(--text-secondary, #4b5563);
+  line-height: 1.7;
+  margin-bottom: 1rem;
+}
+
+.legal-container ul {
+  margin: 0.5rem 0 1rem 1.5rem;
+  color: var(--text-secondary, #4b5563);
+}
+
+.legal-container li {
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+}
+
+.legal-container strong {
+  color: var(--text-primary, #374151);
+}
+
+.legal-container .contact-info {
+  background-color: var(--background-secondary, #f3f4f6);
+  padding: 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .legal-container {
+    padding: 1.5rem;
+  }
+
+  .legal-container h1 {
+    font-size: 1.5rem;
+  }
+
+  .legal-container h2 {
+    font-size: 1.125rem;
+  }
+}

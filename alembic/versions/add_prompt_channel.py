@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = 'add_prompt_channel'
-down_revision = 'add_voxie_provider_fields'
+down_revision = 'add_fallback_voice_prompt'
 branch_labels = None
 depends_on = None
 

@@ -1,7 +1,7 @@
 """Auto-convert existing qualifying leads to contacts
 
 Revision ID: auto_convert_existing_leads
-Revises: add_voxie_provider_fields
+Revises: add_tenant_prompt_config
 Create Date: 2026-01-12
 
 This migration finds all leads that:

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import './Layout.css';
 
@@ -157,6 +157,16 @@ export default function Layout() {
       </nav>
       <main className="content">
         <Outlet />
+        <footer className="app-footer">
+          <div className="footer-links">
+            <Link to="/privacy">Privacy Policy</Link>
+            <span className="footer-divider">|</span>
+            <Link to="/terms">Terms of Service</Link>
+          </div>
+          <div className="footer-copyright">
+            &copy; {new Date().getFullYear()} ChatterCheetah
+          </div>
+        </footer>
       </main>
     </div>
   );

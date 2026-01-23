@@ -1,19 +1,88 @@
-"""Middleware for idempotency, rate limiting, and tenant context."""
+"""Middleware for idempotency, rate limiting, tenant context, and request tracking."""
 
 import json
 import logging
 import time
-from typing import Callable
+import uuid
+from contextvars import ContextVar
+from typing import Callable, Optional
 
+import sentry_sdk
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.idempotency import generate_idempotency_key
+from app.core.tenant_context import get_tenant_context
 from app.infrastructure.redis import redis_client
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# Context variable for request ID (for distributed tracing)
+_request_id_var: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
+
+
+def get_current_request_id() -> Optional[str]:
+    """Get the current request ID from context."""
+    return _request_id_var.get()
+
+
+class RequestContextMiddleware(BaseHTTPMiddleware):
+    """Middleware for request context tracking and Sentry enrichment.
+
+    - Generates unique request IDs for correlation
+    - Adds tenant context to Sentry
+    - Logs request timing for performance monitoring
+    """
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Process request with context tracking."""
+        # Generate or extract request ID
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+        _request_id_var.set(request_id)
+
+        # Get tenant ID from context (if available)
+        tenant_id = get_tenant_context()
+
+        # Set Sentry context for this request
+        with sentry_sdk.configure_scope() as scope:
+            scope.set_tag("request_id", request_id)
+            if tenant_id:
+                scope.set_tag("tenant_id", str(tenant_id))
+                scope.set_user({"tenant_id": tenant_id})
+
+        # Track request timing
+        start_time = time.perf_counter()
+
+        try:
+            response = await call_next(request)
+        except Exception as e:
+            # Ensure errors are captured with context
+            sentry_sdk.capture_exception(e)
+            raise
+        finally:
+            # Log request completion with timing
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            path = str(request.url.path)
+
+            # Skip logging for health checks and static files
+            if not any(skip in path for skip in ["/health", "/static", "/assets"]):
+                log_data = {
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": path,
+                    "status_code": response.status_code if "response" in locals() else 500,
+                    "duration_ms": round(duration_ms, 2),
+                }
+                if tenant_id:
+                    log_data["tenant_id"] = tenant_id
+
+                logger.info(f"Request completed", extra=log_data)
+
+        # Add request ID to response headers for client correlation
+        response.headers["X-Request-ID"] = request_id
+        return response
 
 
 class TenantRateLimitMiddleware(BaseHTTPMiddleware):

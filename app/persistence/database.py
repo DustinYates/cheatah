@@ -1,5 +1,8 @@
 """Database connection and session management."""
 
+import logging
+
+import sentry_sdk
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
@@ -8,6 +11,8 @@ from sqlalchemy.pool import Pool
 from app.core.debug import debug_log
 from app.core.tenant_context import get_tenant_context
 from app.settings import settings, get_async_database_url
+
+logger = logging.getLogger(__name__)
 
 # Get the async-compatible database URL
 async_database_url = get_async_database_url()
@@ -65,8 +70,11 @@ def _set_tenant_context_sync(dbapi_connection, connection_record):
                 cursor.execute("SET app.current_tenant_id = ''")
         finally:
             cursor.close()
-    except Exception:
-        pass  # Silently ignore RLS errors to not break connection checkout
+    except Exception as e:
+        # Log RLS setup errors - these are critical for tenant isolation security
+        logger.error(f"RLS context setup failed: {e}", exc_info=True)
+        sentry_sdk.capture_exception(e)
+        # Don't raise - allow connection checkout to proceed, but log the security concern
 
 
 def _reset_tenant_context_sync(dbapi_connection, connection_record):
@@ -83,8 +91,9 @@ def _reset_tenant_context_sync(dbapi_connection, connection_record):
             cursor.execute("SET app.current_tenant_id = ''")
         finally:
             cursor.close()
-    except Exception:
-        pass  # Silently ignore errors during checkin
+    except Exception as e:
+        # Log but don't fail - connection is being returned anyway
+        logger.warning(f"RLS context reset failed during checkin: {e}")
 
 
 # Register event listeners for RLS tenant context

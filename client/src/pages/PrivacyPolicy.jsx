@@ -133,7 +133,7 @@ const PrivacyPolicy = () => {
             data rights, please contact us at:
           </p>
           <p className="contact-info">
-            Email: privacy@chattercheetah.com
+            Email: dustin.yates143@gmail.com
           </p>
         </section>
       </div>

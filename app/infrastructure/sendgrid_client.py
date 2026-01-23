@@ -1,10 +1,14 @@
 """SendGrid email client for sending emails."""
 
+import logging
 from typing import Optional
+
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Email, To, Content, ReplyTo
+
 from app.settings import settings
-from app.core.debug import debug_log
+
+logger = logging.getLogger(__name__)
 
 
 class SendGridClient:
@@ -71,15 +75,7 @@ class SendGridClient:
 
             response = self.client.send(message)
 
-            debug_log(
-                "sendgrid_client.py:send_email",
-                "Email sent successfully",
-                {
-                    "to": to_email,
-                    "subject": subject,
-                    "status_code": response.status_code,
-                },
-            )
+            logger.info(f"Email sent successfully to={to_email} subject={subject} status_code={response.status_code}")
 
             return {
                 "status": "success",
@@ -88,11 +84,7 @@ class SendGridClient:
             }
 
         except Exception as e:
-            debug_log(
-                "sendgrid_client.py:send_email",
-                f"Failed to send email: {str(e)}",
-                {"to": to_email, "error": str(e)},
-            )
+            logger.error(f"Failed to send email to={to_email}: {e}", exc_info=True)
             raise
 
 

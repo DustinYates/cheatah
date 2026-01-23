@@ -2,10 +2,11 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response
+from twilio.request_validator import RequestValidator
 
 from app.domain.services.sms_service import SmsService
 from app.infrastructure.cloud_tasks import CloudTasksClient
@@ -14,6 +15,35 @@ from app.settings import settings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+
+async def _validate_twilio_signature(
+    request: Request,
+    auth_token: str,
+) -> bool:
+    """Validate Twilio webhook signature.
+
+    Args:
+        request: FastAPI request
+        auth_token: Twilio auth token for the account
+
+    Returns:
+        True if signature is valid, False otherwise
+    """
+    signature = request.headers.get("X-Twilio-Signature", "")
+    if not signature:
+        logger.warning("Missing X-Twilio-Signature header")
+        return False
+
+    # Get the full URL as Twilio sees it
+    url = str(request.url)
+
+    # Get form data for validation
+    form_data = await request.form()
+    params = {key: form_data[key] for key in form_data}
+
+    validator = RequestValidator(auth_token)
+    return validator.validate(url, params, signature)
 
 router = APIRouter()
 
@@ -49,22 +79,23 @@ async def inbound_sms_webhook(
         TwiML response (empty for ACK)
     """
     try:
-        # Extract tenant_id from To number or AccountSid
-        # In production, you'd map Twilio numbers to tenant IDs
-        # For now, we'll need to determine tenant from To number or config
-        tenant_id = await _get_tenant_from_phone_number(To, AccountSid, db)
-        
+        # Extract tenant_id and config from To number or AccountSid
+        tenant_id, sms_config = await _get_tenant_and_config_from_phone_number(To, AccountSid, db)
+
         if not tenant_id:
             logger.warning(f"Could not determine tenant for phone number: {To}")
             # Return 200 to Twilio even if we can't process
             return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', media_type="application/xml")
-        
-        # Validate Twilio signature (optional but recommended)
-        # signature = request.headers.get("X-Twilio-Signature")
-        # if signature:
-        #     twilio_client = TwilioSmsClient()
-        #     if not twilio_client.validate_webhook_signature(str(request.url), dict(request.form()), signature):
-        #         raise HTTPException(status_code=403, detail="Invalid signature")
+
+        # Validate Twilio signature in production
+        if sms_config and sms_config.twilio_auth_token:
+            is_valid = await _validate_twilio_signature(request, sms_config.twilio_auth_token)
+            if not is_valid:
+                if settings.environment == "production":
+                    logger.warning(f"Invalid Twilio signature for tenant {tenant_id}")
+                    raise HTTPException(status_code=403, detail="Invalid signature")
+                else:
+                    logger.warning(f"Invalid Twilio signature for tenant {tenant_id} (ignored in dev)")
         
         # Queue message for async processing
         if settings.cloud_tasks_worker_url:
@@ -152,43 +183,43 @@ async def sms_status_callback(
     return Response(status_code=200)
 
 
-async def _get_tenant_from_phone_number(
+async def _get_tenant_and_config_from_phone_number(
     phone_number: str,
     account_sid: str,
     db: AsyncSession,
-) -> int | None:
-    """Get tenant ID from phone number or account SID.
-    
+) -> tuple[int | None, Any]:
+    """Get tenant ID and SMS config from phone number or account SID.
+
     Args:
         phone_number: Twilio phone number
         account_sid: Twilio account SID
         db: Database session
-        
+
     Returns:
-        Tenant ID or None if not found
+        Tuple of (Tenant ID, TenantSmsConfig) or (None, None) if not found
     """
     from sqlalchemy import select
     from app.persistence.models.tenant_sms_config import TenantSmsConfig
-    
+
     # Try to find tenant by Twilio phone number
     stmt = select(TenantSmsConfig).where(
         TenantSmsConfig.twilio_phone_number == phone_number
     )
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
-    
+
     if config:
-        return config.tenant_id
-    
+        return config.tenant_id, config
+
     # Try to find by account SID
     stmt = select(TenantSmsConfig).where(
         TenantSmsConfig.twilio_account_sid == account_sid
     )
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
-    
+
     if config:
-        return config.tenant_id
-    
-    return None
+        return config.tenant_id, config
+
+    return None, None
 

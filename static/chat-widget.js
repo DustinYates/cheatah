@@ -1,13 +1,14 @@
 /**
  * Chatter Cheetah Web Chat Widget
  * Simple embeddable chat widget for WordPress and other websites
- * 
+ *
  * Usage:
  * <script src="https://your-api-domain.com/static/chat-widget.js"></script>
  * <script>
  *   ChatterCheetah.init({
  *     apiUrl: 'https://your-api-domain.com/api/v1',
  *     tenantId: 1,
+ *     apiKey: 'your-widget-api-key',  // Required for authentication
  *     scrollBehavior: 'top'
  *   });
  * </script>
@@ -2077,11 +2078,19 @@
       loading.style.display = 'block';
 
       try {
+        // Build request headers
+        const headers = {
+          'Content-Type': 'application/json',
+        };
+
+        // Add API key header if configured
+        if (this.config.apiKey) {
+          headers['X-Widget-Api-Key'] = this.config.apiKey;
+        }
+
         const response = await fetch(`${this.config.apiUrl}/chat`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: headers,
           body: JSON.stringify({
             tenant_id: this.config.tenantId,
             session_id: this.sessionId,

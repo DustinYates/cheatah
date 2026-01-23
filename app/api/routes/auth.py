@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.core.auth import create_access_token
 from app.core.password import verify_password, hash_password
 from app.api.deps import get_current_user, is_global_admin
+from app.infrastructure.rate_limiter import rate_limit
 from app.domain.services.audit_service import AuditService
 from app.persistence.database import get_db
 from app.persistence.models.audit_log import AuditAction
@@ -74,6 +75,7 @@ async def login(
     login_data: LoginRequest,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _rate_limit: None = Depends(rate_limit("auth")),
 ) -> LoginResponse:
     """Login endpoint for admin dashboard.
 
@@ -129,6 +131,7 @@ async def signup(
     signup_data: SignupRequest,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _rate_limit: None = Depends(rate_limit("auth")),
 ) -> SignupResponse:
     """Public signup endpoint for new users.
 

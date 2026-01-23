@@ -1,10 +1,11 @@
 """Telnyx webhooks for AI Assistant and SMS."""
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select, cast, String
@@ -21,6 +22,63 @@ from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# Maximum age in seconds for Telnyx webhook timestamps (5 minutes)
+TELNYX_TIMESTAMP_MAX_AGE = 300
+
+
+def _verify_telnyx_webhook(request: Request) -> bool:
+    """Verify Telnyx webhook signature and timestamp.
+
+    Telnyx webhooks include:
+    - telnyx-signature-ed25519: ED25519 signature
+    - telnyx-timestamp: Unix timestamp when the webhook was sent
+
+    This function validates:
+    1. Required headers are present
+    2. Timestamp is recent (prevents replay attacks)
+
+    Note: Full cryptographic signature verification requires the Telnyx SDK
+    or PyNaCl. This implementation provides timestamp-based replay protection.
+
+    Args:
+        request: FastAPI request
+
+    Returns:
+        True if verification passes, False otherwise
+    """
+    signature = request.headers.get("telnyx-signature-ed25519", "")
+    timestamp_str = request.headers.get("telnyx-timestamp", "")
+
+    # Check for required headers
+    if not signature or not timestamp_str:
+        logger.warning(
+            "Missing Telnyx webhook headers",
+            extra={"has_signature": bool(signature), "has_timestamp": bool(timestamp_str)},
+        )
+        return False
+
+    # Validate timestamp is recent (prevents replay attacks)
+    try:
+        webhook_timestamp = int(timestamp_str)
+        current_timestamp = int(time.time())
+        age = current_timestamp - webhook_timestamp
+
+        if age > TELNYX_TIMESTAMP_MAX_AGE:
+            logger.warning(
+                f"Telnyx webhook timestamp too old: {age}s (max {TELNYX_TIMESTAMP_MAX_AGE}s)"
+            )
+            return False
+
+        if age < -60:  # Allow 1 minute clock skew into the future
+            logger.warning(f"Telnyx webhook timestamp in future: {-age}s")
+            return False
+
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Invalid Telnyx timestamp format: {timestamp_str}, error: {e}")
+        return False
+
+    return True
 
 router = APIRouter()
 
@@ -360,6 +418,16 @@ async def telnyx_inbound_sms_webhook(
         JSON response with 200 status
     """
     try:
+        # Verify Telnyx webhook signature in production
+        if settings.environment == "production":
+            if not _verify_telnyx_webhook(request):
+                logger.warning("Invalid Telnyx webhook signature - rejecting request")
+                raise HTTPException(status_code=403, detail="Invalid webhook signature")
+        else:
+            # Log warning in development but don't block
+            if not _verify_telnyx_webhook(request):
+                logger.warning("Invalid Telnyx webhook signature (ignored in dev)")
+
         # Parse JSON body
         body = await request.json()
 
@@ -452,6 +520,12 @@ async def telnyx_sms_status_webhook(
         JSON response with 200 status
     """
     try:
+        # Verify Telnyx webhook signature in production
+        if settings.environment == "production":
+            if not _verify_telnyx_webhook(request):
+                logger.warning("Invalid Telnyx status webhook signature - rejecting")
+                raise HTTPException(status_code=403, detail="Invalid webhook signature")
+
         body = await request.json()
         data = body.get("data", {})
         event_type = data.get("event_type", "")

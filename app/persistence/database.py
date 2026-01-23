@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import Pool
 
-from app.core.debug import debug_log
 from app.core.tenant_context import get_tenant_context
 from app.settings import settings, get_async_database_url
 
@@ -16,10 +15,6 @@ logger = logging.getLogger(__name__)
 
 # Get the async-compatible database URL
 async_database_url = get_async_database_url()
-
-# #region agent log
-debug_log("database.py:9", "Creating async engine", {"database_url_prefix": async_database_url[:50] + "..." if len(async_database_url) > 50 else async_database_url, "url_uses_asyncpg": "postgresql+asyncpg" in async_database_url.lower()})
-# #endregion
 
 # Create async engine with conservative pool settings for Supabase Pooler
 # Note: Supabase Pooler in Session mode has strict limits (typically 10-15 connections)
@@ -112,19 +107,11 @@ if "postgresql" in get_async_database_url().lower():
 
 async def get_db() -> AsyncSession:
     """Dependency for getting database session."""
-    # #region agent log
-    debug_log("database.py:32", "get_db called - creating session", {}, "B")
-    # #endregion
     async with AsyncSessionLocal() as session:
         try:
-            # #region agent log
-            debug_log("database.py:36", "Session created successfully", {}, "B")
-            # #endregion
             yield session
         except Exception as e:
-            # #region agent log
-            debug_log("database.py:42", "Database session error", {"error_type": type(e).__name__, "error_message": str(e)}, "B")
-            # #endregion
+            logger.error(f"Database session error: {e}", exc_info=True)
             raise
         finally:
             await session.close()

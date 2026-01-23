@@ -161,7 +161,7 @@ const TermsOfService = () => {
             If you have any questions about these Terms of Service, please contact us at:
           </p>
           <p className="contact-info">
-            Email: legal@chattercheetah.com
+            Email: dustin.yates143@gmail.com
           </p>
         </section>
       </div>

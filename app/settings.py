@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     gmail_client_secret: str | None = None
     gmail_pubsub_topic: str | None = None  # e.g., projects/{project}/topics/{topic}
     gmail_oauth_redirect_uri: str | None = None  # OAuth callback URL
+    gmail_pubsub_auth_token: str | None = None  # Shared secret for Pub/Sub push verification
     frontend_url: str | None = None  # Frontend URL for OAuth redirects
 
     # SendGrid (Email sending)
@@ -127,10 +128,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-# Import debug_log after settings is created to avoid circular import
-from app.core.debug import debug_log
-
-# #region agent log
-debug_log("settings.py:48", "Settings initialized", {"database_url_prefix": settings.database_url[:30] + "..." if len(settings.database_url) > 30 else settings.database_url, "has_cloud_sql_conn": settings.cloud_sql_instance_connection_name is not None, "gcp_project_id": settings.gcp_project_id, "environment": settings.environment})
-# #endregion

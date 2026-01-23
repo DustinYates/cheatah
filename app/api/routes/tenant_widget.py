@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_current_tenant
+from app.infrastructure.rate_limiter import rate_limit
 from app.infrastructure.widget_asset_storage import (
     MAX_FILE_SIZE_BYTES,
     widget_asset_storage,
@@ -234,6 +235,98 @@ async def get_widget_settings(
     return WidgetSettingsResponse(**merged_settings)
 
 
+class WidgetApiKeyResponse(BaseModel):
+    """Response containing widget API key."""
+    api_key: str
+    tenant_id: int
+
+
+@router.get("/api-key", response_model=WidgetApiKeyResponse)
+async def get_widget_api_key(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> WidgetApiKeyResponse:
+    """Get the widget API key for the current tenant.
+
+    The API key is required for the public chat endpoint to authenticate
+    requests from the chat widget.
+    """
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    stmt = select(TenantWidgetConfig).where(TenantWidgetConfig.tenant_id == tenant_id)
+    result = await db.execute(stmt)
+    config = result.scalar_one_or_none()
+
+    if not config:
+        # Create config with new API key
+        config = TenantWidgetConfig(
+            tenant_id=tenant_id,
+            widget_api_key=TenantWidgetConfig.generate_api_key(),
+            settings=DEFAULT_SETTINGS,
+        )
+        db.add(config)
+        await db.commit()
+        await db.refresh(config)
+    elif not config.widget_api_key:
+        # Generate API key if missing
+        config.widget_api_key = TenantWidgetConfig.generate_api_key()
+        await db.commit()
+
+    return WidgetApiKeyResponse(
+        api_key=config.widget_api_key,
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/api-key/regenerate", response_model=WidgetApiKeyResponse)
+async def regenerate_widget_api_key(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> WidgetApiKeyResponse:
+    """Regenerate the widget API key for the current tenant.
+
+    WARNING: This will invalidate the existing API key. Any widgets using
+    the old key will stop working until updated with the new key.
+    """
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    stmt = select(TenantWidgetConfig).where(TenantWidgetConfig.tenant_id == tenant_id)
+    result = await db.execute(stmt)
+    config = result.scalar_one_or_none()
+
+    if not config:
+        # Create config with new API key
+        config = TenantWidgetConfig(
+            tenant_id=tenant_id,
+            widget_api_key=TenantWidgetConfig.generate_api_key(),
+            settings=DEFAULT_SETTINGS,
+        )
+        db.add(config)
+    else:
+        # Regenerate API key
+        config.widget_api_key = TenantWidgetConfig.generate_api_key()
+
+    await db.commit()
+    await db.refresh(config)
+
+    logger.info(f"Widget API key regenerated for tenant {tenant_id} by user {current_user.id}")
+
+    return WidgetApiKeyResponse(
+        api_key=config.widget_api_key,
+        tenant_id=tenant_id,
+    )
+
+
 @router.put("/settings", response_model=WidgetSettingsResponse)
 async def update_widget_settings(
     settings_data: UpdateWidgetSettingsRequest,
@@ -278,8 +371,10 @@ async def update_widget_settings(
 
 @router.get("/settings/public", response_model=WidgetSettingsResponse)
 async def get_widget_settings_public(
+    request: Request,
     tenant_id: int = Query(..., description="Tenant ID"),
     db: AsyncSession = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit("widget_public")),
 ) -> WidgetSettingsResponse:
     """Get widget settings for a tenant (public endpoint for widget to fetch).
 
@@ -463,6 +558,7 @@ async def track_widget_events(
     background_tasks: BackgroundTasks,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit("widget_events")),
 ) -> WidgetEventResponse:
     """Track widget engagement events (public endpoint for widget).
 

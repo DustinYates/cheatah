@@ -21,7 +21,6 @@ from app.api.middleware import (
     RequestContextMiddleware,
 )
 from app.api.routes import api_router
-from app.core.debug import debug_log
 from app.infrastructure.redis import redis_client
 from app.logging_config import setup_logging
 from app.settings import settings
@@ -76,22 +75,18 @@ def _enrich_sentry_event(event, hint):
 
     return event
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    # #region agent log
-    debug_log("main.py:22", "Application startup - connecting Redis", {}, "C")
-    # #endregion
     # Startup
     try:
         await redis_client.connect()
-        # #region agent log
-        debug_log("main.py:27", "Redis connected successfully", {}, "C")
-        # #endregion
+        logger.info("Redis connected successfully")
     except Exception as e:
-        # #region agent log
-        debug_log("main.py:31", "Redis connection error", {"error_type": type(e).__name__, "error_message": str(e)}, "C")
-        # #endregion
+        logger.error(f"Redis connection error: {e}", exc_info=True)
         raise
     yield
     # Shutdown

@@ -45,23 +45,35 @@ class GmailPushNotification:
 
 def verify_pubsub_token(token: str | None) -> bool:
     """Verify Pub/Sub push notification token.
-    
+
     For Gmail push notifications, Google Cloud Pub/Sub sends a bearer token
     that should be verified against our expected value.
-    
+
     Args:
         token: Bearer token from Authorization header
-        
+
     Returns:
         True if token is valid (or if no verification is configured)
     """
-    # In production, implement proper token verification
-    # For now, accept all tokens (configure in settings for production)
-    if not token:
+    import hmac
+
+    # If no auth token is configured, accept all requests (development mode)
+    if not settings.gmail_pubsub_auth_token:
+        if token:
+            logger.warning("Pub/Sub token received but GMAIL_PUBSUB_AUTH_TOKEN not configured")
         return True
-    
-    # TODO: Add token verification when pubsub_auth_token is configured
-    return True
+
+    # Token is required when auth is configured
+    if not token:
+        logger.warning("Pub/Sub request missing token but GMAIL_PUBSUB_AUTH_TOKEN is configured")
+        return False
+
+    # Constant-time comparison to prevent timing attacks
+    is_valid = hmac.compare_digest(token, settings.gmail_pubsub_auth_token)
+    if not is_valid:
+        logger.warning("Invalid Pub/Sub token received")
+
+    return is_valid
 
 
 def get_gmail_pubsub_topic() -> str | None:

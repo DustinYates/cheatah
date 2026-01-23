@@ -1,14 +1,22 @@
 """Public chat endpoint for web chat widget."""
 
+import hmac
+import logging
 import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.chat_service import ChatService
+from app.infrastructure.rate_limiter import rate_limit
 from app.persistence.database import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.persistence.models.tenant_widget_config import TenantWidgetConfig
+from app.settings import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -22,6 +30,7 @@ class ChatRequest(BaseModel):
     user_name: str | None = None  # Optional, for lead capture
     user_email: str | None = None  # Optional, for lead capture
     user_phone: str | None = None  # Optional, for lead capture
+    api_key: str | None = None  # Widget API key for authentication
 
 
 class ChatResponse(BaseModel):
@@ -36,15 +45,61 @@ class ChatResponse(BaseModel):
     escalation_id: int | None = None  # Escalation record ID if escalation was triggered
 
 
+async def _validate_widget_api_key(
+    db: AsyncSession,
+    tenant_id: int,
+    api_key: str | None,
+) -> bool:
+    """Validate widget API key for tenant.
+
+    Args:
+        db: Database session
+        tenant_id: Tenant ID
+        api_key: API key from request
+
+    Returns:
+        True if valid, False otherwise
+    """
+    stmt = select(TenantWidgetConfig).where(TenantWidgetConfig.tenant_id == tenant_id)
+    result = await db.execute(stmt)
+    config = result.scalar_one_or_none()
+
+    if not config:
+        # No config exists - tenant may not exist
+        return False
+
+    if not config.widget_api_key:
+        # No API key configured - allow in development, deny in production
+        if settings.environment == "production":
+            logger.warning(f"No widget API key configured for tenant {tenant_id}")
+            return False
+        return True
+
+    if not api_key:
+        # No API key provided in request
+        return False
+
+    # Compare API keys (constant-time comparison for security)
+    return hmac.compare_digest(config.widget_api_key, api_key)
+
+
 @router.post("", response_model=ChatResponse)
 async def chat(
+    request: Request,
     chat_request: ChatRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    x_widget_api_key: Annotated[str | None, Header()] = None,
+    _rate_limit: None = Depends(rate_limit("chat")),
 ) -> ChatResponse:
-    """Public chat endpoint for web widget.
-    
+    """Public chat endpoint for web chat widget.
+
+    This endpoint requires a valid widget API key for authentication.
+    The API key can be provided either:
+    - In the request body as 'api_key'
+    - In the header as 'X-Widget-Api-Key'
+
     This endpoint:
-    - Accepts tenant_id in request (no auth required)
+    - Validates widget API key
     - Creates or retrieves conversation by session_id
     - Assembles prompt from tenant settings
     - Calls LLM with conversation history
@@ -52,10 +107,31 @@ async def chat(
     - Enforces guardrails (max turns, timeout)
     """
     start_time = time.time()
-    
+
+    # Get API key from header or body (header takes precedence)
+    api_key = x_widget_api_key or chat_request.api_key
+
+    # Validate API key
+    is_valid = await _validate_widget_api_key(db, chat_request.tenant_id, api_key)
+
+    if not is_valid:
+        if settings.environment == "production":
+            logger.warning(f"Invalid widget API key for tenant {chat_request.tenant_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or missing widget API key",
+            )
+        else:
+            # In development, log warning but allow request
+            if not api_key:
+                logger.warning(
+                    f"No widget API key provided for tenant {chat_request.tenant_id} "
+                    "(allowed in development mode)"
+                )
+
     try:
         chat_service = ChatService(db)
-        
+
         # Process chat request
         result = await chat_service.process_chat(
             tenant_id=chat_request.tenant_id,
@@ -68,10 +144,8 @@ async def chat(
         
         # Calculate latency
         latency_ms = (time.time() - start_time) * 1000
-        
-        # Log metrics (basic logging)
-        import logging
-        logger = logging.getLogger(__name__)
+
+        # Log metrics
         logger.info(
             f"Chat request processed - tenant_id={chat_request.tenant_id}, "
             f"session_id={result.session_id}, latency_ms={latency_ms:.2f}, "
@@ -99,8 +173,6 @@ async def chat(
             detail=error_message,
         )
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         error_latency = (time.time() - start_time) * 1000
         logger.error(
             f"Chat request failed - tenant_id={chat_request.tenant_id}, "

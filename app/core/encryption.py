@@ -4,11 +4,12 @@ Uses Fernet symmetric encryption for encrypting API keys, tokens, and secrets.
 The encryption key should be stored in GCP Secret Manager in production.
 """
 
+import logging
 from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from app.core.debug import debug_log
+logger = logging.getLogger(__name__)
 
 
 class EncryptionError(Exception):
@@ -42,9 +43,9 @@ class EncryptionService:
         key = self._get_encryption_key()
         if key:
             self._fernet = Fernet(key)
-            debug_log("encryption.py:42", "Encryption service initialized", {})
+            logger.info("Encryption service initialized")
         else:
-            debug_log("encryption.py:44", "WARNING: No encryption key configured - encryption disabled", {})
+            logger.warning("No encryption key configured - encryption disabled")
 
     def _get_encryption_key(self) -> Optional[bytes]:
         """Get the encryption key from settings or environment.
@@ -65,7 +66,7 @@ class EncryptionService:
                 Fernet(key_bytes)  # Validate key format
                 return key_bytes
             except Exception as e:
-                debug_log("encryption.py:60", "Invalid FIELD_ENCRYPTION_KEY format", {"error": str(e)})
+                logger.error(f"Invalid FIELD_ENCRYPTION_KEY format: {e}")
                 return None
 
         # No key configured - encryption disabled
@@ -93,7 +94,7 @@ class EncryptionService:
 
         if not self._fernet:
             # If encryption is not enabled, return plaintext with warning
-            debug_log("encryption.py:85", "Encryption not enabled - storing plaintext", {})
+            logger.warning("Encryption not enabled - storing plaintext")
             return plaintext
 
         try:

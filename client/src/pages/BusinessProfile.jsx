@@ -288,6 +288,19 @@ export default function BusinessProfile() {
           />
         </div>
 
+        {getActiveSmsPhone(telephonyConfig).phone && (
+          <div className="form-section">
+            <h3 className="section-title">SMS ALERT PHONE NUMBER</h3>
+            <div className="form-group">
+              <label>Phone:</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontWeight: 'bold' }}>{getActiveSmsPhone(telephonyConfig).phone}</span>
+                <span style={{ color: '#666', fontSize: '14px' }}>(used by default)</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <button type="submit" className="save-btn" disabled={saving}>
           {saving ? 'Saving...' : 'Save Changes'}
         </button>

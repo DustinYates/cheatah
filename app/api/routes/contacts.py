@@ -532,22 +532,89 @@ async def create_contact(
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> ContactResponse:
-    """Create a new contact."""
+    """Create a new contact, auto-merging if matching email/phone exists."""
     if not request.name and not request.email and not request.phone:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one of name, email, or phone is required",
         )
-    
+
     repo = ContactRepository(db)
-    contact = await repo.create(
-        tenant_id=tenant_id,
-        name=request.name,
-        email=request.email,
-        phone=request.phone,
-        source=request.source or "manual",
+
+    # Check for existing contacts with matching email or phone for auto-merge
+    matching_contacts = await repo.get_all_by_email_or_phone(
+        tenant_id, email=request.email, phone=request.phone
     )
-    
+
+    if len(matching_contacts) > 1:
+        # Multiple matches - auto-merge them all
+        merge_service = ContactMergeService(db)
+        primary_contact = matching_contacts[0]  # Oldest contact
+        secondary_ids = [c.id for c in matching_contacts[1:]]
+
+        # Build field resolutions - prefer primary but fill missing from others or request
+        field_resolutions = {}
+        for field in ['name', 'email', 'phone']:
+            primary_value = getattr(primary_contact, field)
+            request_value = getattr(request, field)
+            if not primary_value:
+                # Check if request has this value
+                if request_value:
+                    # Keep as "primary" - we'll update it after merge
+                    field_resolutions[field] = "primary"
+                else:
+                    # Find first secondary with this value
+                    for secondary in matching_contacts[1:]:
+                        if getattr(secondary, field):
+                            field_resolutions[field] = secondary.id
+                            break
+                    else:
+                        field_resolutions[field] = "primary"
+            else:
+                field_resolutions[field] = "primary"
+
+        contact = await merge_service.merge_contacts(
+            tenant_id=tenant_id,
+            primary_contact_id=primary_contact.id,
+            secondary_contact_ids=secondary_ids,
+            field_resolutions=field_resolutions,
+            user_id=current_user.id,
+        )
+
+        # Update with any new data from request
+        update_fields = {}
+        if request.name and not contact.name:
+            update_fields["name"] = request.name
+        if request.email and not contact.email:
+            update_fields["email"] = request.email
+        if request.phone and not contact.phone:
+            update_fields["phone"] = request.phone
+        if update_fields:
+            contact = await repo.update_contact(tenant_id, contact.id, **update_fields)
+
+    elif len(matching_contacts) == 1:
+        # Single match - update with new data
+        contact = matching_contacts[0]
+        update_fields = {}
+        if request.name and not contact.name:
+            update_fields["name"] = request.name
+        if request.email and not contact.email:
+            update_fields["email"] = request.email
+        if request.phone and not contact.phone:
+            update_fields["phone"] = request.phone
+        if update_fields:
+            contact = await repo.update_contact(tenant_id, contact.id, **update_fields)
+
+    else:
+        # No matches - create new contact
+        contact = await repo.create(
+            tenant_id=tenant_id,
+            name=request.name,
+            email=request.email,
+            phone=request.phone,
+            source=request.source or "manual",
+        )
+
     return _contact_to_response(contact)
 
 

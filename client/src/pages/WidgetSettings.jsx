@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, ErrorState, EmptyState } from '../components/ui';
+import ChatbotPreview from '../components/ChatbotPreview';
 import './Settings.css';
 
 const defaultWidgetSettings = {
@@ -544,8 +545,11 @@ export default function WidgetSettings() {
 
   return (
     <div className="settings-page">
-      <h1>Website Widget</h1>
-      <p className="description">Configure your chat widget embed code and customize its appearance.</p>
+      <h1>Chatbot</h1>
+      <p className="description">Test your chatbot and configure your chat widget embed code and appearance.</p>
+
+      {/* Test Your Chatbot Section */}
+      <ChatbotPreview />
 
       {/* Embed Code Section */}
       <details>
@@ -639,6 +643,9 @@ export default function WidgetSettings() {
                   <span>Show advanced settings</span>
                   <span className="info-icon" title="Reveals power-user controls like z-index and motion limits.">ⓘ</span>
                 </label>
+                <button type="submit" className="save-btn save-btn-top" disabled={widgetSaving}>
+                  {widgetSaving ? 'Saving...' : 'Save Changes'}
+                </button>
               </div>
 
               <details open>

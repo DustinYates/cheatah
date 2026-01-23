@@ -165,6 +165,44 @@ class ContactRepository(BaseRepository[Contact]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_all_by_email_or_phone(
+        self, tenant_id: int, email: str | None = None, phone: str | None = None
+    ) -> list[Contact]:
+        """Get all contacts matching email OR phone (for auto-merge).
+
+        Returns all active contacts matching either identifier, ordered by
+        created_at (oldest first) for selecting the primary contact.
+
+        Args:
+            tenant_id: Tenant ID
+            email: Email to search (case-insensitive)
+            phone: Phone to search
+
+        Returns:
+            List of unique contacts matching either identifier (empty if none found)
+        """
+        if not email and not phone:
+            return []
+
+        conditions = []
+        if email:
+            conditions.append(func.lower(Contact.email) == email.lower().strip())
+        if phone:
+            conditions.append(Contact.phone == phone)
+
+        stmt = (
+            select(Contact)
+            .where(
+                Contact.tenant_id == tenant_id,
+                Contact.deleted_at.is_(None),
+                Contact.merged_into_contact_id.is_(None),
+                or_(*conditions)
+            )
+            .order_by(Contact.created_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def list_by_tenant(
         self, tenant_id: int, skip: int = 0, limit: int = 100
     ) -> list[Contact]:

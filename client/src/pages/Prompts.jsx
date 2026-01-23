@@ -6,7 +6,6 @@ import { ToastContainer } from '../components/ui/Toast';
 import { formatDateTimeParts } from '../utils/dateFormat';
 import { useAuth } from '../context/AuthContext';
 import TestChatWidget from '../components/TestChatWidget';
-import ChatbotPreview from '../components/ChatbotPreview';
 import './Prompts.css';
 
 // ========================================
@@ -1577,9 +1576,6 @@ Message style:
         addToast={addToast}
         injectedPrompts={generatedPrompts}
       />
-
-      {/* Chatbot Preview - Test your web chatbot */}
-      <ChatbotPreview />
 
       {/* Archive box (reference only) */}
       <ArchivePromptStorage

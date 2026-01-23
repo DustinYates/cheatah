@@ -609,7 +609,7 @@ export default function Dashboard() {
                 <th>Out</th>
                 <th>Calls</th>
                 <th>Mins</th>
-                <th>Bot</th>
+                <th>Bot Leads</th>
                 <th>Leads</th>
                 <th>Activity</th>
               </tr>

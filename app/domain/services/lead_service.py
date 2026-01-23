@@ -93,12 +93,12 @@ class LeadService:
         phone: str | None = None,
         name: str | None = None,
         metadata: dict | None = None,
-        skip_dedup: bool = False,
+        skip_dedup: bool = True,
     ) -> Lead:
-        """Capture a lead (create or update existing lead record).
+        """Capture a lead (always creates a new lead record).
 
-        If a lead with matching email or phone already exists, updates it.
-        Otherwise creates a new lead.
+        Each lead is stored independently. Merging happens at the Contact
+        level, not the Lead level.
 
         Args:
             tenant_id: Tenant ID
@@ -107,12 +107,12 @@ class LeadService:
             phone: Optional phone (will be normalized to E.164 format)
             name: Optional name
             metadata: Optional metadata dictionary (mapped to extra_data)
-            skip_dedup: If True, always create a new lead even if one exists
-                       with the same email/phone. Useful for chatbot conversations
-                       where multiple people may use the same contact info.
+            skip_dedup: If True (default), always create a new lead even if one
+                       exists with the same email/phone. Each lead is stored
+                       independently; contact merging handles deduplication.
 
         Returns:
-            Created or updated lead
+            Created lead
         """
         # Normalize phone to E.164 format for SMS compatibility
         normalized_phone = normalize_phone_e164(phone) if phone else None
@@ -426,49 +426,76 @@ class LeadService:
         return contact
 
     async def _create_contact_from_lead(self, tenant_id: int, lead: Lead) -> Contact | None:
-        """Create a Contact from a verified lead if one doesn't already exist.
+        """Create a Contact from a verified lead, auto-merging if matches exist.
+
+        Contacts are merged based on matching email OR phone. If multiple
+        contacts match, they are automatically merged into one primary contact.
 
         Args:
             tenant_id: Tenant ID
             lead: Lead to create contact from
 
         Returns:
-            Created Contact or None if contact already exists
+            Created or merged Contact, or None on error
         """
         logger.info(f"Creating contact from lead {lead.id}: email={lead.email}, phone={lead.phone}, name={lead.name}")
-        
+
         try:
-            # Check if a contact already exists with this email or phone
-            existing_contact = await self.contact_repo.get_by_email_or_phone(
+            # Find ALL contacts matching email OR phone for auto-merge
+            matching_contacts = await self.contact_repo.get_all_by_email_or_phone(
                 tenant_id, email=lead.email, phone=lead.phone
             )
-            
-            if existing_contact:
+
+            if len(matching_contacts) > 1:
+                # Multiple contacts match - auto-merge them
+                logger.info(f"Found {len(matching_contacts)} contacts matching lead {lead.id}, auto-merging")
+
+                from app.domain.services.contact_merge_service import ContactMergeService
+                merge_service = ContactMergeService(self.session)
+
+                # Use oldest contact as primary (first in list since sorted by created_at)
+                primary_contact = matching_contacts[0]
+                secondary_ids = [c.id for c in matching_contacts[1:]]
+
+                # Build field resolutions: prefer primary's values, but fill missing from others
+                field_resolutions = {}
+                for field in ['name', 'email', 'phone']:
+                    primary_value = getattr(primary_contact, field)
+                    if not primary_value:
+                        # Find first secondary with this value
+                        for secondary in matching_contacts[1:]:
+                            secondary_value = getattr(secondary, field)
+                            if secondary_value:
+                                field_resolutions[field] = secondary.id
+                                break
+                        else:
+                            field_resolutions[field] = "primary"
+                    else:
+                        field_resolutions[field] = "primary"
+
+                # Use system user ID (0) for auto-merge
+                primary_contact = await merge_service.merge_contacts(
+                    tenant_id=tenant_id,
+                    primary_contact_id=primary_contact.id,
+                    secondary_contact_ids=secondary_ids,
+                    field_resolutions=field_resolutions,
+                    user_id=0  # System auto-merge
+                )
+
+                # Update primary with any missing data from lead
+                await self._update_contact_from_lead(primary_contact, lead)
+                logger.info(f"Auto-merged {len(secondary_ids)} contacts into contact {primary_contact.id}")
+                return primary_contact
+
+            elif len(matching_contacts) == 1:
+                # Single match - update and link
+                existing_contact = matching_contacts[0]
                 logger.info(f"Found existing contact {existing_contact.id} for lead {lead.id}")
-                updated = False
-                # If contact exists but doesn't have lead_id, link it
-                if not existing_contact.lead_id:
-                    existing_contact.lead_id = lead.id
-                    updated = True
-                # Update missing fields from lead
-                if lead.phone and not existing_contact.phone:
-                    existing_contact.phone = lead.phone
-                    updated = True
-                    logger.info(f"Updated contact {existing_contact.id} with phone from lead {lead.id}")
-                if lead.email and not existing_contact.email:
-                    existing_contact.email = lead.email
-                    updated = True
-                    logger.info(f"Updated contact {existing_contact.id} with email from lead {lead.id}")
-                if lead.name and not existing_contact.name:
-                    existing_contact.name = lead.name
-                    updated = True
-                    logger.info(f"Updated contact {existing_contact.id} with name from lead {lead.id}")
-                # Don't commit here - let the caller commit
+                await self._update_contact_from_lead(existing_contact, lead)
                 return existing_contact
-            
-            # Create new contact from lead data
+
+            # No matches - create new contact from lead data
             logger.info(f"Creating new contact for lead {lead.id}")
-            # Determine source from lead metadata
             source = 'web_chat_lead'
             if lead.extra_data and lead.extra_data.get('source') == 'voice_call':
                 source = 'voice_call'
@@ -481,13 +508,37 @@ class LeadService:
                 source=source,
             )
             self.session.add(contact)
-            # Don't commit here - let the caller commit to maintain transaction integrity
-            # The caller (update_lead_status) will commit both the lead status change and contact creation
             logger.info(f"Added contact to session for lead {lead.id}")
             return contact
         except Exception as e:
             logger.error(f"Error creating contact from lead {lead.id}: {e}", exc_info=True)
             raise
+
+    async def _update_contact_from_lead(self, contact: Contact, lead: Lead) -> None:
+        """Update contact with data from lead, filling missing fields.
+
+        Args:
+            contact: Contact to update
+            lead: Lead with data to use
+        """
+        updated = False
+        # Link lead to contact if not already linked
+        if not contact.lead_id:
+            contact.lead_id = lead.id
+            updated = True
+        # Update missing fields from lead
+        if lead.phone and not contact.phone:
+            contact.phone = lead.phone
+            updated = True
+            logger.info(f"Updated contact {contact.id} with phone from lead {lead.id}")
+        if lead.email and not contact.email:
+            contact.email = lead.email
+            updated = True
+            logger.info(f"Updated contact {contact.id} with email from lead {lead.id}")
+        if lead.name and not contact.name:
+            contact.name = lead.name
+            updated = True
+            logger.info(f"Updated contact {contact.id} with name from lead {lead.id}")
 
     async def delete_lead(self, tenant_id: int, lead_id: int) -> bool:
         """Delete a lead by ID.

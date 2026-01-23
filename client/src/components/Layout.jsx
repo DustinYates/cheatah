@@ -119,7 +119,7 @@ export default function Layout() {
                   </li>
                 )}
                 <li>
-                  <NavLink to="/settings/widget">Website Widget</NavLink>
+                  <NavLink to="/settings/widget">Chatbot</NavLink>
                 </li>
                 <li>
                   <NavLink to="/settings/email">Email Setup</NavLink>

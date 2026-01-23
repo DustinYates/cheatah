@@ -403,15 +403,62 @@ export default function WidgetAnalytics() {
                     },
                     settings: widgetSettings,
                     analytics: data ? {
-                      visibility: data.visibility,
-                      attention: data.attention,
+                      summary: {
+                        impressions: data.visibility?.impressions || 0,
+                        openRate: data.attention?.open_rate || 0,
+                        aboveFoldRate: data.visibility?.above_fold_rate || 0,
+                        manualOpenRate: data.attention?.manual_open_rate || 0,
+                      },
+                      visibility: {
+                        impressions: data.visibility?.impressions || 0,
+                        renderSuccessRate: data.visibility?.render_success_rate || 0,
+                        aboveFoldViews: data.visibility?.above_fold_views || 0,
+                        aboveFoldRate: data.visibility?.above_fold_rate || 0,
+                        avgTimeToFirstViewMs: data.visibility?.avg_time_to_first_view_ms || 0,
+                      },
+                      attention: {
+                        autoOpenEnabled: isAutoOpenEnabled,
+                        autoOpenDelay: autoOpenDelay,
+                        widgetOpens: data.attention?.widget_opens || 0,
+                        openRate: data.attention?.open_rate || 0,
+                        manualOpens: data.attention?.manual_opens || 0,
+                        manualOpenRate: data.attention?.manual_open_rate || 0,
+                        autoOpens: data.attention?.auto_opens || 0,
+                        autoOpenDismissCount: data.attention?.auto_open_dismiss_count || 0,
+                        autoOpenDismissRate: data.attention?.auto_open_dismiss_rate || 0,
+                        hoverCount: data.attention?.hover_count || 0,
+                        hoverRate: data.attention?.hover_rate || 0,
+                      },
+                      funnel: {
+                        impressions: data.visibility?.impressions || 0,
+                        hoverFocus: data.attention?.hover_count || 0,
+                        opens: data.attention?.widget_opens || 0,
+                        hoverToImpressionRate: data.visibility?.impressions > 0
+                          ? (data.attention?.hover_count || 0) / data.visibility.impressions
+                          : 0,
+                        openToImpressionRate: data.visibility?.impressions > 0
+                          ? (data.attention?.widget_opens || 0) / data.visibility.impressions
+                          : 0,
+                      },
+                    } : null,
+                    abTestingData: snapshotsData?.variations?.length > 1 ? {
+                      totalVariations: snapshotsData.total_variations,
+                      variations: snapshotsData.variations.map(v => ({
+                        settingsHash: v.settings_hash,
+                        impressions: v.metrics.impressions,
+                        widgetOpens: v.metrics.widget_opens,
+                        openRate: v.metrics.open_rate,
+                        firstSeen: v.metrics.first_seen,
+                        lastSeen: v.metrics.last_seen,
+                        settings: v.settings,
+                      })),
                     } : null,
                   };
                   const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = `widget-config-${formatDateInTimeZone(new Date(), 'yyyy-MM-dd', timeZone)}.json`;
+                  a.download = `widget-analytics-${formatDateInTimeZone(range.startDate, 'yyyy-MM-dd', timeZone)}-to-${formatDateInTimeZone(range.endDate, 'yyyy-MM-dd', timeZone)}.json`;
                   a.click();
                   URL.revokeObjectURL(url);
                 }}

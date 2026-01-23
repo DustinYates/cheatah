@@ -25,7 +25,6 @@ export default function EmailSettings() {
   // SMS follow-up settings state
   const [followupEnabled, setFollowupEnabled] = useState(false);
   const [followupDelayMinutes, setFollowupDelayMinutes] = useState(5);
-  const [followupDefaultMessage, setFollowupDefaultMessage] = useState('');
 
   // Subject-specific SMS templates state
   // Templates are now { subject: { message, delay_minutes } }
@@ -74,7 +73,6 @@ export default function EmailSettings() {
     if (smsSettings) {
       setFollowupEnabled(smsSettings.followup_enabled ?? false);
       setFollowupDelayMinutes(smsSettings.followup_delay_minutes ?? 5);
-      setFollowupDefaultMessage(smsSettings.followup_initial_message ?? '');
       if (smsSettings.followup_subject_templates) {
         setSubjectTemplates(smsSettings.followup_subject_templates);
       }
@@ -502,23 +500,6 @@ export default function EmailSettings() {
               </div>
             </div>
 
-            {/* Default Message */}
-            <div className="form-group">
-              <label htmlFor="followup-default-message">Default Follow-up Message</label>
-              <textarea
-                id="followup-default-message"
-                value={followupDefaultMessage}
-                onChange={(e) => setFollowupDefaultMessage(e.target.value)}
-                placeholder="Hi {first_name}, thanks for reaching out! How can I help you today?"
-                rows={3}
-                maxLength={500}
-              />
-              <small>
-                This message is used when no subject-specific template matches.
-                Use {'{first_name}'} or {'{name}'} as placeholders.
-              </small>
-            </div>
-
             {/* Subject-Specific Templates */}
             <div className="form-group">
               <label>Subject-Specific Templates (Optional)</label>
@@ -680,7 +661,7 @@ export default function EmailSettings() {
                 followup_enabled: followupEnabled,
                 followup_delay_minutes: followupDelayMinutes,
                 followup_sources: ['email'],
-                followup_initial_message: followupDefaultMessage,
+                followup_initial_message: null,
                 followup_subject_templates: Object.keys(templatesToSave).length > 0 ? templatesToSave : null,
               };
 
@@ -688,7 +669,6 @@ export default function EmailSettings() {
                 smsSettingsLoaded: !!smsSettings,
                 followupEnabled,
                 followupDelayMinutes,
-                followupDefaultMessage,
                 templatesCount: Object.keys(templatesToSave).length,
                 payload,
               });

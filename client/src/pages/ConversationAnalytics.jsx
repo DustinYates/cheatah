@@ -650,49 +650,6 @@ export default function ConversationAnalytics() {
           </section>
         )}
 
-        {/* Registration Links Sent */}
-        {data.registration_links && (
-          <section className="conv-analytics-card">
-            <div className="conv-analytics-card-header">
-              <div>
-                <h2>Registration Links Sent</h2>
-                <p>Number of registration links sent to customers.</p>
-              </div>
-            </div>
-            <div className="registration-metrics">
-              <div className="reg-metric-row" style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center', marginBottom: '1rem' }}>
-                <div>
-                  <span className="summary-value" style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-                    {formatNumber(data.registration_links.total_sent)}
-                  </span>
-                  <span className="summary-label" style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
-                    Total Sent
-                  </span>
-                </div>
-                <div>
-                  <span className="summary-value" style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                    {formatNumber(data.registration_links.unique_leads_sent)}
-                  </span>
-                  <span className="summary-label" style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
-                    Unique Leads
-                  </span>
-                </div>
-              </div>
-              {data.registration_links.by_asset_type && Object.keys(data.registration_links.by_asset_type).length > 0 && (
-                <div className="asset-breakdown" style={{ paddingTop: '1rem', borderTop: '1px solid var(--color-border-light)' }}>
-                  <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>By Asset Type</h3>
-                  {Object.entries(data.registration_links.by_asset_type).map(([assetType, count]) => (
-                    <div key={assetType} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', fontSize: '0.875rem' }}>
-                      <span>{formatIntentLabel(assetType)}</span>
-                      <span style={{ fontWeight: 600 }}>{count}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
         {/* Channel Effectiveness Matrix */}
         {data.channel_effectiveness && (
           <section className="conv-analytics-card conv-analytics-card-wide">

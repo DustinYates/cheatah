@@ -113,6 +113,11 @@ export default function Layout() {
             </button>
             {settingsOpen && (
               <ul className="nav-submenu">
+                {user?.is_global_admin && (
+                  <li>
+                    <NavLink to="/settings/prompts">Prompts Setup</NavLink>
+                  </li>
+                )}
                 <li>
                   <NavLink to="/settings/widget">Chatbot</NavLink>
                 </li>

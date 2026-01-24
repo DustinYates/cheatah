@@ -126,6 +126,15 @@ class LeadService:
         if name and validated_name != name:
             logger.info(f"Name validation: '{name}' -> '{validated_name}'")
 
+        # Auto-link to existing contact by phone/email if contact_id not provided
+        if not contact_id and (normalized_phone or email):
+            existing_contact = await self.contact_repo.get_by_email_or_phone(
+                tenant_id, email=email, phone=normalized_phone
+            )
+            if existing_contact:
+                contact_id = existing_contact.id
+                logger.info(f"Auto-linked lead to existing contact {contact_id} by phone={normalized_phone} or email={email}")
+
         # Check for existing lead with same email or phone (unless skip_dedup is set)
         existing_lead = None
         if not skip_dedup:
@@ -414,13 +423,18 @@ class LeadService:
         if not _lead_qualifies_for_auto_conversion(lead):
             return None
 
-        # Check if lead already has an associated contact
+        # Check if lead already has an associated contact (via lead.contact_id)
+        if lead.contact_id:
+            logger.debug(f"Lead {lead.id} already linked to contact {lead.contact_id}, skipping auto-conversion")
+            return None
+
+        # Also check legacy relationship (contact.lead_id)
         result = await self.session.execute(
             text("SELECT id FROM contacts WHERE lead_id = :lead_id LIMIT 1"),
             {"lead_id": lead.id}
         )
         if result.scalar_one_or_none() is not None:
-            logger.debug(f"Lead {lead.id} already has a contact, skipping auto-conversion")
+            logger.debug(f"Lead {lead.id} already has a contact (legacy), skipping auto-conversion")
             return None
 
         logger.info(f"Auto-converting lead {lead.id} to contact: name={lead.name}, email={lead.email}, phone={lead.phone}")
@@ -487,6 +501,8 @@ class LeadService:
 
                 # Update primary with any missing data from lead
                 await self._update_contact_from_lead(primary_contact, lead)
+                # Link lead to primary contact via contact_id
+                lead.contact_id = primary_contact.id
                 logger.info(f"Auto-merged {len(secondary_ids)} contacts into contact {primary_contact.id}")
                 return primary_contact
 
@@ -495,6 +511,8 @@ class LeadService:
                 existing_contact = matching_contacts[0]
                 logger.info(f"Found existing contact {existing_contact.id} for lead {lead.id}")
                 await self._update_contact_from_lead(existing_contact, lead)
+                # Link lead to contact via contact_id
+                lead.contact_id = existing_contact.id
                 return existing_contact
 
             # No matches - create new contact from lead data
@@ -511,7 +529,10 @@ class LeadService:
                 source=source,
             )
             self.session.add(contact)
-            logger.info(f"Added contact to session for lead {lead.id}")
+            await self.session.flush()  # Get contact ID
+            # Link lead to new contact via contact_id
+            lead.contact_id = contact.id
+            logger.info(f"Created contact {contact.id} for lead {lead.id}")
             return contact
         except Exception as e:
             logger.error(f"Error creating contact from lead {lead.id}: {e}", exc_info=True)

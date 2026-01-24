@@ -1554,15 +1554,17 @@ Message style:
         </div>
       </div>
 
-      {/* Master Prompt Generator */}
-      <MasterPromptGenerator
-        value={masterPrompt}
-        onChange={setMasterPrompt}
-        onGenerate={generateChannelPrompts}
-        onSave={handleSaveMaster}
-        saving={masterSaving}
-        savedAt={masterSavedAt}
-      />
+      {/* Master Prompt Generator - Global Admin Only */}
+      {isGlobalAdmin && (
+        <MasterPromptGenerator
+          value={masterPrompt}
+          onChange={setMasterPrompt}
+          onGenerate={generateChannelPrompts}
+          onSave={handleSaveMaster}
+          saving={masterSaving}
+          savedAt={masterSavedAt}
+        />
+      )}
 
       {/* Channel Prompts (Web, Voice, SMS) */}
       <ChannelPromptsSection

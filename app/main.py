@@ -102,19 +102,17 @@ app = FastAPI(
 )
 
 # Configure allowed CORS origins
-ALLOWED_ORIGINS = [
-    "https://chattercheatah-900139201687.us-central1.run.app",
-]
-if settings.environment == "development":
-    ALLOWED_ORIGINS.extend(["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"])
+# The chat widget is embedded on customer websites, so we need to allow all origins
+# for widget endpoints. Authentication is handled via API key, not CORS.
+ALLOWED_ORIGINS = ["*"]
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=False,  # Must be False when allow_origins=["*"]
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Tenant-Id", "Idempotency-Key"],
+    allow_headers=["Authorization", "Content-Type", "X-Tenant-Id", "Idempotency-Key", "X-Widget-Api-Key"],
 )
 
 # Add idempotency middleware

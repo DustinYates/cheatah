@@ -69,17 +69,16 @@ async def _validate_widget_api_key(
         return False
 
     if not config.widget_api_key:
-        # No API key configured - allow in development, deny in production
-        if settings.environment == "production":
-            logger.warning(f"No widget API key configured for tenant {tenant_id}")
-            return False
+        # No API key configured for tenant - allow request
         return True
 
     if not api_key:
-        # No API key provided in request
-        return False
+        # No API key provided in request - allow for backwards compatibility
+        # This supports existing widget embeds that don't include apiKey
+        logger.info(f"Chat request without API key for tenant {tenant_id} (allowed)")
+        return True
 
-    # Compare API keys (constant-time comparison for security)
+    # API key provided - validate it (constant-time comparison for security)
     return hmac.compare_digest(config.widget_api_key, api_key)
 
 

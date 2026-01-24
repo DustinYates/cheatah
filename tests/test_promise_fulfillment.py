@@ -207,29 +207,70 @@ class TestFulfillPromise:
         """Test promise fulfillment with dynamic URL extraction."""
         service = PromiseFulfillmentService(mock_session)
 
-        # Mock Redis to not find duplicate
-        with patch('app.domain.services.promise_fulfillment_service.redis_client') as mock_redis:
-            mock_redis.exists = AsyncMock(return_value=False)
-            mock_redis.set = AsyncMock()
+        # Mock DNC service to not block
+        with patch('app.domain.services.promise_fulfillment_service.DncService') as MockDnc:
+            MockDnc.return_value.is_blocked = AsyncMock(return_value=False)
 
-            # Mock sendable assets config
-            mock_prompt_config = MagicMock()
-            mock_prompt_config.config_json = {
-                "sendable_assets": {
-                    "registration_link": {
-                        "enabled": True,
-                        "url": "https://fallback.url",
-                        "sms_template": "Hi {name}! Register here: {url}"
+            # Mock Redis to not find duplicate
+            with patch('app.domain.services.promise_fulfillment_service.redis_client') as mock_redis:
+                mock_redis.exists = AsyncMock(return_value=False)
+                mock_redis.set = AsyncMock()
+
+                # Mock sendable assets config
+                mock_prompt_config = MagicMock()
+                mock_prompt_config.config_json = {
+                    "sendable_assets": {
+                        "registration_link": {
+                            "enabled": True,
+                            "url": "https://fallback.url",
+                            "sms_template": "Hi {name}! Register here: {url}"
+                        }
                     }
                 }
-            }
-            mock_result = MagicMock()
-            mock_result.scalar_one_or_none.return_value = mock_prompt_config
-            mock_session.execute = AsyncMock(return_value=mock_result)
+                mock_result = MagicMock()
+                mock_result.scalar_one_or_none.return_value = mock_prompt_config
+                mock_session.execute = AsyncMock(return_value=mock_result)
 
-            # Mock _send_sms
-            with patch.object(service, '_send_sms', new_callable=AsyncMock) as mock_send:
-                mock_send.return_value = {"status": "sent", "message_id": "test123"}
+                # Mock _send_sms
+                with patch.object(service, '_send_sms', new_callable=AsyncMock) as mock_send:
+                    mock_send.return_value = {"status": "sent", "message_id": "test123"}
+
+                    promise = DetectedPromise(
+                        asset_type="registration_link",
+                        confidence=0.9,
+                        original_text="I'll text you the registration link"
+                    )
+
+                    result = await service.fulfill_promise(
+                        tenant_id=1,
+                        conversation_id=100,
+                        promise=promise,
+                        phone="+15551234567",
+                        name="Maria",
+                        ai_response="I'll send you the registration link for Starfish classes at Cypress."
+                    )
+
+                    # Verify _send_sms was called
+                    mock_send.assert_called_once()
+                    call_args = mock_send.call_args
+
+                    # The message should contain the dynamic URL
+                    message = call_args[1]["message"] if "message" in call_args[1] else call_args[0][2]
+                    assert "https://britishswimschool.com/cypress-spring/register/" in message
+                    assert "loc=LAFCypress" in message
+
+    @pytest.mark.asyncio
+    async def test_fulfill_promise_dedup_redis(self, mock_session):
+        """Test that duplicate promises are skipped via Redis."""
+        service = PromiseFulfillmentService(mock_session)
+
+        # Mock DNC service to not block
+        with patch('app.domain.services.promise_fulfillment_service.DncService') as MockDnc:
+            MockDnc.return_value.is_blocked = AsyncMock(return_value=False)
+
+            with patch('app.domain.services.promise_fulfillment_service.redis_client') as mock_redis:
+                # Redis reports already sent
+                mock_redis.exists = AsyncMock(return_value=True)
 
                 promise = DetectedPromise(
                     asset_type="registration_link",
@@ -242,43 +283,10 @@ class TestFulfillPromise:
                     conversation_id=100,
                     promise=promise,
                     phone="+15551234567",
-                    name="Maria",
-                    ai_response="I'll send you the registration link for Starfish classes at Cypress."
                 )
 
-                # Verify _send_sms was called
-                mock_send.assert_called_once()
-                call_args = mock_send.call_args
-
-                # The message should contain the dynamic URL
-                message = call_args[1]["message"] if "message" in call_args[1] else call_args[0][2]
-                assert "https://britishswimschool.com/cypress-spring/register/" in message
-                assert "loc=LAFCypress" in message
-
-    @pytest.mark.asyncio
-    async def test_fulfill_promise_dedup_redis(self, mock_session):
-        """Test that duplicate promises are skipped via Redis."""
-        service = PromiseFulfillmentService(mock_session)
-
-        with patch('app.domain.services.promise_fulfillment_service.redis_client') as mock_redis:
-            # Redis reports already sent
-            mock_redis.exists = AsyncMock(return_value=True)
-
-            promise = DetectedPromise(
-                asset_type="registration_link",
-                confidence=0.9,
-                original_text="I'll text you the registration link"
-            )
-
-            result = await service.fulfill_promise(
-                tenant_id=1,
-                conversation_id=100,
-                promise=promise,
-                phone="+15551234567",
-            )
-
-            assert result["status"] == "skipped"
-            assert result["reason"] == "already_sent_recently"
+                assert result["status"] == "skipped"
+                assert result["reason"] == "already_sent_recently"
 
 
 class TestRegistrationUrlBuilder:

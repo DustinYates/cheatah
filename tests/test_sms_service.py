@@ -28,21 +28,26 @@ def sms_service():
 @pytest.mark.asyncio
 async def test_sms_service_opt_out_handling(sms_service):
     """Test SMS service handles STOP keyword."""
-    # Mock opt-in service - OptInService is created locally in process_inbound_sms
-    with patch('app.domain.services.sms_service.OptInService') as MockOptInService:
-        mock_instance = MockOptInService.return_value
-        mock_instance.opt_out = AsyncMock()
-        mock_instance.is_opted_in = AsyncMock(return_value=True)
+    # Mock DNC service to not block
+    with patch('app.domain.services.sms_service.DncService') as MockDnc:
+        MockDnc.return_value.is_blocked = AsyncMock(return_value=False)
 
-        result = await sms_service.process_inbound_sms(
-            tenant_id=1,
-            phone_number="+1234567890",
-            message_body="STOP",
-        )
+        # Mock opt-in service - OptInService is created locally in process_inbound_sms
+        with patch('app.domain.services.sms_service.OptInService') as MockOptInService:
+            mock_instance = MockOptInService.return_value
+            mock_instance.opt_out = AsyncMock()
+            mock_instance.is_opted_in = AsyncMock(return_value=True)
+            mock_instance.opt_in = AsyncMock()  # For auto opt-in
 
-        # Should call opt_out
-        mock_instance.opt_out.assert_called_once()
-        assert result.opt_in_status_changed
+            result = await sms_service.process_inbound_sms(
+                tenant_id=1,
+                phone_number="+1234567890",
+                message_body="STOP",
+            )
+
+            # Should call opt_out
+            mock_instance.opt_out.assert_called_once()
+            assert result.opt_in_status_changed
 
 
 @pytest.mark.asyncio

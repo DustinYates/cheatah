@@ -211,10 +211,10 @@ class TestFulfillPromise:
         with patch('app.domain.services.promise_fulfillment_service.DncService') as MockDnc:
             MockDnc.return_value.is_blocked = AsyncMock(return_value=False)
 
-            # Mock Redis to not find duplicate
+            # Mock Redis - setnx returns True when key was set (no duplicate)
             with patch('app.domain.services.promise_fulfillment_service.redis_client') as mock_redis:
-                mock_redis.exists = AsyncMock(return_value=False)
-                mock_redis.set = AsyncMock()
+                mock_redis.setnx = AsyncMock(return_value=True)
+                mock_redis.delete = AsyncMock()
 
                 # Mock sendable assets config
                 mock_prompt_config = MagicMock()
@@ -269,8 +269,8 @@ class TestFulfillPromise:
             MockDnc.return_value.is_blocked = AsyncMock(return_value=False)
 
             with patch('app.domain.services.promise_fulfillment_service.redis_client') as mock_redis:
-                # Redis reports already sent
-                mock_redis.exists = AsyncMock(return_value=True)
+                # Redis setnx returns False when key already exists (duplicate)
+                mock_redis.setnx = AsyncMock(return_value=False)
 
                 promise = DetectedPromise(
                     asset_type="registration_link",
@@ -285,6 +285,75 @@ class TestFulfillPromise:
                     phone="+15551234567",
                 )
 
+                assert result["status"] == "skipped"
+                assert result["reason"] == "already_sent_recently"
+
+    @pytest.mark.asyncio
+    async def test_fulfill_promise_dedup_db_fallback(self, mock_session):
+        """Test that DB dedup catches duplicates when Redis passes (race condition protection)."""
+        service = PromiseFulfillmentService(mock_session)
+
+        # Mock DNC service to not block
+        with patch('app.domain.services.promise_fulfillment_service.DncService') as MockDnc:
+            MockDnc.return_value.is_blocked = AsyncMock(return_value=False)
+
+            with patch('app.domain.services.promise_fulfillment_service.redis_client') as mock_redis:
+                # Redis setnx succeeds (key was set)
+                mock_redis.setnx = AsyncMock(return_value=True)
+                mock_redis.delete = AsyncMock()
+
+                # Mock DB to simulate conflict (INSERT returns None = duplicate)
+                mock_result = MagicMock()
+                mock_result.scalar_one_or_none.return_value = None  # No row inserted = duplicate
+                mock_session.execute = AsyncMock(return_value=mock_result)
+                mock_session.commit = AsyncMock()
+
+                promise = DetectedPromise(
+                    asset_type="registration_link",
+                    confidence=0.9,
+                    original_text="I'll text you the registration link"
+                )
+
+                result = await service.fulfill_promise(
+                    tenant_id=1,
+                    conversation_id=100,
+                    promise=promise,
+                    phone="+15551234567",
+                )
+
+                # DB conflict should catch the duplicate
+                assert result["status"] == "skipped"
+                assert result["reason"] == "already_sent_to_lead"
+
+    @pytest.mark.asyncio
+    async def test_setnx_used_for_atomic_deduplication(self, mock_session):
+        """Test that setnx is used (not exists+set) for atomic deduplication."""
+        service = PromiseFulfillmentService(mock_session)
+
+        # Mock DNC service to not block
+        with patch('app.domain.services.promise_fulfillment_service.DncService') as MockDnc:
+            MockDnc.return_value.is_blocked = AsyncMock(return_value=False)
+
+            with patch('app.domain.services.promise_fulfillment_service.redis_client') as mock_redis:
+                # setnx returns False = key already existed
+                mock_redis.setnx = AsyncMock(return_value=False)
+
+                promise = DetectedPromise(
+                    asset_type="registration_link",
+                    confidence=0.9,
+                    original_text="I'll text you the registration link"
+                )
+
+                result = await service.fulfill_promise(
+                    tenant_id=1,
+                    conversation_id=100,
+                    promise=promise,
+                    phone="+15551234567",
+                )
+
+                # Verify setnx was called (atomic operation)
+                mock_redis.setnx.assert_called_once()
+                # Verify we got blocked due to duplicate
                 assert result["status"] == "skipped"
                 assert result["reason"] == "already_sent_recently"
 

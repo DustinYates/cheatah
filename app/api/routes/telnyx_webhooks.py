@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 # Maximum age in seconds for Telnyx webhook timestamps (5 minutes)
 TELNYX_TIMESTAMP_MAX_AGE = 300
 
+# TTL for message deduplication (5 minutes - enough to handle retries)
+MESSAGE_DEDUP_TTL_SECONDS = 300
+
 
 def _verify_telnyx_webhook(request: Request) -> bool:
     """Verify Telnyx webhook signature and timestamp.
@@ -511,6 +514,24 @@ async def telnyx_inbound_sms_webhook(
         to_number = to_list[0].get("phone_number", "") if to_list else ""
         message_body = payload.get("text", "")
         message_id = payload.get("id", "")
+
+        # Deduplicate by message_id to prevent processing same message twice
+        # (handles Telnyx retries, webhook replay attacks, etc.)
+        if message_id:
+            dedup_key = f"sms_msg_processed:{message_id}"
+            if not await redis_client.setnx(dedup_key, "1", ttl=MESSAGE_DEDUP_TTL_SECONDS):
+                # MONITORING: Log duplicate webhook with structured data for alerting
+                logger.warning(
+                    "[DUPLICATE_WEBHOOK] Duplicate inbound SMS webhook ignored",
+                    extra={
+                        "event_type": "duplicate_webhook_blocked",
+                        "provider": "telnyx",
+                        "message_id": message_id,
+                        "from_number": from_number,
+                        "to_number": to_number,
+                    },
+                )
+                return JSONResponse(content={"status": "ok"})
 
         if not from_number or not to_number:
             logger.warning("Missing phone numbers in Telnyx webhook")

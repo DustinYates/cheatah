@@ -24,6 +24,7 @@ Your mission:
 
 # BSS-specific critical rules
 BSS_CRITICAL_RULES = """## CRITICAL RULES
+- NEVER assume the caller is a parent or that lessons are for a child - always ask "Who will be swimming?" first
 - If they speak another language, respond in that language
 - Ask one question at a time
 - Keep responses concise unless the user asks for more detail
@@ -283,14 +284,14 @@ When discussing schedules or pricing:
 3. Frame once-a-week as accommodating schedule or budget constraints
 
 Approved phrases:
-- "Most parents choose twice a week for faster progress"
+- "Most swimmers choose twice a week for faster progress"
 - "Twice a week is recommended for steady improvement"
 - "Twice a week for progress, once a week for maintenance"
 - "We recommend twice a week, but once a week works if that fits your schedule better"
 
 Example flow:
 User: "How much are lessons?"
-Bot: "Our twice-a-week program is [price]/month—that's what most families choose for steady progress. We also have once-a-week at [price] if that works better for your schedule."
+Bot: "Our twice-a-week program is [price]/month—that's what most swimmers choose for steady progress. We also have once-a-week at [price] if that works better for your schedule."
 """
 
 # BSS branding language
@@ -363,6 +364,12 @@ class BSSBaseConfig:
         # Introduction
         "role",
         "critical_rules",
+        # Conversation rules - EARLY placement so LLM prioritizes these
+        "swimmer_identification",  # Base rule - identify swimmer vs account holder FIRST
+        "pronoun_usage",        # Base rule - 2nd vs 3rd person based on swimmer_role
+        "conversation_start",   # Base rule - NEVER assume child, ask who's swimming
+        "conversation_flow",    # Base rule
+        # Style and formatting
         "location_link_guardrails",  # Base rule - STRICT location/link rules
         "direct_response",
         "style",
@@ -385,11 +392,7 @@ class BSSBaseConfig:
         "discounts",            # From tenant config
         "policies",             # From tenant config
         "registration",         # From tenant config
-        # Conversation guidance
-        "swimmer_identification",  # Base rule - identify swimmer vs account holder
-        "pronoun_usage",        # Base rule - 2nd vs 3rd person based on swimmer_role
-        "conversation_start",   # Base rule
-        "conversation_flow",    # Base rule
+        # Contact and safety
         "contact_collection",   # Base rule
         "name_usage",           # Base rule - CRITICAL: use name once only
         "promise_phone_collection",  # Base rule - how to handle texting info

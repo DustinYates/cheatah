@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.dnc_service import DncService
@@ -18,6 +19,7 @@ from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 from app.persistence.models.lead import Lead
 from app.persistence.models.conversation import Message
+from app.persistence.models.sent_asset import SentAsset
 from app.infrastructure.telephony.telnyx_provider import TelnyxSmsProvider
 from app.infrastructure.redis import redis_client
 
@@ -74,49 +76,97 @@ class PromiseFulfillmentService:
         phone_normalized = "".join(c for c in phone if c.isdigit())[-10:]
         dedup_key = f"promise_sent:{tenant_id}:{phone_normalized}:{promise.asset_type}"
 
-        # Primary dedup: Redis (if enabled)
-        if await redis_client.exists(dedup_key):
-            logger.info(
-                f"Skipping duplicate promise fulfillment (Redis) - key={dedup_key}"
+        # Primary dedup: Redis with atomic setnx (set-if-not-exists)
+        # This acquires a "lock" atomically to prevent race conditions when
+        # multiple messages trigger fulfillment concurrently
+        dedup_acquired = await redis_client.setnx(dedup_key, "1", ttl=DEDUP_TTL_SECONDS)
+        if not dedup_acquired:
+            # MONITORING: Log duplicate detection with structured data for alerting
+            logger.warning(
+                "[DUPLICATE_BLOCKED] Registration link duplicate prevented by Redis",
+                extra={
+                    "event_type": "duplicate_send_blocked",
+                    "dedup_layer": "redis",
+                    "tenant_id": tenant_id,
+                    "phone_normalized": phone_normalized,
+                    "asset_type": promise.asset_type,
+                    "conversation_id": conversation_id,
+                },
             )
             return {
                 "status": "skipped",
                 "reason": "already_sent_recently",
             }
 
-        # Fallback dedup: DB-backed check via Lead.extra_data
+        # Fallback dedup: DB-backed check via sent_assets table
+        # Uses INSERT ... ON CONFLICT DO NOTHING for atomic deduplication
         # This handles cases where Redis is disabled or unavailable
         try:
-            stmt = select(Lead).where(
-                Lead.tenant_id == tenant_id,
-                Lead.phone.like(f"%{phone_normalized}"),
-            ).order_by(Lead.created_at.desc()).limit(1)
-            lead_result = await self.session.execute(stmt)
-            existing_lead = lead_result.scalar_one_or_none()
+            stmt = pg_insert(SentAsset).values(
+                tenant_id=tenant_id,
+                phone_normalized=phone_normalized,
+                asset_type=promise.asset_type,
+                conversation_id=conversation_id,
+                sent_at=datetime.now(timezone.utc),
+            ).on_conflict_do_nothing(
+                constraint="uq_sent_assets_tenant_phone_asset"
+            ).returning(SentAsset.id)
 
-            if existing_lead and existing_lead.extra_data:
-                extra = existing_lead.extra_data
-                sms_sent_assets = extra.get("sms_sent_for_assets", [])
-                if promise.asset_type in sms_sent_assets:
-                    logger.info(
-                        f"Skipping duplicate promise fulfillment (DB) - "
-                        f"asset_type={promise.asset_type} already sent to lead_id={existing_lead.id}"
-                    )
-                    return {
-                        "status": "skipped",
-                        "reason": "already_sent_to_lead",
-                    }
+            result = await self.session.execute(stmt)
+            await self.session.commit()
+            inserted_id = result.scalar_one_or_none()
+
+            if inserted_id is None:
+                # Conflict occurred - asset was already sent
+                # MONITORING: Log duplicate detection with structured data for alerting
+                # This indicates a race condition was caught by the DB layer
+                logger.warning(
+                    "[DUPLICATE_BLOCKED] Registration link duplicate prevented by DB (race condition caught!)",
+                    extra={
+                        "event_type": "duplicate_send_blocked",
+                        "dedup_layer": "database",
+                        "tenant_id": tenant_id,
+                        "phone_normalized": phone_normalized,
+                        "asset_type": promise.asset_type,
+                        "conversation_id": conversation_id,
+                        "race_condition_caught": True,
+                    },
+                )
+                # Note: Keep Redis key set since this is a genuine duplicate
+                return {
+                    "status": "skipped",
+                    "reason": "already_sent_to_lead",
+                }
+            logger.info(f"DB dedup record created: sent_asset_id={inserted_id}")
         except Exception as db_check_err:
-            logger.warning(f"DB dedup check failed, proceeding: {db_check_err}")
+            logger.warning(f"DB dedup check failed, proceeding with caution: {db_check_err}")
+
+        # Helper to release dedup locks on recoverable errors
+        async def release_dedup_and_return(result: dict) -> dict:
+            await redis_client.delete(dedup_key)
+            # Also delete the DB dedup record
+            try:
+                await self.session.execute(
+                    SentAsset.__table__.delete().where(
+                        SentAsset.tenant_id == tenant_id,
+                        SentAsset.phone_normalized == phone_normalized,
+                        SentAsset.asset_type == promise.asset_type,
+                    )
+                )
+                await self.session.commit()
+            except Exception as e:
+                logger.warning(f"Failed to release DB dedup record: {e}")
+            logger.info(f"Released dedup locks for recoverable error: {dedup_key}")
+            return result
 
         # Get sendable assets config from tenant prompt config
         sendable_assets = await self._get_sendable_assets(tenant_id)
         if not sendable_assets:
             logger.warning(f"No sendable assets configured for tenant {tenant_id}")
-            return {
+            return await release_dedup_and_return({
                 "status": "not_configured",
                 "error": "No sendable assets configured for tenant",
-            }
+            })
 
         # Find the matching asset
         asset_config = sendable_assets.get(promise.asset_type)
@@ -124,27 +174,27 @@ class PromiseFulfillmentService:
             logger.warning(
                 f"No asset config for type '{promise.asset_type}' in tenant {tenant_id}"
             )
-            return {
+            return await release_dedup_and_return({
                 "status": "asset_not_found",
                 "error": f"No configuration for asset type: {promise.asset_type}",
-            }
+            })
 
         # Check if asset is enabled
         if not asset_config.get("enabled", True):
             logger.info(f"Asset type '{promise.asset_type}' is disabled for tenant {tenant_id}")
-            return {
+            return await release_dedup_and_return({
                 "status": "disabled",
                 "error": f"Asset type '{promise.asset_type}' is disabled",
-            }
+            })
 
         # Get SMS template and compose message
         sms_template = asset_config.get("sms_template")
         if not sms_template:
             logger.warning(f"No SMS template for asset type '{promise.asset_type}'")
-            return {
+            return await release_dedup_and_return({
                 "status": "no_template",
                 "error": "No SMS template configured for this asset",
-            }
+            })
 
         # Try to get dynamic URL from conversation context
         dynamic_url = None
@@ -183,11 +233,11 @@ class PromiseFulfillmentService:
                     f"No dynamic URL found and fallback URL missing location parameter. "
                     f"Skipping SMS to avoid incomplete link. fallback={url_to_send}"
                 )
-                return {
+                return await release_dedup_and_return({
                     "status": "skipped",
                     "reason": "no_location_in_url",
                     "error": "Could not determine location for registration link",
-                }
+                })
             logger.warning(f"No dynamic URL found, using fallback: {url_to_send}")
 
         # Always use the template to compose the message (provides better context)
@@ -197,10 +247,46 @@ class PromiseFulfillmentService:
         # Send SMS
         result = await self._send_sms(tenant_id, phone, message)
 
-        # Mark as sent for deduplication (only if successful)
-        if result.get("status") == "sent":
-            await redis_client.set(dedup_key, "1", ttl=DEDUP_TTL_SECONDS)
-            logger.info(f"Set dedup key with TTL {DEDUP_TTL_SECONDS}s: {dedup_key}")
+        # If send failed, release dedup locks so retries are possible
+        if result.get("status") != "sent":
+            await redis_client.delete(dedup_key)
+            # Also delete the DB dedup record
+            try:
+                await self.session.execute(
+                    select(SentAsset).where(
+                        SentAsset.tenant_id == tenant_id,
+                        SentAsset.phone_normalized == phone_normalized,
+                        SentAsset.asset_type == promise.asset_type,
+                    ).with_for_update()
+                )
+                await self.session.execute(
+                    SentAsset.__table__.delete().where(
+                        SentAsset.tenant_id == tenant_id,
+                        SentAsset.phone_normalized == phone_normalized,
+                        SentAsset.asset_type == promise.asset_type,
+                    )
+                )
+                await self.session.commit()
+                logger.info(f"Released DB dedup record after failed send: {phone_normalized}/{promise.asset_type}")
+            except Exception as e:
+                logger.warning(f"Failed to release DB dedup record: {e}")
+            logger.info(f"Released dedup key after failed send: {dedup_key}")
+        else:
+            # Update the sent_asset record with the message_id for audit trail
+            try:
+                stmt = (
+                    SentAsset.__table__.update()
+                    .where(
+                        SentAsset.tenant_id == tenant_id,
+                        SentAsset.phone_normalized == phone_normalized,
+                        SentAsset.asset_type == promise.asset_type,
+                    )
+                    .values(message_id=result.get("message_id"))
+                )
+                await self.session.execute(stmt)
+                await self.session.commit()
+            except Exception as e:
+                logger.warning(f"Failed to update sent_asset message_id: {e}")
 
         # Track fulfillment in lead metadata if lead exists
         await self._track_fulfillment(tenant_id, conversation_id, promise, result, phone)

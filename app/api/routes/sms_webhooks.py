@@ -10,11 +10,15 @@ from twilio.request_validator import RequestValidator
 
 from app.domain.services.sms_service import SmsService
 from app.infrastructure.cloud_tasks import CloudTasksClient
+from app.infrastructure.redis import redis_client
 from app.persistence.database import get_db
 from app.settings import settings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+# TTL for message deduplication (5 minutes - enough to handle retries)
+MESSAGE_DEDUP_TTL_SECONDS = 300
 
 
 async def _validate_twilio_signature(
@@ -79,6 +83,26 @@ async def inbound_sms_webhook(
         TwiML response (empty for ACK)
     """
     try:
+        # Deduplicate by MessageSid to prevent processing same message twice
+        # (handles Twilio retries, webhook replay attacks, etc.)
+        dedup_key = f"sms_msg_processed:{MessageSid}"
+        if not await redis_client.setnx(dedup_key, "1", ttl=MESSAGE_DEDUP_TTL_SECONDS):
+            # MONITORING: Log duplicate webhook with structured data for alerting
+            logger.warning(
+                "[DUPLICATE_WEBHOOK] Duplicate inbound SMS webhook ignored",
+                extra={
+                    "event_type": "duplicate_webhook_blocked",
+                    "provider": "twilio",
+                    "message_sid": MessageSid,
+                    "from_number": From,
+                    "to_number": To,
+                },
+            )
+            return Response(
+                content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+                media_type="application/xml",
+            )
+
         # Extract tenant_id and config from To number or AccountSid
         tenant_id, sms_config = await _get_tenant_and_config_from_phone_number(To, AccountSid, db)
 

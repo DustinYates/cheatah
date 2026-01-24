@@ -74,6 +74,33 @@ class RedisClient:
             return await self._client.setex(key, ttl, value)
         return await self._client.set(key, value)
 
+    async def setnx(self, key: str, value: str, ttl: int | None = None) -> bool:
+        """Set value in Redis only if the key does not exist (atomic).
+
+        This is useful for deduplication to avoid race conditions.
+
+        Args:
+            key: Redis key
+            value: Value to set
+            ttl: Optional time-to-live in seconds
+
+        Returns:
+            True if the key was set (did not exist), False if already exists
+        """
+        if not self._enabled or self._client is None:
+            return True  # Pretend success when disabled (caller should have DB fallback)
+        try:
+            # Use SET with NX (only set if not exists) and optional EX (expiry)
+            if ttl:
+                result = await self._client.set(key, value, nx=True, ex=ttl)
+            else:
+                result = await self._client.set(key, value, nx=True)
+            # Returns True if key was set, None if key already existed
+            return result is True
+        except Exception as e:
+            logger.warning(f"Redis setnx failed: {e}")
+            return True  # On error, let caller proceed (DB fallback should catch it)
+
     async def delete(self, key: str) -> int:
         """Delete key from Redis.
 

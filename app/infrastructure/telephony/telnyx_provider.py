@@ -370,7 +370,7 @@ Extract:
 1. "name" - The caller's full name if they explicitly stated it. Empty string if not provided.
 2. "email" - The caller's email if they mentioned it. Empty string if not provided.
 3. "intent" - One of: "pricing_info", "hours_location", "booking_request", "support_request", "wrong_number", "general_inquiry"
-4. "summary" - A 1-2 sentence summary of why the caller called and the outcome.
+4. "summary" - A brief 1-sentence summary (max 100 characters) of why the caller called.
 
 CRITICAL rules for name extraction:
 - Only extract a name if the caller EXPLICITLY stated their name (e.g., "My name is John Smith", "I'm Sarah", "It's Mike")
@@ -378,7 +378,7 @@ CRITICAL rules for name extraction:
 - Do not infer or guess names from context
 - If no explicit name was stated, return empty string ""
 
-Return JSON:"""
+Return ONLY compact JSON (no extra whitespace or newlines):"""
 
         try:
             from app.llm.gemini_client import GeminiClient

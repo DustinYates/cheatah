@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.prompt_service import PromptService
 from app.domain.services.sms_service import SmsService
-from app.domain.services.voice_prompt_transformer import transform_chat_to_voice
+from app.domain.services.voice_prompt_transformer import transform_chat_to_voice, transform_chat_to_voice_es
 from app.infrastructure.cloud_tasks import CloudTasksClient
 from app.infrastructure.redis import redis_client
 from app.persistence.database import get_db
@@ -199,12 +199,28 @@ async def get_dynamic_variables(
 
     tenant_id = config.tenant_id
 
-    # Get tenant's voice config for fallback prompt
+    # Detect language based on which phone number received the call
+    # voice_phone_number = Spanish line, telnyx_phone_number = English line
+    is_spanish = config.voice_phone_number and _normalize_phone(to_number) == _normalize_phone(config.voice_phone_number)
+    if not is_spanish and config.voice_phone_number:
+        # Also try unnormalized comparison
+        is_spanish = to_number == config.voice_phone_number
+
+    detected_language = "spanish" if is_spanish else "english"
+    logger.info(f"Detected language: {detected_language} for phone {to_number}")
+
+    # Get tenant's voice config for fallback prompt and transfer settings
     voice_config_stmt = select(TenantVoiceConfig).where(
         TenantVoiceConfig.tenant_id == tenant_id
     )
     voice_config_result = await db.execute(voice_config_stmt)
     voice_config = voice_config_result.scalar_one_or_none()
+
+    # Get transfer number if configured for live transfers
+    transfer_number = None
+    if voice_config and voice_config.handoff_mode == "live_transfer" and voice_config.live_transfer_number:
+        transfer_number = voice_config.live_transfer_number
+        logger.info(f"Live transfer configured to: {transfer_number}")
 
     # Compose the voice prompt for this tenant
     prompt_service = PromptService(db)
@@ -212,7 +228,17 @@ async def get_dynamic_variables(
     # Check if tenant has a dedicated voice prompt bundle
     has_dedicated_voice = await prompt_service.has_dedicated_voice_prompt(tenant_id)
 
-    voice_prompt = await prompt_service.compose_prompt_voice(tenant_id)
+    # Get the appropriate prompt based on language
+    if is_spanish:
+        # Try to get Spanish-specific prompt first
+        all_prompts = await prompt_service.get_all_channel_prompts(tenant_id)
+        voice_prompt = all_prompts.get("voice_es_prompt")
+        if not voice_prompt:
+            # Fall back to English voice prompt
+            voice_prompt = await prompt_service.compose_prompt_voice(tenant_id)
+            logger.info(f"No Spanish prompt found, using English prompt for tenant {tenant_id}")
+    else:
+        voice_prompt = await prompt_service.compose_prompt_voice(tenant_id)
 
     if not voice_prompt:
         logger.warning(f"No prompt configured for tenant {tenant_id}")
@@ -224,7 +250,34 @@ async def get_dynamic_variables(
     # Only apply transform_chat_to_voice if using chat prompt fallback
     # Dedicated voice prompts are already voice-safe and shouldn't be wrapped
     if not has_dedicated_voice:
-        voice_prompt = transform_chat_to_voice(voice_prompt)
+        if is_spanish:
+            voice_prompt = transform_chat_to_voice_es(voice_prompt)
+        else:
+            voice_prompt = transform_chat_to_voice(voice_prompt)
+
+    # Add transfer instructions if transfer is configured
+    if transfer_number:
+        if is_spanish:
+            transfer_instructions = f"""
+
+## TRANSFERENCIA A HUMANO (MUY IMPORTANTE)
+Cuando el llamante pida hablar con una persona real, humano, gerente, o representante:
+1. Di: "Claro, permíteme transferirte con un representante ahora mismo."
+2. USA INMEDIATAMENTE la funcion Transfer para transferir la llamada al numero {transfer_number}
+3. NO preguntes si hay algo mas - simplemente transfiere
+4. Si la funcion Transfer no esta disponible, di: "Le avisare para que se comunique contigo. ¿Hay algo mas en lo que pueda ayudarte antes de colgar?"
+"""
+        else:
+            transfer_instructions = f"""
+
+## TRANSFER TO HUMAN (CRITICAL)
+When the caller asks to speak with a real person, human, manager, or representative:
+1. Say: "Of course, let me transfer you to a representative right now."
+2. IMMEDIATELY USE the Transfer function to transfer the call to {transfer_number}
+3. Do NOT ask if there's anything else - just transfer
+4. If the Transfer function is not available, say: "I will let them know to contact you. Is there anything else I can help you with before we hang up?"
+"""
+        voice_prompt = voice_prompt + transfer_instructions
 
     logger.info(
         f"Returning dynamic variables for tenant",
@@ -233,6 +286,8 @@ async def get_dynamic_variables(
             "to": to_number,
             "prompt_length": len(voice_prompt),
             "has_dedicated_voice": has_dedicated_voice,
+            "language": detected_language,
+            "has_transfer": bool(transfer_number),
         },
     )
 
@@ -559,12 +614,13 @@ async def _get_tenant_from_telnyx_number(
     normalized = _normalize_phone(phone_number)
 
     # Try to find tenant by Telnyx phone number OR voice phone number (for Spanish line etc.)
+    # Use .limit(1) to handle cases where multiple configs match (e.g., same number in different columns)
     stmt = select(TenantSmsConfig).where(
         or_(
             TenantSmsConfig.telnyx_phone_number == normalized,
             TenantSmsConfig.voice_phone_number == normalized,
         )
-    )
+    ).limit(1)
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
 
@@ -578,7 +634,7 @@ async def _get_tenant_from_telnyx_number(
             TenantSmsConfig.telnyx_phone_number == phone_number,
             TenantSmsConfig.voice_phone_number == phone_number,
         )
-    )
+    ).limit(1)
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
 

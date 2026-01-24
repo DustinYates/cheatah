@@ -17,6 +17,7 @@ from sqlalchemy.orm import relationship
 from app.persistence.database import Base
 
 if TYPE_CHECKING:
+    from app.persistence.models.contact import Contact
     from app.persistence.models.escalation import Escalation
     from app.persistence.models.lead import Lead
     from app.persistence.models.tenant import Tenant
@@ -32,16 +33,19 @@ class Conversation(Base):
     channel = Column(String(50), nullable=False)  # web, sms, voice
     external_id = Column(String(255), nullable=True, index=True)  # For idempotency
     phone_number = Column(String(50), nullable=True, index=True)  # For SMS conversations
+    contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
     tenant = relationship("Tenant", back_populates="conversations")
+    contact = relationship("Contact", back_populates="conversations")
     messages = relationship(
         "Message", back_populates="conversation", cascade="all, delete-orphan", order_by="Message.sequence_number"
     )
     leads = relationship("Lead", back_populates="conversation")
     escalations = relationship("Escalation", back_populates="conversation")
+    email_conversations = relationship("EmailConversation", back_populates="conversation")
 
     def __repr__(self) -> str:
         return f"<Conversation(id={self.id}, tenant_id={self.tenant_id}, channel={self.channel})>"

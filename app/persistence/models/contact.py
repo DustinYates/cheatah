@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.persistence.models.call_summary import CallSummary
     from app.persistence.models.contact_alias import ContactAlias
     from app.persistence.models.contact_merge_log import ContactMergeLog
+    from app.persistence.models.conversation import Conversation
     from app.persistence.models.lead import Lead
     from app.persistence.models.tenant import Tenant, User
 
@@ -75,6 +76,12 @@ class Contact(Base):
     
     # Call summaries
     call_summaries = relationship("CallSummary", back_populates="contact")
+
+    # Conversations linked to this contact
+    conversations = relationship("Conversation", back_populates="contact")
+
+    # Email conversations
+    email_conversations = relationship("EmailConversation", back_populates="contact")
 
     def __repr__(self) -> str:
         return f"<Contact(id={self.id}, tenant_id={self.tenant_id}, email={self.email}, phone={self.phone})>"

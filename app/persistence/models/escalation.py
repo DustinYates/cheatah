@@ -49,6 +49,7 @@ class Escalation(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="escalations")
     conversation = relationship("Conversation", back_populates="escalations")
+    resolved_by_user = relationship("User", foreign_keys=[resolved_by])
 
     def __repr__(self) -> str:
         return f"<Escalation(id={self.id}, tenant_id={self.tenant_id}, reason={self.reason}, status={self.status})>"

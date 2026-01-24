@@ -95,6 +95,9 @@ class Tenant(Base):
     widget_events = relationship(
         "WidgetEvent", back_populates="tenant", cascade="all, delete-orphan"
     )
+    config_snapshots = relationship(
+        "ConfigSnapshot", back_populates="tenant", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Tenant(id={self.id}, name={self.name}, subdomain={self.subdomain})>"

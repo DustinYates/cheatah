@@ -24,6 +24,7 @@ from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 from app.persistence.models.widget_event import WidgetEvent
 from app.persistence.models.zapier_request import ZapierRequest
 from app.persistence.models.jackrabbit_customer import JackrabbitCustomer
+from app.persistence.models.config_snapshot import ConfigSnapshot
 
 __all__ = [
     "AuditAction",
@@ -59,5 +60,6 @@ __all__ = [
     "WidgetEvent",
     "ZapierRequest",
     "JackrabbitCustomer",
+    "ConfigSnapshot",
 ]
 

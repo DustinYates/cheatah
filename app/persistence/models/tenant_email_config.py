@@ -121,9 +121,9 @@ class EmailConversation(Base):
 
     # Relationships
     tenant = relationship("Tenant")
-    conversation = relationship("Conversation")
-    contact = relationship("Contact")
-    lead = relationship("Lead")
+    conversation = relationship("Conversation", back_populates="email_conversations")
+    contact = relationship("Contact", back_populates="email_conversations")
+    lead = relationship("Lead", back_populates="email_conversations")
 
     def __repr__(self) -> str:
         return f"<EmailConversation(id={self.id}, thread_id={self.gmail_thread_id}, from={self.from_email})>"

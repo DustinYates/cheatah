@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.domain.services.prompt_service import PromptService
 from app.domain.services.sms_service import SmsService
@@ -2067,7 +2068,6 @@ async def sync_calls_to_leads(
     from app.persistence.models.call_summary import CallSummary
     from app.persistence.models.lead import Lead
     from sqlalchemy.orm import joinedload
-    from sqlalchemy.orm.attributes import flag_modified
 
     try:
         # Find all calls with summaries that don't have lead_id set

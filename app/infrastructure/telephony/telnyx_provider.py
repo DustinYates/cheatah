@@ -384,7 +384,7 @@ Return JSON:"""
             from app.llm.gemini_client import GeminiClient
 
             gemini = GeminiClient()
-            response = await gemini.generate(prompt, {"temperature": 0.1, "max_tokens": 1000})
+            response = await gemini.generate(prompt, {"temperature": 0.1, "max_tokens": 2000})
 
             logger.info(f"Gemini raw response: {response[:500] if response else 'empty'}")
 

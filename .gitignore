@@ -22,6 +22,7 @@ client/dist/
 
 # local tooling
 .cursor/
+.mcp.json
 
 # build artifacts (rebuilt during deploy)
 static/client/

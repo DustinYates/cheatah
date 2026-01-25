@@ -43,6 +43,7 @@ class LeadResponse(BaseModel):
     created_at: str
     updated_at: str | None = None
     llm_responded: bool | None = None  # True if assistant responded, False if not, None if no conversation
+    conv_channel: str | None = None  # Conversation channel (sms, email, web, voice, etc.)
 
     class Config:
         from_attributes = True
@@ -98,6 +99,19 @@ async def _check_llm_responded(db: AsyncSession, conversation_id: int | None) ->
     return result.scalar() is not None
 
 
+async def _get_conv_channel(db: AsyncSession, conversation_id: int | None) -> str | None:
+    """Get the channel of a conversation."""
+    if not conversation_id:
+        return None
+    from app.persistence.models.conversation import Conversation
+    result = await db.execute(
+        select(Conversation.channel)
+        .where(Conversation.id == conversation_id)
+        .limit(1)
+    )
+    return result.scalar()
+
+
 @router.get("", response_model=LeadsListResponse)
 async def list_leads(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -121,10 +135,11 @@ async def list_leads(
     if status:
         leads = [l for l in leads if l.status == status]
 
-    # Build response with llm_responded field
+    # Build response with llm_responded field and conv_channel
     lead_responses = []
     for lead in leads:
         llm_responded = await _check_llm_responded(db, lead.conversation_id)
+        conv_channel = await _get_conv_channel(db, lead.conversation_id)
         lead_responses.append(
             LeadResponse(
                 id=lead.id,
@@ -138,6 +153,7 @@ async def list_leads(
                 created_at=_isoformat_utc(lead.created_at),
                 updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
                 llm_responded=llm_responded,
+                conv_channel=conv_channel,
             )
         )
 
@@ -165,6 +181,7 @@ async def get_lead(
         )
 
     llm_responded = await _check_llm_responded(db, lead.conversation_id)
+    conv_channel = await _get_conv_channel(db, lead.conversation_id)
 
     return LeadResponse(
         id=lead.id,
@@ -178,6 +195,7 @@ async def get_lead(
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
+        conv_channel=conv_channel,
     )
 
 

@@ -716,6 +716,11 @@ export default function Dashboard() {
       seenInbound.add('call');
     }
 
+    // Check conversation channel (inbound) - shows how the lead is currently engaged
+    if (lead.conv_channel) {
+      addInbound(lead.conv_channel);
+    }
+
     // Check sources array (inbound - for merged leads)
     if (lead.extra_data?.sources) {
       for (const s of lead.extra_data.sources) {

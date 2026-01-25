@@ -25,6 +25,7 @@ from app.persistence.models.widget_event import WidgetEvent
 from app.persistence.models.zapier_request import ZapierRequest
 from app.persistence.models.jackrabbit_customer import JackrabbitCustomer
 from app.persistence.models.config_snapshot import ConfigSnapshot
+from app.persistence.models.sent_asset import SentAsset
 
 __all__ = [
     "AuditAction",
@@ -61,5 +62,6 @@ __all__ = [
     "ZapierRequest",
     "JackrabbitCustomer",
     "ConfigSnapshot",
+    "SentAsset",
 ]
 

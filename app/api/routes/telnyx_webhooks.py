@@ -1812,17 +1812,24 @@ async def telnyx_ai_call_complete(
             else None
         )
 
-        # Fast-path dedup via Redis (works even if lead is missing)
+        # Fast-path dedup via Redis using atomic setnx (works even if lead is missing)
+        # CRITICAL: Use setnx to atomically claim the right to send SMS
+        # This prevents race conditions where multiple webhook events arrive simultaneously
+        redis_dedup_claimed = False
         if is_registration_request and redis_dedup_key:
             try:
                 await redis_client.connect()
-                if await redis_client.exists(redis_dedup_key):
+                # setnx returns True if key was set (we got the lock), False if already exists
+                redis_dedup_claimed = await redis_client.setnx(redis_dedup_key, "1", ttl=7200)
+                if not redis_dedup_claimed:
                     sms_already_sent_for_call = True
                     logger.info(
-                        f"Skipping registration SMS - redis dedup hit: {redis_dedup_key}"
+                        f"Skipping registration SMS - redis setnx dedup blocked: {redis_dedup_key}"
                     )
+                else:
+                    logger.info(f"Claimed Redis dedup lock for SMS: {redis_dedup_key}")
             except Exception as e:
-                logger.warning(f"Redis dedup check failed for {redis_dedup_key}: {e}")
+                logger.warning(f"Redis dedup setnx failed for {redis_dedup_key}: {e}")
 
         if lead and call and is_registration_request and from_number and not sms_already_sent_for_call:
             # Refresh lead from DB to get latest data (in case another event updated it)
@@ -1915,14 +1922,16 @@ async def telnyx_ai_call_complete(
                     f"Registration SMS fulfillment result - tenant_id={tenant_id}, "
                     f"status={result.get('status')}, phone={from_number}, call_id={call.id if call else 'none'}"
                 )
-                # Set Redis dedup on success to catch retries when lead is missing
-                if result.get("status") == "sent" and redis_dedup_key:
-                    try:
-                        await redis_client.set(redis_dedup_key, "1", ttl=7200)
-                        logger.info(f"Set Redis registration dedup key: {redis_dedup_key}")
-                    except Exception as e:
-                        logger.warning(f"Failed to set Redis registration dedup key {redis_dedup_key}: {e}")
-                elif result.get("status") != "sent" and lead and call:
+                # Redis key was already set by setnx before sending
+                # If send failed, release the Redis lock so retry is possible
+                if result.get("status") != "sent":
+                    if redis_dedup_key and redis_dedup_claimed:
+                        try:
+                            await redis_client.delete(redis_dedup_key)
+                            logger.info(f"Released Redis dedup lock after failed send: {redis_dedup_key}")
+                        except Exception as e:
+                            logger.warning(f"Failed to release Redis dedup lock {redis_dedup_key}: {e}")
+                if result.get("status") != "sent" and lead and call:
                     # ROLLBACK: If send failed, remove claim so retry is possible
                     try:
                         await db.refresh(lead)
@@ -1939,7 +1948,14 @@ async def telnyx_ai_call_complete(
                         logger.warning(f"Failed to rollback SMS claim for call_id={call.id}: {rollback_err}")
             except Exception as e:
                 logger.error(f"Failed to auto-send registration SMS: {e}", exc_info=True)
-                # ROLLBACK: On exception, also try to remove claim
+                # ROLLBACK: On exception, release Redis lock so retry is possible
+                if redis_dedup_key and redis_dedup_claimed:
+                    try:
+                        await redis_client.delete(redis_dedup_key)
+                        logger.info(f"Released Redis dedup lock after exception: {redis_dedup_key}")
+                    except Exception as redis_err:
+                        logger.warning(f"Failed to release Redis dedup lock {redis_dedup_key}: {redis_err}")
+                # ROLLBACK: Also remove lead claim
                 if lead and call:
                     try:
                         await db.refresh(lead)

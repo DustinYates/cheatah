@@ -90,7 +90,15 @@ class PromiseFulfillmentService:
         # Primary dedup: Redis with atomic setnx (set-if-not-exists)
         # This acquires a "lock" atomically to prevent race conditions when
         # multiple messages trigger fulfillment concurrently
-        dedup_acquired = is_test_phone or await redis_client.setnx(dedup_key, "1", ttl=DEDUP_TTL_SECONDS)
+        # If Redis is down, fall through to DB-only dedup (still protected)
+        dedup_acquired = is_test_phone  # Test phones always bypass
+        if not dedup_acquired:
+            try:
+                dedup_acquired = await redis_client.setnx(dedup_key, "1", ttl=DEDUP_TTL_SECONDS)
+            except Exception as redis_err:
+                logger.warning(f"Redis dedup setnx failed, falling back to DB-only: {redis_err}")
+                dedup_acquired = True  # Proceed to DB check as fallback
+
         if not dedup_acquired:
             # MONITORING: Log duplicate detection with structured data for alerting
             logger.warning(

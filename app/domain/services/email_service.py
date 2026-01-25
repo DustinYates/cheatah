@@ -956,22 +956,9 @@ class EmailService:
         
         return formatted
 
-    async def _send_email_response(
-        self,
-        gmail_client: GmailClient,
-        to_email: str,
-        subject: str,
-        body: str,
-        thread_id: str,
-        email_config: TenantEmailConfig,
-    ) -> dict[str, Any]:
-        """Send email response via Gmail API."""
-        return gmail_client.send_message(
-            to=to_email,
-            subject=subject,
-            body=body,
-            thread_id=thread_id,
-        )
+    # NOTE: Email sending is permanently disabled. This service is receive-only.
+    # The _send_email_response method has been removed to prevent any accidental sends.
+    # If email sending is needed in the future, it must be explicitly re-implemented.
 
     def _is_automated_email(
         self,

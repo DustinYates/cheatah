@@ -380,21 +380,6 @@ export default function Dashboard() {
     localStorage.setItem('dashboard_leads_limit', newLimit.toString());
   };
 
-  const handleVerify = async (leadId) => {
-    setActionLoading(leadId);
-    try {
-      await api.updateLeadStatus(leadId, 'verified');
-      // Update local state
-      setLeads(leads.map(lead => 
-        lead.id === leadId ? { ...lead, status: 'verified' } : lead
-      ));
-    } catch (err) {
-      setError('Failed to verify lead');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
   const handleMarkUnknown = async (leadId) => {
     setActionLoading(leadId);
     try {
@@ -1020,38 +1005,21 @@ export default function Dashboard() {
                           </IconButton>
                         )}
                         {(!lead.status || lead.status === 'new') && (
-                          <>
-                            <IconButton
-                              className="icon-button--soft icon-button--success"
-                              onClick={() => handleVerify(lead.id)}
-                              disabled={actionLoading === lead.id}
-                              title="Mark as verified lead"
-                              ariaLabel="Verify lead"
-                            >
-                              {actionLoading === lead.id ? (
-                                <span className="spinner">⋯</span>
-                              ) : (
-                                <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                  <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                                </svg>
-                              )}
-                            </IconButton>
-                            <IconButton
-                              className="icon-button--soft icon-button--warning"
-                              onClick={() => handleMarkUnknown(lead.id)}
-                              disabled={actionLoading === lead.id}
-                              title="Mark as unknown/spam"
-                              ariaLabel="Mark as unknown"
-                            >
-                              {actionLoading === lead.id ? (
-                                <span className="spinner">⋯</span>
-                              ) : (
-                                <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                                </svg>
-                              )}
-                            </IconButton>
-                          </>
+                          <IconButton
+                            className="icon-button--soft icon-button--warning"
+                            onClick={() => handleMarkUnknown(lead.id)}
+                            disabled={actionLoading === lead.id}
+                            title="Mark as unknown/spam"
+                            ariaLabel="Mark as unknown"
+                          >
+                            {actionLoading === lead.id ? (
+                              <span className="spinner">⋯</span>
+                            ) : (
+                              <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </IconButton>
                         )}
                         <IconButton
                           className="icon-button--soft icon-button--danger"

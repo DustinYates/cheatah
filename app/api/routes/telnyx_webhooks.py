@@ -2,7 +2,7 @@
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -1293,35 +1293,29 @@ async def telnyx_ai_call_complete(
         logger.info(f"Found tenant_id={tenant_id} for AI call")
 
         # Determine if this is a voice call vs SMS/chat interaction
-        # Voice assistant: assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d (ChatterCheetah Voice BSS)
-        # Text assistant: assistant-d3d25f89-a4df-4ca0-8657-7fe2f53ce348 (ChatterCheetah text BSS)
-        VOICE_ASSISTANT_ID = "assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d"
-        TEXT_ASSISTANT_ID = "assistant-d3d25f89-a4df-4ca0-8657-7fe2f53ce348"
-        is_text_assistant = assistant_id == TEXT_ASSISTANT_ID
-        is_voice_assistant = assistant_id == VOICE_ASSISTANT_ID
+        # Note: The voice assistant can handle BOTH voice calls AND text messages,
+        # so we classify based on actual signals (duration/recording), not assistant ID
 
         # Voice calls require actual voice signals (duration > 0 OR recording)
-        # Note: event_type "call.*" is used by Telnyx AI for BOTH voice AND text assistants,
-        # so we can't rely on event_type alone to distinguish voice from SMS
         has_voice_signals = (
             bool(duration and int(duration) > 0) or  # Voice calls have duration
             bool(recording_url)  # Voice calls may have recordings
         )
 
-        # Classify as voice call only if:
-        # 1. Explicitly from voice assistant, OR
-        # 2. NOT from text assistant AND has actual voice signals (duration/recording)
-        is_voice_call = (
-            is_voice_assistant or  # Explicitly from voice assistant
-            (not is_text_assistant and has_voice_signals)  # Unknown assistant with voice signals
-        )
+        # Text assistant ID (for explicit text-only assistant if configured)
+        TEXT_ASSISTANT_ID = "assistant-d3d25f89-a4df-4ca0-8657-7fe2f53ce348"
+        is_text_assistant = assistant_id == TEXT_ASSISTANT_ID
 
-        # SMS-specific indicators
+        # Classify based on actual signals, not just assistant ID
+        # Voice call = has actual voice signals (duration > 0 or recording)
+        is_voice_call = has_voice_signals
+
+        # SMS/text interaction = no voice signals OR explicit text assistant OR message event
         is_sms_interaction = (
+            not has_voice_signals or  # No voice signals = SMS/text (even from voice assistant)
             is_text_assistant or  # Explicitly from text assistant
             event_type.startswith("message.") or
-            event_type in ("message.received", "message.sent", "message.delivered") or
-            (not is_voice_assistant and not has_voice_signals)  # Unknown assistant without voice signals
+            event_type in ("message.received", "message.sent", "message.delivered")
         )
 
         logger.info(f"Channel classification: is_voice_call={is_voice_call}, is_sms_interaction={is_sms_interaction}, "
@@ -1835,7 +1829,6 @@ async def telnyx_ai_call_complete(
         # This is the most reliable check - works even if Redis is down
         if is_registration_request and normalized_from_for_dedup and not sms_already_sent_for_call and not is_test_phone:
             try:
-                from datetime import datetime, timedelta, timezone
                 from sqlalchemy import select, func
                 from app.persistence.models.sent_asset import SentAsset
 

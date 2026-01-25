@@ -702,6 +702,8 @@ export default function Dashboard() {
           return { icon: '📞', title: 'Phone Call', key: 'call' };
         case 'sms':
         case 'text':
+        case 'sms_ai_assistant':
+        case 'sms_ai':
           return { icon: <TextBubbleIcon />, title: 'Text Message', key: 'sms' };
         default:
           return null;

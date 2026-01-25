@@ -1300,23 +1300,32 @@ async def telnyx_ai_call_complete(
         is_text_assistant = assistant_id == TEXT_ASSISTANT_ID
         is_voice_assistant = assistant_id == VOICE_ASSISTANT_ID
 
-        # Voice calls have: call.* event types, call_control_id, CallDuration, etc.
-        # SMS/chat has: message.* event types, no call_control_id, no duration
-        is_voice_call = (
-            is_voice_assistant or  # Explicitly from voice assistant
-            event_type.startswith("call.") or
-            event_type in ("call.conversation.ended", "call.conversation_insights.generated") or
-            bool(call_id and call_id.startswith("call_")) or  # Telnyx call IDs start with "call_"
+        # Voice calls require actual voice signals (duration > 0 OR recording)
+        # Note: event_type "call.*" is used by Telnyx AI for BOTH voice AND text assistants,
+        # so we can't rely on event_type alone to distinguish voice from SMS
+        has_voice_signals = (
             bool(duration and int(duration) > 0) or  # Voice calls have duration
             bool(recording_url)  # Voice calls may have recordings
         )
 
-        # Also check for SMS-specific indicators
+        # Classify as voice call only if:
+        # 1. Explicitly from voice assistant, OR
+        # 2. NOT from text assistant AND has actual voice signals (duration/recording)
+        is_voice_call = (
+            is_voice_assistant or  # Explicitly from voice assistant
+            (not is_text_assistant and has_voice_signals)  # Unknown assistant with voice signals
+        )
+
+        # SMS-specific indicators
         is_sms_interaction = (
             is_text_assistant or  # Explicitly from text assistant
             event_type.startswith("message.") or
-            event_type in ("message.received", "message.sent", "message.delivered")
+            event_type in ("message.received", "message.sent", "message.delivered") or
+            (not is_voice_assistant and not has_voice_signals)  # Unknown assistant without voice signals
         )
+
+        logger.info(f"Channel classification: is_voice_call={is_voice_call}, is_sms_interaction={is_sms_interaction}, "
+                    f"has_voice_signals={has_voice_signals}, duration={duration}, recording_url={bool(recording_url)}")
 
         if is_sms_interaction or (not is_voice_call and not call_id):
             logger.info(f"Skipping Call record creation for non-voice interaction: event_type={event_type}, call_id={call_id}, assistant_id={assistant_id}, is_text_assistant={is_text_assistant}")
@@ -1398,15 +1407,19 @@ async def telnyx_ai_call_complete(
                         email=caller_email or None,
                         status="new",
                         extra_data={"source": "sms_ai_assistant", "summary": summary},
+                        conversation_id=sms_conversation.id if sms_conversation else None,
                     )
                     db.add(lead)
-                    logger.info(f"Created Lead from SMS AI interaction: phone={normalized_from}")
+                    logger.info(f"Created Lead from SMS AI interaction: phone={normalized_from}, conversation_id={sms_conversation.id if sms_conversation else None}")
                 else:
                     if caller_name and not lead.name:
                         lead.name = caller_name
                     if caller_email and not lead.email:
                         lead.email = caller_email
-                    logger.info(f"Updated existing Lead from SMS AI interaction: id={lead.id}")
+                    # Update conversation_id if not set (link to latest SMS conversation)
+                    if sms_conversation and not lead.conversation_id:
+                        lead.conversation_id = sms_conversation.id
+                    logger.info(f"Updated existing Lead from SMS AI interaction: id={lead.id}, conversation_id={lead.conversation_id}")
 
                 await db.commit()
 

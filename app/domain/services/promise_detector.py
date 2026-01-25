@@ -37,6 +37,32 @@ class PromiseDetector:
         # "send that text" variations (bot says "I'll send that text to you")
         r"(?:i'll|i will)\s+send\s+(?:that|the)\s+text\s+(?:to\s+)?you",
         r"send\s+(?:that|the)\s+text\s+to\s+you\s+(?:now|right now|right away)",
+        # "send that text over to [phone]" - when AI mentions the phone number directly
+        r"(?:i'll|i will)\s+send\s+(?:that|the)\s+text\s+(?:over\s+)?to\s+\d{3}",
+        r"send\s+(?:that|the)\s+text\s+(?:over\s+)?to\s+\d{3}.*(?:now|right now|right away)",
+        # "texting it to you now" / "sending it now" patterns
+        r"(?:i'll|i will|i'm)\s+(?:text|send)\s+(?:it|that|this)\s+(?:over\s+)?(?:to\s+you\s+)?(?:now|right now|right away)",
+        r"(?:texting|sending)\s+(?:it|that|this)\s+(?:over\s+)?(?:to\s+you\s+)?(?:now|right now|right away)",
+        r"(?:texting|sending)\s+(?:it|that|this)\s+(?:over\s+)?to\s+\d{3}",
+        # "I'll get that to you" / "getting that to you now"
+        r"(?:i'll|i will)\s+get\s+(?:that|this|it)\s+(?:over\s+)?to\s+you",
+        r"(?:getting|get)\s+(?:that|this|it)\s+(?:over\s+)?to\s+you\s+(?:now|right now|right away)",
+        # "shoot that over" / "fire that off" casual language
+        r"(?:i'll|i will|let me)\s+(?:shoot|fire)\s+(?:that|this|it)\s+(?:over|off)\s+(?:to\s+you)?",
+        # "on its way" / "coming your way" patterns
+        r"(?:text|message|link|info)\s+(?:is\s+)?(?:on\s+its\s+way|coming\s+your\s+way|headed\s+your\s+way)",
+        r"(?:i'll|i will)\s+have\s+(?:that|it)\s+(?:sent|texted)\s+(?:over\s+)?(?:to\s+you)?",
+        # "text you the link" / "text you that info"
+        r"(?:i'll|i will|let me)\s+text\s+you\s+(?:the|that|this|a)",
+        r"(?:texting|text)\s+you\s+(?:the|that|this|a)\s+(?:link|info|information|details)",
+        # "send you a text with" patterns
+        r"(?:i'll|i will|let me)\s+send\s+you\s+a\s+(?:text|message|sms)\s+(?:with|containing)",
+        r"(?:sending|send)\s+you\s+a\s+(?:text|message|sms)\s+(?:with|containing)",
+        # "you'll get a text" / "you should receive"
+        r"you(?:'ll|\s+will)\s+(?:get|receive)\s+(?:a|the)\s+(?:text|message|sms)",
+        r"you\s+should\s+(?:get|receive)\s+(?:a|the)\s+(?:text|message|sms)",
+        # "so you have it handy" / "so you have the link" (contextual)
+        r"(?:text|send|texting|sending).*so\s+you\s+have\s+(?:it|the\s+link|that)",
         # Passive "get...sent" constructions (bot says "I'll get that link sent over to you")
         r"(?:i'll|i will)\s+get\s+(?:that|the|this)\s+(?:link|info|information|text)\s+sent",
         r"(?:link|info|text)\s+sent\s+(?:over\s+)?to\s+you",
@@ -73,6 +99,15 @@ class PromiseDetector:
         r"(?:recibirás|recibiras|recibirá|recibira)\s+(?:un|una|el|la)",
         # "I'm sending" patterns
         r"(?:estoy|le estoy|te estoy)\s+(?:enviando|mandando)",
+        # "sending it to your phone" / "to your number" patterns
+        r"(?:te|le)\s+(?:envío|envio|mando)\s+(?:al|a\s+tu)\s+(?:teléfono|telefono|celular|número|numero)",
+        r"(?:enviando|mandando)\s+(?:al|a\s+tu)\s+(?:teléfono|telefono|celular|número|numero)",
+        # "you will get it" / "it's on its way"
+        r"(?:te|le)\s+(?:va\s+a\s+)?llegar\s+(?:un|una|el|la)\s+(?:mensaje|texto)",
+        r"(?:ya\s+)?(?:te|le)\s+(?:está|esta)\s+(?:llegando|enviando)",
+        r"(?:en\s+)?camino\s+(?:a\s+tu\s+)?(?:teléfono|telefono|celular)",
+        # "so you have it" patterns
+        r"(?:enviar|mandar|textear).*(?:para\s+que\s+)?(?:lo\s+)?tengas",
     ]
 
     # Combined patterns (checked in order)

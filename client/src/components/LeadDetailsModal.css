@@ -183,6 +183,11 @@
   color: #8b5cf6;
 }
 
+.source-pill--email {
+  background: #fff7ed;
+  color: #f97316;
+}
+
 /* ===================================
    Timeline Body
    =================================== */
@@ -316,6 +321,12 @@
   border-color: #8b5cf6;
   color: #8b5cf6;
   background: #f5f3ff;
+}
+
+.timeline-item-icon--email {
+  border-color: #f97316;
+  color: #f97316;
+  background: #fff7ed;
 }
 
 /* ===================================

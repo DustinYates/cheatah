@@ -1,4 +1,4 @@
-import { Phone, MessageSquare, Bot, ChevronDown } from 'lucide-react';
+import { Phone, MessageSquare, Bot, Mail, ChevronDown } from 'lucide-react';
 import { formatSmartDateTime } from '../utils/dateFormat';
 
 /**
@@ -9,6 +9,7 @@ function getIconComponent(iconName) {
     Phone: Phone,
     MessageSquare: MessageSquare,
     Bot: Bot,
+    Mail: Mail,
   };
   return icons[iconName] || Phone;
 }

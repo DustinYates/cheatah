@@ -4,16 +4,27 @@
  */
 
 /**
- * Determine if a message is from SMS or web chatbot based on channel
- * @param {object} message - The message object
- * @param {string} channel - The conversation channel ('sms', 'text', 'web', 'web_chat', etc.)
- * @returns {boolean} - True if SMS, false if chatbot
+ * Determine the channel type based on channel string
+ * @param {string} channel - The conversation channel ('sms', 'text', 'web', 'web_chat', 'email', 'form', etc.)
+ * @returns {string} - Channel type: 'sms', 'email', or 'chatbot'
  */
-function determineIfSMS(message, channel) {
-  if (!channel) return false;
+function determineChannelType(channel) {
+  if (!channel) return 'chatbot';
 
   const channelLower = channel.toLowerCase();
-  return channelLower === 'sms' || channelLower === 'text';
+
+  // SMS channels
+  if (channelLower === 'sms' || channelLower === 'text') {
+    return 'sms';
+  }
+
+  // Email/form channels
+  if (channelLower === 'email' || channelLower === 'form' || channelLower === 'web_form' || channelLower === 'contact_form') {
+    return 'email';
+  }
+
+  // Default to chatbot for web chat
+  return 'chatbot';
 }
 
 /**
@@ -93,10 +104,18 @@ export function buildUnifiedTimeline(lead, conversationData) {
     });
   }
 
-  // 2. Transform conversation messages (SMS + Chatbot) - GROUP them together
+  // 2. Transform conversation messages (SMS + Chatbot + Email/Form) - GROUP them together
   if (conversationData?.messages?.length > 0) {
     const channel = conversationData.channel || 'web';
-    const isSMS = determineIfSMS(conversationData.messages[0], channel);
+    const channelType = determineChannelType(channel);
+
+    // Map channel type to timeline type and icon
+    const typeMap = {
+      sms: { type: 'sms', icon: 'MessageSquare' },
+      email: { type: 'email', icon: 'Mail' },
+      chatbot: { type: 'chatbot', icon: 'Bot' },
+    };
+    const { type: itemType, icon: itemIcon } = typeMap[channelType] || typeMap.chatbot;
 
     // Group all messages from the same conversation together
     const messages = conversationData.messages
@@ -107,13 +126,19 @@ export function buildUnifiedTimeline(lead, conversationData) {
       // Use the timestamp of the most recent message
       const lastMessage = messages[messages.length - 1];
 
+      // Generate appropriate summary based on channel type
+      let summary = `Conversation (${messages.length} message${messages.length > 1 ? 's' : ''})`;
+      if (channelType === 'email') {
+        summary = `Get In Touch Form Submission`;
+      }
+
       timeline.push({
         id: `conversation-${conversationData.id || 'group'}`,
-        type: isSMS ? 'sms' : 'chatbot',
+        type: itemType,
         timestamp: new Date(lastMessage.created_at),
         timestampISO: lastMessage.created_at,
-        summary: `Conversation (${messages.length} message${messages.length > 1 ? 's' : ''})`,
-        icon: isSMS ? 'MessageSquare' : 'Bot',
+        summary: summary,
+        icon: itemIcon,
         details: {
           messages: messages.map(msg => ({
             role: msg.role,
@@ -143,12 +168,14 @@ export function getTimelineSources(timeline) {
     hasVoiceCalls: false,
     hasSMS: false,
     hasChatbot: false,
+    hasEmail: false,
   };
 
   timeline.forEach(item => {
     if (item.type === 'voice_call') sources.hasVoiceCalls = true;
     if (item.type === 'sms') sources.hasSMS = true;
     if (item.type === 'chatbot') sources.hasChatbot = true;
+    if (item.type === 'email') sources.hasEmail = true;
   });
 
   return sources;

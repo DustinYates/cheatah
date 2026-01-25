@@ -141,7 +141,7 @@ export default function LeadDetailsModal({ lead, onClose }) {
           </div>
 
           {/* Source badges */}
-          {(sources.hasVoiceCalls || sources.hasSMS || sources.hasChatbot) && (
+          {(sources.hasVoiceCalls || sources.hasSMS || sources.hasChatbot || sources.hasEmail) && (
             <div className="summary-sources">
               {sources.hasVoiceCalls && (
                 <span className="source-pill source-pill--voice">
@@ -159,6 +159,12 @@ export default function LeadDetailsModal({ lead, onClose }) {
                 <span className="source-pill source-pill--chatbot">
                   <Bot size={12} />
                   <span>Chat</span>
+                </span>
+              )}
+              {sources.hasEmail && (
+                <span className="source-pill source-pill--email">
+                  <Mail size={12} />
+                  <span>Form</span>
                 </span>
               )}
             </div>

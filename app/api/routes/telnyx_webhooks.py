@@ -1812,9 +1812,15 @@ async def telnyx_ai_call_complete(
             else None
         )
 
+        # Test phone whitelist - bypass dedup for testing
+        TEST_PHONE_WHITELIST = {"2816278851"}
+        is_test_phone = normalized_from_for_dedup in TEST_PHONE_WHITELIST if normalized_from_for_dedup else False
+        if is_test_phone:
+            logger.info(f"Test phone whitelist - bypassing voice dedup for {normalized_from_for_dedup}")
+
         # LAYER 1: DB check - query sent_assets table for recent sends to this phone
         # This is the most reliable check - works even if Redis is down
-        if is_registration_request and normalized_from_for_dedup and not sms_already_sent_for_call:
+        if is_registration_request and normalized_from_for_dedup and not sms_already_sent_for_call and not is_test_phone:
             try:
                 from datetime import datetime, timedelta, timezone
                 from sqlalchemy import select, func
@@ -1843,7 +1849,7 @@ async def telnyx_ai_call_complete(
         # CRITICAL: Use setnx to atomically claim the right to send SMS
         # This prevents race conditions where multiple webhook events arrive simultaneously
         redis_dedup_claimed = False
-        if is_registration_request and redis_dedup_key and not sms_already_sent_for_call:
+        if is_registration_request and redis_dedup_key and not sms_already_sent_for_call and not is_test_phone:
             try:
                 await redis_client.connect()
                 # setnx returns True if key was set (we got the lock), False if already exists
@@ -1858,7 +1864,8 @@ async def telnyx_ai_call_complete(
             except Exception as e:
                 logger.warning(f"Redis dedup setnx failed for {redis_dedup_key}: {e}")
 
-        if lead and call and is_registration_request and from_number and not sms_already_sent_for_call:
+        # LAYER 3: Lead-based check (skip for test phones)
+        if lead and call and is_registration_request and from_number and not sms_already_sent_for_call and not is_test_phone:
             # Refresh lead from DB to get latest data (in case another event updated it)
             await db.refresh(lead)
             lead_extra = lead.extra_data or {}

@@ -28,6 +28,12 @@ logger = logging.getLogger(__name__)
 # Deduplication TTL in seconds (1 hour)
 DEDUP_TTL_SECONDS = 3600
 
+# Test phone numbers that bypass dedup (for testing purposes)
+# These numbers can receive multiple SMS within the dedup window
+TEST_PHONE_WHITELIST = {
+    "2816278851",  # Dustin's test number
+}
+
 
 class PromiseFulfillmentService:
     """Service for fulfilling promises made by the AI to send information."""
@@ -76,10 +82,15 @@ class PromiseFulfillmentService:
         phone_normalized = "".join(c for c in phone if c.isdigit())[-10:]
         dedup_key = f"promise_sent:{tenant_id}:{phone_normalized}:{promise.asset_type}"
 
+        # Skip dedup for test phone numbers (allows repeated testing)
+        is_test_phone = phone_normalized in TEST_PHONE_WHITELIST
+        if is_test_phone:
+            logger.info(f"Test phone whitelist - bypassing dedup for {phone_normalized}")
+
         # Primary dedup: Redis with atomic setnx (set-if-not-exists)
         # This acquires a "lock" atomically to prevent race conditions when
         # multiple messages trigger fulfillment concurrently
-        dedup_acquired = await redis_client.setnx(dedup_key, "1", ttl=DEDUP_TTL_SECONDS)
+        dedup_acquired = is_test_phone or await redis_client.setnx(dedup_key, "1", ttl=DEDUP_TTL_SECONDS)
         if not dedup_acquired:
             # MONITORING: Log duplicate detection with structured data for alerting
             logger.warning(
@@ -101,45 +112,47 @@ class PromiseFulfillmentService:
         # Fallback dedup: DB-backed check via sent_assets table
         # Uses INSERT ... ON CONFLICT DO NOTHING for atomic deduplication
         # This handles cases where Redis is disabled or unavailable
-        try:
-            stmt = pg_insert(SentAsset).values(
-                tenant_id=tenant_id,
-                phone_normalized=phone_normalized,
-                asset_type=promise.asset_type,
-                conversation_id=conversation_id,
-                sent_at=datetime.now(timezone.utc),
-            ).on_conflict_do_nothing(
-                constraint="uq_sent_assets_tenant_phone_asset"
-            ).returning(SentAsset.id)
+        # Skip for test phone numbers
+        if not is_test_phone:
+            try:
+                stmt = pg_insert(SentAsset).values(
+                    tenant_id=tenant_id,
+                    phone_normalized=phone_normalized,
+                    asset_type=promise.asset_type,
+                    conversation_id=conversation_id,
+                    sent_at=datetime.now(timezone.utc),
+                ).on_conflict_do_nothing(
+                    constraint="uq_sent_assets_tenant_phone_asset"
+                ).returning(SentAsset.id)
 
-            result = await self.session.execute(stmt)
-            await self.session.commit()
-            inserted_id = result.scalar_one_or_none()
+                result = await self.session.execute(stmt)
+                await self.session.commit()
+                inserted_id = result.scalar_one_or_none()
 
-            if inserted_id is None:
-                # Conflict occurred - asset was already sent
-                # MONITORING: Log duplicate detection with structured data for alerting
-                # This indicates a race condition was caught by the DB layer
-                logger.warning(
-                    "[DUPLICATE_BLOCKED] Registration link duplicate prevented by DB (race condition caught!)",
-                    extra={
-                        "event_type": "duplicate_send_blocked",
-                        "dedup_layer": "database",
-                        "tenant_id": tenant_id,
-                        "phone_normalized": phone_normalized,
-                        "asset_type": promise.asset_type,
-                        "conversation_id": conversation_id,
-                        "race_condition_caught": True,
-                    },
-                )
-                # Note: Keep Redis key set since this is a genuine duplicate
-                return {
-                    "status": "skipped",
-                    "reason": "already_sent_to_lead",
-                }
-            logger.info(f"DB dedup record created: sent_asset_id={inserted_id}")
-        except Exception as db_check_err:
-            logger.warning(f"DB dedup check failed, proceeding with caution: {db_check_err}")
+                if inserted_id is None:
+                    # Conflict occurred - asset was already sent
+                    # MONITORING: Log duplicate detection with structured data for alerting
+                    # This indicates a race condition was caught by the DB layer
+                    logger.warning(
+                        "[DUPLICATE_BLOCKED] Registration link duplicate prevented by DB (race condition caught!)",
+                        extra={
+                            "event_type": "duplicate_send_blocked",
+                            "dedup_layer": "database",
+                            "tenant_id": tenant_id,
+                            "phone_normalized": phone_normalized,
+                            "asset_type": promise.asset_type,
+                            "conversation_id": conversation_id,
+                            "race_condition_caught": True,
+                        },
+                    )
+                    # Note: Keep Redis key set since this is a genuine duplicate
+                    return {
+                        "status": "skipped",
+                        "reason": "already_sent_to_lead",
+                    }
+                logger.info(f"DB dedup record created: sent_asset_id={inserted_id}")
+            except Exception as db_check_err:
+                logger.warning(f"DB dedup check failed, proceeding with caution: {db_check_err}")
 
         # Helper to release dedup locks on recoverable errors
         async def release_dedup_and_return(result: dict) -> dict:

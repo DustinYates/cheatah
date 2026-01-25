@@ -1812,11 +1812,38 @@ async def telnyx_ai_call_complete(
             else None
         )
 
-        # Fast-path dedup via Redis using atomic setnx (works even if lead is missing)
+        # LAYER 1: DB check - query sent_assets table for recent sends to this phone
+        # This is the most reliable check - works even if Redis is down
+        if is_registration_request and normalized_from_for_dedup and not sms_already_sent_for_call:
+            try:
+                from datetime import datetime, timedelta, timezone
+                from sqlalchemy import select, func
+                from app.persistence.models.sent_asset import SentAsset
+
+                # Check if registration_link was sent to this phone in the last 2 hours
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
+                existing_send = await db.execute(
+                    select(SentAsset.id).where(
+                        SentAsset.tenant_id == tenant_id,
+                        SentAsset.phone_normalized == normalized_from_for_dedup,
+                        SentAsset.asset_type == "registration_link",
+                        SentAsset.sent_at >= cutoff_time,
+                    ).limit(1)
+                )
+                if existing_send.scalar_one_or_none():
+                    sms_already_sent_for_call = True
+                    logger.info(
+                        f"Skipping registration SMS - DB sent_assets check found recent send: "
+                        f"tenant_id={tenant_id}, phone={normalized_from_for_dedup}"
+                    )
+            except Exception as e:
+                logger.warning(f"DB sent_assets dedup check failed: {e}")
+
+        # LAYER 2: Redis atomic setnx (fast-path, works even if lead is missing)
         # CRITICAL: Use setnx to atomically claim the right to send SMS
         # This prevents race conditions where multiple webhook events arrive simultaneously
         redis_dedup_claimed = False
-        if is_registration_request and redis_dedup_key:
+        if is_registration_request and redis_dedup_key and not sms_already_sent_for_call:
             try:
                 await redis_client.connect()
                 # setnx returns True if key was set (we got the lock), False if already exists

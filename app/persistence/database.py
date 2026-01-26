@@ -3,13 +3,12 @@
 import logging
 
 import sentry_sdk
-from sqlalchemy import event, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.pool import Pool
 
 from app.core.tenant_context import get_tenant_context
-from app.settings import settings, get_async_database_url
+from app.settings import get_async_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -45,74 +44,41 @@ async_session_factory = AsyncSessionLocal
 Base = declarative_base()
 
 
-def _set_tenant_context_sync(dbapi_connection, connection_record):
+async def _set_tenant_context_async(session: AsyncSession) -> None:
     """Set the tenant context on the database connection for RLS.
 
-    This is called synchronously when a connection is checked out from the pool.
+    This is called asynchronously when a session is created.
     It sets the PostgreSQL session variable that RLS policies use.
     """
-    if dbapi_connection is None:
-        return  # Connection not available, skip RLS setup
-
     try:
         tenant_id = get_tenant_context()
-        cursor = dbapi_connection.cursor()
-        try:
-            if tenant_id is not None:
-                cursor.execute(f"SET app.current_tenant_id = '{tenant_id}'")
-            else:
-                # Reset to empty for global admin operations
-                cursor.execute("SET app.current_tenant_id = ''")
-        finally:
-            cursor.close()
+        if tenant_id is not None:
+            await session.execute(text(f"SET app.current_tenant_id = '{tenant_id}'"))
+        else:
+            # Reset to empty for global admin operations
+            await session.execute(text("SET app.current_tenant_id = ''"))
     except Exception as e:
         # Log RLS setup errors - these are critical for tenant isolation security
         logger.error(f"RLS context setup failed: {e}", exc_info=True)
         sentry_sdk.capture_exception(e)
-        # Don't raise - allow connection checkout to proceed, but log the security concern
-
-
-def _reset_tenant_context_sync(dbapi_connection, connection_record):
-    """Reset tenant context when connection is returned to pool.
-
-    This ensures connections don't leak tenant context to other requests.
-    """
-    if dbapi_connection is None:
-        return  # Connection not available, skip reset
-
-    try:
-        cursor = dbapi_connection.cursor()
-        try:
-            cursor.execute("SET app.current_tenant_id = ''")
-        finally:
-            cursor.close()
-    except Exception as e:
-        # Log but don't fail - connection is being returned anyway
-        logger.warning(f"RLS context reset failed during checkin: {e}")
-
-
-# Register event listeners for RLS tenant context
-# Only for PostgreSQL (asyncpg) connections
-if "postgresql" in get_async_database_url().lower():
-    @event.listens_for(Pool, "checkout")
-    def on_checkout(dbapi_connection, connection_record, connection_proxy):
-        """Set tenant context when connection is checked out."""
-        _set_tenant_context_sync(dbapi_connection, connection_record)
-
-    @event.listens_for(Pool, "checkin")
-    def on_checkin(dbapi_connection, connection_record):
-        """Reset tenant context when connection is returned."""
-        _reset_tenant_context_sync(dbapi_connection, connection_record)
+        # Don't raise - allow session to proceed, but log the security concern
 
 
 async def get_db() -> AsyncSession:
-    """Dependency for getting database session."""
+    """Dependency for getting database session with RLS tenant context."""
     async with AsyncSessionLocal() as session:
         try:
+            # Set tenant context for RLS using proper async execution
+            await _set_tenant_context_async(session)
             yield session
         except Exception as e:
             logger.error(f"Database session error: {e}", exc_info=True)
             raise
         finally:
+            # Reset tenant context when returning session
+            try:
+                await session.execute(text("SET app.current_tenant_id = ''"))
+            except Exception:
+                pass  # Ignore errors during cleanup
             await session.close()
 

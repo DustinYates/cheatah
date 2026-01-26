@@ -442,6 +442,99 @@ def _get_fallback_prompt() -> str:
 You are on a PHONE CALL. Keep it conversational, brief, and helpful."""
 
 
+async def _sync_lead_to_contact(
+    db: AsyncSession,
+    tenant_id: int,
+    lead: "Lead",
+    phone: str | None = None,
+    email: str | None = None,
+    name: str | None = None,
+) -> int | None:
+    """Sync lead information to a matching contact, creating one if needed.
+
+    Finds a contact by phone or email and updates it with the lead's information.
+    If no contact exists and the lead has sufficient info, creates a new contact.
+
+    Args:
+        db: Database session
+        tenant_id: Tenant ID
+        lead: The lead to sync from
+        phone: Phone number (normalized)
+        email: Email address
+        name: Contact name
+
+    Returns:
+        Contact ID if found/created, None otherwise
+    """
+    from app.persistence.models.contact import Contact
+
+    # Use lead fields if not provided
+    phone = phone or lead.phone
+    email = email or lead.email
+    name = name or lead.name
+
+    if not phone and not email:
+        return None
+
+    # Find existing contact by phone OR email
+    contact = None
+
+    if phone:
+        result = await db.execute(
+            select(Contact).where(
+                Contact.tenant_id == tenant_id,
+                Contact.phone == phone,
+                Contact.deleted_at.is_(None),
+            ).order_by(Contact.created_at.desc()).limit(1)
+        )
+        contact = result.scalar_one_or_none()
+
+    if not contact and email:
+        result = await db.execute(
+            select(Contact).where(
+                Contact.tenant_id == tenant_id,
+                Contact.email == email,
+                Contact.deleted_at.is_(None),
+            ).order_by(Contact.created_at.desc()).limit(1)
+        )
+        contact = result.scalar_one_or_none()
+
+    if contact:
+        # Update existing contact with new information (overwrite, not just fill missing)
+        updated = False
+        if name and name != contact.name and not name.startswith("Caller ") and not name.startswith("SMS Contact "):
+            contact.name = name
+            updated = True
+        if email and email != contact.email:
+            contact.email = email
+            updated = True
+        if phone and phone != contact.phone:
+            contact.phone = phone
+            updated = True
+
+        if updated:
+            logger.info(f"Updated contact {contact.id} from lead {lead.id}: name={name}, email={email}, phone={phone}")
+    else:
+        # Create new contact if we have enough info (at least name + phone or email)
+        if name and (phone or email) and not name.startswith("Caller ") and not name.startswith("SMS Contact "):
+            contact = Contact(
+                tenant_id=tenant_id,
+                name=name,
+                phone=phone,
+                email=email,
+                source="lead_conversion",
+            )
+            db.add(contact)
+            await db.flush()
+            logger.info(f"Created new contact {contact.id} from lead {lead.id}: name={name}, email={email}, phone={phone}")
+
+    # Link lead to contact
+    if contact and lead.contact_id != contact.id:
+        lead.contact_id = contact.id
+
+    return contact.id if contact else None
+
+
 # =============================================================================
 # Telnyx SMS Webhooks
 # =============================================================================
@@ -1735,9 +1828,11 @@ async def telnyx_ai_call_complete(
                         conversation_id=sms_conversation.id if sms_conversation else None,
                     )
                     db.add(lead)
+                    await db.flush()
                     logger.info(f"Created Lead from SMS AI interaction: phone={normalized_from}, conversation_id={sms_conversation.id if sms_conversation else None}")
                 else:
-                    if caller_name and not lead.name:
+                    # Update lead with new info (overwrite empty fields)
+                    if caller_name and (not lead.name or lead.name.startswith("SMS Contact ")):
                         lead.name = caller_name
                     if caller_email and not lead.email:
                         lead.email = caller_email
@@ -1745,6 +1840,18 @@ async def telnyx_ai_call_complete(
                     if sms_conversation and not lead.conversation_id:
                         lead.conversation_id = sms_conversation.id
                     logger.info(f"Updated existing Lead from SMS AI interaction: id={lead.id}, conversation_id={lead.conversation_id}")
+
+                # Sync lead info to matching contact (find/update/create contact)
+                contact_id = await _sync_lead_to_contact(
+                    db=db,
+                    tenant_id=tenant_id,
+                    lead=lead,
+                    phone=normalized_from,
+                    email=caller_email,
+                    name=caller_name,
+                )
+                if contact_id:
+                    logger.info(f"Synced SMS lead {lead.id} to contact {contact_id}")
 
                 await db.commit()
 
@@ -2052,17 +2159,6 @@ async def telnyx_ai_call_complete(
         if from_number:
             normalized_from = _normalize_phone(from_number)
 
-            # Check if contact already exists for this phone number
-            existing_contact_result = await db.execute(
-                select(Contact).where(
-                    Contact.tenant_id == tenant_id,
-                    Contact.phone == normalized_from,
-                    Contact.deleted_at.is_(None),
-                ).order_by(Contact.created_at.desc()).limit(1)
-            )
-            existing_contact = existing_contact_result.scalar_one_or_none()
-            contact_id = existing_contact.id if existing_contact else None
-
             call_data = {
                 "source": "voice_call",
                 "call_id": call.id,
@@ -2074,7 +2170,7 @@ async def telnyx_ai_call_complete(
                 "transcript": transcript[:2000] if transcript else None,
             }
 
-            # Always create new lead for each call (link to existing contact if found)
+            # Always create new lead for each call
             display_name = caller_name if caller_name else f"Caller {normalized_from}"
             lead = Lead(
                 tenant_id=tenant_id,
@@ -2083,13 +2179,21 @@ async def telnyx_ai_call_complete(
                 email=caller_email or None,
                 status="new",
                 extra_data={"voice_calls": [call_data]},
-                contact_id=contact_id,  # Link to existing contact
             )
             db.add(lead)
+            await db.flush()
+
+            # Sync lead info to matching contact (find/update/create contact)
+            contact_id = await _sync_lead_to_contact(
+                db=db,
+                tenant_id=tenant_id,
+                lead=lead,
+                phone=normalized_from,
+                email=caller_email,
+                name=caller_name,
+            )
             logger.info(f"Created new Lead from AI call: phone={normalized_from}, name={caller_name}, email={caller_email}, contact_id={contact_id}")
 
-            # Flush to get lead ID
-            await db.flush()
             lead_id = lead.id if lead else None
         else:
             lead_id = None

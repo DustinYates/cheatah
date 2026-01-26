@@ -22,6 +22,7 @@ from app.persistence.database import get_db
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 from app.settings import settings
+from app.core.phone import normalize_phone_for_dedup
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +39,9 @@ MESSAGE_DEDUP_TTL_SECONDS = 300
 # TTL for event ID-based dedup (10 minutes - prevents processing same webhook twice)
 EVENT_DEDUP_TTL_SECONDS = 600
 
-# TTL for phone-based registration SMS dedup (2 minutes - short window for same-call retries)
-# DB cooldown (30 days) handles production duplicate prevention across calls
-PHONE_SMS_DEDUP_TTL_SECONDS = 120
+# TTL for phone-based registration SMS dedup (1 hour - matches promise_fulfillment TTL)
+# This prevents duplicate SMS when multiple webhook events arrive for the same call
+PHONE_SMS_DEDUP_TTL_SECONDS = 3600
 
 
 def _verify_telnyx_webhook(request: Request) -> bool:
@@ -727,7 +728,7 @@ async def delayed_sms_send(
 
         # If send failed, release the dedup lock so retries are possible
         if result.get("status") != "sent":
-            redis_dedup_key = f"registration_sms:{tenant_id}:{phone[-10:]}"
+            redis_dedup_key = f"registration_sms:{tenant_id}:{normalize_phone_for_dedup(phone)}"
             try:
                 await redis_client.delete(redis_dedup_key)
                 logger.info(f"[DELAYED-SMS] Released dedup lock after failed send: {redis_dedup_key}")
@@ -1565,8 +1566,54 @@ async def telnyx_ai_call_complete(
                     await db.flush()
                     logger.info(f"Created SMS conversation for usage tracking: id={sms_conversation.id}")
 
-                # Add user message (represents the SMS interaction)
-                if transcript or summary:
+                # Add messages from the SMS interaction
+                # Try to fetch actual conversation messages from Telnyx API
+                actual_messages_stored = False
+                telnyx_conv_id = conversation.get("id")  # Telnyx conversation ID from webhook
+
+                if telnyx_conv_id:
+                    from app.settings import settings
+                    if settings.telnyx_api_key:
+                        try:
+                            from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+                            sms_telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
+
+                            logger.info(f"Fetching actual SMS messages from Telnyx for conv_id={telnyx_conv_id}")
+                            actual_messages = await sms_telnyx_ai.get_conversation_messages(telnyx_conv_id)
+
+                            if actual_messages:
+                                # Get next sequence number
+                                msg_result = await db.execute(
+                                    select(Message).where(
+                                        Message.conversation_id == sms_conversation.id
+                                    ).order_by(Message.sequence_number.desc()).limit(1)
+                                )
+                                last_msg = msg_result.scalar_one_or_none()
+                                next_seq = (last_msg.sequence_number + 1) if last_msg else 1
+
+                                # Store each actual message individually
+                                for msg in actual_messages:
+                                    msg_role = msg.get("role", "user")
+                                    msg_content = msg.get("text", msg.get("content", ""))
+
+                                    if msg_content and msg_content.strip():
+                                        new_msg = Message(
+                                            conversation_id=sms_conversation.id,
+                                            role=msg_role,
+                                            content=msg_content,
+                                            sequence_number=next_seq,
+                                            message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
+                                        )
+                                        db.add(new_msg)
+                                        next_seq += 1
+
+                                actual_messages_stored = True
+                                logger.info(f"Stored {len(actual_messages)} actual SMS messages from Telnyx API: conversation_id={sms_conversation.id}")
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch actual SMS messages from Telnyx API: {e}")
+
+                # Fallback: store transcript/summary if we couldn't get actual messages
+                if not actual_messages_stored and (transcript or summary):
                     # Get next sequence number
                     msg_result = await db.execute(
                         select(Message).where(
@@ -1576,13 +1623,13 @@ async def telnyx_ai_call_complete(
                     last_msg = msg_result.scalar_one_or_none()
                     next_seq = (last_msg.sequence_number + 1) if last_msg else 1
 
-                    # Add user message
+                    # Add user message with transcript if available, otherwise summary
                     user_msg = Message(
                         conversation_id=sms_conversation.id,
                         role="user",
                         content=transcript or summary or "SMS interaction",
                         sequence_number=next_seq,
-                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
+                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id, "fallback": True},
                     )
                     db.add(user_msg)
 
@@ -1592,10 +1639,10 @@ async def telnyx_ai_call_complete(
                         role="assistant",
                         content=summary or "Response provided",
                         sequence_number=next_seq + 1,
-                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
+                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id, "fallback": True},
                     )
                     db.add(assistant_msg)
-                    logger.info(f"Added SMS messages for usage tracking: conversation_id={sms_conversation.id}")
+                    logger.info(f"Added SMS messages (fallback) for usage tracking: conversation_id={sms_conversation.id}")
 
                 # Still create/update Lead from SMS AI Assistant interactions
                 existing_lead = await db.execute(
@@ -1720,9 +1767,11 @@ async def telnyx_ai_call_complete(
                     # DELAYED SMS SEND: Instead of sending immediately, store context
                     # and schedule a Cloud Task to send after a delay. This allows
                     # multiple webhooks to arrive and update context before sending.
-                    redis_dedup_key_sms = f"registration_sms:{tenant_id}:{normalized_from}"
-                    redis_context_key = f"pending_sms_context:{tenant_id}:{normalized_from}"
-                    redis_task_key = f"pending_sms_task:{tenant_id}:{normalized_from}"
+                    # Use consistent phone normalization for dedup keys (last 10 digits)
+                    normalized_for_dedup = normalize_phone_for_dedup(from_number)
+                    redis_dedup_key_sms = f"registration_sms:{tenant_id}:{normalized_for_dedup}"
+                    redis_context_key = f"pending_sms_context:{tenant_id}:{normalized_for_dedup}"
+                    redis_task_key = f"pending_sms_task:{tenant_id}:{normalized_for_dedup}"
 
                     try:
                         await redis_client.connect()
@@ -2148,8 +2197,9 @@ async def telnyx_ai_call_complete(
         # =============================================================
         # Telnyx sends multiple events per call (conversation.ended, insights.generated, retries)
         # Use database-backed dedup with "claim before send" to prevent race conditions
+        # IMPORTANT: Use normalize_phone_for_dedup (last 10 digits) to match promise_fulfillment_service
         sms_already_sent_for_call = False
-        normalized_from_for_dedup = _normalize_phone(from_number) if from_number else None
+        normalized_from_for_dedup = normalize_phone_for_dedup(from_number) if from_number else None
         redis_dedup_key = (
             f"registration_sms:{tenant_id}:{normalized_from_for_dedup}"
             if normalized_from_for_dedup

@@ -23,6 +23,7 @@ from app.persistence.models.sent_asset import SentAsset
 from app.infrastructure.telephony.telnyx_provider import TelnyxSmsProvider
 from app.infrastructure.redis import redis_client
 from app.settings import settings
+from app.core.phone import normalize_phone_for_dedup
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +79,8 @@ class PromiseFulfillmentService:
             return {"status": "skipped", "reason": "do_not_contact"}
 
         # Check for duplicate sends (deduplication by phone number, not conversation)
-        # Normalize phone for dedup key
-        phone_normalized = "".join(c for c in phone if c.isdigit())[-10:]
+        # Normalize phone for dedup key - use shared function for consistency
+        phone_normalized = normalize_phone_for_dedup(phone)
         dedup_key = f"promise_sent:{tenant_id}:{phone_normalized}:{promise.asset_type}"
 
         # Skip dedup if disabled via environment (for testing)

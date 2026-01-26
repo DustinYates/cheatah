@@ -76,7 +76,7 @@ class MessageResponse(BaseModel):
 
 class ConversationResponse(BaseModel):
     """Conversation with messages response."""
-    
+
     id: int
     channel: str
     created_at: str
@@ -84,6 +84,12 @@ class ConversationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ConversationsResponse(BaseModel):
+    """Multiple conversations response for timeline."""
+
+    conversations: list[ConversationResponse]
 
 
 async def _check_llm_responded(db: AsyncSession, conversation_id: int | None) -> bool | None:
@@ -199,51 +205,80 @@ async def get_lead(
     )
 
 
-@router.get("/{lead_id}/conversation", response_model=ConversationResponse)
+@router.get("/{lead_id}/conversation", response_model=ConversationsResponse)
 async def get_lead_conversation(
     lead_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
-) -> ConversationResponse:
-    """Get the conversation associated with a lead."""
+) -> ConversationsResponse:
+    """Get all conversations associated with a lead (via contact_id)."""
+    from app.persistence.models.conversation import Conversation
+
     lead_service = LeadService(db)
     lead = await lead_service.get_lead(tenant_id, lead_id)
-    
+
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lead not found",
         )
-    
-    if not lead.conversation_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No conversation associated with this lead",
-        )
-    
+
+    conversations_list = []
     conversation_service = ConversationService(db)
-    conversation = await conversation_service.get_conversation(tenant_id, lead.conversation_id)
-    
-    if not conversation:
+
+    # Get the primary conversation (from lead.conversation_id)
+    if lead.conversation_id:
+        primary_conv = await conversation_service.get_conversation(tenant_id, lead.conversation_id)
+        if primary_conv:
+            conversations_list.append(primary_conv)
+
+    # Also get all conversations linked to the same contact_id
+    if lead.contact_id:
+        contact_convs_stmt = (
+            select(Conversation)
+            .where(
+                Conversation.tenant_id == tenant_id,
+                Conversation.contact_id == lead.contact_id,
+            )
+            .order_by(Conversation.created_at.desc())
+        )
+        contact_convs_result = await db.execute(contact_convs_stmt)
+        contact_convs = contact_convs_result.scalars().all()
+
+        # Add conversations not already in the list
+        existing_ids = {c.id for c in conversations_list}
+        for conv in contact_convs:
+            if conv.id not in existing_ids:
+                # Load messages for this conversation
+                full_conv = await conversation_service.get_conversation(tenant_id, conv.id)
+                if full_conv:
+                    conversations_list.append(full_conv)
+
+    if not conversations_list:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Conversation not found",
+            detail="No conversations associated with this lead",
         )
-    
-    return ConversationResponse(
-        id=conversation.id,
-        channel=conversation.channel,
-        created_at=_isoformat_utc(conversation.created_at),
-        messages=[
-            MessageResponse(
-                id=msg.id,
-                role=msg.role,
-                content=msg.content,
-                created_at=_isoformat_utc(msg.created_at),
+
+    return ConversationsResponse(
+        conversations=[
+            ConversationResponse(
+                id=conv.id,
+                channel=conv.channel,
+                created_at=_isoformat_utc(conv.created_at),
+                messages=[
+                    MessageResponse(
+                        id=msg.id,
+                        role=msg.role,
+                        content=msg.content,
+                        created_at=_isoformat_utc(msg.created_at),
+                    )
+                    for msg in conv.messages
+                ],
             )
-            for msg in conversation.messages
-        ],
+            for conv in conversations_list
+        ]
     )
 
 

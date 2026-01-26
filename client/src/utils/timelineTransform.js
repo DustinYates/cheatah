@@ -105,8 +105,13 @@ export function buildUnifiedTimeline(lead, conversationData) {
   }
 
   // 2. Transform conversation messages (SMS + Chatbot + Email/Form) - GROUP them together
-  if (conversationData?.messages?.length > 0) {
-    const channel = conversationData.channel || 'web';
+  // Handle both single conversation (legacy) and multiple conversations (new format)
+  const conversations = conversationData?.conversations || (conversationData?.messages ? [conversationData] : []);
+
+  conversations.forEach(conv => {
+    if (!conv?.messages?.length) return;
+
+    const channel = conv.channel || 'web';
     const channelType = determineChannelType(channel);
 
     // Map channel type to timeline type and icon
@@ -118,7 +123,7 @@ export function buildUnifiedTimeline(lead, conversationData) {
     const { type: itemType, icon: itemIcon } = typeMap[channelType] || typeMap.chatbot;
 
     // Group all messages from the same conversation together
-    const messages = conversationData.messages
+    const messages = conv.messages
       .filter(msg => msg.created_at) // Skip messages without timestamps
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Sort oldest first for display
 
@@ -133,7 +138,7 @@ export function buildUnifiedTimeline(lead, conversationData) {
       }
 
       timeline.push({
-        id: `conversation-${conversationData.id || 'group'}`,
+        id: `conversation-${conv.id || 'group'}`,
         type: itemType,
         timestamp: new Date(lastMessage.created_at),
         timestampISO: lastMessage.created_at,
@@ -149,7 +154,7 @@ export function buildUnifiedTimeline(lead, conversationData) {
         }
       });
     }
-  }
+  });
 
   // 3. Sort chronologically (most recent first)
   timeline.sort((a, b) => b.timestamp - a.timestamp);

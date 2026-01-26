@@ -218,7 +218,10 @@ class TenantRateLimitMiddleware(BaseHTTPMiddleware):
         window_start = now - self.WINDOW_SECONDS
 
         # Use Redis pipeline for atomic operations
-        pipe = redis_client._redis.pipeline()
+        if redis_client._client is None:
+            # Redis not connected, skip rate limiting
+            return True, 999, self.WINDOW_SECONDS
+        pipe = redis_client._client.pipeline()
 
         # Remove old entries outside the window
         pipe.zremrangebyscore(key, 0, window_start)

@@ -211,36 +211,41 @@ class TenantRateLimitMiddleware(BaseHTTPMiddleware):
         Returns:
             Tuple of (is_allowed, remaining, reset_time_seconds)
         """
-        await redis_client.connect()
-
-        key = f"ratelimit:tenant:{tenant_id}"
-        now = int(time.time())
-        window_start = now - self.WINDOW_SECONDS
-
-        # Use Redis pipeline for atomic operations
-        if redis_client._client is None:
-            # Redis not connected, skip rate limiting
+        # Check if Redis is enabled and connected
+        if not redis_client._enabled or redis_client._client is None:
+            # Redis not available, skip rate limiting
             return True, 999, self.WINDOW_SECONDS
-        pipe = redis_client._client.pipeline()
 
-        # Remove old entries outside the window
-        pipe.zremrangebyscore(key, 0, window_start)
-        # Count current entries in window
-        pipe.zcard(key)
-        # Add current request
-        pipe.zadd(key, {str(now): now})
-        # Set expiry on the key
-        pipe.expire(key, self.WINDOW_SECONDS * 2)
+        try:
+            key = f"ratelimit:tenant:{tenant_id}"
+            now = int(time.time())
+            window_start = now - self.WINDOW_SECONDS
 
-        results = await pipe.execute()
-        current_count = results[1]
+            # Use Redis pipeline for atomic operations
+            pipe = redis_client._client.pipeline()
 
-        remaining = max(0, limit - current_count - 1)
-        reset_time = self.WINDOW_SECONDS
+            # Remove old entries outside the window
+            pipe.zremrangebyscore(key, 0, window_start)
+            # Count current entries in window
+            pipe.zcard(key)
+            # Add current request
+            pipe.zadd(key, {str(now): now})
+            # Set expiry on the key
+            pipe.expire(key, self.WINDOW_SECONDS * 2)
 
-        is_allowed = current_count < limit
+            results = await pipe.execute()
+            current_count = results[1]
 
-        return is_allowed, remaining, reset_time
+            remaining = max(0, limit - current_count - 1)
+            reset_time = self.WINDOW_SECONDS
+
+            is_allowed = current_count < limit
+
+            return is_allowed, remaining, reset_time
+        except Exception as e:
+            # Redis error, skip rate limiting
+            logger.warning(f"Rate limit Redis error: {e}")
+            return True, 999, self.WINDOW_SECONDS
 
 
 class IdempotencyMiddleware(BaseHTTPMiddleware):

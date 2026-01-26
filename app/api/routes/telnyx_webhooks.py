@@ -1601,15 +1601,30 @@ async def telnyx_ai_call_complete(
                 actual_assistant_transcript = None  # Will hold real bot messages for registration link
                 telnyx_conv_id = conversation.get("id")  # Telnyx conversation ID from webhook
 
+                # Debug logging for conversation ID extraction
+                logger.info(f"[SMS-MESSAGES] Conversation dict keys: {list(conversation.keys()) if conversation else 'empty'}")
+                logger.info(f"[SMS-MESSAGES] telnyx_conv_id={telnyx_conv_id}, has_api_key={bool(settings.telnyx_api_key)}")
+
+                if not telnyx_conv_id:
+                    logger.warning(f"[SMS-MESSAGES] No conversation ID available - cannot fetch actual messages")
+                elif not settings.telnyx_api_key:
+                    logger.warning(f"[SMS-MESSAGES] No Telnyx API key configured - cannot fetch actual messages")
+
                 if telnyx_conv_id and settings.telnyx_api_key:
                     try:
                         from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
                         sms_telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
 
-                        logger.info(f"Fetching actual SMS messages from Telnyx for conv_id={telnyx_conv_id}")
+                        logger.info(f"[SMS-MESSAGES] Fetching actual SMS messages from Telnyx for conv_id={telnyx_conv_id}")
                         actual_messages = await sms_telnyx_ai.get_conversation_messages(telnyx_conv_id)
+                        logger.info(f"[SMS-MESSAGES] Telnyx API returned {len(actual_messages) if actual_messages else 0} messages")
 
                         if actual_messages:
+                            # Log sample message structure for debugging
+                            if actual_messages:
+                                sample_msg = actual_messages[0]
+                                logger.info(f"[SMS-MESSAGES] Sample message keys: {list(sample_msg.keys())}, sample: {str(sample_msg)[:500]}")
+
                             # Get next sequence number
                             msg_result = await db.execute(
                                 select(Message).where(
@@ -1653,6 +1668,8 @@ async def telnyx_ai_call_complete(
 
                 # Fallback: store transcript/summary if we couldn't get actual messages
                 if not actual_messages_stored and (transcript or summary):
+                    logger.warning(f"[SMS-MESSAGES] Using FALLBACK - storing summary instead of actual messages. "
+                                   f"actual_messages_stored={actual_messages_stored}, has_transcript={bool(transcript)}, has_summary={bool(summary)}")
                     # Get next sequence number
                     msg_result = await db.execute(
                         select(Message).where(

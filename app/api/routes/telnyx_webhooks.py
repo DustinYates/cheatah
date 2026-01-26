@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select, cast, String
+from sqlalchemy import select, cast, String, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -1204,7 +1204,6 @@ async def telnyx_ai_call_complete(
                 temp_tenant_id = await _get_tenant_from_telnyx_number(to_number, db) if to_number else None
                 if temp_tenant_id:
                     from app.persistence.models.conversation import Conversation, Message
-                    from datetime import timedelta
 
                     normalized_phone = _normalize_phone(from_number)
                     time_window = datetime.utcnow() - timedelta(minutes=10)
@@ -1504,7 +1503,6 @@ async def telnyx_ai_call_complete(
         # If not found by call_sid, try to find by phone number within last 10 minutes
         # This helps match insights webhooks to TeXML callbacks which use different IDs
         if not call and from_number:
-            from datetime import timedelta
             time_window = now - timedelta(minutes=10)
             normalized_from = _normalize_phone(from_number)
             recent_call_result = await db.execute(
@@ -1829,7 +1827,6 @@ async def telnyx_ai_call_complete(
         # This is the most reliable check - works even if Redis is down
         if is_registration_request and normalized_from_for_dedup and not sms_already_sent_for_call and not is_test_phone:
             try:
-                from sqlalchemy import select, func
                 from app.persistence.models.sent_asset import SentAsset
 
                 # Check if registration_link was sent to this phone in the last 2 hours

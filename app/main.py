@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="Chatter Cheetah API",
+    title="ConvoPro API",
     description="Multi-tenant AI customer communication platform",
     version="0.1.0",
     lifespan=lifespan,
@@ -169,7 +169,7 @@ async def serve_react_app(full_path: str):
         return FileResponse(index_file)
 
     return {
-        "message": "Chatter Cheetah API",
+        "message": "ConvoPro API",
         "version": "0.1.0",
         "docs": "/docs",
     }

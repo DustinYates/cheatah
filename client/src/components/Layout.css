@@ -32,8 +32,9 @@
 
 .logo h2 {
   margin: 0;
-  font-size: 14px;
-  color: var(--color-primary);
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
 }
 
 .logo-mark {

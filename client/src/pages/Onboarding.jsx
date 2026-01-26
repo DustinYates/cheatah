@@ -196,7 +196,7 @@ export default function Onboarding() {
   return (
     <div className="onboarding-container">
       <div className="onboarding-card">
-        <h1>Welcome to Chatter Cheetah</h1>
+        <h1>Welcome to ConvoPro</h1>
         <p className="subtitle">Let's set up your business profile to get started</p>
 
         {error && <div className="error-message" role="alert">{error}</div>}

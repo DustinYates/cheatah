@@ -35,13 +35,17 @@ export default function Layout() {
       )}
       <nav className="sidebar">
         <div className="logo">
-          <img
-            className="logo-mark"
-            src="/brand/chattercheetah-mark-square.svg"
-            alt=""
-            aria-hidden="true"
-          />
-          <h2>Chatter Cheetah</h2>
+          <svg className="logo-mark" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="url(#sidebar-gradient)"/>
+            <path d="M8 12l2.5 2.5L16 9" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <defs>
+              <linearGradient id="sidebar-gradient" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#6366f1"/>
+                <stop offset="1" stopColor="#8b5cf6"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <h2>ConvoPro</h2>
         </div>
         
         {user?.is_global_admin && (
@@ -167,7 +171,7 @@ export default function Layout() {
             <Link to="/terms">Terms of Service</Link>
           </div>
           <div className="footer-copyright">
-            &copy; {new Date().getFullYear()} ChatterCheetah
+            &copy; {new Date().getFullYear()} ConvoPro
           </div>
         </footer>
       </main>

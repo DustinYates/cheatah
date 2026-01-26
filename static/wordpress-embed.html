@@ -1,5 +1,5 @@
-<!-- 
-Chatter Cheetah Chat Widget - WordPress Embed Code
+<!--
+ConvoPro Chat Widget - WordPress Embed Code
 Add this to your WordPress footer or use a plugin like "Insert Headers and Footers"
 -->
 
@@ -11,13 +11,13 @@ Add this to your WordPress footer or use a plugin like "Insert Headers and Foote
 (function() {
   // Wait for both the page and the widget script to load
   function initChatWidget() {
-    if (typeof ChatterCheetah !== 'undefined') {
+    if (typeof ConvoPro !== 'undefined') {
       try {
-        ChatterCheetah.init({
+        ConvoPro.init({
           apiUrl: 'https://chattercheatah-iyv6z6wp7a-uc.a.run.app/api/v1',
           tenantId: 4  // The Best Chatbot tenant ID
         });
-        console.log('Chatter Cheetah widget initialized successfully');
+        console.log('ConvoPro widget initialized successfully');
       } catch (error) {
         console.error('Error initializing chat widget:', error);
       }

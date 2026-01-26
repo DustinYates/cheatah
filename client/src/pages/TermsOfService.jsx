@@ -11,7 +11,7 @@ const TermsOfService = () => {
         <section>
           <h2>1. Acceptance of Terms</h2>
           <p>
-            By accessing or using ChatterCheetah ("Service"), you agree to be bound by these
+            By accessing or using ConvoPro ("Service"), you agree to be bound by these
             Terms of Service. If you do not agree to these terms, please do not use our Service.
           </p>
         </section>
@@ -19,7 +19,7 @@ const TermsOfService = () => {
         <section>
           <h2>2. Description of Service</h2>
           <p>
-            ChatterCheetah is an AI-powered customer communication platform that provides:
+            ConvoPro is an AI-powered customer communication platform that provides:
           </p>
           <ul>
             <li>AI chatbot widgets for websites</li>
@@ -88,7 +88,7 @@ const TermsOfService = () => {
           <h2>7. Intellectual Property</h2>
           <p>
             The Service and its original content, features, and functionality are owned by
-            ChatterCheetah and are protected by copyright, trademark, and other intellectual
+            ConvoPro and are protected by copyright, trademark, and other intellectual
             property laws.
           </p>
           <p>
@@ -124,7 +124,7 @@ const TermsOfService = () => {
         <section>
           <h2>10. Indemnification</h2>
           <p>
-            You agree to indemnify and hold harmless ChatterCheetah from any claims, damages,
+            You agree to indemnify and hold harmless ConvoPro from any claims, damages,
             or expenses arising from your use of the Service or violation of these Terms.
           </p>
         </section>

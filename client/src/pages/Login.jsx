@@ -29,12 +29,26 @@ export default function Login() {
   return (
     <div className="login-container">
       <div className="login-card">
-        <h1>Chatter Cheetah</h1>
-        <p className="subtitle">Sign in to your dashboard</p>
-        
+        <div className="login-header">
+          <div className="logo">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="url(#gradient)"/>
+              <path d="M8 12l2.5 2.5L16 9" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <defs>
+                <linearGradient id="gradient" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#6366f1"/>
+                  <stop offset="1" stopColor="#8b5cf6"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <h1>ConvoPro</h1>
+          <p className="subtitle">Sign in to your dashboard</p>
+        </div>
+
         <form onSubmit={handleSubmit}>
           {error && <div className="error">{error}</div>}
-          
+
           <div className="form-group">
             <label htmlFor="email">Email</label>
             <input
@@ -44,9 +58,10 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
               required
+              autoComplete="email"
             />
           </div>
-          
+
           <div className="form-group">
             <label htmlFor="password">Password</label>
             <input
@@ -54,15 +69,27 @@ export default function Login() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Your password"
+              placeholder="Enter your password"
               required
+              autoComplete="current-password"
             />
           </div>
-          
+
           <button type="submit" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? (
+              <>
+                <span className="spinner"></span>
+                Signing in...
+              </>
+            ) : (
+              'Sign In'
+            )}
           </button>
         </form>
+
+        <p className="login-footer">
+          Secure business communications platform
+        </p>
       </div>
     </div>
   );

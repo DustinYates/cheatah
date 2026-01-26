@@ -1,11 +1,11 @@
 /**
- * Chatter Cheetah Web Chat Widget
+ * ConvoPro Web Chat Widget
  * Simple embeddable chat widget for WordPress and other websites
  *
  * Usage:
  * <script src="https://your-api-domain.com/static/chat-widget.js"></script>
  * <script>
- *   ChatterCheetah.init({
+ *   ConvoPro.init({
  *     apiUrl: 'https://your-api-domain.com/api/v1',
  *     tenantId: 1,
  *     apiKey: 'your-widget-api-key',  // Required for authentication
@@ -20,7 +20,7 @@
   // Initialize dataLayer for GTM compatibility (ES5)
   window.dataLayer = window.dataLayer || [];
 
-  const ChatterCheetah = {
+  const ConvoPro = {
     config: null,
     sessionId: null,
     isOpen: false,
@@ -416,7 +416,7 @@
 
     applySettings: function(settings) {
       const root = document.documentElement;
-      const widget = document.getElementById('chatter-cheetah-widget');
+      const widget = document.getElementById('convopro-widget');
 
       if (!widget || !settings) return;
       this.settings = settings;
@@ -616,7 +616,7 @@
     },
 
     applySocialProof: function(settings) {
-      const widget = document.getElementById('chatter-cheetah-widget');
+      const widget = document.getElementById('convopro-widget');
       if (!widget || !settings.socialProof) return;
 
       const titleEl = widget.querySelector('.cc-widget-title');
@@ -1045,7 +1045,7 @@
     createWidget: function() {
       // Create widget container
       const widget = document.createElement('div');
-      widget.id = 'chatter-cheetah-widget';
+      widget.id = 'convopro-widget';
       widget.innerHTML = `
         <div class="cc-widget-container" style="display: none;">
           <div class="cc-widget-header">
@@ -1119,7 +1119,7 @@
           --cc-max-height: 500px;
           --cc-opacity: 1;
         }
-        #chatter-cheetah-widget {
+        #convopro-widget {
           position: fixed;
           bottom: 20px;
           right: 20px;
@@ -2132,6 +2132,7 @@
     },
   };
 
-  // Expose globally
-  window.ChatterCheetah = ChatterCheetah;
+  // Expose globally (ConvoPro is primary, ChatterCheetah kept for backwards compatibility)
+  window.ConvoPro = ConvoPro;
+  window.ChatterCheetah = ConvoPro;
 })();

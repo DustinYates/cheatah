@@ -11,7 +11,7 @@ const PrivacyPolicy = () => {
         <section>
           <h2>1. Introduction</h2>
           <p>
-            This Privacy Policy describes how ChatterCheetah ("we", "us", or "our") collects,
+            This Privacy Policy describes how ConvoPro ("we", "us", or "our") collects,
             uses, and protects your personal information when you use our AI-powered customer
             communication platform.
           </p>

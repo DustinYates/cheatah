@@ -53,7 +53,12 @@ class RedisClient:
         """
         if not self._enabled or self._client is None:
             return None
-        return await self._client.get(key)
+        try:
+            return await self._client.get(key)
+        except Exception as e:
+            logger.warning(f"Redis get failed: {e}. Disabling Redis.")
+            self._enabled = False
+            return None
 
     async def set(
         self, key: str, value: str, ttl: int | None = None
@@ -70,9 +75,14 @@ class RedisClient:
         """
         if not self._enabled or self._client is None:
             return True  # Pretend success when disabled
-        if ttl:
-            return await self._client.setex(key, ttl, value)
-        return await self._client.set(key, value)
+        try:
+            if ttl:
+                return await self._client.setex(key, ttl, value)
+            return await self._client.set(key, value)
+        except Exception as e:
+            logger.warning(f"Redis set failed: {e}. Disabling Redis.")
+            self._enabled = False
+            return True  # Pretend success when disabled
 
     async def setnx(self, key: str, value: str, ttl: int | None = None) -> bool:
         """Set value in Redis only if the key does not exist (atomic).
@@ -112,7 +122,12 @@ class RedisClient:
         """
         if not self._enabled or self._client is None:
             return 0
-        return await self._client.delete(key)
+        try:
+            return await self._client.delete(key)
+        except Exception as e:
+            logger.warning(f"Redis delete failed: {e}. Disabling Redis.")
+            self._enabled = False
+            return 0
 
     async def exists(self, key: str) -> bool:
         """Check if key exists in Redis.
@@ -125,7 +140,12 @@ class RedisClient:
         """
         if not self._enabled or self._client is None:
             return False
-        return await self._client.exists(key) > 0
+        try:
+            return await self._client.exists(key) > 0
+        except Exception as e:
+            logger.warning(f"Redis exists failed: {e}. Disabling Redis.")
+            self._enabled = False
+            return False
 
     async def get_json(self, key: str) -> dict[str, Any] | None:
         """Get JSON value from Redis.

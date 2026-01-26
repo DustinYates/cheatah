@@ -7,21 +7,21 @@
 </head>
 <body>
     <h1>Chat Widget Test Page</h1>
-    <p>This page tests the Chatter Cheetah chat widget.</p>
+    <p>This page tests the ConvoPro chat widget.</p>
     
     <!-- Chat Widget Script -->
     <script src="https://chattercheatah-iyv6z6wp7a-uc.a.run.app/static/chat-widget.js"></script>
     <script>
         // Initialize the widget
-        if (typeof ChatterCheetah !== 'undefined') {
-            ChatterCheetah.init({
+        if (typeof ConvoPro !== 'undefined') {
+            ConvoPro.init({
                 apiUrl: 'https://chattercheatah-iyv6z6wp7a-uc.a.run.app/api/v1',
                 tenantId: 4,  // The Best Chatbot tenant
                 scrollBehavior: 'top'
             });
             console.log('Chat widget initialized successfully');
         } else {
-            console.error('ChatterCheetah widget failed to load');
+            console.error('ConvoPro widget failed to load');
         }
     </script>
 </body>

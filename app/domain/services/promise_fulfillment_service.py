@@ -22,6 +22,7 @@ from app.persistence.models.conversation import Message
 from app.persistence.models.sent_asset import SentAsset
 from app.infrastructure.telephony.telnyx_provider import TelnyxSmsProvider
 from app.infrastructure.redis import redis_client
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +31,8 @@ DEDUP_TTL_SECONDS = 3600
 
 # Test phone numbers that bypass dedup (for testing purposes)
 # These numbers can receive multiple SMS within the dedup window
-TEST_PHONE_WHITELIST = {
-    "2816278851",  # Dustin's test number
-}
+# WARNING: Keep this empty in production to prevent duplicate SMS
+TEST_PHONE_WHITELIST: set[str] = set()
 
 
 class PromiseFulfillmentService:
@@ -82,6 +82,11 @@ class PromiseFulfillmentService:
         phone_normalized = "".join(c for c in phone if c.isdigit())[-10:]
         dedup_key = f"promise_sent:{tenant_id}:{phone_normalized}:{promise.asset_type}"
 
+        # Skip dedup if disabled via environment (for testing)
+        dedup_disabled = settings.sms_dedup_disabled
+        if dedup_disabled:
+            logger.info(f"SMS dedup disabled via settings - bypassing all dedup for {phone_normalized}")
+
         # Skip dedup for test phone numbers (allows repeated testing)
         is_test_phone = phone_normalized in TEST_PHONE_WHITELIST
         if is_test_phone:
@@ -91,7 +96,7 @@ class PromiseFulfillmentService:
         # This acquires a "lock" atomically to prevent race conditions when
         # multiple messages trigger fulfillment concurrently
         # If Redis is down, fall through to DB-only dedup (still protected)
-        dedup_acquired = is_test_phone  # Test phones always bypass
+        dedup_acquired = dedup_disabled or is_test_phone  # Bypass if disabled or test phone
         if not dedup_acquired:
             try:
                 dedup_acquired = await redis_client.setnx(dedup_key, "1", ttl=DEDUP_TTL_SECONDS)
@@ -120,12 +125,12 @@ class PromiseFulfillmentService:
         # Fallback dedup: DB-backed check via sent_assets table
         # Uses INSERT ... ON CONFLICT DO NOTHING for atomic deduplication
         # This handles cases where Redis is disabled or unavailable
-        # Skip for test phone numbers
+        # Skip if dedup is disabled or for test phone numbers
         #
         # RESEND POLICY: Allow resends after 30 days by deleting old records
         # This ensures customers can receive the asset again after a cooling period
         RESEND_COOLDOWN_DAYS = 30
-        if not is_test_phone:
+        if not dedup_disabled and not is_test_phone:
             try:
                 from sqlalchemy import delete
 

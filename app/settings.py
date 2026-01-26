@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     # Application
     environment: str = "development"
     log_level: str = "INFO"
+    sms_dedup_disabled: bool = False  # Set to True to disable SMS deduplication (for testing)
     api_v1_prefix: str = "/api/v1"
     api_base_url: str = ""  # Base URL for embed code generation (e.g., https://chattercheatah-900139201687.us-central1.run.app)
 

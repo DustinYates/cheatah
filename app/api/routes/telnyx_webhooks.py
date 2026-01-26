@@ -26,10 +26,6 @@ from app.core.phone import normalize_phone_for_dedup
 
 logger = logging.getLogger(__name__)
 
-# Delay in seconds before sending SMS registration link
-# This allows multiple webhooks to arrive and update context before sending
-SMS_REGISTRATION_DELAY_SECONDS = 45
-
 # Maximum age in seconds for Telnyx webhook timestamps (5 minutes)
 TELNYX_TIMESTAMP_MAX_AGE = 300
 
@@ -739,118 +735,6 @@ async def telnyx_sms_status_webhook(
     except Exception as e:
         logger.error(f"Error processing Telnyx status webhook: {e}", exc_info=True)
         return JSONResponse(content={"status": "error"})
-
-
-class DelayedSmsRequest(BaseModel):
-    """Request body for delayed SMS send task."""
-    tenant_id: int
-    phone: str
-    conversation_id: int
-
-
-@router.post("/delayed-sms-send")
-async def delayed_sms_send(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> JSONResponse:
-    """Handle delayed SMS send from Cloud Tasks.
-
-    This endpoint is called by Cloud Tasks after a delay to send
-    the SMS registration link with the final/complete context.
-    """
-    try:
-        body = await request.json()
-        tenant_id = body.get("tenant_id")
-        phone = body.get("phone")
-        conversation_id = body.get("conversation_id")
-
-        logger.info(
-            f"[DELAYED-SMS] Processing delayed SMS send - tenant_id={tenant_id}, "
-            f"phone={phone}, conversation_id={conversation_id}"
-        )
-
-        # Get the latest context from Redis
-        redis_context_key = f"pending_sms_context:{tenant_id}:{phone}"
-        context_json = None
-
-        try:
-            await redis_client.connect()
-            context_json = await redis_client.get(redis_context_key)
-        except Exception as e:
-            logger.warning(f"[DELAYED-SMS] Failed to get context from Redis: {e}")
-
-        if not context_json:
-            logger.warning(
-                f"[DELAYED-SMS] No context found in Redis for {redis_context_key} - "
-                "SMS may have already been sent or context expired"
-            )
-            return JSONResponse(content={"status": "skipped", "reason": "no_context"})
-
-        # Parse the context
-        context = json.loads(context_json)
-        summary = context.get("summary", "")
-        caller_intent = context.get("caller_intent", "")
-        transcript = context.get("transcript", "")
-        caller_name = context.get("caller_name")
-
-        logger.info(
-            f"[DELAYED-SMS] Got context from Redis - summary_len={len(summary)}, "
-            f"caller_name={caller_name}"
-        )
-
-        # Send the SMS
-        from app.domain.services.promise_detector import DetectedPromise
-        from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
-
-        promise = DetectedPromise(
-            asset_type="registration_link",
-            confidence=0.9,
-            original_text=summary or "User requested registration information",
-        )
-
-        ai_response_text = f"{summary or ''}\n{caller_intent or ''}\n{transcript or ''}"
-
-        logger.info("=" * 60)
-        logger.info("[DELAYED-SMS] SENDING SMS REGISTRATION LINK (DELAYED)")
-        logger.info(f"Tenant: {tenant_id}, Phone: {phone}, Name: {caller_name}")
-        logger.info(f"Summary (first 300 chars): {(summary or 'NONE')[:300]}")
-        logger.info("=" * 60)
-
-        fulfillment_service = PromiseFulfillmentService(db)
-        result = await fulfillment_service.fulfill_promise(
-            tenant_id=tenant_id,
-            conversation_id=conversation_id,
-            promise=promise,
-            phone=phone,
-            name=caller_name,
-            ai_response=ai_response_text,
-        )
-
-        logger.info(
-            f"[DELAYED-SMS] SMS result - tenant_id={tenant_id}, "
-            f"status={result.get('status')}, phone={phone}"
-        )
-
-        # Clean up Redis context
-        try:
-            await redis_client.delete(redis_context_key)
-        except Exception as e:
-            logger.warning(f"[DELAYED-SMS] Failed to delete Redis context: {e}")
-
-        # If send failed, release the dedup lock so retries are possible
-        if result.get("status") != "sent":
-            redis_dedup_key = f"registration_sms:{tenant_id}:{normalize_phone_for_dedup(phone)}"
-            try:
-                await redis_client.delete(redis_dedup_key)
-                logger.info(f"[DELAYED-SMS] Released dedup lock after failed send: {redis_dedup_key}")
-            except Exception as e:
-                logger.warning(f"[DELAYED-SMS] Failed to release dedup lock: {e}")
-
-        return JSONResponse(content={"status": "ok", "result": result.get("status")})
-
-    except Exception as e:
-        logger.error(f"[DELAYED-SMS] Error processing delayed SMS: {e}", exc_info=True)
-        return JSONResponse(content={"status": "error", "message": str(e)})
 
 
 async def _send_sms_immediately(
@@ -1940,16 +1824,12 @@ async def telnyx_ai_call_complete(
                 )
 
                 if is_registration_request_sms and normalized_from and not link_already_sent_sms:
-                    # DELAYED SMS SEND: Instead of sending immediately, store context
-                    # and schedule a Cloud Task to send after a delay. This allows
-                    # multiple webhooks to arrive and update context before sending.
+                    # IMMEDIATE SMS SEND: Send registration link right away
                     # Use consistent phone normalization for dedup keys (last 10 digits)
                     normalized_for_dedup = normalize_phone_for_dedup(from_number)
                     redis_dedup_key_sms = f"registration_sms:{tenant_id}:{normalized_for_dedup}"
-                    redis_context_key = f"pending_sms_context:{tenant_id}:{normalized_for_dedup}"
-                    redis_task_key = f"pending_sms_task:{tenant_id}:{normalized_for_dedup}"
 
-                    # DATABASE-BASED DEDUP: Check if SMS was already sent recently (fallback when Redis unavailable)
+                    # DATABASE-BASED DEDUP: Check if SMS was already sent recently
                     db_sms_already_sent = False
                     if lead:
                         await db.refresh(lead)
@@ -1961,12 +1841,12 @@ async def telnyx_ai_call_complete(
                                 # Skip if SMS was sent within the last hour
                                 if (datetime.utcnow().replace(tzinfo=None) - last_sent_time.replace(tzinfo=None)).total_seconds() < 3600:
                                     db_sms_already_sent = True
-                                    logger.info(f"[DELAYED-SMS] DB dedup - skipping, sent at {last_sms_sent}")
+                                    logger.info(f"[SMS] DB dedup - skipping, sent at {last_sms_sent}")
                             except Exception as parse_err:
-                                logger.warning(f"[DELAYED-SMS] Failed to parse last_sms_sent: {parse_err}")
+                                logger.warning(f"[SMS] Failed to parse last_sms_sent: {parse_err}")
 
                     if db_sms_already_sent:
-                        logger.info(f"[DELAYED-SMS] Skipping - already sent (DB dedup): phone={from_number}")
+                        logger.info(f"[SMS] Skipping - already sent (DB dedup): phone={from_number}")
                     else:
                         # Mark in DB that we're sending (claim before send)
                         if lead:
@@ -1975,93 +1855,27 @@ async def telnyx_ai_call_complete(
                             lead.extra_data = lead_extra
                             flag_modified(lead, "extra_data")
                             await db.commit()
-                            logger.info(f"[DELAYED-SMS] Claimed SMS send in DB for lead_id={lead.id}")
+                            logger.info(f"[SMS] Claimed SMS send in DB for lead_id={lead.id}")
 
+                        # Try Redis dedup (optional, falls back to DB dedup if Redis unavailable)
+                        redis_dedup_ok = True
                         try:
                             await redis_client.connect()
-
-                            # Check if SMS was already sent (Redis dedup - faster but optional)
                             sms_already_sent = not await redis_client.setnx(redis_dedup_key_sms, "1", ttl=PHONE_SMS_DEDUP_TTL_SECONDS)
                             if sms_already_sent:
-                                logger.info(f"[DELAYED-SMS] Skipping - already sent: {redis_dedup_key_sms}")
-                            else:
-                                # Store/update the context in Redis (always update with latest)
-                                # Use actual_assistant_transcript if available - it contains
-                                # specific class recommendations like "Young Adult Level 3"
-                                effective_transcript = actual_assistant_transcript or transcript or ""
-                                context_data = {
-                                    "summary": summary or "",
-                                    "caller_intent": caller_intent or "",
-                                    "transcript": effective_transcript,
-                                    "caller_name": caller_name,
-                                    "conversation_id": sms_conversation.id if sms_conversation else 0,
-                                    "updated_at": datetime.utcnow().isoformat(),
-                                }
-                                if actual_assistant_transcript:
-                                    logger.info(f"[DELAYED-SMS] Using actual assistant transcript for class detection")
-                                await redis_client.set(
-                                    redis_context_key,
-                                    json.dumps(context_data),
-                                    ttl=300,  # 5 minute TTL
-                                )
-                                logger.info(
-                                    f"[DELAYED-SMS] Updated context in Redis - tenant_id={tenant_id}, "
-                                    f"phone={from_number}, summary_len={len(summary or '')}"
-                                )
-
-                                # Check if a task is already scheduled
-                                task_already_scheduled = not await redis_client.setnx(redis_task_key, "1", ttl=120)
-
-                                if task_already_scheduled:
-                                    logger.info(
-                                        f"[DELAYED-SMS] Task already scheduled, just updated context - "
-                                        f"tenant_id={tenant_id}, phone={from_number}"
-                                    )
-                                else:
-                                    # Schedule Cloud Task to send SMS after delay
-                                    try:
-                                        task_url = f"{settings.api_base_url}/api/v1/telnyx/delayed-sms-send"
-                                        task_payload = {
-                                            "tenant_id": tenant_id,
-                                            "phone": from_number,
-                                            "conversation_id": sms_conversation.id if sms_conversation else 0,
-                                        }
-
-                                        cloud_tasks = CloudTasksClient()
-                                        task_name = await cloud_tasks.create_task_async(
-                                            payload=task_payload,
-                                            url=task_url,
-                                            delay_seconds=SMS_REGISTRATION_DELAY_SECONDS,
-                                        )
-
-                                        logger.info(
-                                            f"[DELAYED-SMS] Scheduled Cloud Task - tenant_id={tenant_id}, "
-                                            f"phone={from_number}, delay={SMS_REGISTRATION_DELAY_SECONDS}s, "
-                                            f"task={task_name}"
-                                        )
-                                    except Exception as task_err:
-                                        logger.error(
-                                            f"[DELAYED-SMS] Failed to schedule Cloud Task: {task_err}",
-                                            exc_info=True
-                                        )
-                                        # Fall back to immediate send if Cloud Tasks fails
-                                        logger.info("[DELAYED-SMS] Falling back to immediate send")
-                                        await redis_client.delete(redis_task_key)
-                                        await _send_sms_immediately(
-                                            db, tenant_id, from_number, caller_name,
-                                            summary, caller_intent, actual_assistant_transcript or transcript,
-                                            sms_conversation.id if sms_conversation else 0,
-                                            redis_dedup_key_sms,
-                                        )
-
+                                logger.info(f"[SMS] Skipping - already sent (Redis dedup): {redis_dedup_key_sms}")
+                                redis_dedup_ok = False
                         except Exception as e:
-                            logger.warning(f"[DELAYED-SMS] Redis error, falling back to immediate: {e}")
-                            # Fall back to immediate send if Redis fails
+                            logger.warning(f"[SMS] Redis dedup check failed (continuing anyway): {e}")
+
+                        if redis_dedup_ok:
+                            # Send SMS immediately
+                            logger.info(f"[SMS] Sending registration link immediately - tenant_id={tenant_id}, phone={from_number}")
                             await _send_sms_immediately(
                                 db, tenant_id, from_number, caller_name,
                                 summary, caller_intent, actual_assistant_transcript or transcript,
                                 sms_conversation.id if sms_conversation else 0,
-                                None,
+                                redis_dedup_key_sms,
                             )
 
             return JSONResponse(content={
@@ -2856,3 +2670,261 @@ async def sync_calls_to_leads(
             status_code=500,
             content={"status": "error", "message": str(e)}
         )
+
+
+# =============================================================================
+# Telnyx AI Assistant Webhook Tools
+# =============================================================================
+
+
+class SendRegistrationLinkRequest(BaseModel):
+    """Request body for send_registration_link webhook tool.
+
+    The AI extracts these from the conversation and passes them to the tool.
+    """
+    location: str | None = None  # "Cypress", "Langham Creek", or "Spring"
+    level: str | None = None  # "Adult Level 3", "Tadpole", etc.
+
+
+@router.post("/tools/send-registration-link")
+async def send_registration_link_tool(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Async webhook tool for Telnyx AI Assistant to send registration links.
+
+    Called when the AI Assistant needs to send a registration link to the caller.
+    This is an async tool - it returns immediately and the SMS is sent in the background.
+
+    Telnyx provides:
+    - x-]telnyx-call-control-id header: For live message injection
+    - x-]telnyx-from header: Caller's phone number
+    - Body: {location, level} extracted by AI from conversation
+
+    Args:
+        request: FastAPI request with Telnyx headers and body
+        db: Database session
+
+    Returns:
+        JSON response with status
+    """
+    try:
+        # Debug: Print all headers to see what Telnyx sends
+        print(f"[TOOL DEBUG] === send_registration_link called ===")
+        print(f"[TOOL DEBUG] Headers: {dict(request.headers)}")
+
+        # Parse body
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        print(f"[TOOL DEBUG] Body: {body}")
+
+        # Get call_control_id from Telnyx header
+        call_control_id = request.headers.get("x-telnyx-call-control-id", "")
+
+        # Look up the caller's phone from our Call table using call_control_id
+        # This is more reliable than expecting the AI to pass the phone number
+        caller_phone = None
+        tenant_id = None
+        to_number = None
+
+        if call_control_id:
+            from app.persistence.models.call import Call
+            stmt = select(Call).where(Call.call_sid == call_control_id)
+            result = await db.execute(stmt)
+            call_record = result.scalar_one_or_none()
+
+            if call_record:
+                caller_phone = call_record.from_number
+                tenant_id = call_record.tenant_id
+                to_number = call_record.to_number
+                print(f"[TOOL DEBUG] Found call record - from={caller_phone}, tenant={tenant_id}")
+            else:
+                print(f"[TOOL DEBUG] No call record found for call_control_id={call_control_id}")
+
+        # Fallback: check body for phone number (from AI parameter)
+        if not caller_phone:
+            caller_phone = body.get("caller_phone", "") or body.get("from", "")
+            # Filter out test/placeholder numbers
+            if caller_phone and caller_phone.startswith("+1555"):
+                print(f"[TOOL DEBUG] Ignoring test phone number: {caller_phone}")
+                caller_phone = None
+
+        logger.info(
+            f"[TOOL] send_registration_link called - "
+            f"call_control_id={call_control_id}, caller={caller_phone}, "
+            f"location={body.get('location')}, level={body.get('level')}"
+        )
+
+        if not caller_phone:
+            logger.error("[TOOL] No caller phone number found - check call_control_id lookup")
+            return JSONResponse(content={
+                "status": "error",
+                "message": "Could not determine caller phone number from call"
+            })
+
+        # Look up tenant by the Telnyx number if not already found
+        if not tenant_id and to_number:
+            tenant_id = await _get_tenant_from_telnyx_number(to_number, db)
+
+        # Fallback: default to tenant 3 (BSS)
+        if not tenant_id:
+            tenant_id = 3
+            logger.warning(f"[TOOL] Could not determine tenant, defaulting to {tenant_id}")
+
+        # Extract location and level from body
+        location = body.get("location", "")
+        level = body.get("level", "")
+
+        # Map location name to location code
+        location_code = _map_location_to_code(location)
+
+        if not location_code:
+            logger.warning(f"[TOOL] Could not map location '{location}' to code")
+            return JSONResponse(content={
+                "status": "error",
+                "message": f"Unknown location: {location}"
+            })
+
+        # Build the registration URL
+        from app.utils.registration_url_builder import build_registration_url, LEVEL_NAME_TO_TYPE_CODE
+
+        # Try to map level name to standard name
+        level_name = _normalize_level_name(level) if level else None
+
+        try:
+            registration_url = build_registration_url(location_code, level_name)
+            logger.info(f"[TOOL] Built registration URL: {registration_url}")
+        except Exception as e:
+            logger.error(f"[TOOL] Failed to build URL: {e}")
+            return JSONResponse(content={
+                "status": "error",
+                "message": f"Failed to build URL: {e}"
+            })
+
+        # Send the SMS
+        from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
+        from app.domain.services.promise_detector import DetectedPromise
+
+        fulfillment_service = PromiseFulfillmentService(db)
+
+        # Create a synthetic promise for the fulfillment service
+        promise = DetectedPromise(
+            asset_type="registration_link",
+            confidence=1.0,  # Tool call = high confidence
+            original_text=f"Tool call: send registration link for {level} at {location}",
+        )
+
+        # Fulfill the promise (sends SMS)
+        result = await fulfillment_service.fulfill_promise(
+            tenant_id=tenant_id,
+            conversation_id=None,  # No conversation ID for tool calls
+            promise=promise,
+            phone=caller_phone,
+            name=None,  # Could extract from call if needed
+            messages=None,
+            ai_response=f"Registration link for {level} at {location}",
+        )
+
+        logger.info(f"[TOOL] Registration link send result: {result}")
+
+        # TODO: Use call_control_id to inject confirmation message back into live call
+        # This would require calling Telnyx's live message injection API
+
+        return JSONResponse(content={
+            "status": result.get("status", "unknown"),
+            "message_id": result.get("message_id"),
+            "url_sent": registration_url if result.get("status") == "sent" else None,
+        })
+
+    except Exception as e:
+        logger.error(f"[TOOL] Error in send_registration_link: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+
+def _map_location_to_code(location: str) -> str | None:
+    """Map a location name from conversation to a location code.
+
+    Args:
+        location: Location name as mentioned in conversation
+
+    Returns:
+        Location code or None if not found
+    """
+    if not location:
+        return None
+
+    location_lower = location.lower().strip()
+
+    # Direct mappings
+    location_map = {
+        # Cypress variations
+        "cypress": "LAFCypress",
+        "la fitness cypress": "LAFCypress",
+        "lafcypress": "LAFCypress",
+        # Langham Creek variations
+        "langham creek": "LALANG",
+        "langham": "LALANG",
+        "la fitness langham creek": "LALANG",
+        "lalang": "LALANG",
+        # Spring variations
+        "spring": "24Spring",
+        "24 hour fitness spring": "24Spring",
+        "24 hour spring": "24Spring",
+        "24spring": "24Spring",
+        "24hr spring": "24Spring",
+    }
+
+    return location_map.get(location_lower)
+
+
+def _normalize_level_name(level: str) -> str | None:
+    """Normalize a level name from conversation to standard format.
+
+    Args:
+        level: Level name as mentioned in conversation
+
+    Returns:
+        Normalized level name or None
+    """
+    if not level:
+        return None
+
+    level_lower = level.lower().strip()
+
+    # Level name mappings (conversation -> standard name)
+    level_map = {
+        # Adult levels
+        "adult level 1": "Adult Level 1",
+        "adult level 2": "Adult Level 2",
+        "adult level 3": "Adult Level 3",
+        "adult 1": "Adult Level 1",
+        "adult 2": "Adult Level 2",
+        "adult 3": "Adult Level 3",
+        # Young Adult levels
+        "young adult 1": "Young Adult 1",
+        "young adult 2": "Young Adult 2",
+        "young adult 3": "Young Adult 3",
+        "young adult level 1": "Young Adult 1",
+        "young adult level 2": "Young Adult 2",
+        "young adult level 3": "Young Adult 3",
+        # Child levels
+        "tadpole": "Tadpole",
+        "swimboree": "Swimboree",
+        "seahorse": "Seahorse",
+        "starfish": "Starfish",
+        "minnow": "Minnow",
+        "turtle 1": "Turtle 1",
+        "turtle 2": "Turtle 2",
+        "shark 1": "Shark 1",
+        "shark 2": "Shark 2",
+        "dolphin": "Dolphin",
+        "barracuda": "Barracuda",
+    }
+
+    return level_map.get(level_lower, level)  # Return original if no mapping found

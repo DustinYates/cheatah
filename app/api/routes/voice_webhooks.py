@@ -1171,9 +1171,25 @@ async def _check_and_fulfill_promise(
             f"ai_response_length={len(ai_response) if ai_response else 0}"
         )
 
+        # Build conversation context for asset type identification
+        # This helps identify "registration_link" when AI says "I'll send that to you"
+        # but the registration context is in previous messages
+        conversation_context = None
+        if conversation_id:
+            try:
+                async with async_session_factory() as context_db:
+                    from app.domain.services.conversation_service import ConversationService
+                    conv_service = ConversationService(context_db)
+                    messages = await conv_service.get_conversation_history(tenant_id, conversation_id)
+                    conversation_context = " ".join(
+                        m.content for m in messages if hasattr(m, "content") and m.content
+                    )
+            except Exception as ctx_err:
+                logger.warning(f"Failed to get conversation context for promise detection: {ctx_err}")
+
         # Detect if AI made a promise
         detector = PromiseDetector()
-        promise = detector.detect_promise(ai_response)
+        promise = detector.detect_promise(ai_response, conversation_context=conversation_context)
 
         # [SMS-DEBUG] Log promise detection result
         logger.info(

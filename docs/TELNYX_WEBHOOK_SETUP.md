@@ -10,6 +10,7 @@
 | **SMS Status Callback** | `/api/v1/telnyx/sms/status` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/sms/status` |
 | **Voice AI (Dynamic Variables)** | `/api/v1/telnyx/dynamic-variables` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/dynamic-variables` |
 | **Voice AI (Call Complete)** | `/api/v1/telnyx/ai-call-complete` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/ai-call-complete` |
+| **Voice AI Tool (Registration Link)** | `/api/v1/telnyx/tools/send-registration-link` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/send-registration-link` |
 
 ## Common Mistakes
 
@@ -115,6 +116,7 @@ The webhook handlers are defined in:
 
 ## Additional Resources
 
+- [Telnyx Voice AI Agents](./TELNYX_VOICE_AGENTS.md) - Configuration for the two voice agents (English & Spanish)
 - [Telnyx SMS API Documentation](https://developers.telnyx.com/docs/api/v2/messaging)
 - [Telnyx Webhook Security](https://developers.telnyx.com/docs/v2/messaging/quickstarts/webhooks)
 - [10DLC Registration Guide](https://developers.telnyx.com/docs/v2/messaging/10dlc-registration)

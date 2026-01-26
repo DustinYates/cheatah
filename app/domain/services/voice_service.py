@@ -1650,10 +1650,14 @@ Write a professional summary (2-3 sentences):"""
             # Check 2: Did assistant promise to send info?
             from app.domain.services.promise_detector import PromiseDetector
 
+            # Build conversation context for asset type identification
+            conversation_context = " ".join(
+                m.content for m in messages if hasattr(m, "content") and m.content
+            )
             promise_detector = PromiseDetector()
             for msg in messages:
                 if msg.role == "assistant" and msg.content:
-                    promise = promise_detector.detect_promise(msg.content)
+                    promise = promise_detector.detect_promise(msg.content, conversation_context=conversation_context)
                     if promise:
                         logger.info(
                             f"Voice call promise detected for follow-up SMS: tenant_id={tenant_id}, "

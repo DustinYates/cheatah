@@ -809,8 +809,14 @@ Respond with ONLY valid JSON, no explanation:
                 return  # Don't double-send if user request detected
 
             # Check AI response for promise
+            # Build conversation context from messages for asset type identification
+            # This helps identify "registration_link" when AI says "I'll send that to you"
+            # but the registration context is in previous messages
+            conversation_text = " ".join(
+                m.content for m in messages if hasattr(m, "content") and m.content
+            )
             ai_detector = PromiseDetector()
-            ai_promise = ai_detector.detect_promise(ai_response)
+            ai_promise = ai_detector.detect_promise(ai_response, conversation_context=conversation_text)
 
             if ai_promise and ai_promise.confidence >= 0.6:
                 logger.info(

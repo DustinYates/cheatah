@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.idempotency import generate_idempotency_key
-from app.core.tenant_context import get_tenant_context
+from app.core.tenant_context import get_tenant_context, set_tenant_context
 from app.infrastructure.redis import redis_client
 from app.settings import settings
 
@@ -42,7 +42,17 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
         _request_id_var.set(request_id)
 
-        # Get tenant ID from context (if available)
+        # Set tenant context from X-Tenant-Id header EARLY
+        # This must happen BEFORE any database operations (which trigger RLS setup)
+        # The deps.py layer will still validate that only global admins can use this header
+        x_tenant_id = request.headers.get("X-Tenant-Id")
+        if x_tenant_id:
+            try:
+                set_tenant_context(int(x_tenant_id))
+            except (ValueError, TypeError):
+                pass  # Invalid header value, deps.py will handle validation
+
+        # Get tenant ID from context (now includes header-based context)
         tenant_id = get_tenant_context()
 
         # Set Sentry context for this request

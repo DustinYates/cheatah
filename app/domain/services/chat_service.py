@@ -877,10 +877,27 @@ class ChatService:
                                     'happy', 'excited', 'nervous', 'afraid', 'new', 'fine', 'great',
                                     'looking', 'trying', 'learning', 'starting', 'calling', 'texting',
                                     'beginner', 'intermediate', 'advanced', 'experienced'}
+                # US state names - these are never last names
+                us_states = {'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado',
+                            'connecticut', 'delaware', 'florida', 'georgia', 'hawaii', 'idaho',
+                            'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana',
+                            'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota',
+                            'mississippi', 'missouri', 'montana', 'nebraska', 'nevada',
+                            'hampshire', 'jersey', 'mexico', 'york', 'carolina', 'dakota',
+                            'ohio', 'oklahoma', 'oregon', 'pennsylvania', 'island', 'tennessee',
+                            'texas', 'utah', 'vermont', 'virginia', 'washington', 'wisconsin', 'wyoming'}
                 words = name.lower().split()
                 # Skip if both words are common, OR if the second word is a non-surname word
                 if (words[0] in common_words and words[1] in common_words) or words[1] in non_surname_words:
                     pass  # Skip this match
+                # Skip if second word is a US state (e.g., "Spring Texas", "Fort Worth")
+                elif words[1] in us_states or words[0] in us_states:
+                    logger.debug(f"Skipping potential location name: {name}")
+                    pass  # Skip - this is likely a location
+                # Skip if preceded by location phrases like "I live in", "I'm in", "located in", etc.
+                elif re.search(rf'\b(?:i\s+live\s+in|i\'?m\s+in|i\s+am\s+in|live\s+in|from|near|located\s+in|based\s+in|reside\s+in)\s+{re.escape(name)}\b', text, re.IGNORECASE):
+                    logger.debug(f"Skipping location after 'I live in' or similar: {name}")
+                    pass  # Skip - this is clearly a location
                 else:
                     return (name, False)  # False = not an explicit introduction
 
@@ -1024,13 +1041,35 @@ GENERAL RULES:
 Respond with ONLY a valid JSON object in this exact format, no other text:
 {{"name": null, "email": null, "phone": null}}""".format("\n".join(recent_messages))
 
-        # Use fallbacks if regex didn't find a name
-        # Priority: regex_name -> name_after_request -> bot_greeting_name
-        fallback_name = regex_name or name_after_request or bot_greeting_name
-        fallback_name_is_explicit = (
-            name_is_explicit if regex_name
-            else (True if name_after_request or bot_greeting_name else False)
-        )
+        # Determine best name extraction with priority:
+        # 1. Q&A pattern (name_after_request) - most reliable, user directly answered "what's your name?"
+        # 2. Bot greeting extraction - reliable, bot greeted user by name it recognized
+        # 3. Regex explicit intro (e.g., "I'm John") - reliable explicit statement
+        # 4. Regex capitalized pattern - least reliable, prone to false positives like "Spring Texas"
+        if name_after_request:
+            # Q&A pattern is most reliable - user responded directly to name question
+            fallback_name = name_after_request
+            fallback_name_is_explicit = True
+            logger.info(f"Using Q&A pattern name '{name_after_request}' (highest priority)")
+        elif bot_greeting_name:
+            # Bot already recognized and greeted by name
+            fallback_name = bot_greeting_name
+            fallback_name_is_explicit = True
+            logger.info(f"Using bot greeting name '{bot_greeting_name}'")
+        elif regex_name and name_is_explicit:
+            # Explicit introduction like "I'm John" or "my name is Sarah"
+            fallback_name = regex_name
+            fallback_name_is_explicit = True
+            logger.info(f"Using explicit regex name '{regex_name}'")
+        elif regex_name:
+            # Capitalized pattern - less reliable, don't mark as explicit
+            fallback_name = regex_name
+            fallback_name_is_explicit = False
+            logger.info(f"Using capitalized pattern name '{regex_name}' (not explicit)")
+        else:
+            fallback_name = None
+            fallback_name_is_explicit = False
+
         result = {"name": fallback_name, "email": regex_email, "phone": regex_phone, "name_is_explicit": fallback_name_is_explicit}
         
         try:

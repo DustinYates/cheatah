@@ -18,7 +18,7 @@ from app.domain.services.conversation_context_extractor import (
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 from app.persistence.models.lead import Lead
-from app.persistence.models.conversation import Message
+from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.sent_asset import SentAsset
 from app.infrastructure.telephony.telnyx_provider import TelnyxSmsProvider
 from app.infrastructure.redis import redis_client
@@ -294,8 +294,8 @@ class PromiseFulfillmentService:
         message = self._compose_message(sms_template, asset_config, name, url_to_send)
         logger.info(f"Composed SMS using template - length={len(message)}")
 
-        # Send SMS
-        result = await self._send_sms(tenant_id, phone, message)
+        # Send SMS and create SMS conversation record
+        result = await self._send_sms(tenant_id, phone, message, conversation_id)
 
         # If send failed, release dedup locks so retries are possible
         if result.get("status") != "sent":
@@ -519,13 +519,15 @@ class PromiseFulfillmentService:
         tenant_id: int,
         to_phone: str,
         message: str,
+        source_conversation_id: int | None = None,
     ) -> dict[str, Any]:
-        """Send SMS via Telnyx.
+        """Send SMS via Telnyx and create SMS conversation record.
 
         Args:
             tenant_id: Tenant ID
             to_phone: Recipient phone number
             message: SMS message
+            source_conversation_id: Original conversation ID (to link contact)
 
         Returns:
             Result dictionary
@@ -597,11 +599,20 @@ class PromiseFulfillmentService:
                 f"to={formatted_phone}, message_id={sms_result.message_id}"
             )
 
+            # Create SMS conversation record so outbound message shows in timeline
+            sms_conversation_id = await self._create_sms_conversation_record(
+                tenant_id=tenant_id,
+                phone=formatted_phone,
+                message=message,
+                source_conversation_id=source_conversation_id,
+            )
+
             return {
                 "status": "sent",
                 "message_id": sms_result.message_id,
                 "to": formatted_phone,
                 "provider": "telnyx",
+                "sms_conversation_id": sms_conversation_id,
             }
 
         except Exception as e:
@@ -614,6 +625,100 @@ class PromiseFulfillmentService:
                 "status": "error",
                 "error": str(e),
             }
+
+    async def _create_sms_conversation_record(
+        self,
+        tenant_id: int,
+        phone: str,
+        message: str,
+        source_conversation_id: int | None = None,
+    ) -> int | None:
+        """Create SMS conversation record for outbound message.
+
+        This ensures outbound SMS messages appear in the Lead Activity Timeline
+        alongside chat conversations.
+
+        Args:
+            tenant_id: Tenant ID
+            phone: Recipient phone number
+            message: The SMS message that was sent
+            source_conversation_id: Original conversation ID (to link same contact)
+
+        Returns:
+            SMS conversation ID or None if failed
+        """
+        try:
+            from app.persistence.repositories.conversation_repository import ConversationRepository
+
+            conv_repo = ConversationRepository(self.session)
+
+            # Check if SMS conversation already exists for this phone
+            existing_sms_conv = await conv_repo.get_by_phone_number(
+                tenant_id, phone, channel="sms"
+            )
+
+            if existing_sms_conv:
+                sms_conversation = existing_sms_conv
+                logger.info(f"Found existing SMS conversation {sms_conversation.id} for {phone}")
+            else:
+                # Create new SMS conversation
+                sms_conversation = Conversation(
+                    tenant_id=tenant_id,
+                    channel="sms",
+                    phone_number=phone,
+                )
+
+                # Link to same contact as source conversation if available
+                if source_conversation_id:
+                    source_conv_stmt = select(Conversation).where(
+                        Conversation.id == source_conversation_id
+                    )
+                    source_conv_result = await self.session.execute(source_conv_stmt)
+                    source_conv = source_conv_result.scalar_one_or_none()
+                    if source_conv and source_conv.contact_id:
+                        sms_conversation.contact_id = source_conv.contact_id
+                        logger.info(
+                            f"Linking SMS conversation to contact_id={source_conv.contact_id}"
+                        )
+
+                self.session.add(sms_conversation)
+                await self.session.commit()
+                await self.session.refresh(sms_conversation)
+                logger.info(f"Created SMS conversation {sms_conversation.id} for {phone}")
+
+            # Add the outbound message to the SMS conversation
+            outbound_message = Message(
+                conversation_id=sms_conversation.id,
+                role="assistant",
+                content=message,
+                sequence_number=1,  # Will be updated if there are existing messages
+            )
+
+            # Get next sequence number if conversation has messages
+            from sqlalchemy import func
+            max_seq_stmt = select(func.max(Message.sequence_number)).where(
+                Message.conversation_id == sms_conversation.id
+            )
+            max_seq_result = await self.session.execute(max_seq_stmt)
+            max_seq = max_seq_result.scalar() or 0
+            outbound_message.sequence_number = max_seq + 1
+
+            self.session.add(outbound_message)
+            await self.session.commit()
+
+            logger.info(
+                f"Added outbound SMS message to conversation {sms_conversation.id}, "
+                f"sequence={outbound_message.sequence_number}"
+            )
+
+            return sms_conversation.id
+
+        except Exception as e:
+            logger.error(
+                f"Failed to create SMS conversation record: {e}",
+                exc_info=True
+            )
+            return None
 
     async def _track_fulfillment(
         self,

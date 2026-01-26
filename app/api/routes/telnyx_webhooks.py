@@ -1601,12 +1601,25 @@ async def telnyx_ai_call_complete(
                 actual_assistant_transcript = None  # Will hold real bot messages for registration link
                 telnyx_conv_id = conversation.get("id")  # Telnyx conversation ID from webhook
 
+                # Try multiple paths to find conversation ID for fetching messages
+                telnyx_conv_id = (
+                    conversation.get("id")
+                    or payload.get("conversation_id")
+                    or data.get("conversation_id")
+                    or body.get("conversation_id")
+                    or metadata.get("conversation_id")
+                    or call_id  # Fall back to call_id which might be conversation_id
+                )
+
                 # Debug logging for conversation ID extraction
-                logger.info(f"[SMS-MESSAGES] Conversation dict keys: {list(conversation.keys()) if conversation else 'empty'}")
-                logger.info(f"[SMS-MESSAGES] telnyx_conv_id={telnyx_conv_id}, has_api_key={bool(settings.telnyx_api_key)}")
+                logger.info(f"[SMS-MESSAGES] Attempting to fetch actual messages")
+                logger.info(f"[SMS-MESSAGES] conversation dict: {json.dumps(conversation)[:500] if conversation else 'empty'}")
+                logger.info(f"[SMS-MESSAGES] payload keys: {list(payload.keys()) if isinstance(payload, dict) else 'not dict'}")
+                logger.info(f"[SMS-MESSAGES] telnyx_conv_id={telnyx_conv_id}, call_id={call_id}, has_api_key={bool(settings.telnyx_api_key)}")
 
                 if not telnyx_conv_id:
-                    logger.warning(f"[SMS-MESSAGES] No conversation ID available - cannot fetch actual messages")
+                    logger.warning(f"[SMS-MESSAGES] No conversation ID available - cannot fetch actual messages. "
+                                   f"Checked: conversation.id, payload.conversation_id, data.conversation_id, body.conversation_id, metadata.conversation_id, call_id")
                 elif not settings.telnyx_api_key:
                     logger.warning(f"[SMS-MESSAGES] No Telnyx API key configured - cannot fetch actual messages")
 

@@ -230,12 +230,22 @@ class TelnyxAIService:
         """
         try:
             async with self._get_client() as client:
-                response = await client.get(f"/ai/conversations/{conversation_id}/messages")
+                url = f"/ai/conversations/{conversation_id}/messages"
+                logger.info(f"[TELNYX-API] Fetching messages from: {url}")
+                response = await client.get(url)
+                logger.info(f"[TELNYX-API] Response status: {response.status_code}")
                 response.raise_for_status()
                 data = response.json()
-                return data.get("data", [])
+                messages = data.get("data", [])
+                logger.info(f"[TELNYX-API] Got {len(messages)} messages, response keys: {list(data.keys())}")
+                if messages:
+                    logger.info(f"[TELNYX-API] First message sample: {str(messages[0])[:300]}")
+                return messages
         except httpx.HTTPError as e:
-            logger.warning(f"Failed to get conversation messages: {e}")
+            logger.warning(f"[TELNYX-API] Failed to get conversation messages: {e}, response: {getattr(e, 'response', None)}")
+            return []
+        except Exception as e:
+            logger.warning(f"[TELNYX-API] Unexpected error getting messages: {type(e).__name__}: {e}")
             return []
 
     def extract_insights_from_transcript(

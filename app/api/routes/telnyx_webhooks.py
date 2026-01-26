@@ -43,6 +43,24 @@ EVENT_DEDUP_TTL_SECONDS = 600
 # This prevents duplicate SMS when multiple webhook events arrive for the same call
 PHONE_SMS_DEDUP_TTL_SECONDS = 3600
 
+# Voice call event types from Telnyx (any call.* event is a voice interaction)
+VOICE_EVENT_TYPES = {
+    "call.initiated",
+    "call.answered",
+    "call.hangup",
+    "call.conversation.ended",
+    "call.conversation_insights.generated",
+}
+
+# SMS/text event types from Telnyx (any message.* event is an SMS interaction)
+SMS_EVENT_TYPES = {
+    "message.received",
+    "message.sent",
+    "message.delivered",
+    "message.failed",
+    "message.finalized",
+}
+
 
 def _verify_telnyx_webhook(request: Request) -> bool:
     """Verify Telnyx webhook signature and timestamp.
@@ -1328,90 +1346,86 @@ async def telnyx_ai_call_complete(
 
         # WORKAROUND: Telnyx Insights webhooks not firing for voice calls
         # If we have no insights data, try to fetch transcript from Telnyx API directly
-        if not caller_name and not caller_email and call_id:
-            from app.settings import settings
-            if settings.telnyx_api_key:
-                try:
-                    from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
-                    telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
+        if not caller_name and not caller_email and call_id and settings.telnyx_api_key:
+            try:
+                from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+                telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
 
-                    logger.info(f"No insights from webhook, fetching transcript from Telnyx API for call_control_id={call_id}")
+                logger.info(f"No insights from webhook, fetching transcript from Telnyx API for call_control_id={call_id}")
 
-                    # Wait for Telnyx to finish writing the transcript
-                    # Race condition: webhook fires before transcript is fully saved
-                    # Increased from 2s to 5s based on production observation
-                    import asyncio
-                    await asyncio.sleep(5)
+                # Wait for Telnyx to finish writing the transcript
+                # Race condition: webhook fires before transcript is fully saved
+                # Increased from 2s to 5s based on production observation
+                import asyncio
+                await asyncio.sleep(5)
 
-                    # Find the conversation by call_control_id
-                    conversation = await telnyx_ai.find_conversation_by_call_control_id(call_id)
+                # Find the conversation by call_control_id
+                conversation = await telnyx_ai.find_conversation_by_call_control_id(call_id)
 
-                    if conversation:
-                        conv_id = conversation.get("id")
-                        logger.info(f"Found conversation {conv_id}, fetching messages")
+                if conversation:
+                    conv_id = conversation.get("id")
+                    logger.info(f"Found conversation {conv_id}, fetching messages")
 
-                        # Retry logic for race condition - Telnyx may not have messages ready yet
-                        # Increased retries and delay based on production observation
-                        max_retries = 5
-                        retry_delay = 3  # seconds
-                        extracted = None
+                    # Retry logic for race condition - Telnyx may not have messages ready yet
+                    # Increased retries and delay based on production observation
+                    max_retries = 5
+                    retry_delay = 3  # seconds
+                    extracted = None
 
-                        for attempt in range(max_retries):
-                            # Get messages from the conversation
-                            messages = await telnyx_ai.get_conversation_messages(conv_id)
-                            logger.info(f"Attempt {attempt + 1}: Got {len(messages)} messages from Telnyx API")
+                    for attempt in range(max_retries):
+                        # Get messages from the conversation
+                        messages = await telnyx_ai.get_conversation_messages(conv_id)
+                        logger.info(f"Attempt {attempt + 1}: Got {len(messages)} messages from Telnyx API")
 
-                            if messages:
-                                # Check if we have user messages (not just assistant greeting)
-                                user_messages = [m for m in messages if m.get("role") == "user" and m.get("text")]
-                                logger.info(f"Attempt {attempt + 1}: Found {len(user_messages)} user messages")
+                        if messages:
+                            # Check if we have user messages (not just assistant greeting)
+                            user_messages = [m for m in messages if m.get("role") == "user" and m.get("text")]
+                            logger.info(f"Attempt {attempt + 1}: Found {len(user_messages)} user messages")
 
-                                if user_messages:
-                                    # Log the user messages for debugging
-                                    for i, um in enumerate(user_messages[:3]):  # Log first 3
-                                        logger.info(f"User message {i+1}: {um.get('text', '')[:100]}")
+                            if user_messages:
+                                # Log the user messages for debugging
+                                for i, um in enumerate(user_messages[:3]):  # Log first 3
+                                    logger.info(f"User message {i+1}: {um.get('text', '')[:100]}")
 
-                                    # Extract insights using Gemini LLM for better accuracy
-                                    extracted = await telnyx_ai.extract_insights_with_llm(messages)
+                                # Extract insights using Gemini LLM for better accuracy
+                                extracted = await telnyx_ai.extract_insights_with_llm(messages)
 
-                                    # If we got a name or email, we're done
-                                    if extracted.get("name") or extracted.get("email"):
-                                        logger.info(f"Successfully extracted data on attempt {attempt + 1}")
-                                        break
-                                    else:
-                                        logger.info(f"Attempt {attempt + 1}: LLM returned no name/email, will retry")
+                                # If we got a name or email, we're done
+                                if extracted.get("name") or extracted.get("email"):
+                                    logger.info(f"Successfully extracted data on attempt {attempt + 1}")
+                                    break
                                 else:
-                                    logger.info(f"Attempt {attempt + 1}: No user messages yet, Telnyx still writing transcript")
+                                    logger.info(f"Attempt {attempt + 1}: LLM returned no name/email, will retry")
+                            else:
+                                logger.info(f"Attempt {attempt + 1}: No user messages yet, Telnyx still writing transcript")
 
-                            # Wait before retry (unless last attempt)
-                            if attempt < max_retries - 1:
-                                logger.info(f"Waiting {retry_delay}s before retry...")
-                                await asyncio.sleep(retry_delay)
+                        # Wait before retry (unless last attempt)
+                        if attempt < max_retries - 1:
+                            logger.info(f"Waiting {retry_delay}s before retry...")
+                            await asyncio.sleep(retry_delay)
 
-                        if extracted:
-                            # Use extracted data if we didn't get it from webhook
-                            if extracted.get("name") and not caller_name:
-                                caller_name = extracted["name"]
-                                logger.info(f"Extracted caller_name from transcript: {caller_name}")
-                            if extracted.get("email") and not caller_email:
-                                caller_email = extracted["email"]
-                                logger.info(f"Extracted caller_email from transcript: {caller_email}")
-                            if extracted.get("intent") and not caller_intent:
-                                caller_intent = extracted["intent"]
-                                logger.info(f"Extracted caller_intent from transcript: {caller_intent}")
-                            if extracted.get("summary") and not summary:
-                                summary = extracted["summary"]
-                                logger.info(f"Extracted summary from transcript (first 100 chars): {summary[:100]}")
-                            if extracted.get("transcript") and not transcript:
-                                transcript = extracted["transcript"]
+                    if extracted:
+                        # Use extracted data if we didn't get it from webhook
+                        if extracted.get("name") and not caller_name:
+                            caller_name = extracted["name"]
+                            logger.info(f"Extracted caller_name from transcript: {caller_name}")
+                        if extracted.get("email") and not caller_email:
+                            caller_email = extracted["email"]
+                            logger.info(f"Extracted caller_email from transcript: {caller_email}")
+                        if extracted.get("intent") and not caller_intent:
+                            caller_intent = extracted["intent"]
+                            logger.info(f"Extracted caller_intent from transcript: {caller_intent}")
+                        if extracted.get("summary") and not summary:
+                            summary = extracted["summary"]
+                            logger.info(f"Extracted summary from transcript (first 100 chars): {summary[:100]}")
+                        if extracted.get("transcript") and not transcript:
+                            transcript = extracted["transcript"]
 
-                        logger.info(f"Final extracted data: name={caller_name}, email={caller_email}, intent={caller_intent}")
-                    else:
-                        logger.info(f"Could not find conversation for call_control_id={call_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to fetch transcript from Telnyx API: {e}")
-            else:
-                logger.info("No TELNYX_API_KEY configured, skipping transcript fetch")
+                    logger.info(f"Final extracted data: name={caller_name}, email={caller_email}, intent={caller_intent}")
+                else:
+                    logger.info(f"Could not find conversation for call_control_id={call_id}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch transcript from Telnyx API: {e}")
 
         # FALLBACK: Try to get transcript from our own database
         # The voice_webhooks.py stores messages in the Conversation table during the call
@@ -1509,36 +1523,51 @@ async def telnyx_ai_call_complete(
         logger.info(f"Found tenant_id={tenant_id} for AI call")
 
         # Determine if this is a voice call vs SMS/chat interaction
-        # Note: The voice assistant can handle BOTH voice calls AND text messages,
-        # so we classify based on actual signals (duration/recording), not assistant ID
+        # PRIMARY: Use event_type as the definitive classifier
+        # SECONDARY: Use duration only for capturing call metrics, not classification
 
-        # Voice calls require actual voice signals (duration > 0 OR recording)
+        # Normalize event_type for comparison
+        normalized_event_type = event_type.lower().strip() if event_type else ""
+
+        # Check if event type indicates voice call (any call.* event)
+        is_voice_event = (
+            normalized_event_type.startswith("call.") or
+            normalized_event_type in VOICE_EVENT_TYPES
+        )
+
+        # Check if event type indicates SMS/text (any message.* event)
+        is_sms_event = (
+            normalized_event_type.startswith("message.") or
+            normalized_event_type in SMS_EVENT_TYPES
+        )
+
+        # Voice signals (used for metrics/logging, not classification)
         has_voice_signals = (
-            bool(duration and int(duration) > 0) or  # Voice calls have duration
-            bool(recording_url)  # Voice calls may have recordings
+            bool(duration and int(duration) > 0) or
+            bool(recording_url)
         )
 
-        # Text assistant ID (for explicit text-only assistant if configured)
-        TEXT_ASSISTANT_ID = "assistant-d3d25f89-a4df-4ca0-8657-7fe2f53ce348"
-        is_text_assistant = assistant_id == TEXT_ASSISTANT_ID
+        # Final classification based on event type (not duration)
+        if is_sms_event:
+            is_voice_call = False
+            is_sms_interaction = True
+        elif is_voice_event:
+            is_voice_call = True
+            is_sms_interaction = False
+        else:
+            # Unknown event type - log and default to SMS to be safe
+            logger.warning(f"Unknown event type '{event_type}', defaulting to SMS classification")
+            is_voice_call = False
+            is_sms_interaction = True
 
-        # Classify based on actual signals, not just assistant ID
-        # Voice call = has actual voice signals (duration > 0 or recording)
-        is_voice_call = has_voice_signals
-
-        # SMS/text interaction = no voice signals OR explicit text assistant OR message event
-        is_sms_interaction = (
-            not has_voice_signals or  # No voice signals = SMS/text (even from voice assistant)
-            is_text_assistant or  # Explicitly from text assistant
-            event_type.startswith("message.") or
-            event_type in ("message.received", "message.sent", "message.delivered")
+        logger.info(
+            f"Channel classification: is_voice_call={is_voice_call}, is_sms_interaction={is_sms_interaction}, "
+            f"event_type={event_type}, is_voice_event={is_voice_event}, is_sms_event={is_sms_event}, "
+            f"has_voice_signals={has_voice_signals}, duration={duration}"
         )
-
-        logger.info(f"Channel classification: is_voice_call={is_voice_call}, is_sms_interaction={is_sms_interaction}, "
-                    f"has_voice_signals={has_voice_signals}, duration={duration}, recording_url={bool(recording_url)}")
 
         if is_sms_interaction or (not is_voice_call and not call_id):
-            logger.info(f"Skipping Call record creation for non-voice interaction: event_type={event_type}, call_id={call_id}, assistant_id={assistant_id}, is_text_assistant={is_text_assistant}")
+            logger.info(f"Skipping Call record creation for non-voice interaction: event_type={event_type}, call_id={call_id}, assistant_id={assistant_id}")
             # Create/update Conversation and Messages for SMS AI Assistant (for usage tracking)
             now = datetime.utcnow()
             if from_number:
@@ -1569,48 +1598,58 @@ async def telnyx_ai_call_complete(
                 # Add messages from the SMS interaction
                 # Try to fetch actual conversation messages from Telnyx API
                 actual_messages_stored = False
+                actual_assistant_transcript = None  # Will hold real bot messages for registration link
                 telnyx_conv_id = conversation.get("id")  # Telnyx conversation ID from webhook
 
-                if telnyx_conv_id:
-                    from app.settings import settings
-                    if settings.telnyx_api_key:
-                        try:
-                            from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
-                            sms_telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
+                if telnyx_conv_id and settings.telnyx_api_key:
+                    try:
+                        from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+                        sms_telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
 
-                            logger.info(f"Fetching actual SMS messages from Telnyx for conv_id={telnyx_conv_id}")
-                            actual_messages = await sms_telnyx_ai.get_conversation_messages(telnyx_conv_id)
+                        logger.info(f"Fetching actual SMS messages from Telnyx for conv_id={telnyx_conv_id}")
+                        actual_messages = await sms_telnyx_ai.get_conversation_messages(telnyx_conv_id)
 
-                            if actual_messages:
-                                # Get next sequence number
-                                msg_result = await db.execute(
-                                    select(Message).where(
-                                        Message.conversation_id == sms_conversation.id
-                                    ).order_by(Message.sequence_number.desc()).limit(1)
-                                )
-                                last_msg = msg_result.scalar_one_or_none()
-                                next_seq = (last_msg.sequence_number + 1) if last_msg else 1
+                        if actual_messages:
+                            # Get next sequence number
+                            msg_result = await db.execute(
+                                select(Message).where(
+                                    Message.conversation_id == sms_conversation.id
+                                ).order_by(Message.sequence_number.desc()).limit(1)
+                            )
+                            last_msg = msg_result.scalar_one_or_none()
+                            next_seq = (last_msg.sequence_number + 1) if last_msg else 1
 
-                                # Store each actual message individually
-                                for msg in actual_messages:
-                                    msg_role = msg.get("role", "user")
-                                    msg_content = msg.get("text", msg.get("content", ""))
+                            # Store each actual message individually
+                            for msg in actual_messages:
+                                msg_role = msg.get("role", "user")
+                                msg_content = msg.get("text", msg.get("content", ""))
 
-                                    if msg_content and msg_content.strip():
-                                        new_msg = Message(
-                                            conversation_id=sms_conversation.id,
-                                            role=msg_role,
-                                            content=msg_content,
-                                            sequence_number=next_seq,
-                                            message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
-                                        )
-                                        db.add(new_msg)
-                                        next_seq += 1
+                                if msg_content and msg_content.strip():
+                                    new_msg = Message(
+                                        conversation_id=sms_conversation.id,
+                                        role=msg_role,
+                                        content=msg_content,
+                                        sequence_number=next_seq,
+                                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
+                                    )
+                                    db.add(new_msg)
+                                    next_seq += 1
 
-                                actual_messages_stored = True
-                                logger.info(f"Stored {len(actual_messages)} actual SMS messages from Telnyx API: conversation_id={sms_conversation.id}")
-                        except Exception as e:
-                            logger.warning(f"Failed to fetch actual SMS messages from Telnyx API: {e}")
+                            actual_messages_stored = True
+                            logger.info(f"Stored {len(actual_messages)} actual SMS messages from Telnyx API: conversation_id={sms_conversation.id}")
+
+                            # Build transcript from assistant messages for class level detection
+                            # The assistant messages contain specific class recommendations like "Young Adult Level 3"
+                            assistant_texts = [
+                                msg.get("text", msg.get("content", ""))
+                                for msg in actual_messages
+                                if msg.get("role") == "assistant"
+                            ]
+                            if assistant_texts:
+                                actual_assistant_transcript = "\n".join(assistant_texts)
+                                logger.info(f"Built actual assistant transcript ({len(actual_assistant_transcript)} chars) for registration link")
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch actual SMS messages from Telnyx API: {e}")
 
                 # Fallback: store transcript/summary if we couldn't get actual messages
                 if not actual_messages_stored and (transcript or summary):
@@ -1773,87 +1812,120 @@ async def telnyx_ai_call_complete(
                     redis_context_key = f"pending_sms_context:{tenant_id}:{normalized_for_dedup}"
                     redis_task_key = f"pending_sms_task:{tenant_id}:{normalized_for_dedup}"
 
-                    try:
-                        await redis_client.connect()
+                    # DATABASE-BASED DEDUP: Check if SMS was already sent recently (fallback when Redis unavailable)
+                    db_sms_already_sent = False
+                    if lead:
+                        await db.refresh(lead)
+                        lead_extra = lead.extra_data or {}
+                        last_sms_sent = lead_extra.get("sms_registration_sent_at")
+                        if last_sms_sent:
+                            try:
+                                last_sent_time = datetime.fromisoformat(last_sms_sent.replace("Z", "+00:00"))
+                                # Skip if SMS was sent within the last hour
+                                if (datetime.utcnow().replace(tzinfo=None) - last_sent_time.replace(tzinfo=None)).total_seconds() < 3600:
+                                    db_sms_already_sent = True
+                                    logger.info(f"[DELAYED-SMS] DB dedup - skipping, sent at {last_sms_sent}")
+                            except Exception as parse_err:
+                                logger.warning(f"[DELAYED-SMS] Failed to parse last_sms_sent: {parse_err}")
 
-                        # Check if SMS was already sent (final dedup)
-                        sms_already_sent = not await redis_client.setnx(redis_dedup_key_sms, "1", ttl=PHONE_SMS_DEDUP_TTL_SECONDS)
-                        if sms_already_sent:
-                            logger.info(f"[DELAYED-SMS] Skipping - already sent: {redis_dedup_key_sms}")
-                        else:
-                            # Store/update the context in Redis (always update with latest)
-                            context_data = {
-                                "summary": summary or "",
-                                "caller_intent": caller_intent or "",
-                                "transcript": transcript or "",
-                                "caller_name": caller_name,
-                                "conversation_id": sms_conversation.id if sms_conversation else 0,
-                                "updated_at": datetime.utcnow().isoformat(),
-                            }
-                            await redis_client.set(
-                                redis_context_key,
-                                json.dumps(context_data),
-                                ttl=300,  # 5 minute TTL
-                            )
-                            logger.info(
-                                f"[DELAYED-SMS] Updated context in Redis - tenant_id={tenant_id}, "
-                                f"phone={from_number}, summary_len={len(summary or '')}"
-                            )
+                    if db_sms_already_sent:
+                        logger.info(f"[DELAYED-SMS] Skipping - already sent (DB dedup): phone={from_number}")
+                    else:
+                        # Mark in DB that we're sending (claim before send)
+                        if lead:
+                            lead_extra = lead.extra_data or {}
+                            lead_extra["sms_registration_sent_at"] = datetime.utcnow().isoformat()
+                            lead.extra_data = lead_extra
+                            flag_modified(lead, "extra_data")
+                            await db.commit()
+                            logger.info(f"[DELAYED-SMS] Claimed SMS send in DB for lead_id={lead.id}")
 
-                            # Check if a task is already scheduled
-                            task_already_scheduled = not await redis_client.setnx(redis_task_key, "1", ttl=120)
+                        try:
+                            await redis_client.connect()
 
-                            if task_already_scheduled:
-                                logger.info(
-                                    f"[DELAYED-SMS] Task already scheduled, just updated context - "
-                                    f"tenant_id={tenant_id}, phone={from_number}"
-                                )
+                            # Check if SMS was already sent (Redis dedup - faster but optional)
+                            sms_already_sent = not await redis_client.setnx(redis_dedup_key_sms, "1", ttl=PHONE_SMS_DEDUP_TTL_SECONDS)
+                            if sms_already_sent:
+                                logger.info(f"[DELAYED-SMS] Skipping - already sent: {redis_dedup_key_sms}")
                             else:
-                                # Schedule Cloud Task to send SMS after delay
-                                try:
-                                    task_url = f"{settings.api_base_url}/api/v1/telnyx/delayed-sms-send"
-                                    task_payload = {
-                                        "tenant_id": tenant_id,
-                                        "phone": from_number,
-                                        "conversation_id": sms_conversation.id if sms_conversation else 0,
-                                    }
+                                # Store/update the context in Redis (always update with latest)
+                                # Use actual_assistant_transcript if available - it contains
+                                # specific class recommendations like "Young Adult Level 3"
+                                effective_transcript = actual_assistant_transcript or transcript or ""
+                                context_data = {
+                                    "summary": summary or "",
+                                    "caller_intent": caller_intent or "",
+                                    "transcript": effective_transcript,
+                                    "caller_name": caller_name,
+                                    "conversation_id": sms_conversation.id if sms_conversation else 0,
+                                    "updated_at": datetime.utcnow().isoformat(),
+                                }
+                                if actual_assistant_transcript:
+                                    logger.info(f"[DELAYED-SMS] Using actual assistant transcript for class detection")
+                                await redis_client.set(
+                                    redis_context_key,
+                                    json.dumps(context_data),
+                                    ttl=300,  # 5 minute TTL
+                                )
+                                logger.info(
+                                    f"[DELAYED-SMS] Updated context in Redis - tenant_id={tenant_id}, "
+                                    f"phone={from_number}, summary_len={len(summary or '')}"
+                                )
 
-                                    cloud_tasks = CloudTasksClient()
-                                    task_name = await cloud_tasks.create_task_async(
-                                        payload=task_payload,
-                                        url=task_url,
-                                        delay_seconds=SMS_REGISTRATION_DELAY_SECONDS,
-                                    )
+                                # Check if a task is already scheduled
+                                task_already_scheduled = not await redis_client.setnx(redis_task_key, "1", ttl=120)
 
+                                if task_already_scheduled:
                                     logger.info(
-                                        f"[DELAYED-SMS] Scheduled Cloud Task - tenant_id={tenant_id}, "
-                                        f"phone={from_number}, delay={SMS_REGISTRATION_DELAY_SECONDS}s, "
-                                        f"task={task_name}"
+                                        f"[DELAYED-SMS] Task already scheduled, just updated context - "
+                                        f"tenant_id={tenant_id}, phone={from_number}"
                                     )
-                                except Exception as task_err:
-                                    logger.error(
-                                        f"[DELAYED-SMS] Failed to schedule Cloud Task: {task_err}",
-                                        exc_info=True
-                                    )
-                                    # Fall back to immediate send if Cloud Tasks fails
-                                    logger.info("[DELAYED-SMS] Falling back to immediate send")
-                                    await redis_client.delete(redis_task_key)
-                                    await _send_sms_immediately(
-                                        db, tenant_id, from_number, caller_name,
-                                        summary, caller_intent, transcript,
-                                        sms_conversation.id if sms_conversation else 0,
-                                        redis_dedup_key_sms,
-                                    )
+                                else:
+                                    # Schedule Cloud Task to send SMS after delay
+                                    try:
+                                        task_url = f"{settings.api_base_url}/api/v1/telnyx/delayed-sms-send"
+                                        task_payload = {
+                                            "tenant_id": tenant_id,
+                                            "phone": from_number,
+                                            "conversation_id": sms_conversation.id if sms_conversation else 0,
+                                        }
 
-                    except Exception as e:
-                        logger.warning(f"[DELAYED-SMS] Redis error, falling back to immediate: {e}")
-                        # Fall back to immediate send if Redis fails
-                        await _send_sms_immediately(
-                            db, tenant_id, from_number, caller_name,
-                            summary, caller_intent, transcript,
-                            sms_conversation.id if sms_conversation else 0,
-                            None,
-                        )
+                                        cloud_tasks = CloudTasksClient()
+                                        task_name = await cloud_tasks.create_task_async(
+                                            payload=task_payload,
+                                            url=task_url,
+                                            delay_seconds=SMS_REGISTRATION_DELAY_SECONDS,
+                                        )
+
+                                        logger.info(
+                                            f"[DELAYED-SMS] Scheduled Cloud Task - tenant_id={tenant_id}, "
+                                            f"phone={from_number}, delay={SMS_REGISTRATION_DELAY_SECONDS}s, "
+                                            f"task={task_name}"
+                                        )
+                                    except Exception as task_err:
+                                        logger.error(
+                                            f"[DELAYED-SMS] Failed to schedule Cloud Task: {task_err}",
+                                            exc_info=True
+                                        )
+                                        # Fall back to immediate send if Cloud Tasks fails
+                                        logger.info("[DELAYED-SMS] Falling back to immediate send")
+                                        await redis_client.delete(redis_task_key)
+                                        await _send_sms_immediately(
+                                            db, tenant_id, from_number, caller_name,
+                                            summary, caller_intent, actual_assistant_transcript or transcript,
+                                            sms_conversation.id if sms_conversation else 0,
+                                            redis_dedup_key_sms,
+                                        )
+
+                        except Exception as e:
+                            logger.warning(f"[DELAYED-SMS] Redis error, falling back to immediate: {e}")
+                            # Fall back to immediate send if Redis fails
+                            await _send_sms_immediately(
+                                db, tenant_id, from_number, caller_name,
+                                summary, caller_intent, actual_assistant_transcript or transcript,
+                                sms_conversation.id if sms_conversation else 0,
+                                None,
+                            )
 
             return JSONResponse(content={
                 "status": "ok",

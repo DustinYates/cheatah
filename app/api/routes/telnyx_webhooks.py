@@ -2303,6 +2303,34 @@ async def telnyx_ai_call_complete(
             except Exception as e:
                 logger.warning(f"DB sent_assets dedup check failed: {e}")
 
+        # LAYER 1.5: Check if AI already sent registration URL in conversation messages
+        # This prevents duplicates when AI sends link directly via Telnyx messaging
+        ai_sent_registration_url_voice = False
+        if is_registration_request and not sms_already_sent_for_call and not is_test_phone:
+            try:
+                telnyx_conv_id_for_check = (
+                    payload.get("conversation_id")
+                    or metadata.get("conversation_id")
+                    or data.get("conversation_id")
+                )
+                if telnyx_conv_id_for_check and settings.telnyx_api_key:
+                    from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+                    voice_telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
+                    voice_messages = await voice_telnyx_ai.get_conversation_messages(telnyx_conv_id_for_check)
+                    if voice_messages:
+                        for msg in voice_messages:
+                            msg_text = msg.get("text", msg.get("content", "")) or ""
+                            if "britishswimschool.com" in msg_text and "register" in msg_text:
+                                ai_sent_registration_url_voice = True
+                                logger.info(f"[VOICE-AI-DEDUP] AI already sent registration URL: {msg_text[:100]}")
+                                break
+            except Exception as e:
+                logger.warning(f"[VOICE-AI-DEDUP] Failed to check conversation messages: {e}")
+
+        if ai_sent_registration_url_voice:
+            sms_already_sent_for_call = True
+            logger.info(f"[VOICE-AI-DEDUP] Skipping fallback SMS - AI already sent registration URL to {from_number}")
+
         # LAYER 2: Redis atomic setnx (fast-path, works even if lead is missing)
         # CRITICAL: Use setnx to atomically claim the right to send SMS
         # This prevents race conditions where multiple webhook events arrive simultaneously

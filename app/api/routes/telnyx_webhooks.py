@@ -2269,8 +2269,8 @@ async def telnyx_ai_call_complete(
             try:
                 from app.persistence.models.sent_asset import SentAsset
 
-                # Check if registration_link was sent to this phone in the last 2 hours
-                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
+                # Check if registration_link was sent to this phone in the last 30 seconds (cooloff only)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=30)
                 existing_send = await db.execute(
                     select(SentAsset.id).where(
                         SentAsset.tenant_id == tenant_id,

@@ -128,16 +128,16 @@ class PromiseFulfillmentService:
         # This handles cases where Redis is disabled or unavailable
         # Skip if dedup is disabled or for test phone numbers
         #
-        # RESEND POLICY: Allow resends after 30 days by deleting old records
-        # This ensures customers can receive the asset again after a cooling period
-        RESEND_COOLDOWN_DAYS = 30
+        # RESEND POLICY: Allow resends after 30 seconds cooloff only
+        # This prevents rapid duplicate sends while allowing reasonable resends
+        RESEND_COOLDOWN_SECONDS = 30
         if not dedup_disabled and not is_test_phone:
             try:
                 from sqlalchemy import delete
 
                 # First, delete any old records for this phone+asset that are past the cooldown
-                # This allows resends after 30 days
-                cooldown_cutoff = datetime.now(timezone.utc) - timedelta(days=RESEND_COOLDOWN_DAYS)
+                # This allows resends after 30 seconds
+                cooldown_cutoff = datetime.now(timezone.utc) - timedelta(seconds=RESEND_COOLDOWN_SECONDS)
                 delete_old = delete(SentAsset).where(
                     SentAsset.tenant_id == tenant_id,
                     SentAsset.phone_normalized == phone_normalized,
@@ -147,7 +147,7 @@ class PromiseFulfillmentService:
                 delete_result = await self.session.execute(delete_old)
                 if delete_result.rowcount > 0:
                     logger.info(
-                        f"Deleted {delete_result.rowcount} old sent_asset records (>30 days) for "
+                        f"Deleted {delete_result.rowcount} old sent_asset records (>30s) for "
                         f"phone={phone_normalized}, asset={promise.asset_type}"
                     )
 
@@ -167,11 +167,11 @@ class PromiseFulfillmentService:
                 inserted_id = result.scalar_one_or_none()
 
                 if inserted_id is None:
-                    # Conflict occurred - asset was already sent recently (within 30 days)
+                    # Conflict occurred - asset was already sent recently (within 30 seconds)
                     # MONITORING: Log duplicate detection with structured data for alerting
                     # This indicates a race condition was caught by the DB layer
                     logger.warning(
-                        "[DUPLICATE_BLOCKED] Registration link duplicate prevented by DB (sent within 30 days)",
+                        "[DUPLICATE_BLOCKED] Registration link duplicate prevented by DB (sent within 30s)",
                         extra={
                             "event_type": "duplicate_send_blocked",
                             "dedup_layer": "database",

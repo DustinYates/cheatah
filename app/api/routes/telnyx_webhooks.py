@@ -1532,10 +1532,16 @@ async def telnyx_ai_call_complete(
             is_voice_call = True
             is_sms_interaction = False
         else:
-            # Unknown event type - log and default to SMS to be safe
-            logger.warning(f"Unknown event type '{event_type}', defaulting to SMS classification")
-            is_voice_call = False
-            is_sms_interaction = True
+            # Unknown event type - check metadata for channel info before defaulting
+            conversation_channel = metadata.get("telnyx_conversation_channel", "")
+            if conversation_channel == "phone_call":
+                logger.info(f"Unknown event type '{event_type}', but telnyx_conversation_channel=phone_call - classifying as voice")
+                is_voice_call = True
+                is_sms_interaction = False
+            else:
+                logger.warning(f"Unknown event type '{event_type}', defaulting to SMS classification")
+                is_voice_call = False
+                is_sms_interaction = True
 
         logger.info(
             f"Channel classification: is_voice_call={is_voice_call}, is_sms_interaction={is_sms_interaction}, "
@@ -1694,6 +1700,49 @@ async def telnyx_ai_call_complete(
                                     ai_sent_registration_url = True
                                     logger.info(f"[SMS-AI-DEDUP] AI already sent registration URL in conversation: {msg_text[:100]}")
                                     break
+
+                            # Extract location/level from tool_calls in conversation messages
+                            # When the AI called send_registration_link, the tool_calls contain
+                            # the location and level that the text summary may not mention
+                            tool_call_location = None
+                            tool_call_level = None
+                            for msg in actual_messages:
+                                tool_calls = msg.get("tool_calls")
+                                if not tool_calls:
+                                    continue
+                                for tc in tool_calls:
+                                    fn = tc.get("function", tc) if isinstance(tc, dict) else {}
+                                    fn_name = fn.get("name", "")
+                                    if "registration" in fn_name.lower() or "send_registration" in fn_name.lower():
+                                        args = fn.get("arguments", {})
+                                        if isinstance(args, str):
+                                            try:
+                                                args = json.loads(args)
+                                            except Exception:
+                                                args = {}
+                                        tool_call_location = args.get("location")
+                                        tool_call_level = args.get("level")
+                                        logger.info(
+                                            f"[SMS-TOOL-EXTRACT] Found tool call with "
+                                            f"location={tool_call_location}, level={tool_call_level}"
+                                        )
+                                        break
+                                if tool_call_location:
+                                    break
+
+                            # If we found tool call params, build a URL to inject into the text
+                            tool_call_url = None
+                            if tool_call_location:
+                                try:
+                                    from app.utils.registration_url_builder import build_registration_url
+                                    tc_loc_code = _map_location_to_code(tool_call_location)
+                                    tc_level_name = _normalize_level_name(tool_call_level) if tool_call_level else None
+                                    if tc_loc_code:
+                                        tool_call_url = build_registration_url(tc_loc_code, tc_level_name)
+                                        logger.info(f"[SMS-TOOL-EXTRACT] Built URL from tool call: {tool_call_url}")
+                                except Exception as e:
+                                    logger.warning(f"[SMS-TOOL-EXTRACT] Failed to build URL from tool call: {e}")
+
                     except Exception as e:
                         logger.warning(f"Failed to fetch actual SMS messages from Telnyx API: {e}")
 
@@ -1868,7 +1917,10 @@ async def telnyx_ai_call_complete(
                 if ai_sent_registration_url:
                     logger.info(f"[SMS-AI-DEDUP] Skipping fallback SMS - AI already sent registration URL to {from_number}")
 
-                if is_registration_request_sms and normalized_from and not link_already_sent_sms and not ai_sent_registration_url:
+                # Only trust ai_sent_registration_url (actual Telnyx message check), not
+                # link_already_sent_sms (summary text match). The AI often says "I sent the link"
+                # in the summary but didn't actually send a URL via SMS.
+                if is_registration_request_sms and normalized_from and not ai_sent_registration_url:
                     # IMMEDIATE SMS SEND: Send registration link right away
                     # Use consistent phone normalization for dedup keys (last 10 digits)
                     normalized_for_dedup = normalize_phone_for_dedup(from_number)
@@ -1915,10 +1967,16 @@ async def telnyx_ai_call_complete(
 
                         if redis_dedup_ok:
                             # Send SMS immediately
+                            # If we extracted a URL from tool_calls, inject it into the transcript
+                            # so fulfill_promise's extract_url_from_ai_response() picks it up
+                            effective_transcript = actual_assistant_transcript or transcript or ""
+                            if tool_call_url:
+                                effective_transcript = f"{effective_transcript}\nRegistration link: {tool_call_url}"
+                                logger.info(f"[SMS] Injected tool_call_url into transcript: {tool_call_url}")
                             logger.info(f"[SMS] Sending registration link immediately - tenant_id={tenant_id}, phone={from_number}")
                             await _send_sms_immediately(
                                 db, tenant_id, from_number, caller_name,
-                                summary, caller_intent, actual_assistant_transcript or transcript,
+                                summary, caller_intent, effective_transcript,
                                 sms_conversation.id if sms_conversation else 0,
                                 redis_dedup_key_sms,
                             )
@@ -2305,7 +2363,9 @@ async def telnyx_ai_call_complete(
 
         # LAYER 1.5: Check if AI already sent registration URL in conversation messages
         # This prevents duplicates when AI sends link directly via Telnyx messaging
+        # Also extract location/level from tool_calls for URL building
         ai_sent_registration_url_voice = False
+        voice_tool_call_url = None
         if is_registration_request and not sms_already_sent_for_call and not is_test_phone:
             try:
                 telnyx_conv_id_for_check = (
@@ -2323,6 +2383,37 @@ async def telnyx_ai_call_complete(
                             if "britishswimschool.com" in msg_text and "register" in msg_text:
                                 ai_sent_registration_url_voice = True
                                 logger.info(f"[VOICE-AI-DEDUP] AI already sent registration URL: {msg_text[:100]}")
+                                break
+
+                        # Extract location/level from tool_calls in conversation messages
+                        for msg in voice_messages:
+                            tool_calls_voice = msg.get("tool_calls")
+                            if not tool_calls_voice:
+                                continue
+                            for tc in tool_calls_voice:
+                                fn = tc.get("function", tc) if isinstance(tc, dict) else {}
+                                fn_name = fn.get("name", "")
+                                if "registration" in fn_name.lower() or "send_registration" in fn_name.lower():
+                                    args = fn.get("arguments", {})
+                                    if isinstance(args, str):
+                                        try:
+                                            args = json.loads(args)
+                                        except Exception:
+                                            args = {}
+                                    tc_location = args.get("location")
+                                    tc_level = args.get("level")
+                                    if tc_location:
+                                        try:
+                                            from app.utils.registration_url_builder import build_registration_url
+                                            tc_loc_code = _map_location_to_code(tc_location)
+                                            tc_level_name = _normalize_level_name(tc_level) if tc_level else None
+                                            if tc_loc_code:
+                                                voice_tool_call_url = build_registration_url(tc_loc_code, tc_level_name)
+                                                logger.info(f"[VOICE-TOOL-EXTRACT] Built URL from tool call: {voice_tool_call_url}")
+                                        except Exception as e:
+                                            logger.warning(f"[VOICE-TOOL-EXTRACT] Failed to build URL: {e}")
+                                    break
+                            if voice_tool_call_url:
                                 break
             except Exception as e:
                 logger.warning(f"[VOICE-AI-DEDUP] Failed to check conversation messages: {e}")
@@ -2381,14 +2472,24 @@ async def telnyx_ai_call_complete(
         # [SMS-DEBUG] Log final SMS decision
         logger.info(
             f"[SMS-DEBUG] SMS decision - tenant_id={tenant_id}, "
-            f"link_already_sent={link_already_sent}, sms_already_sent_for_call={sms_already_sent_for_call}, "
+            f"link_already_sent={link_already_sent}, ai_sent_url_voice={ai_sent_registration_url_voice}, "
+            f"sms_already_sent_for_call={sms_already_sent_for_call}, "
             f"is_registration_request={is_registration_request}, has_phone={bool(from_number)}, "
-            f"will_send={is_registration_request and from_number and not link_already_sent and not sms_already_sent_for_call}"
+            f"will_send={is_registration_request and from_number and not (link_already_sent and ai_sent_registration_url_voice) and not sms_already_sent_for_call}"
         )
 
-        if link_already_sent:
+        # Only trust link_already_sent if AI actually sent a URL (confirmed by message check).
+        # The AI often says "I sent the link" in the summary but didn't actually send a URL.
+        link_confirmed_sent = link_already_sent and ai_sent_registration_url_voice
+        if link_already_sent and not ai_sent_registration_url_voice:
             logger.info(
-                f"Skipping registration SMS - link already sent during call: "
+                f"[SMS-DEBUG] Summary says link sent but AI didn't actually send URL - overriding link_already_sent: "
+                f"tenant_id={tenant_id}, phone={from_number}"
+            )
+
+        if link_confirmed_sent:
+            logger.info(
+                f"Skipping registration SMS - link already sent during call (confirmed by AI messages): "
                 f"tenant_id={tenant_id}, phone={from_number}"
             )
         elif sms_already_sent_for_call:
@@ -2419,7 +2520,11 @@ async def telnyx_ai_call_complete(
                 # Fulfill the promise (send SMS with registration info)
                 # Pass summary, caller_intent, and transcript so dynamic URL can be built from context
                 # IMPORTANT: caller_intent contains the location/level details needed for URL building
+                # If we extracted a URL from tool_calls, inject it so extract_url_from_ai_response picks it up
                 ai_response_text = f"{summary or ''}\n{caller_intent or ''}\n{transcript or ''}"
+                if voice_tool_call_url:
+                    ai_response_text = f"{ai_response_text}\nRegistration link: {voice_tool_call_url}"
+                    logger.info(f"[VOICE] Injected tool_call_url into ai_response: {voice_tool_call_url}")
                 logger.info("=" * 60)
                 logger.info("SENDING POST-CALL REGISTRATION SMS")
                 logger.info(f"Tenant: {tenant_id}, Phone: {from_number}, Name: {caller_name}")
@@ -2871,6 +2976,25 @@ async def send_registration_link_tool(
                 print(f"[TOOL DEBUG] Found call record - from={caller_phone}, tenant={tenant_id}")
             else:
                 print(f"[TOOL DEBUG] No call record found for call_control_id={call_control_id}")
+                # Fallback: query Telnyx API to get caller phone from call_control_id
+                if settings.telnyx_api_key:
+                    try:
+                        import httpx
+                        async with httpx.AsyncClient(
+                            base_url="https://api.telnyx.com/v2",
+                            headers={"Authorization": f"Bearer {settings.telnyx_api_key}"},
+                            timeout=10.0,
+                        ) as client:
+                            resp = await client.get(f"/calls/{call_control_id}")
+                            if resp.status_code == 200:
+                                call_data = resp.json().get("data", {})
+                                caller_phone = call_data.get("from") or call_data.get("from_display_name")
+                                to_number = call_data.get("to")
+                                print(f"[TOOL DEBUG] Telnyx API lookup - from={caller_phone}, to={to_number}")
+                            else:
+                                print(f"[TOOL DEBUG] Telnyx API call lookup failed: {resp.status_code} {resp.text[:200]}")
+                    except Exception as e:
+                        print(f"[TOOL DEBUG] Telnyx API call lookup error: {e}")
 
         # Fallback: check body for phone number (from AI parameter)
         if not caller_phone:
@@ -2887,15 +3011,16 @@ async def send_registration_link_tool(
         )
 
         if not caller_phone:
-            # For SMS conversations, Telnyx doesn't send x-telnyx-call-control-id
-            # The SMS will be sent via the ai-call-complete webhook instead
+            # Can't send SMS right now - will be sent post-call by ai-call-complete webhook.
+            # Return a success-like response so the AI continues the conversation naturally.
             logger.info(
-                "[TOOL] No caller phone found (expected for SMS conversations) - "
-                "SMS will be sent via ai-call-complete webhook instead"
+                "[TOOL] No caller phone found - SMS will be sent via ai-call-complete webhook. "
+                "Returning success to AI so it continues talking."
             )
             return JSONResponse(content={
-                "status": "deferred",
-                "message": "SMS will be sent when conversation completes"
+                "status": "ok",
+                "result": "The registration link will be sent to the caller's phone via text message momentarily. "
+                          "Let the caller know the text is on its way and ask if there is anything else you can help with."
             })
 
         # Look up tenant by the Telnyx number if not already found

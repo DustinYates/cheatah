@@ -1,8 +1,9 @@
 """Follow-up worker for processing scheduled SMS follow-up tasks."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -23,6 +24,10 @@ from app.settings import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Fixed quiet hours: no outbound SMS between 9 PM and 8 AM in tenant timezone
+QUIET_HOURS_START = time(21, 0)  # 9:00 PM
+QUIET_HOURS_END = time(8, 0)    # 8:00 AM
 
 
 class FollowUpTaskPayload(BaseModel):
@@ -75,6 +80,11 @@ async def process_followup_task(
         if not sms_provider:
             logger.warning(f"Could not get SMS provider for tenant {payload.tenant_id}")
             return {"status": "skipped", "reason": "provider_not_configured"}
+
+        # Check quiet hours - defer if outside allowed sending window
+        defer_result = await _check_quiet_hours_and_defer(sms_config, payload)
+        if defer_result is not None:
+            return defer_result
 
         # Check Do Not Contact list - skip if blocked
         dnc_service = DncService(db)
@@ -233,3 +243,76 @@ def _generate_initial_message(lead: Lead, sms_config: TenantSmsConfig) -> str:
         if first_name:
             return f"Hi {first_name}! Thanks for reaching out. I wanted to follow up and see how I can help you today."
         return "Hi! Thanks for reaching out. I wanted to follow up and see how I can help you today."
+
+
+def _is_quiet_hours(tz_name: str) -> bool:
+    """Check if current time is within quiet hours (9 PM - 8 AM) in the given timezone."""
+    try:
+        tz = ZoneInfo(tz_name)
+    except (KeyError, ValueError):
+        tz = ZoneInfo("UTC")
+    now_local = datetime.now(timezone.utc).astimezone(tz).time()
+    # Quiet hours span midnight: 21:00 -> 08:00
+    return now_local >= QUIET_HOURS_START or now_local < QUIET_HOURS_END
+
+
+def _seconds_until_quiet_hours_end(tz_name: str) -> int:
+    """Calculate seconds from now until quiet hours end (8 AM) in the given timezone."""
+    try:
+        tz = ZoneInfo(tz_name)
+    except (KeyError, ValueError):
+        tz = ZoneInfo("UTC")
+    now = datetime.now(timezone.utc).astimezone(tz)
+    # Target is 8 AM today or tomorrow
+    target = now.replace(hour=QUIET_HOURS_END.hour, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return int((target - now).total_seconds())
+
+
+async def _check_quiet_hours_and_defer(
+    sms_config: TenantSmsConfig,
+    payload: FollowUpTaskPayload,
+) -> dict[str, Any] | None:
+    """If it's quiet hours, reschedule the follow-up and return a response dict.
+
+    Returns None if not in quiet hours (caller should proceed normally).
+    """
+    tz_name = sms_config.timezone or "UTC"
+    if not _is_quiet_hours(tz_name):
+        return None
+
+    delay_seconds = _seconds_until_quiet_hours_end(tz_name)
+    logger.info(
+        f"Quiet hours active for tenant {payload.tenant_id} (tz={tz_name}). "
+        f"Deferring follow-up for lead {payload.lead_id} by {delay_seconds}s"
+    )
+
+    # Reschedule via Cloud Tasks
+    from app.infrastructure.cloud_tasks import CloudTasksClient
+
+    worker_base_url = settings.cloud_tasks_worker_url
+    if worker_base_url and worker_base_url.endswith("/process-sms"):
+        worker_base_url = worker_base_url[:-12]
+    task_url = f"{worker_base_url.rstrip('/')}/followup" if worker_base_url else None
+
+    if not task_url:
+        logger.error("Cannot defer follow-up: cloud_tasks_worker_url not configured")
+        return {"status": "skipped", "reason": "cannot_defer_no_worker_url"}
+
+    cloud_tasks = CloudTasksClient()
+    await cloud_tasks.create_task_async(
+        payload={
+            "tenant_id": payload.tenant_id,
+            "lead_id": payload.lead_id,
+            "phone_number": payload.phone_number,
+        },
+        url=task_url,
+        delay_seconds=delay_seconds,
+    )
+
+    return {
+        "status": "deferred",
+        "reason": "quiet_hours",
+        "deferred_seconds": delay_seconds,
+    }

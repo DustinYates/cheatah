@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.services.conversation_service import ConversationService
 from app.domain.services.email_body_parser import EmailBodyParser
 from app.domain.services.lead_service import LeadService
 from app.infrastructure.cloud_tasks import CloudTasksClient
@@ -366,9 +367,20 @@ async def _process_sendgrid_email(
         if parsed.get("additional_fields"):
             metadata.update(parsed["additional_fields"])
 
+        # Create a conversation and store the email body so it appears in the lead timeline
+        conversation_service = ConversationService(db)
+        conversation = await conversation_service.create_conversation(
+            tenant_id=tenant_id,
+            channel="email",
+        )
+        await conversation_service.add_message(
+            tenant_id, conversation.id, "user", email_body
+        )
+
         # Capture lead using existing LeadService
         lead = await lead_service.capture_lead(
             tenant_id=tenant_id,
+            conversation_id=conversation.id,
             email=parsed.get("email"),
             phone=parsed.get("phone"),
             name=parsed.get("name"),

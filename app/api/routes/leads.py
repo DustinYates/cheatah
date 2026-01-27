@@ -261,6 +261,9 @@ async def get_lead_conversation(
             detail="No conversations associated with this lead",
         )
 
+    # Sort conversations chronologically (oldest first) for timeline display
+    conversations_list.sort(key=lambda c: c.created_at)
+
     return ConversationsResponse(
         conversations=[
             ConversationResponse(

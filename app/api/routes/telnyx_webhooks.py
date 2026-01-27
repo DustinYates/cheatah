@@ -2638,7 +2638,7 @@ async def telnyx_call_progress(
 
                     # Get duration from payload if available
                     duration_secs = payload.get("duration_seconds") or payload.get("duration") or 0
-                    if duration_secs:
+                    if duration_secs and int(duration_secs) > 0:
                         call.duration = int(duration_secs)
                     elif call.started_at:
                         # Calculate from timestamps

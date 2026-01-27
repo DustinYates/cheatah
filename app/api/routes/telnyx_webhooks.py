@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select, cast, String, func
+from sqlalchemy import or_, select, cast, String, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -207,20 +207,26 @@ async def get_dynamic_variables(
         return {"X": _get_fallback_prompt()}
 
     # Look up tenant by the Telnyx phone number being called
-    # Normalize phone number (remove any formatting)
+    # Check both telnyx_phone_number (English) and voice_phone_number (Spanish)
     normalized_to = _normalize_phone(to_number)
 
     stmt = select(TenantSmsConfig).where(
-        TenantSmsConfig.telnyx_phone_number == normalized_to
-    )
+        or_(
+            TenantSmsConfig.telnyx_phone_number == normalized_to,
+            TenantSmsConfig.voice_phone_number == normalized_to,
+        )
+    ).limit(1)
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
 
     # Also try without normalization if not found
     if not config:
         stmt = select(TenantSmsConfig).where(
-            TenantSmsConfig.telnyx_phone_number == to_number
-        )
+            or_(
+                TenantSmsConfig.telnyx_phone_number == to_number,
+                TenantSmsConfig.voice_phone_number == to_number,
+            )
+        ).limit(1)
         result = await db.execute(stmt)
         config = result.scalar_one_or_none()
 
@@ -823,8 +829,6 @@ async def _get_tenant_from_telnyx_number(
     Returns:
         Tenant ID or None if not found
     """
-    from sqlalchemy import or_
-
     # Normalize phone number
     normalized = _normalize_phone(phone_number)
 

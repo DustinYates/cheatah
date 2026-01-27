@@ -54,7 +54,7 @@ When the caller asks for a registration link or sign-up link:
 - URLs MUST include ?loc= parameter with the location code
 - URLs MUST include &type= parameter with the level/class type
 - NEVER send the base URL without these parameters
-- Format: https://britishswimschool.com/cypress-spring/register/?loc={LOCATION_CODE}&type={TYPE_CODE}
+- Format: https://britishswimschool.com/cypress-spring/register/?loc={{LOCATION_CODE}}&type={{TYPE_CODE}}
 - Example: https://britishswimschool.com/cypress-spring/register/?loc=LALANG&type=Starfish
 - Location codes: LALANG (Langham Creek), LAFCypress (Cypress), 24Spring (Spring)
 - If you don't know the location or level, ASK before sending any link
@@ -188,7 +188,7 @@ Cuando el llamante pida un enlace de registro o inscripcion:
 - Las URLs DEBEN incluir parametro ?loc= con el codigo de ubicacion
 - Las URLs DEBEN incluir parametro &type= con el nivel/tipo de clase
 - NUNCA envies la URL base sin estos parametros
-- Formato: https://britishswimschool.com/cypress-spring/register/?loc={CODIGO_UBICACION}&type={CODIGO_TIPO}
+- Formato: https://britishswimschool.com/cypress-spring/register/?loc={{CODIGO_UBICACION}}&type={{CODIGO_TIPO}}
 - Ejemplo: https://britishswimschool.com/cypress-spring/register/?loc=LALANG&type=Starfish
 - Codigos de ubicacion: LALANG (Langham Creek), LAFCypress (Cypress), 24Spring (Spring)
 - Si no sabes la ubicacion o nivel, PREGUNTA antes de enviar cualquier enlace

@@ -231,9 +231,11 @@ class EmailService:
             from_email, sender_name, body, subject=subject, is_lead_capture_email=should_capture_lead
         )
         
-        print(f"[LEAD_CAPTURE] subject='{subject}', should_capture={should_capture_lead}, has_extracted_info={extracted_info is not None}, existing_lead_id={email_conversation.lead_id}", flush=True)
-        print(f"[LEAD_CAPTURE] extracted_info={extracted_info}", flush=True)
-        logger.info(f"Lead capture check: subject='{subject}', should_capture={should_capture_lead}, has_extracted_info={extracted_info is not None}, has_existing_lead={email_conversation.lead_id is not None}")
+        # Only log subject details when it matches configured prefixes (privacy protection)
+        if should_capture_lead:
+            print(f"[LEAD_CAPTURE] subject='{subject}', has_extracted_info={extracted_info is not None}, existing_lead_id={email_conversation.lead_id}", flush=True)
+            print(f"[LEAD_CAPTURE] extracted_info={extracted_info}", flush=True)
+            logger.info(f"Lead capture check: subject='{subject}', has_extracted_info={extracted_info is not None}, has_existing_lead={email_conversation.lead_id is not None}")
 
         # Only capture leads from emails with matching subject prefixes
         if extracted_info and should_capture_lead:
@@ -273,7 +275,7 @@ class EmailService:
                 print(f"[LEAD_CAPTURE] ERROR: {type(e).__name__}: {e}", flush=True)
                 logger.error(f"Error capturing lead: {e}", exc_info=True)
         elif not should_capture_lead:
-            print(f"[LEAD_CAPTURE] SKIP: subject '{subject}' does not match configured prefixes", flush=True)
+            print(f"[LEAD_CAPTURE] SKIP: subject does not match configured prefixes", flush=True)
             logger.info(f"Skipping lead capture - subject does not match prefixes")
         else:
             print(f"[LEAD_CAPTURE] SKIP: no contact info extracted from email", flush=True)
@@ -431,14 +433,16 @@ class EmailService:
                     continue
                 
                 subject = message.get("subject", "")
-                print(f"[EMAIL_SERVICE] Processing inbound email: subject='{subject}', from='{message.get('from', '')}'", flush=True)
-                logger.info(f"Processing inbound email: subject='{subject}', from='{message.get('from', '')}'")
 
                 # Only process emails with subjects matching configured lead capture prefixes
+                # Check BEFORE logging to avoid exposing non-matching subjects (privacy)
                 if not self._should_capture_lead_from_subject(subject, email_config):
-                    print(f"[EMAIL_SERVICE] SKIPPING email - subject '{subject}' does not match configured prefixes", flush=True)
-                    logger.info(f"Skipping email - subject does not match lead capture prefixes: {subject}")
+                    print(f"[EMAIL_SERVICE] SKIPPING email - subject does not match configured prefixes", flush=True)
                     continue
+
+                # Only log subject details for emails that match our prefixes
+                print(f"[EMAIL_SERVICE] Processing inbound email: subject='{subject}', from='{message.get('from', '')}'", flush=True)
+                logger.info(f"Processing inbound email: subject='{subject}', from='{message.get('from', '')}')")
 
                 # Process the inbound email (lead capture decision happens inside based on subject)
                 result = await self.process_inbound_email(
@@ -674,10 +678,6 @@ class EmailService:
             if not changed:
                 break
 
-        print(f"[LEAD_CAPTURE] Checking subject '{cleaned_subject}' against prefixes", flush=True)
-        if cleaned_subject != subject_lower:
-            print(f"[LEAD_CAPTURE] Original subject: '{subject_lower}'", flush=True)
-
         for prefix in prefixes:
             # Strip whitespace from prefix to handle any trailing spaces in database
             prefix_lower = (prefix or "").lower().strip()
@@ -686,8 +686,8 @@ class EmailService:
                 logger.debug(f"Subject '{subject}' matches prefix '{prefix}'")
                 return True
 
-        print(f"[LEAD_CAPTURE] NO MATCH: Subject '{subject}' does not match any prefixes: {prefixes}", flush=True)
-        logger.debug(f"Subject '{subject}' does not match any prefixes: {prefixes}")
+        # Don't log subject for non-matching emails (privacy protection)
+        logger.debug(f"Subject does not match any configured prefixes")
         return False
 
     def _parse_booking_page_subject(self, subject: str) -> dict[str, str] | None:

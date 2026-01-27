@@ -35,9 +35,9 @@ MESSAGE_DEDUP_TTL_SECONDS = 300
 # TTL for event ID-based dedup (10 minutes - prevents processing same webhook twice)
 EVENT_DEDUP_TTL_SECONDS = 600
 
-# TTL for phone-based registration SMS dedup (1 hour - matches promise_fulfillment TTL)
+# TTL for phone-based registration SMS dedup (30 seconds - matches promise_fulfillment TTL)
 # This prevents duplicate SMS when multiple webhook events arrive for the same call
-PHONE_SMS_DEDUP_TTL_SECONDS = 3600
+PHONE_SMS_DEDUP_TTL_SECONDS = 30
 
 # Voice call event types from Telnyx (any call.* event is a voice interaction)
 VOICE_EVENT_TYPES = {
@@ -1625,11 +1625,29 @@ async def telnyx_ai_call_complete(
                             next_seq = (last_msg.sequence_number + 1) if last_msg else 1
 
                             # Store each actual message individually
+                            # Filter out tool call results and API error responses
                             for msg in actual_messages:
                                 msg_role = msg.get("role", "user")
                                 msg_content = msg.get("text", msg.get("content", ""))
 
+                                # Skip tool/function messages (these are API call results)
+                                if msg_role in ("tool", "function", "system"):
+                                    logger.debug(f"Skipping {msg_role} message from Telnyx AI conversation")
+                                    continue
+
+                                # Skip messages that look like API error responses
                                 if msg_content and msg_content.strip():
+                                    content_stripped = msg_content.strip()
+                                    # Check if content looks like a JSON error response
+                                    if content_stripped.startswith("{") and (
+                                        '"http_status"' in content_stripped
+                                        or '"errors"' in content_stripped
+                                        or '"error"' in content_stripped
+                                        or '"http_body"' in content_stripped
+                                    ):
+                                        logger.warning(f"Skipping API error response from Telnyx AI conversation: {content_stripped[:200]}")
+                                        continue
+
                                     new_msg = Message(
                                         conversation_id=sms_conversation.id,
                                         role=msg_role,
@@ -1645,11 +1663,23 @@ async def telnyx_ai_call_complete(
 
                             # Build transcript from assistant messages for class level detection
                             # The assistant messages contain specific class recommendations like "Young Adult Level 3"
-                            assistant_texts = [
-                                msg.get("text", msg.get("content", ""))
-                                for msg in actual_messages
-                                if msg.get("role") == "assistant"
-                            ]
+                            # Filter out error responses and tool messages
+                            assistant_texts = []
+                            for msg in actual_messages:
+                                if msg.get("role") != "assistant":
+                                    continue
+                                content = msg.get("text", msg.get("content", ""))
+                                if not content or not content.strip():
+                                    continue
+                                # Skip if it looks like an API error response
+                                content_stripped = content.strip()
+                                if content_stripped.startswith("{") and (
+                                    '"http_status"' in content_stripped
+                                    or '"errors"' in content_stripped
+                                    or '"error"' in content_stripped
+                                ):
+                                    continue
+                                assistant_texts.append(content)
                             if assistant_texts:
                                 actual_assistant_transcript = "\n".join(assistant_texts)
                                 logger.info(f"Built actual assistant transcript ({len(actual_assistant_transcript)} chars) for registration link")
@@ -1838,8 +1868,8 @@ async def telnyx_ai_call_complete(
                         if last_sms_sent:
                             try:
                                 last_sent_time = datetime.fromisoformat(last_sms_sent.replace("Z", "+00:00"))
-                                # Skip if SMS was sent within the last hour
-                                if (datetime.utcnow().replace(tzinfo=None) - last_sent_time.replace(tzinfo=None)).total_seconds() < 3600:
+                                # Skip if SMS was sent within the last 30 seconds
+                                if (datetime.utcnow().replace(tzinfo=None) - last_sent_time.replace(tzinfo=None)).total_seconds() < 30:
                                     db_sms_already_sent = True
                                     logger.info(f"[SMS] DB dedup - skipping, sent at {last_sms_sent}")
                             except Exception as parse_err:
@@ -2495,8 +2525,63 @@ async def telnyx_call_progress(
             or ""
         )
 
+        # Handle call.initiated or call.answered - create Call record early
+        # This ensures the Call record exists when tools like send_registration_link
+        # are called during the call (they need to look up caller phone by call_control_id)
+        if event_type in ("call.initiated", "call.answered") and call_control_id:
+            # Check if Call record already exists
+            stmt = select(Call).where(Call.call_sid == call_control_id)
+            result = await db.execute(stmt)
+            existing_call = result.scalar_one_or_none()
+
+            if not existing_call:
+                # Extract phone numbers from payload
+                from_number = (
+                    payload.get("from")
+                    or payload.get("caller_id_number")
+                    or payload.get("from_number")
+                    or ""
+                )
+                to_number = (
+                    payload.get("to")
+                    or payload.get("called_number")
+                    or payload.get("to_number")
+                    or ""
+                )
+
+                # Look up tenant by the Telnyx phone number (to_number)
+                tenant_id = None
+                if to_number:
+                    tenant_id = await _get_tenant_from_telnyx_number(to_number, db)
+
+                if tenant_id and from_number:
+                    # Create Call record so tools can look it up during the call
+                    new_call = Call(
+                        tenant_id=tenant_id,
+                        call_sid=call_control_id,
+                        from_number=from_number,
+                        to_number=to_number,
+                        direction="inbound",
+                        status="in-progress",
+                        duration=0,
+                        started_at=datetime.utcnow(),
+                    )
+                    db.add(new_call)
+                    await db.commit()
+                    logger.info(
+                        f"Created Call record on {event_type}: id={new_call.id}, "
+                        f"call_sid={call_control_id}, from={from_number}, to={to_number}"
+                    )
+                else:
+                    logger.warning(
+                        f"Could not create Call record on {event_type}: "
+                        f"tenant_id={tenant_id}, from={from_number}, to={to_number}"
+                    )
+            else:
+                logger.debug(f"Call record already exists for {call_control_id}")
+
         # Handle call.hangup event - update duration
-        if event_type == "call.hangup":
+        elif event_type == "call.hangup":
             # Try to find existing call record
             if call_control_id:
                 stmt = select(Call).where(Call.call_sid == call_control_id)
@@ -2759,10 +2844,15 @@ async def send_registration_link_tool(
         )
 
         if not caller_phone:
-            logger.error("[TOOL] No caller phone number found - check call_control_id lookup")
+            # For SMS conversations, Telnyx doesn't send x-telnyx-call-control-id
+            # The SMS will be sent via the ai-call-complete webhook instead
+            logger.info(
+                "[TOOL] No caller phone found (expected for SMS conversations) - "
+                "SMS will be sent via ai-call-complete webhook instead"
+            )
             return JSONResponse(content={
-                "status": "error",
-                "message": "Could not determine caller phone number from call"
+                "status": "deferred",
+                "message": "SMS will be sent when conversation completes"
             })
 
         # Look up tenant by the Telnyx number if not already found
@@ -2818,6 +2908,7 @@ async def send_registration_link_tool(
         )
 
         # Fulfill the promise (sends SMS)
+        # Include the full URL in ai_response so fulfillment service can extract it
         result = await fulfillment_service.fulfill_promise(
             tenant_id=tenant_id,
             conversation_id=None,  # No conversation ID for tool calls
@@ -2825,7 +2916,7 @@ async def send_registration_link_tool(
             phone=caller_phone,
             name=None,  # Could extract from call if needed
             messages=None,
-            ai_response=f"Registration link for {level} at {location}",
+            ai_response=f"Here is the registration link: {registration_url}",
         )
 
         logger.info(f"[TOOL] Registration link send result: {result}")

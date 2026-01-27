@@ -27,8 +27,8 @@ from app.core.phone import normalize_phone_for_dedup
 
 logger = logging.getLogger(__name__)
 
-# Deduplication TTL in seconds (1 hour)
-DEDUP_TTL_SECONDS = 3600
+# Deduplication TTL in seconds (30 seconds - short window to prevent race conditions only)
+DEDUP_TTL_SECONDS = 30
 
 # Test phone numbers that bypass dedup (for testing purposes)
 # These numbers can receive multiple SMS within the dedup window

@@ -27,8 +27,8 @@ from app.core.phone import normalize_phone_for_dedup
 
 logger = logging.getLogger(__name__)
 
-# Deduplication TTL in seconds (30 seconds - short window to prevent race conditions only)
-DEDUP_TTL_SECONDS = 30
+# Deduplication TTL in seconds (3 minutes - prevents duplicates from AI + our fallback)
+DEDUP_TTL_SECONDS = 180
 
 # Test phone numbers that bypass dedup (for testing purposes)
 # These numbers can receive multiple SMS within the dedup window
@@ -128,15 +128,15 @@ class PromiseFulfillmentService:
         # This handles cases where Redis is disabled or unavailable
         # Skip if dedup is disabled or for test phone numbers
         #
-        # RESEND POLICY: Allow resends after 30 seconds cooloff only
-        # This prevents rapid duplicate sends while allowing reasonable resends
-        RESEND_COOLDOWN_SECONDS = 30
+        # RESEND POLICY: Allow resends after 3 minutes cooloff
+        # This prevents duplicates from AI-sent messages + our fallback
+        RESEND_COOLDOWN_SECONDS = 180
         if not dedup_disabled and not is_test_phone:
             try:
                 from sqlalchemy import delete
 
                 # First, delete any old records for this phone+asset that are past the cooldown
-                # This allows resends after 30 seconds
+                # This allows resends after 3 minutes
                 cooldown_cutoff = datetime.now(timezone.utc) - timedelta(seconds=RESEND_COOLDOWN_SECONDS)
                 delete_old = delete(SentAsset).where(
                     SentAsset.tenant_id == tenant_id,
@@ -147,7 +147,7 @@ class PromiseFulfillmentService:
                 delete_result = await self.session.execute(delete_old)
                 if delete_result.rowcount > 0:
                     logger.info(
-                        f"Deleted {delete_result.rowcount} old sent_asset records (>30s) for "
+                        f"Deleted {delete_result.rowcount} old sent_asset records (>3min) for "
                         f"phone={phone_normalized}, asset={promise.asset_type}"
                     )
 
@@ -167,11 +167,11 @@ class PromiseFulfillmentService:
                 inserted_id = result.scalar_one_or_none()
 
                 if inserted_id is None:
-                    # Conflict occurred - asset was already sent recently (within 30 seconds)
+                    # Conflict occurred - asset was already sent recently (within 3 minutes)
                     # MONITORING: Log duplicate detection with structured data for alerting
                     # This indicates a race condition was caught by the DB layer
                     logger.warning(
-                        "[DUPLICATE_BLOCKED] Registration link duplicate prevented by DB (sent within 30s)",
+                        "[DUPLICATE_BLOCKED] Registration link duplicate prevented by DB (sent within 3min)",
                         extra={
                             "event_type": "duplicate_send_blocked",
                             "dedup_layer": "database",

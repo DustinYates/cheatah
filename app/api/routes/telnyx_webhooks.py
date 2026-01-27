@@ -35,9 +35,9 @@ MESSAGE_DEDUP_TTL_SECONDS = 300
 # TTL for event ID-based dedup (10 minutes - prevents processing same webhook twice)
 EVENT_DEDUP_TTL_SECONDS = 600
 
-# TTL for phone-based registration SMS dedup (30 seconds - matches promise_fulfillment TTL)
+# TTL for phone-based registration SMS dedup (3 minutes - matches promise_fulfillment TTL)
 # This prevents duplicate SMS when multiple webhook events arrive for the same call
-PHONE_SMS_DEDUP_TTL_SECONDS = 30
+PHONE_SMS_DEDUP_TTL_SECONDS = 180
 
 # Voice call event types from Telnyx (any call.* event is a voice interaction)
 VOICE_EVENT_TYPES = {
@@ -1576,6 +1576,7 @@ async def telnyx_ai_call_complete(
                 # Try to fetch actual conversation messages from Telnyx API
                 actual_messages_stored = False
                 actual_assistant_transcript = None  # Will hold real bot messages for registration link
+                ai_sent_registration_url = False  # Track if AI already sent registration URL
                 telnyx_conv_id = conversation.get("id")  # Telnyx conversation ID from webhook
 
                 # Try multiple paths to find conversation ID for fetching messages
@@ -1683,6 +1684,16 @@ async def telnyx_ai_call_complete(
                             if assistant_texts:
                                 actual_assistant_transcript = "\n".join(assistant_texts)
                                 logger.info(f"Built actual assistant transcript ({len(actual_assistant_transcript)} chars) for registration link")
+
+                            # Check if AI already sent a registration URL in the conversation
+                            # This prevents our fallback from sending a duplicate
+                            ai_sent_registration_url = False
+                            for msg in actual_messages:
+                                msg_text = msg.get("text", msg.get("content", "")) or ""
+                                if "britishswimschool.com" in msg_text and "register" in msg_text:
+                                    ai_sent_registration_url = True
+                                    logger.info(f"[SMS-AI-DEDUP] AI already sent registration URL in conversation: {msg_text[:100]}")
+                                    break
                     except Exception as e:
                         logger.warning(f"Failed to fetch actual SMS messages from Telnyx API: {e}")
 
@@ -1850,10 +1861,14 @@ async def telnyx_ai_call_complete(
                 logger.info(
                     f"[SMS-DEBUG] SMS registration check - tenant_id={tenant_id}, "
                     f"is_registration_request={is_registration_request_sms}, "
-                    f"link_already_sent={link_already_sent_sms}, phone={from_number}"
+                    f"link_already_sent={link_already_sent_sms}, ai_sent_url={ai_sent_registration_url}, phone={from_number}"
                 )
 
-                if is_registration_request_sms and normalized_from and not link_already_sent_sms:
+                # Skip if AI already sent a registration URL in this conversation
+                if ai_sent_registration_url:
+                    logger.info(f"[SMS-AI-DEDUP] Skipping fallback SMS - AI already sent registration URL to {from_number}")
+
+                if is_registration_request_sms and normalized_from and not link_already_sent_sms and not ai_sent_registration_url:
                     # IMMEDIATE SMS SEND: Send registration link right away
                     # Use consistent phone normalization for dedup keys (last 10 digits)
                     normalized_for_dedup = normalize_phone_for_dedup(from_number)
@@ -1868,8 +1883,8 @@ async def telnyx_ai_call_complete(
                         if last_sms_sent:
                             try:
                                 last_sent_time = datetime.fromisoformat(last_sms_sent.replace("Z", "+00:00"))
-                                # Skip if SMS was sent within the last 30 seconds
-                                if (datetime.utcnow().replace(tzinfo=None) - last_sent_time.replace(tzinfo=None)).total_seconds() < 30:
+                                # Skip if SMS was sent within the last 3 minutes
+                                if (datetime.utcnow().replace(tzinfo=None) - last_sent_time.replace(tzinfo=None)).total_seconds() < 180:
                                     db_sms_already_sent = True
                                     logger.info(f"[SMS] DB dedup - skipping, sent at {last_sms_sent}")
                             except Exception as parse_err:
@@ -2269,8 +2284,8 @@ async def telnyx_ai_call_complete(
             try:
                 from app.persistence.models.sent_asset import SentAsset
 
-                # Check if registration_link was sent to this phone in the last 30 seconds (cooloff only)
-                cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=30)
+                # Check if registration_link was sent to this phone in the last 3 minutes
+                cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=3)
                 existing_send = await db.execute(
                     select(SentAsset.id).where(
                         SentAsset.tenant_id == tenant_id,

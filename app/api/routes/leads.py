@@ -525,7 +525,7 @@ async def send_asset_to_lead(
     elif result.get("status") == "skipped":
         return SendAssetResponse(
             success=False,
-            message="SMS skipped - already sent recently (30 second cooloff)",
+            message="SMS skipped - already sent recently (3 minute cooloff)",
         )
     else:
         return SendAssetResponse(

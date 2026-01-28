@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import or_, select, cast, String, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -2761,6 +2761,45 @@ async def telnyx_call_progress(
     except Exception as e:
         logger.error(f"Error processing call-progress webhook: {e}", exc_info=True)
         return JSONResponse(content={"status": "error", "message": str(e)})
+
+
+# =============================================================================
+# Voice Fallback (TeXML)
+# =============================================================================
+
+
+@router.post("/voice-fallback")
+async def voice_fallback(request: Request) -> Response:
+    """Fallback endpoint for when Telnyx AI Assistant is unavailable.
+
+    This endpoint is called when the primary AI Assistant webhook fails or times out.
+    It returns TeXML that plays an apology message and takes a voicemail.
+
+    Args:
+        request: FastAPI request
+
+    Returns:
+        TeXML response with apology message and voicemail recording
+    """
+    logger.warning("Voice fallback triggered - AI Assistant may be unavailable")
+
+    # Log request details for debugging
+    try:
+        body = await request.body()
+        logger.info(f"Voice fallback request body: {body.decode()[:500] if body else 'empty'}")
+    except Exception:
+        pass
+
+    # TeXML response: apology message + voicemail
+    texml = '''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna">We apologize, but we are experiencing technical difficulties and cannot take your call right now. Please leave a message after the beep and we will call you back as soon as possible.</Say>
+    <Record maxLength="120" finishOnKey="#" playBeep="true"/>
+    <Say voice="Polly.Joanna">Thank you for your message. Goodbye.</Say>
+    <Hangup/>
+</Response>'''
+
+    return Response(content=texml, media_type="application/xml")
 
 
 # =============================================================================

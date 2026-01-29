@@ -4,7 +4,7 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -13,14 +13,11 @@ from sqlalchemy import or_, select, cast, String, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.domain.services.prompt_service import PromptService
 from app.domain.services.sms_service import SmsService
-from app.domain.services.voice_prompt_transformer import transform_chat_to_voice, transform_chat_to_voice_es
 from app.infrastructure.cloud_tasks import CloudTasksClient
 from app.infrastructure.redis import redis_client
 from app.persistence.database import get_db
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
-from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 from app.settings import settings
 from app.core.phone import normalize_phone_for_dedup
 
@@ -114,223 +111,6 @@ def _verify_telnyx_webhook(request: Request) -> bool:
 router = APIRouter()
 
 
-class TelnyxDynamicVarsRequest(BaseModel):
-    """Request from Telnyx AI Assistant for dynamic variables.
-
-    Telnyx sends call metadata when requesting dynamic variables.
-    """
-
-    call_control_id: str | None = None
-    to: str | None = None  # The Telnyx number being called
-    from_: str | None = None  # The caller's number
-    direction: str | None = None  # "inbound" or "outbound"
-
-    class Config:
-        populate_by_name = True
-        # Allow 'from' as alias since it's a Python keyword
-        fields = {"from_": {"alias": "from"}}
-
-
-@router.post("/dynamic-variables")
-async def get_dynamic_variables(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict[str, Any]:
-    """Return dynamic variables for Telnyx AI Assistant.
-
-    Telnyx calls this webhook to fetch variables like the system prompt (X).
-    The tenant is identified by the Telnyx phone number being called.
-
-    Args:
-        request: FastAPI request (raw to handle various Telnyx formats)
-        db: Database session
-
-    Returns:
-        Dictionary with dynamic variables, including X (the composed prompt)
-    """
-    import json
-
-    # Parse raw body to handle different Telnyx formats
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-
-    # Log raw request for debugging
-    logger.info(f"Telnyx dynamic-variables raw body: {json.dumps(body)[:1500]}")
-
-    # Try multiple possible locations for phone numbers
-    # Telnyx may send: {to, from} or {data: {payload: {to, from}}} or {agent_target, end_user_target}
-    to_number = (
-        body.get("to")
-        or body.get("agent_target")
-        or body.get("telnyx_agent_target")
-        or (body.get("data", {}).get("payload", {}) or {}).get("to")
-        or (body.get("data", {}).get("payload", {}) or {}).get("agent_target")
-        or (body.get("payload", {}) or {}).get("to")
-        or ""
-    )
-    from_number = (
-        body.get("from")
-        or body.get("end_user_target")
-        or body.get("telnyx_end_user_target")
-        or (body.get("data", {}).get("payload", {}) or {}).get("from")
-        or (body.get("data", {}).get("payload", {}) or {}).get("end_user_target")
-        or (body.get("payload", {}) or {}).get("from")
-        or ""
-    )
-    call_control_id = (
-        body.get("call_control_id")
-        or body.get("call_session_id")
-        or body.get("conversation_id")
-        or (body.get("data", {}) or {}).get("call_control_id")
-        or ""
-    )
-
-    # Handle nested phone number objects
-    if isinstance(to_number, dict):
-        to_number = to_number.get("phone_number", "")
-    if isinstance(from_number, dict):
-        from_number = from_number.get("phone_number", "")
-
-    logger.info(
-        f"Telnyx dynamic variables request",
-        extra={
-            "to": to_number,
-            "from": from_number,
-            "call_control_id": call_control_id,
-        },
-    )
-
-    if not to_number:
-        logger.warning("No 'to' number in Telnyx request")
-        return {"X": _get_fallback_prompt()}
-
-    # Look up tenant by the Telnyx phone number being called
-    # Check both telnyx_phone_number (English) and voice_phone_number (Spanish)
-    normalized_to = _normalize_phone(to_number)
-
-    stmt = select(TenantSmsConfig).where(
-        or_(
-            TenantSmsConfig.telnyx_phone_number == normalized_to,
-            TenantSmsConfig.voice_phone_number == normalized_to,
-        )
-    ).limit(1)
-    result = await db.execute(stmt)
-    config = result.scalar_one_or_none()
-
-    # Also try without normalization if not found
-    if not config:
-        stmt = select(TenantSmsConfig).where(
-            or_(
-                TenantSmsConfig.telnyx_phone_number == to_number,
-                TenantSmsConfig.voice_phone_number == to_number,
-            )
-        ).limit(1)
-        result = await db.execute(stmt)
-        config = result.scalar_one_or_none()
-
-    if not config:
-        logger.warning(f"No tenant found for Telnyx number: {to_number}")
-        return {"X": _get_fallback_prompt()}
-
-    tenant_id = config.tenant_id
-
-    # Detect language based on which phone number received the call
-    # voice_phone_number = Spanish line, telnyx_phone_number = English line
-    is_spanish = config.voice_phone_number and _normalize_phone(to_number) == _normalize_phone(config.voice_phone_number)
-    if not is_spanish and config.voice_phone_number:
-        # Also try unnormalized comparison
-        is_spanish = to_number == config.voice_phone_number
-
-    detected_language = "spanish" if is_spanish else "english"
-    logger.info(f"Detected language: {detected_language} for phone {to_number}")
-
-    # Get tenant's voice config for fallback prompt and transfer settings
-    voice_config_stmt = select(TenantVoiceConfig).where(
-        TenantVoiceConfig.tenant_id == tenant_id
-    )
-    voice_config_result = await db.execute(voice_config_stmt)
-    voice_config = voice_config_result.scalar_one_or_none()
-
-    # Get transfer number if configured for live transfers
-    transfer_number = None
-    if voice_config and voice_config.handoff_mode == "live_transfer" and voice_config.live_transfer_number:
-        transfer_number = voice_config.live_transfer_number
-        logger.info(f"Live transfer configured to: {transfer_number}")
-
-    # Compose the voice prompt for this tenant
-    prompt_service = PromptService(db)
-
-    # Check if tenant has a dedicated voice prompt bundle
-    has_dedicated_voice = await prompt_service.has_dedicated_voice_prompt(tenant_id)
-
-    # Get the appropriate prompt based on language
-    if is_spanish:
-        # Try to get Spanish-specific prompt first
-        all_prompts = await prompt_service.get_all_channel_prompts(tenant_id)
-        voice_prompt = all_prompts.get("voice_es_prompt")
-        if not voice_prompt:
-            # Fall back to English voice prompt
-            voice_prompt = await prompt_service.compose_prompt_voice(tenant_id)
-            logger.info(f"No Spanish prompt found, using English prompt for tenant {tenant_id}")
-    else:
-        voice_prompt = await prompt_service.compose_prompt_voice(tenant_id)
-
-    if not voice_prompt:
-        logger.warning(f"No prompt configured for tenant {tenant_id}")
-        # Use tenant-specific fallback if available, otherwise generic
-        if voice_config and voice_config.fallback_voice_prompt:
-            return {"X": voice_config.fallback_voice_prompt}
-        return {"X": _get_fallback_prompt()}
-
-    # Only apply transform_chat_to_voice if using chat prompt fallback
-    # Dedicated voice prompts are already voice-safe and shouldn't be wrapped
-    if not has_dedicated_voice:
-        if is_spanish:
-            voice_prompt = transform_chat_to_voice_es(voice_prompt)
-        else:
-            voice_prompt = transform_chat_to_voice(voice_prompt)
-
-    # Add transfer instructions if transfer is configured
-    if transfer_number:
-        if is_spanish:
-            transfer_instructions = f"""
-
-## TRANSFERENCIA A HUMANO (MUY IMPORTANTE)
-Cuando el llamante pida hablar con una persona real, humano, gerente, o representante:
-1. Di: "Claro, permíteme transferirte con un representante ahora mismo."
-2. USA INMEDIATAMENTE la funcion Transfer para transferir la llamada al numero {transfer_number}
-3. NO preguntes si hay algo mas - simplemente transfiere
-4. Si la funcion Transfer no esta disponible, di: "Le avisare para que se comunique contigo. ¿Hay algo mas en lo que pueda ayudarte antes de colgar?"
-"""
-        else:
-            transfer_instructions = f"""
-
-## TRANSFER TO HUMAN (CRITICAL)
-When the caller asks to speak with a real person, human, manager, or representative:
-1. Say: "Of course, let me transfer you to a representative right now."
-2. IMMEDIATELY USE the Transfer function to transfer the call to {transfer_number}
-3. Do NOT ask if there's anything else - just transfer
-4. If the Transfer function is not available, say: "I will let them know to contact you. Is there anything else I can help you with before we hang up?"
-"""
-        voice_prompt = voice_prompt + transfer_instructions
-
-    logger.info(
-        f"Returning dynamic variables for tenant",
-        extra={
-            "tenant_id": tenant_id,
-            "to": to_number,
-            "prompt_length": len(voice_prompt),
-            "has_dedicated_voice": has_dedicated_voice,
-            "language": detected_language,
-            "has_transfer": bool(transfer_number),
-        },
-    )
-
-    return {"X": voice_prompt}
-
-
 def _normalize_phone(phone: str) -> str:
     """Normalize phone number to E.164 format.
 
@@ -421,27 +201,6 @@ async def _detect_language_from_phone(
 
     logger.info(f"Could not determine language for phone number {to_number}")
     return None
-
-
-def _get_fallback_prompt() -> str:
-    """Return a fallback prompt when tenant cannot be identified or prompt fails."""
-    return """You are a voice assistant for a local business. You communicate through spoken conversation only.
-
-## CRITICAL VOICE RULES
-- Keep responses SHORT (2-3 sentences max)
-- Ask only ONE question per turn
-- NEVER read URLs, email addresses, or special characters aloud
-- For links/websites: "I can text that to you. What's the best number?"
-- Sound warm and helpful, not robotic
-
-## YOUR ROLE
-- Greet callers warmly and ask how you can help
-- Answer basic questions about services, hours, and location
-- If you don't know something, say: "I don't have that specific information, but I can take your details and have someone call you back."
-- Collect their name and best callback number if needed
-
-## REMEMBER
-You are on a PHONE CALL. Keep it conversational, brief, and helpful."""
 
 
 async def _sync_lead_to_contact(
@@ -2071,6 +1830,46 @@ async def telnyx_ai_call_complete(
             db.add(call)
             await db.flush()  # Get the call ID
             logger.info(f"Created new Call record: id={call.id}, language={detected_language}")
+
+        # If duration is still 0, try to calculate from Telnyx API conversation timestamps
+        if (not call.duration or call.duration == 0) and call_id and settings.telnyx_api_key:
+            try:
+                from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+                telnyx_ai_duration = TelnyxAIService(settings.telnyx_api_key)
+                conv_data = await telnyx_ai_duration.find_conversation_by_call_control_id(call_id)
+                if conv_data:
+                    conv_created = conv_data.get("created_at")
+                    conv_updated = conv_data.get("updated_at")
+                    if conv_created and conv_updated and conv_created != conv_updated:
+                        from dateutil import parser as date_parser
+                        start_dt = date_parser.parse(str(conv_created))
+                        end_dt = date_parser.parse(str(conv_updated))
+                        calculated_duration = int((end_dt - start_dt).total_seconds())
+                        if calculated_duration > 0:
+                            call.duration = calculated_duration
+                            call.started_at = start_dt.replace(tzinfo=None)
+                            call.ended_at = end_dt.replace(tzinfo=None)
+                            logger.info(f"Calculated duration from Telnyx conversation timestamps: {calculated_duration}s")
+                    else:
+                        # Fallback: use conversation messages timestamps
+                        conv_id = conv_data.get("id")
+                        if conv_id:
+                            msgs = await telnyx_ai_duration.get_conversation_messages(conv_id)
+                            if msgs and len(msgs) >= 2:
+                                first_ts = msgs[0].get("created_at") or msgs[0].get("timestamp")
+                                last_ts = msgs[-1].get("created_at") or msgs[-1].get("timestamp")
+                                if first_ts and last_ts:
+                                    from dateutil import parser as date_parser
+                                    start_dt = date_parser.parse(str(first_ts))
+                                    end_dt = date_parser.parse(str(last_ts))
+                                    calculated_duration = int((end_dt - start_dt).total_seconds())
+                                    if calculated_duration > 0:
+                                        call.duration = calculated_duration
+                                        call.started_at = start_dt.replace(tzinfo=None)
+                                        call.ended_at = end_dt.replace(tzinfo=None)
+                                        logger.info(f"Calculated duration from message timestamps: {calculated_duration}s")
+            except Exception as e:
+                logger.warning(f"Failed to calculate duration from Telnyx API: {e}")
 
         # Store transcript and summary in call metadata or separate table
         # For now, we'll create a lead with the information

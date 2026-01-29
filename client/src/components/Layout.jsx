@@ -104,6 +104,9 @@ export default function Layout() {
                 <li>
                   <NavLink to="/analytics/widget">Widget</NavLink>
                 </li>
+                <li>
+                  <NavLink to="/analytics/savings">Savings</NavLink>
+                </li>
               </ul>
             )}
           </li>

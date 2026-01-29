@@ -198,6 +198,11 @@ class ApiClient {
     return this.request(`/analytics/widget/settings-snapshots${query ? `?${query}` : ''}`);
   }
 
+  async getSavingsAnalytics(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/analytics/savings${query ? `?${query}` : ''}`);
+  }
+
   async revealTelephonyCredential(field) {
     return this.request('/admin/telephony/credentials/reveal', {
       method: 'POST',

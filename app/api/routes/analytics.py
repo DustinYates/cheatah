@@ -21,6 +21,7 @@ from app.persistence.models.escalation import Escalation
 from app.persistence.models.lead import Lead
 from app.persistence.models.tenant import Tenant
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
+from app.persistence.models.sent_asset import SentAsset
 from app.persistence.models.widget_event import WidgetEvent
 
 router = APIRouter()
@@ -1878,4 +1879,236 @@ async def get_widget_settings_snapshots(
         timezone=effective_timezone,
         variations=variations,
         total_variations=len(variations),
+    )
+
+
+# Savings Analytics Models
+
+
+class ChannelSavingsDetail(BaseModel):
+    """Savings detail for a single channel."""
+
+    count: int  # calls or assistant messages
+    total_minutes: float
+    hours_saved: float
+    offshore_savings: float
+    onshore_savings: float
+
+
+class ConversionMetrics(BaseModel):
+    """Registration link conversion tracking."""
+
+    total_links_sent: int
+    unique_phones_sent: int
+    by_asset_type: dict[str, int]
+
+
+class SavingsAnalyticsResponse(BaseModel):
+    """Savings analytics response."""
+
+    start_date: str
+    end_date: str
+    timezone: str
+    total_hours_saved: float
+    total_offshore_savings: float
+    total_onshore_savings: float
+    voice: ChannelSavingsDetail
+    sms: ChannelSavingsDetail
+    web_chat: ChannelSavingsDetail
+    conversions: ConversionMetrics
+
+
+OFFSHORE_RATE = 7.0
+ONSHORE_RATE = 14.0
+SMS_MINUTES_PER_MESSAGE = 2.0
+WEB_MINUTES_PER_MESSAGE = 1.5
+
+
+@router.get("/savings", response_model=SavingsAnalyticsResponse)
+async def get_savings_analytics(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    start_date: Annotated[str | None, Query()] = None,
+    end_date: Annotated[str | None, Query()] = None,
+    timezone: Annotated[str | None, Query()] = None,
+) -> SavingsAnalyticsResponse:
+    """Get savings analytics showing cost savings from AI handling calls and messages."""
+    # Get tenant info
+    tenant_result = await db.execute(
+        select(Tenant.created_at).where(Tenant.id == tenant_id)
+    )
+    tenant_created_at = tenant_result.scalar_one_or_none()
+    if not tenant_created_at:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found",
+        )
+
+    # Resolve timezone
+    sms_config_result = await db.execute(
+        select(TenantSmsConfig.timezone).where(TenantSmsConfig.tenant_id == tenant_id)
+    )
+    tenant_timezone = sms_config_result.scalar_one_or_none()
+    requested_timezone = _resolve_timezone(timezone)
+    effective_timezone = (
+        _resolve_timezone(tenant_timezone) if tenant_timezone else requested_timezone
+    )
+
+    # Parse date range
+    tenant_start_date = tenant_created_at.date()
+    today = datetime.utcnow().date()
+    parsed_start = _normalize_date(start_date)
+    parsed_end = _normalize_date(end_date)
+
+    if parsed_start is None and parsed_end is None:
+        parsed_end = today
+        parsed_start = parsed_end - timedelta(days=29)
+    elif parsed_start is None and parsed_end is not None:
+        parsed_start = parsed_end - timedelta(days=29)
+    elif parsed_end is None and parsed_start is not None:
+        parsed_end = today
+
+    range_start = parsed_start or tenant_start_date
+    range_end = parsed_end or today
+
+    if range_start < tenant_start_date:
+        range_start = tenant_start_date
+    if range_end > today:
+        range_end = today
+    if range_start > range_end:
+        range_start = range_end
+
+    # Convert to UTC datetime range
+    tz = pytz.timezone(effective_timezone)
+    start_local = tz.localize(datetime.combine(range_start, time.min))
+    end_local = tz.localize(datetime.combine(range_end, time.max))
+    start_datetime = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
+    end_datetime = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
+
+    # Query 1: Voice call duration
+    call_timestamp = func.coalesce(Call.started_at, Call.created_at)
+    duration_seconds = func.coalesce(
+        func.nullif(Call.duration, 0),
+        func.extract("epoch", Call.ended_at - Call.started_at),
+        0,
+    )
+    voice_stmt = (
+        select(
+            func.count(Call.id).label("call_count"),
+            func.sum(duration_seconds).label("total_seconds"),
+        )
+        .where(
+            Call.tenant_id == tenant_id,
+            call_timestamp >= start_datetime,
+            call_timestamp <= end_datetime,
+        )
+    )
+    voice_result = await db.execute(voice_stmt)
+    voice_row = voice_result.one()
+    voice_call_count = int(voice_row.call_count or 0)
+    voice_total_seconds = float(voice_row.total_seconds or 0)
+    voice_total_minutes = voice_total_seconds / 60
+    voice_hours = voice_total_minutes / 60
+
+    # Query 2: SMS assistant message count
+    sms_msg_stmt = (
+        select(func.count(Message.id).label("count"))
+        .select_from(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.channel == "sms",
+            Message.role == "assistant",
+            Message.created_at >= start_datetime,
+            Message.created_at <= end_datetime,
+        )
+    )
+    sms_result = await db.execute(sms_msg_stmt)
+    sms_msg_count = sms_result.scalar() or 0
+    sms_human_minutes = sms_msg_count * SMS_MINUTES_PER_MESSAGE
+    sms_hours = sms_human_minutes / 60
+
+    # Query 3: Web chat assistant message count
+    web_msg_stmt = (
+        select(func.count(Message.id).label("count"))
+        .select_from(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.channel == "web",
+            Message.role == "assistant",
+            Message.created_at >= start_datetime,
+            Message.created_at <= end_datetime,
+        )
+    )
+    web_result = await db.execute(web_msg_stmt)
+    web_msg_count = web_result.scalar() or 0
+    web_human_minutes = web_msg_count * WEB_MINUTES_PER_MESSAGE
+    web_hours = web_human_minutes / 60
+
+    # Calculate totals
+    total_hours = voice_hours + sms_hours + web_hours
+    total_offshore = round(total_hours * OFFSHORE_RATE, 2)
+    total_onshore = round(total_hours * ONSHORE_RATE, 2)
+
+    # Query 4: Sent assets / conversion tracking
+    conversions_stmt = (
+        select(
+            SentAsset.asset_type,
+            func.count(SentAsset.id).label("total_sent"),
+            func.count(func.distinct(SentAsset.phone_normalized)).label("unique_phones"),
+        )
+        .where(
+            SentAsset.tenant_id == tenant_id,
+            SentAsset.sent_at >= start_datetime,
+            SentAsset.sent_at <= end_datetime,
+        )
+        .group_by(SentAsset.asset_type)
+    )
+    conversions_result = await db.execute(conversions_stmt)
+
+    total_links_sent = 0
+    unique_phones_sent = 0
+    by_asset_type: dict[str, int] = {}
+
+    for row in conversions_result:
+        count = int(row.total_sent or 0)
+        phones = int(row.unique_phones or 0)
+        total_links_sent += count
+        unique_phones_sent += phones
+        by_asset_type[row.asset_type] = count
+
+    return SavingsAnalyticsResponse(
+        start_date=range_start.isoformat(),
+        end_date=range_end.isoformat(),
+        timezone=effective_timezone,
+        total_hours_saved=round(total_hours, 2),
+        total_offshore_savings=total_offshore,
+        total_onshore_savings=total_onshore,
+        voice=ChannelSavingsDetail(
+            count=voice_call_count,
+            total_minutes=round(voice_total_minutes, 2),
+            hours_saved=round(voice_hours, 2),
+            offshore_savings=round(voice_hours * OFFSHORE_RATE, 2),
+            onshore_savings=round(voice_hours * ONSHORE_RATE, 2),
+        ),
+        sms=ChannelSavingsDetail(
+            count=sms_msg_count,
+            total_minutes=round(sms_human_minutes, 2),
+            hours_saved=round(sms_hours, 2),
+            offshore_savings=round(sms_hours * OFFSHORE_RATE, 2),
+            onshore_savings=round(sms_hours * ONSHORE_RATE, 2),
+        ),
+        web_chat=ChannelSavingsDetail(
+            count=web_msg_count,
+            total_minutes=round(web_human_minutes, 2),
+            hours_saved=round(web_hours, 2),
+            offshore_savings=round(web_hours * OFFSHORE_RATE, 2),
+            onshore_savings=round(web_hours * ONSHORE_RATE, 2),
+        ),
+        conversions=ConversionMetrics(
+            total_links_sent=total_links_sent,
+            unique_phones_sent=unique_phones_sent,
+            by_asset_type=by_asset_type,
+        ),
     )

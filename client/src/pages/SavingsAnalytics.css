@@ -92,6 +92,88 @@
   margin: 0;
 }
 
+/* Wide card for chart */
+.savings-analytics-card-wide {
+  margin-bottom: var(--spacing-md);
+}
+
+/* Chart legend */
+.savings-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.savings-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.savings-legend-swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Chart container */
+.savings-chart-container {
+  position: relative;
+  width: 100%;
+}
+
+.savings-chart-container svg {
+  display: block;
+}
+
+/* Tooltip */
+.savings-chart-tooltip {
+  position: absolute;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  z-index: 10;
+  pointer-events: none;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.25);
+  white-space: nowrap;
+}
+
+.savings-tooltip-date {
+  font-weight: 600;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(248, 250, 252, 0.15);
+}
+
+.savings-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.savings-tooltip-row .savings-legend-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.savings-tooltip-label {
+  flex: 1;
+  color: #94a3b8;
+}
+
+.savings-tooltip-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Savings highlight color */
 .savings-highlight {
   color: #16a34a !important;

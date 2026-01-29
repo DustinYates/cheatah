@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
@@ -94,6 +94,233 @@ const persistRange = (range, timeZone, setSearchParams, replace = false) => {
   setSearchParams(params, { replace });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(params));
 };
+
+const LINES = [
+  { key: 'ft_onshore', label: 'Full-Time Onshore', hoursPerWeek: 40, rate: 14, color: '#dc2626' },
+  { key: 'ft_offshore', label: 'Full-Time Offshore', hoursPerWeek: 40, rate: 7, color: '#f97316' },
+  { key: 'pt_onshore', label: 'Part-Time Onshore', hoursPerWeek: 20, rate: 14, color: '#8b5cf6' },
+  { key: 'pt_offshore', label: 'Part-Time Offshore', hoursPerWeek: 20, rate: 7, color: '#06b6d4' },
+];
+
+function CostSavingsChart({ startDate, endDate, timeZone }) {
+  const svgRef = useRef(null);
+  const [tooltip, setTooltip] = useState(null);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 320 });
+
+  useEffect(() => {
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width } = entry.contentRect;
+        if (width > 0) setDimensions({ width, height: 320 });
+      }
+    });
+    if (svgRef.current?.parentElement) {
+      observer.observe(svgRef.current.parentElement);
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  const chartData = useMemo(() => {
+    if (!startDate || !endDate) return null;
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const dayCount = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1);
+
+    const points = [];
+    for (let i = 0; i < dayCount; i++) {
+      const date = new Date(start);
+      date.setDate(date.getDate() + i);
+      const weeks = (i + 1) / 7;
+      const entry = { day: i, date };
+      for (const line of LINES) {
+        entry[line.key] = weeks * line.hoursPerWeek * line.rate;
+      }
+      points.push(entry);
+    }
+    return points;
+  }, [startDate, endDate]);
+
+  if (!chartData || chartData.length === 0) return null;
+
+  const padding = { top: 20, right: 20, bottom: 40, left: 70 };
+  const chartWidth = dimensions.width - padding.left - padding.right;
+  const chartHeight = dimensions.height - padding.top - padding.bottom;
+
+  const maxValue = chartData[chartData.length - 1]?.ft_onshore || 0;
+  const yMax = maxValue > 0 ? maxValue * 1.1 : 100;
+
+  const xScale = (i) => padding.left + (i / Math.max(1, chartData.length - 1)) * chartWidth;
+  const yScale = (v) => padding.top + chartHeight - (v / yMax) * chartHeight;
+
+  const buildPath = (key) => {
+    return chartData
+      .map((d, i) => `${i === 0 ? 'M' : 'L'}${xScale(i).toFixed(1)},${yScale(d[key]).toFixed(1)}`)
+      .join(' ');
+  };
+
+  // Y-axis ticks
+  const tickCount = 5;
+  const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => (yMax / tickCount) * i);
+
+  // X-axis labels
+  const labelCount = Math.min(chartData.length, 8);
+  const labelInterval = Math.max(1, Math.floor((chartData.length - 1) / (labelCount - 1)));
+  const xLabels = chartData.filter(
+    (_, i) => i % labelInterval === 0 || i === chartData.length - 1
+  );
+
+  const handleMouseMove = (e) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const dataIndex = Math.round(
+      ((mouseX - padding.left) / chartWidth) * (chartData.length - 1)
+    );
+    const clamped = Math.max(0, Math.min(chartData.length - 1, dataIndex));
+    const d = chartData[clamped];
+    if (d) {
+      setTooltip({
+        x: xScale(clamped),
+        y: padding.top,
+        data: d,
+      });
+    }
+  };
+
+  const formatAxisCurrency = (v) => {
+    if (v >= 1000) return `$${(v / 1000).toFixed(1)}k`;
+    return `$${Math.round(v)}`;
+  };
+
+  return (
+    <section className="savings-analytics-card savings-analytics-card-wide">
+      <div className="savings-analytics-card-header">
+        <div>
+          <h2>Cumulative Employee Cost Comparison</h2>
+          <p>What you would have paid to hire a person instead of using the AI bot.</p>
+        </div>
+      </div>
+      <div className="savings-chart-legend">
+        {LINES.map((line) => (
+          <span key={line.key} className="savings-legend-item">
+            <span className="savings-legend-swatch" style={{ backgroundColor: line.color }} />
+            {line.label} ({line.hoursPerWeek}hrs/wk @ ${line.rate}/hr)
+          </span>
+        ))}
+      </div>
+      <div className="savings-chart-container">
+        <svg
+          ref={svgRef}
+          width="100%"
+          height={dimensions.height}
+          viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
+          preserveAspectRatio="xMidYMid meet"
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => setTooltip(null)}
+        >
+          {/* Grid lines */}
+          {yTicks.map((tick) => (
+            <g key={tick}>
+              <line
+                x1={padding.left}
+                y1={yScale(tick)}
+                x2={padding.left + chartWidth}
+                y2={yScale(tick)}
+                stroke="var(--color-border-light, #e2e8f0)"
+                strokeDasharray={tick === 0 ? 'none' : '4,4'}
+              />
+              <text
+                x={padding.left - 8}
+                y={yScale(tick) + 4}
+                textAnchor="end"
+                fontSize="11"
+                fill="var(--color-text-muted, #94a3b8)"
+              >
+                {formatAxisCurrency(tick)}
+              </text>
+            </g>
+          ))}
+
+          {/* X-axis labels */}
+          {xLabels.map((d) => (
+            <text
+              key={d.day}
+              x={xScale(d.day)}
+              y={dimensions.height - 8}
+              textAnchor="middle"
+              fontSize="11"
+              fill="var(--color-text-muted, #94a3b8)"
+            >
+              {formatDateInTimeZone(d.date, 'MMM d', timeZone)}
+            </text>
+          ))}
+
+          {/* Lines */}
+          {LINES.map((line) => (
+            <path
+              key={line.key}
+              d={buildPath(line.key)}
+              fill="none"
+              stroke={line.color}
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+            />
+          ))}
+
+          {/* Tooltip crosshair */}
+          {tooltip && (
+            <>
+              <line
+                x1={tooltip.x}
+                y1={padding.top}
+                x2={tooltip.x}
+                y2={padding.top + chartHeight}
+                stroke="var(--color-text-muted, #94a3b8)"
+                strokeWidth="1"
+                strokeDasharray="4,4"
+                pointerEvents="none"
+              />
+              {LINES.map((line) => (
+                <circle
+                  key={line.key}
+                  cx={tooltip.x}
+                  cy={yScale(tooltip.data[line.key])}
+                  r="4"
+                  fill={line.color}
+                  stroke="white"
+                  strokeWidth="2"
+                  pointerEvents="none"
+                />
+              ))}
+            </>
+          )}
+        </svg>
+        {tooltip && (
+          <div
+            className="savings-chart-tooltip"
+            style={{
+              left: tooltip.x + 12,
+              top: padding.top + 10,
+            }}
+          >
+            <div className="savings-tooltip-date">
+              {formatDateInTimeZone(tooltip.data.date, 'MMM d, yyyy', timeZone)}
+            </div>
+            {LINES.map((line) => (
+              <div key={line.key} className="savings-tooltip-row">
+                <span className="savings-legend-swatch" style={{ backgroundColor: line.color }} />
+                <span className="savings-tooltip-label">{line.label}</span>
+                <span className="savings-tooltip-value">{formatCurrency(tooltip.data[line.key])}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 export default function SavingsAnalytics() {
   const { user, selectedTenantId } = useAuth();
@@ -251,6 +478,8 @@ export default function SavingsAnalytics() {
   return (
     <div className="savings-analytics-page">
       {header}
+
+      <CostSavingsChart startDate={data.start_date} endDate={data.end_date} timeZone={timeZone} />
 
       <div className="savings-analytics-grid">
         {/* Voice Savings */}

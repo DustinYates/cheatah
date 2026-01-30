@@ -80,6 +80,60 @@
   color: #94a3b8;
 }
 
+.login-card .label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.login-card .label-row label {
+  margin-bottom: 0;
+}
+
+.login-card .forgot-password-link {
+  font-size: 13px;
+  color: #6366f1;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.login-card .forgot-password-link:hover {
+  text-decoration: underline;
+}
+
+.login-card .password-input-wrapper {
+  position: relative;
+}
+
+.login-card .password-input-wrapper input {
+  padding-right: 44px;
+}
+
+.login-card .password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card .password-toggle:hover {
+  color: #64748b;
+}
+
+.login-card .password-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
 .login-card button[type="submit"] {
   width: 100%;
   padding: 14px;

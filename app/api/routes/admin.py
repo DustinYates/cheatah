@@ -240,13 +240,15 @@ async def get_tenants_overview(
         .where(TenantVoiceConfig.tenant_id.in_(tenant_ids))
     )
     voice_result = await db.execute(voice_config_query)
-    voice_service_status = {
-        row.tenant_id: {
+    voice_service_status = {}
+    for row in voice_result:
+        # Voice is configured if the tenant has a phone number capable of voice
+        sms_cfg = sms_configs.get(row.tenant_id, [])
+        has_phone = len(sms_cfg) > 0
+        voice_service_status[row.tenant_id] = {
             "enabled": row.is_enabled or False,
-            "configured": bool(row.live_transfer_number),
+            "configured": has_phone,
         }
-        for row in voice_result
-    }
 
     # Query Widget config per tenant
     widget_config_query = (

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_tenant_context
+from app.api.deps import require_global_admin, require_tenant_context
 from app.api.schemas.dashboard_analytics import (
     AnomalyAlertListResponse,
     AnomalyAlertResponse,
@@ -654,6 +654,7 @@ async def get_conversation_chi(
 
 @router.get("/sms-bursts", response_model=SmsBurstDashboardResponse)
 async def get_sms_burst_dashboard(
+    _admin: Annotated[None, Depends(require_global_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
     hours: int = Query(24, ge=1, le=168),
@@ -722,6 +723,7 @@ async def get_sms_burst_dashboard(
 @router.patch("/sms-bursts/{incident_id}")
 async def update_burst_incident(
     incident_id: int,
+    _admin: Annotated[None, Depends(require_global_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
     new_status: str = Query(..., alias="status"),

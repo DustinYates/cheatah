@@ -445,17 +445,17 @@ async def get_calendar_events(
     config_repo = TenantCalendarConfigRepository(db)
     config = await config_repo.get_by_tenant_id(tenant_id)
 
-    if not config or not config.google_refresh_token:
-        return CalendarEventsResponse(
-            events=[],
-            week_start=date.today().isoformat(),
-            week_end=date.today().isoformat(),
-        )
-
     # Calculate week boundaries (Monday-Sunday)
     today = date.today()
     monday = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
     sunday = monday + timedelta(days=6)
+
+    if not config or not config.google_refresh_token:
+        return CalendarEventsResponse(
+            events=[],
+            week_start=monday.isoformat(),
+            week_end=sunday.isoformat(),
+        )
 
     tz_name = "America/New_York"
     if config.scheduling_preferences:

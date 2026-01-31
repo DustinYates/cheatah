@@ -483,33 +483,16 @@ export default function EmailSettings() {
 
         {followupEnabled && (
           <>
-            {/* Delay Setting */}
-            <div className="form-group">
-              <label htmlFor="followup-delay">Send SMS after</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <input
-                  id="followup-delay"
-                  type="number"
-                  value={followupDelayMinutes}
-                  onChange={(e) => setFollowupDelayMinutes(Math.max(1, Math.min(60, parseInt(e.target.value) || 5)))}
-                  min={1}
-                  max={60}
-                  style={{ width: '80px' }}
-                />
-                <span>minutes</span>
-              </div>
-            </div>
-
             {/* Subject-Specific Templates */}
             <div className="form-group">
-              <label>Subject-Specific Templates (Optional)</label>
+              <label>SMS Templates by Subject</label>
               <small style={{ display: 'block', marginBottom: '0.5rem' }}>
-                Override the default message for specific email subjects.
+                Configure the SMS message and delay for each email subject. Only emails matching a template will trigger an SMS follow-up.
               </small>
 
               {Object.keys(subjectTemplates).length === 0 ? (
                 <div className="template-empty">
-                  No subject-specific templates configured. The default message above will be used for all emails.
+                  No templates configured. Add a template below to start sending SMS follow-ups for specific email subjects.
                 </div>
               ) : (
                 <div className="template-list">

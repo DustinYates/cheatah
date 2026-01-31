@@ -1407,3 +1407,60 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* CHI Dashboard Card */
+.chi-dashboard-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: var(--dash-space-4);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.chi-dashboard-card .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--dash-space-3);
+}
+
+.chi-dashboard-card h2 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.chi-dashboard-row {
+  display: flex;
+  align-items: center;
+  gap: var(--dash-space-6);
+  flex-wrap: wrap;
+}
+
+.chi-dashboard-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chi-dashboard-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.chi-dashboard-stat-value--warn {
+  font-size: 13px;
+  font-weight: 600;
+  color: #d97706;
+  text-transform: capitalize;
+}
+
+.chi-dashboard-stat-label {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

@@ -2948,6 +2948,126 @@ async def send_registration_link_tool(
         )
 
 
+@router.post("/tools/send-link")
+async def send_link_tool(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Webhook tool for Telnyx AI Assistant to send a Jackrabbit registration link via SMS.
+
+    Replaces the external Railway service. Called by the Telnyx AI agent when
+    a caller wants to register for a class.
+
+    Body params:
+        to: Caller phone number (required)
+        org_id: Jackrabbit org ID (required, e.g. "545911")
+        class_id: Jackrabbit class ID (optional)
+        class_name: Class name for logging (optional)
+        first_name, last_name, email, students: Optional caller info
+    """
+    try:
+        # Parse body
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        to_phone = body.get("to", "")
+        org_id = body.get("org_id", "545911")
+        class_id = body.get("class_id")
+        class_name = body.get("class_name", "")
+
+        logger.info(
+            f"[TOOL] send_link called - to={to_phone}, org_id={org_id}, "
+            f"class_id={class_id}, class_name={class_name}"
+        )
+
+        if not to_phone:
+            logger.warning("[TOOL] send_link: no 'to' phone number provided")
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "Registration link will be sent after the call.",
+            })
+
+        # Determine tenant from call context
+        tenant_id = None
+        call_control_id = request.headers.get("x-telnyx-call-control-id", "")
+        if call_control_id:
+            from app.persistence.models.call import Call
+            stmt = select(Call).where(Call.call_sid == call_control_id)
+            result = await db.execute(stmt)
+            call_record = result.scalar_one_or_none()
+            if call_record:
+                tenant_id = call_record.tenant_id
+
+        # Fallback: look up tenant by the caller's phone in sms configs
+        if not tenant_id:
+            tenant_id = await _get_tenant_from_telnyx_number(to_phone, db)
+
+        if not tenant_id:
+            logger.error("[TOOL] send_link: could not determine tenant")
+            return JSONResponse(content={
+                "status": "error",
+                "message": "Could not determine tenant",
+            })
+
+        # Build Jackrabbit registration URL
+        if class_id:
+            reg_url = f"https://app.jackrabbitclass.com/regv2.asp?id={org_id}&classid={class_id}"
+        else:
+            reg_url = f"https://app.jackrabbitclass.com/regv2.asp?id={org_id}"
+
+        # Send SMS via tenant's configured provider
+        from app.infrastructure.telephony.factory import TelephonyProviderFactory
+
+        factory = TelephonyProviderFactory(db)
+        sms_provider = await factory.get_sms_provider(tenant_id)
+
+        if not sms_provider:
+            logger.error(f"[TOOL] send_link: no SMS provider for tenant {tenant_id}")
+            return JSONResponse(content={
+                "status": "error",
+                "message": "SMS not configured for this tenant",
+            })
+
+        sms_config = await factory.get_config(tenant_id)
+        from_number = factory.get_sms_phone_number(sms_config)
+
+        if not from_number:
+            logger.error(f"[TOOL] send_link: no from number for tenant {tenant_id}")
+            return JSONResponse(content={
+                "status": "error",
+                "message": "No SMS phone number configured",
+            })
+
+        # Format phone to E.164
+        formatted_to = _normalize_phone(to_phone)
+
+        sms_result = await sms_provider.send_sms(
+            to=formatted_to,
+            from_=from_number,
+            body=reg_url,
+        )
+
+        logger.info(
+            f"[TOOL] send_link SMS sent - to={formatted_to}, from={from_number}, "
+            f"message_id={sms_result.message_id}, url={reg_url}"
+        )
+
+        return JSONResponse(content={
+            "status": "ok",
+            "message_id": sms_result.message_id,
+            "url_sent": reg_url,
+        })
+
+    except Exception as e:
+        logger.error(f"[TOOL] Error in send_link: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+
 def _map_location_to_code(location: str) -> str | None:
     """Map a location name from conversation to a location code.
 

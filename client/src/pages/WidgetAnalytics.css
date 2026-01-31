@@ -33,31 +33,12 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: var(--spacing-md);
-  background: var(--color-bg-white);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.widget-analytics-summary > .metric-card {
   border: 1px solid var(--color-border-light);
-}
-
-.widget-analytics-summary div {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
+  background: var(--color-bg-white);
   min-height: 56px;
-  justify-content: center;
-}
-
-.widget-analytics-summary .summary-value {
-  font-size: var(--font-size-xl);
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.widget-analytics-summary .summary-label {
-  font-size: var(--font-size-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-muted);
 }
 
 .widget-analytics-grid {

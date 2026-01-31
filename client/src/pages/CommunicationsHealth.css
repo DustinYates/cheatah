@@ -1,0 +1,111 @@
+.comms-health {
+  padding: var(--spacing-lg);
+  max-width: 1200px;
+}
+.comms-health-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-lg);
+}
+.comms-health-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+.comms-health-controls select {
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border, #e4e4e7);
+  font-size: 0.85rem;
+}
+
+.comms-health-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.comms-health-card {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border, #e4e4e7);
+  margin-bottom: var(--spacing-md);
+}
+.comms-health-card h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-md) 0;
+  color: var(--color-text-primary);
+}
+
+.comms-health-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+/* Anomaly list */
+.anomaly-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.anomaly-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+}
+.anomaly-warning {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+.anomaly-critical {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+.anomaly-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.anomaly-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(0,0,0,0.08);
+}
+.anomaly-type {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.anomaly-detail {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+.anomaly-time {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* Drilldown */
+.drilldown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.drilldown-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 0.9rem;
+}

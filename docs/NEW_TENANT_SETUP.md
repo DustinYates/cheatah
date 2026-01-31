@@ -31,7 +31,7 @@ This document outlines the steps required to fully configure a new tenant in Cha
 - **API Key**: Get from https://portal.telnyx.com > API Keys
   - Can reuse the same API key across multiple tenants
 - **Messaging Profile ID**: From Telnyx Mission Control > Messaging > Messaging Profiles
-- **SMS Phone Number**: The Telnyx number assigned to this tenant (e.g., +12816260873)
+- **SMS Phone Number**: The Telnyx number assigned to this tenant (e.g., +12816990999)
 
 ### For Twilio:
 - **Account SID**: From Twilio Console
@@ -222,7 +222,7 @@ If you don't know something specific, offer to have someone call them back.
 
 1. Go to **AI Assistants** → Click on the assistant
 2. Go to **Calling** tab → **Assigned Phone Numbers**
-3. Add the tenant's phone number (e.g., +1-281-626-0873)
+3. Add the tenant's phone number (e.g., +1-281-699-0999)
 4. Save
 
 ### Step 4: Test Voice

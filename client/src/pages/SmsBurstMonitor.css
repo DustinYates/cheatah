@@ -1,0 +1,239 @@
+.burst-monitor {
+  padding: var(--spacing-lg);
+  max-width: 1400px;
+}
+.burst-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-lg);
+}
+.burst-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+.burst-settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-border, #e4e4e7);
+  border-radius: var(--radius-md);
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: border-color 0.15s;
+}
+.burst-settings-btn:hover {
+  border-color: var(--color-primary);
+}
+
+.burst-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.burst-card {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border, #e4e4e7);
+  margin-bottom: var(--spacing-md);
+}
+.burst-card h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-md) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.burst-refresh-note {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+/* Incident table */
+.burst-table-header {
+  display: grid;
+  grid-template-columns: 80px 120px 80px 60px 70px 80px 130px 90px 80px;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border, #e4e4e7);
+}
+.burst-table-row {
+  display: grid;
+  grid-template-columns: 80px 120px 80px 60px 70px 80px 130px 90px 80px;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: 0.8rem;
+  align-items: center;
+  border-bottom: 1px solid #f4f4f5;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.burst-table-row:hover {
+  background: #f9fafb;
+}
+
+.burst-severity-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+.severity-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+.severity-high {
+  background: #ffedd5;
+  color: #c2410c;
+}
+.severity-critical {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.burst-number {
+  font-family: monospace;
+}
+.burst-time {
+  color: var(--color-text-muted);
+}
+.burst-count {
+  font-weight: 600;
+}
+.burst-identical {
+  color: var(--color-error);
+  font-weight: 600;
+}
+.burst-varied {
+  color: var(--color-text-muted);
+}
+.burst-cause {
+  font-size: 0.75rem;
+}
+.status-active {
+  color: var(--color-error);
+  font-weight: 600;
+}
+.status-acknowledged {
+  color: var(--color-warning);
+  font-weight: 500;
+}
+.status-resolved {
+  color: var(--color-success);
+}
+
+.burst-actions {
+  display: flex;
+  gap: 4px;
+}
+.burst-action-btn {
+  background: none;
+  border: 1px solid var(--color-border, #e4e4e7);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition: all 0.1s;
+}
+.burst-action-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.burst-action-btn.resolve:hover {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+/* Expanded detail */
+.burst-expanded {
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: #f9fafb;
+  border-bottom: 1px solid #e4e4e7;
+}
+.burst-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-sm);
+}
+.burst-detail-item {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+}
+.burst-detail-label {
+  font-weight: 600;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+.burst-notes {
+  margin-top: var(--spacing-sm);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+/* Settings form */
+.burst-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.burst-setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.burst-setting-group label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.burst-setting-group input[type="number"] {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border, #e4e4e7);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  width: 100px;
+}
+.burst-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.burst-save-btn {
+  padding: 10px 20px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-top: var(--spacing-md);
+}
+.burst-save-btn:hover {
+  opacity: 0.9;
+}
+
+.burst-empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+  font-size: 0.85rem;
+  padding: var(--spacing-md);
+  text-align: center;
+}

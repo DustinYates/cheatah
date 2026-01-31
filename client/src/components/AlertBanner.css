@@ -1,0 +1,39 @@
+.alert-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: var(--spacing-md);
+}
+.alert-warning {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+.alert-critical {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+.alert-info {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+.alert-message {
+  flex: 1;
+}
+.alert-dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.6;
+  color: inherit;
+  padding: 2px;
+}
+.alert-dismiss:hover {
+  opacity: 1;
+}

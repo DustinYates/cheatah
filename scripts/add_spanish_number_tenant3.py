@@ -14,7 +14,7 @@ from app.persistence.models.tenant_sms_config import TenantSmsConfig
 
 
 TENANT_ID = 3
-SPANISH_PHONE_NUMBER = "+12817679141"  # Spanish AI line
+SPANISH_PHONE_NUMBER = "+12816990999"  # BSS_03 voice line (replaced Spanish-only number)
 
 
 async def add_spanish_number():

@@ -1647,6 +1647,67 @@
           0%, 100% { transform: translate(0, 0); }
           50% { transform: translate(var(--cc-nudge-x, -6px), var(--cc-nudge-y, -6px)); }
         }
+        /* Scheduling time slots */
+        .cc-time-slots {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          padding: 8px 0;
+          margin-top: 4px;
+        }
+        .cc-time-slot-btn {
+          background: var(--cc-bg, #f0f7ff);
+          border: 1px solid var(--cc-primary, #3b82f6);
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 13px;
+          font-family: inherit;
+          color: var(--cc-primary, #1e40af);
+          transition: background 0.2s, transform 0.1s;
+        }
+        .cc-time-slot-btn:hover {
+          background: var(--cc-primary, #3b82f6);
+          color: #fff;
+        }
+        .cc-time-slot-btn:active {
+          transform: scale(0.97);
+        }
+        .cc-time-slot-btn:disabled {
+          opacity: 0.5;
+          cursor: default;
+          pointer-events: none;
+        }
+        .cc-time-slot-btn.cc-selected {
+          background: var(--cc-primary, #3b82f6);
+          color: #fff;
+          border-color: var(--cc-primary, #3b82f6);
+        }
+        .cc-booking-confirmation {
+          background: #f0fdf4;
+          border: 1px solid #22c55e;
+          border-radius: 8px;
+          padding: 12px;
+          text-align: center;
+          margin: 8px 0;
+        }
+        .cc-booking-icon {
+          font-size: 24px;
+          color: #22c55e;
+          margin-bottom: 4px;
+        }
+        .cc-booking-text {
+          font-size: 14px;
+          font-weight: 600;
+          color: #166534;
+        }
+        .cc-booking-link {
+          display: inline-block;
+          margin-top: 8px;
+          color: var(--cc-primary, #3b82f6);
+          text-decoration: underline;
+          font-size: 13px;
+        }
       `;
       document.head.appendChild(style);
     },
@@ -1939,6 +2000,63 @@
       this.playTick();
     },
 
+    renderTimeSlots: function(slots) {
+      const container = document.getElementById('cc-messages');
+      if (!container) return;
+
+      const slotsDiv = document.createElement('div');
+      slotsDiv.className = 'cc-time-slots';
+
+      slots.forEach((slot, index) => {
+        const btn = document.createElement('button');
+        btn.className = 'cc-time-slot-btn';
+        btn.textContent = slot.display_label;
+        btn.onclick = () => {
+          // Highlight selected slot
+          slotsDiv.querySelectorAll('.cc-time-slot-btn').forEach(b => {
+            b.disabled = true;
+            b.classList.remove('cc-selected');
+          });
+          btn.classList.add('cc-selected');
+          btn.disabled = true;
+          // Send selection as a user message
+          const selectionMsg = (index + 1).toString();
+          this.addMessage(selectionMsg, 'user');
+          const storedName = sessionStorage.getItem(this.getStorageKey('user_name')) || '';
+          const storedEmail = sessionStorage.getItem(this.getStorageKey('user_email')) || '';
+          const storedPhone = sessionStorage.getItem(this.getStorageKey('user_phone')) || '';
+          this.sendMessageToBackend(selectionMsg, storedName, storedEmail, storedPhone);
+        };
+        slotsDiv.appendChild(btn);
+      });
+
+      container.appendChild(slotsDiv);
+      this.scrollToBottom();
+    },
+
+    renderBookingConfirmation: function(confirmation) {
+      const container = document.getElementById('cc-messages');
+      if (!container) return;
+
+      const div = document.createElement('div');
+      div.className = 'cc-booking-confirmation';
+      let html = '<div class="cc-booking-icon">&#10003;</div>';
+      html += '<div class="cc-booking-text">Meeting confirmed!</div>';
+      if (confirmation.event_link) {
+        html += '<a href="' + confirmation.event_link + '" target="_blank" rel="noopener" class="cc-booking-link">Add to Calendar</a>';
+      }
+      div.innerHTML = html;
+      container.appendChild(div);
+      this.scrollToBottom();
+    },
+
+    scrollToBottom: function() {
+      const container = document.getElementById('cc-messages');
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    },
+
     showContactForm: function() {
       document.getElementById('cc-contact-form').style.display = 'block';
       document.getElementById('cc-input-container').style.display = 'none';
@@ -2113,6 +2231,16 @@
 
         // Add assistant response
         this.addMessage(data.response, 'assistant');
+
+        // Handle scheduling data (time slots or booking confirmation)
+        if (data.scheduling) {
+          if (data.scheduling.mode === 'calendar_api' && data.scheduling.slots && data.scheduling.slots.length > 0) {
+            this.renderTimeSlots(data.scheduling.slots);
+          }
+          if (data.scheduling.booking_confirmed) {
+            this.renderBookingConfirmation(data.scheduling.booking_confirmed);
+          }
+        }
 
         // Handle conversation complete
         if (data.conversation_complete) {

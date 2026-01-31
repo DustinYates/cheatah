@@ -80,6 +80,12 @@ class ZapierIntegrationService:
             "callback_url": callback_url,
         }
 
+        # Include Jackrabbit API keys if configured
+        if config.jackrabbit_api_key_1:
+            payload["jackrabbit_api_key_1"] = config.jackrabbit_api_key_1
+        if config.jackrabbit_api_key_2:
+            payload["jackrabbit_api_key_2"] = config.jackrabbit_api_key_2
+
         return await self._send_request(
             tenant_id=tenant_id,
             correlation_id=correlation_id,
@@ -132,6 +138,12 @@ class ZapierIntegrationService:
             "context": context or {},
             "callback_url": callback_url,
         }
+
+        # Include Jackrabbit API keys if configured
+        if config.jackrabbit_api_key_1:
+            payload["jackrabbit_api_key_1"] = config.jackrabbit_api_key_1
+        if config.jackrabbit_api_key_2:
+            payload["jackrabbit_api_key_2"] = config.jackrabbit_api_key_2
 
         return await self._send_request(
             tenant_id=tenant_id,

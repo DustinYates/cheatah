@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
 import DateRangeFilter from '../components/DateRangeFilter';
+import MetricCard from '../components/MetricCard';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import {
   DATE_RANGE_PRESETS,
@@ -254,22 +255,27 @@ export default function ConversationAnalytics() {
       </div>
       {hasData && (
         <div className="conv-analytics-summary">
-          <div>
-            <span className="summary-value">{data.conversation_length.avg_message_count}</span>
-            <span className="summary-label">Avg Messages</span>
-          </div>
-          <div>
-            <span className="summary-value">{formatDuration(data.conversation_length.avg_duration_minutes)}</span>
-            <span className="summary-label">Avg Duration</span>
-          </div>
-          <div>
-            <span className="summary-value">{formatPercent(data.escalation_metrics.escalation_rate)}</span>
-            <span className="summary-label">Escalation Rate</span>
-          </div>
-          <div>
-            <span className="summary-value">{formatSeconds(data.response_times.avg_response_time_seconds)}</span>
-            <span className="summary-label">Avg Response Time</span>
-          </div>
+          <MetricCard
+            label="Avg Messages"
+            value={data.conversation_length.avg_message_count}
+            tooltip="Computed using: average message count across all conversations in this period."
+          />
+          <MetricCard
+            label="Avg Duration"
+            value={formatDuration(data.conversation_length.avg_duration_minutes)}
+            tooltip="Computed using: average time between first and last message per conversation."
+          />
+          <MetricCard
+            label="Escalation Rate"
+            value={formatPercent(data.escalation_metrics.escalation_rate)}
+            tooltip="Computed using: escalated conversations / total conversations."
+            severity={data.escalation_metrics.escalation_rate > 0.2 ? 'warning' : undefined}
+          />
+          <MetricCard
+            label="Avg Response Time"
+            value={formatSeconds(data.response_times.avg_response_time_seconds)}
+            tooltip="Computed using: average delay between user message and next assistant response."
+          />
         </div>
       )}
     </div>

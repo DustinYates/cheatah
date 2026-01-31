@@ -12,6 +12,9 @@ import Plots from './pages/Plots';
 import ConversationAnalytics from './pages/ConversationAnalytics';
 import WidgetAnalytics from './pages/WidgetAnalytics';
 import SavingsAnalytics from './pages/SavingsAnalytics';
+import CommunicationsHealth from './pages/CommunicationsHealth';
+import CustomerHappiness from './pages/CustomerHappiness';
+import SmsBurstMonitor from './pages/SmsBurstMonitor';
 import Onboarding from './pages/Onboarding';
 import BusinessProfile from './pages/BusinessProfile';
 import WidgetSettings from './pages/WidgetSettings';
@@ -19,6 +22,7 @@ import SmsSettings from './pages/SmsSettings';
 import TelephonySettings from './pages/TelephonySettings';
 import EmailSettings from './pages/EmailSettings';
 import EscalationSettings from './pages/EscalationSettings';
+import CalendarSettings from './pages/CalendarSettings';
 import DncList from './pages/DncList';
 import ManageTenants from './pages/ManageTenants';
 import PromptWizard from './pages/PromptWizard';
@@ -55,6 +59,9 @@ function App() {
             <Route path="analytics/conversations" element={<ConversationAnalytics />} />
             <Route path="analytics/widget" element={<WidgetAnalytics />} />
             <Route path="analytics/savings" element={<SavingsAnalytics />} />
+            <Route path="analytics/health" element={<CommunicationsHealth />} />
+            <Route path="analytics/happiness" element={<CustomerHappiness />} />
+            <Route path="analytics/sms-bursts" element={<SmsBurstMonitor />} />
             <Route path="analytics/plots" element={<Navigate to="/analytics/usage" replace />} />
 
             {/* Settings routes */}
@@ -66,6 +73,7 @@ function App() {
             <Route path="settings/sms" element={<SmsSettings />} />
             <Route path="settings/telephony" element={<TelephonySettings />} />
             <Route path="settings/escalation" element={<EscalationSettings />} />
+            <Route path="settings/calendar" element={<CalendarSettings />} />
             <Route path="settings/dnc" element={<DncList />} />
             <Route path="telephony-settings" element={<Navigate to="/settings/telephony" replace />} />
             <Route path="sms" element={<Navigate to="/settings/sms" replace />} />

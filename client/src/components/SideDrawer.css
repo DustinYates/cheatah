@@ -1,0 +1,90 @@
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 200;
+}
+.side-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 420px;
+  max-width: 90vw;
+  height: 100vh;
+  background: #fff;
+  z-index: 201;
+  box-shadow: -4px 0 20px rgba(0,0,0,0.12);
+  display: flex;
+  flex-direction: column;
+  animation: slide-in 0.2s ease-out;
+}
+@keyframes slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border, #e4e4e7);
+}
+.drawer-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.drawer-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+.drawer-close:hover {
+  background: var(--color-bg-light);
+}
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-lg);
+}
+
+/* Config Diff */
+.config-diff {
+  margin-top: var(--spacing-md);
+}
+.config-diff h4 {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-sm);
+}
+.config-diff-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 0.8rem;
+}
+.config-field-name {
+  flex: 1;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.config-field-old {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+.config-field-arrow {
+  color: var(--color-text-muted);
+}
+.config-field-new {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+.config-diff-empty {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}

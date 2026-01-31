@@ -107,6 +107,15 @@ export default function Layout() {
                 <li>
                   <NavLink to="/analytics/savings">Savings</NavLink>
                 </li>
+                <li>
+                  <NavLink to="/analytics/health">Health</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/analytics/happiness">Happiness (CHI)</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/analytics/sms-bursts">SMS Bursts</NavLink>
+                </li>
               </ul>
             )}
           </li>
@@ -136,6 +145,9 @@ export default function Layout() {
                 </li>
                 <li>
                   <NavLink to="/settings/escalation">Escalations</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/settings/calendar">Calendar</NavLink>
                 </li>
                 <li>
                   <NavLink to="/settings/dnc">Do Not Contact</NavLink>

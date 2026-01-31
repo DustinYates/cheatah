@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
 import DateRangeFilter from '../components/DateRangeFilter';
+import MetricCard from '../components/MetricCard';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import {
   DATE_RANGE_PRESETS,
@@ -441,22 +442,28 @@ export default function SavingsAnalytics() {
       </div>
       {hasData && (
         <div className="savings-analytics-summary">
-          <div>
-            <span className="summary-value">{formatHours(data.total_hours_saved)}</span>
-            <span className="summary-label">Hours Saved</span>
-          </div>
-          <div>
-            <span className="summary-value savings-highlight">{formatCurrency(data.total_offshore_savings)}</span>
-            <span className="summary-label">Offshore Savings ($7/hr)</span>
-          </div>
-          <div>
-            <span className="summary-value savings-highlight">{formatCurrency(data.total_onshore_savings)}</span>
-            <span className="summary-label">Onshore Savings ($14/hr)</span>
-          </div>
-          <div>
-            <span className="summary-value">{formatNumber(data.conversions?.total_links_sent)}</span>
-            <span className="summary-label">Registration Links Sent</span>
-          </div>
+          <MetricCard
+            label="Hours Saved"
+            value={formatHours(data.total_hours_saved)}
+            tooltip="Computed using: voice call minutes + estimated SMS handling time (2 min/msg) + estimated web chat time (1.5 min/msg)."
+          />
+          <MetricCard
+            label="Offshore Savings ($7/hr)"
+            value={formatCurrency(data.total_offshore_savings)}
+            tooltip="Computed using: total hours saved × $7/hr offshore rate."
+            className="savings-highlight-card"
+          />
+          <MetricCard
+            label="Onshore Savings ($14/hr)"
+            value={formatCurrency(data.total_onshore_savings)}
+            tooltip="Computed using: total hours saved × $14/hr onshore rate."
+            className="savings-highlight-card"
+          />
+          <MetricCard
+            label="Registration Links Sent"
+            value={formatNumber(data.conversions?.total_links_sent)}
+            tooltip="Computed using: count of registration links sent by the AI assistant via sent_assets."
+          />
         </div>
       )}
     </div>

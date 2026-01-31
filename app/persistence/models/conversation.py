@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     JSON,
@@ -36,6 +37,11 @@ class Conversation(Base):
     contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Customer Happiness Index (computed by CHI worker)
+    chi_score = Column(Float, nullable=True, index=True)  # 0-100
+    chi_computed_at = Column(DateTime, nullable=True)
+    chi_signals = Column(JSON, nullable=True)  # Signal breakdown for explainability
 
     # Relationships
     tenant = relationship("Tenant", back_populates="conversations")

@@ -19,6 +19,7 @@ from app.persistence.models.tenant_email_config import EmailConversation, Tenant
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 from app.persistence.models.tenant_widget_config import TenantWidgetConfig
+from app.persistence.models.tenant_calendar_config import TenantCalendarConfig
 from app.persistence.models.tenant_customer_service_config import TenantCustomerServiceConfig
 from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 from app.persistence.models.widget_event import WidgetEvent
@@ -26,6 +27,10 @@ from app.persistence.models.zapier_request import ZapierRequest
 from app.persistence.models.jackrabbit_customer import JackrabbitCustomer
 from app.persistence.models.config_snapshot import ConfigSnapshot
 from app.persistence.models.sent_asset import SentAsset
+from app.persistence.models.sms_burst_incident import SmsBurstIncident
+from app.persistence.models.sms_burst_config import SmsBurstConfig
+from app.persistence.models.communications_health_snapshot import CommunicationsHealthSnapshot
+from app.persistence.models.anomaly_alert import AnomalyAlert
 
 __all__ = [
     "AuditAction",
@@ -63,5 +68,10 @@ __all__ = [
     "JackrabbitCustomer",
     "ConfigSnapshot",
     "SentAsset",
+    "TenantCalendarConfig",
+    "SmsBurstIncident",
+    "SmsBurstConfig",
+    "CommunicationsHealthSnapshot",
+    "AnomalyAlert",
 ]
 

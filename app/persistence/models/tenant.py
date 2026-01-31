@@ -92,6 +92,9 @@ class Tenant(Base):
     prompt_config = relationship(
         "TenantPromptConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
     )
+    calendar_config = relationship(
+        "TenantCalendarConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
+    )
     widget_events = relationship(
         "WidgetEvent", back_populates="tenant", cascade="all, delete-orphan"
     )

@@ -295,6 +295,10 @@ export default function Dashboard() {
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarWeekStart, setCalendarWeekStart] = useState('');
+  const [calendarWeekEnd, setCalendarWeekEnd] = useState('');
+  const [calendarLoading, setCalendarLoading] = useState(false);
   const [leadsLimit, setLeadsLimit] = useState(() => {
     const saved = localStorage.getItem('dashboard_leads_limit');
     return saved ? parseInt(saved, 10) : 50;
@@ -343,9 +347,10 @@ export default function Dashboard() {
     setCallsLoading(true);
     setError('');
     try {
-      const [leadsResult, callsResult] = await Promise.allSettled([
+      const [leadsResult, callsResult, calendarResult] = await Promise.allSettled([
         api.getLeads({ limit: leadsLimit }),
         api.getCalls({ page: 1, page_size: 5 }),
+        api.getCalendarEvents(0),
       ]);
 
       if (leadsResult.status === 'fulfilled') {
@@ -366,6 +371,15 @@ export default function Dashboard() {
       } else {
         console.warn('Failed to load recent calls:', callsResult.reason);
         setCalls([]);
+      }
+
+      if (calendarResult.status === 'fulfilled') {
+        const calData = calendarResult.value;
+        setCalendarEvents(calData.events || []);
+        setCalendarWeekStart(calData.week_start || '');
+        setCalendarWeekEnd(calData.week_end || '');
+      } else {
+        setCalendarEvents([]);
       }
     } catch (err) {
       setError('Failed to load dashboard data');
@@ -851,6 +865,87 @@ export default function Dashboard() {
           <span className="dashboard-header__subtitle">Recent activity</span>
         </div>
       </div>
+
+      {/* Calendar Week View */}
+      {calendarWeekStart && (
+        <div className="card calendar-week-card">
+          <div className="card-header">
+            <h2>This Week</h2>
+            <span className="calendar-week-range">
+              {new Date(calendarWeekStart + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              {' – '}
+              {new Date(calendarWeekEnd + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </span>
+          </div>
+          {calendarEvents.length === 0 ? (
+            <div className="calendar-empty">
+              {calendarLoading ? 'Loading...' : 'No calendar connected or no events this week'}
+            </div>
+          ) : (
+            <div className="calendar-week-grid">
+              {(() => {
+                // Build day columns Mon-Sun
+                const days = [];
+                const start = new Date(calendarWeekStart + 'T00:00:00');
+                for (let i = 0; i < 7; i++) {
+                  const day = new Date(start);
+                  day.setDate(start.getDate() + i);
+                  days.push(day);
+                }
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                return days.map((day) => {
+                  const dayStr = day.toISOString().split('T')[0];
+                  const isToday = day.getTime() === today.getTime();
+                  const dayEvents = calendarEvents.filter((evt) => {
+                    const evtDate = (evt.start || '').split('T')[0];
+                    return evtDate === dayStr;
+                  });
+
+                  return (
+                    <div key={dayStr} className={`calendar-day-col ${isToday ? 'calendar-day-col--today' : ''}`}>
+                      <div className="calendar-day-header">
+                        <span className="calendar-day-name">
+                          {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                        </span>
+                        <span className={`calendar-day-num ${isToday ? 'calendar-day-num--today' : ''}`}>
+                          {day.getDate()}
+                        </span>
+                      </div>
+                      <div className="calendar-day-events">
+                        {dayEvents.length === 0 ? (
+                          <span className="calendar-no-events">—</span>
+                        ) : (
+                          dayEvents.map((evt) => {
+                            const startTime = evt.all_day
+                              ? 'All day'
+                              : new Date(evt.start).toLocaleTimeString('en-US', {
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                  hour12: true,
+                                });
+                            return (
+                              <div
+                                key={evt.id}
+                                className="calendar-event"
+                                title={`${evt.summary}\n${startTime}`}
+                              >
+                                <span className="calendar-event-time">{startTime}</span>
+                                <span className="calendar-event-title">{evt.summary}</span>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="dashboard-grid">
         <div className="card leads-card leads-card-wide">

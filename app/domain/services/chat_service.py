@@ -8,8 +8,10 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.services.calendar_service import CalendarService
 from app.domain.services.conversation_service import ConversationService
 from app.domain.services.escalation_service import EscalationService
+from app.domain.services.intent_detector import IntentDetector
 from app.domain.services.lead_service import LeadService
 from app.domain.services.contact_service import ContactService
 from app.domain.services.pending_promise_service import PendingPromiseService
@@ -64,6 +66,7 @@ class ChatResult:
     llm_latency_ms: float
     escalation_requested: bool = False
     escalation_id: int | None = None
+    scheduling: dict | None = None  # {mode, slots[], booking_link, booking_confirmed}
 
 
 class ChatService:
@@ -88,6 +91,8 @@ class ChatService:
         self.prompt_service = PromptService(session)
         self.llm_orchestrator = LLMOrchestrator()
         self.tenant_repo = TenantRepository(session)
+        self.calendar_service = CalendarService(session)
+        self.intent_detector = IntentDetector()
 
     async def process_chat(
         self,
@@ -189,6 +194,21 @@ class ChatService:
                 f"conversation_id={conversation.id}, escalation_id={escalation.id}, "
                 f"reason={escalation.reason}"
             )
+
+        # Check if user is responding to a scheduling prompt (selecting a time slot)
+        scheduling_state = self._get_scheduling_state(messages)
+        if scheduling_state and scheduling_state.get("awaiting_selection"):
+            booking_result = await self._handle_slot_selection(
+                tenant_id=tenant_id,
+                conversation_id=conversation.id,
+                user_message=user_message,
+                scheduling_state=scheduling_state,
+                customer_name=user_name,
+                customer_email=user_email,
+                customer_phone=user_phone,
+            )
+            if booking_result:
+                return booking_result
 
         # Handle lead capture
         lead_captured = False
@@ -623,6 +643,61 @@ class ChatService:
         if sms_confirmation:
             final_response = llm_response + sms_confirmation
 
+        # ============================================================
+        # SCHEDULING: If escalation or scheduling intent detected,
+        # offer available time slots or booking link
+        # ============================================================
+        scheduling_data = None
+        intent_result = self.intent_detector.detect_intent(user_message)
+        if escalation_requested or intent_result.intent == "scheduling":
+            try:
+                scheduling_mode = await self.calendar_service.get_scheduling_mode(tenant_id)
+                if scheduling_mode == "calendar_api":
+                    from datetime import date as date_type
+                    slots = await self.calendar_service.get_available_slots(
+                        tenant_id, date_type.today()
+                    )
+                    if slots:
+                        slot_text = "\n\nI can help you schedule a meeting. Here are some available times:\n"
+                        slot_list = []
+                        for i, slot in enumerate(slots, 1):
+                            slot_text += f"\n{i}. {slot.display_label}"
+                            slot_list.append({
+                                "start": slot.start.isoformat(),
+                                "end": slot.end.isoformat(),
+                                "display_label": slot.display_label,
+                            })
+                        slot_text += "\n\nPlease select a time that works for you."
+                        final_response += slot_text
+
+                        # Store scheduling state as system message metadata
+                        await self._set_scheduling_state(
+                            tenant_id, conversation.id,
+                            {"awaiting_selection": True, "offered_slots": slot_list},
+                        )
+
+                        scheduling_data = {
+                            "mode": "calendar_api",
+                            "slots": slot_list,
+                        }
+                        logger.info(
+                            f"Scheduling slots offered in chat - tenant_id={tenant_id}, "
+                            f"conversation_id={conversation.id}, num_slots={len(slots)}"
+                        )
+                elif scheduling_mode == "booking_link":
+                    link = await self.calendar_service.get_booking_link(tenant_id)
+                    if link:
+                        final_response += f"\n\nYou can schedule a meeting here: {link}"
+                        scheduling_data = {
+                            "mode": "booking_link",
+                            "booking_link": link,
+                        }
+            except Exception as e:
+                logger.error(
+                    f"Failed to offer scheduling in chat - tenant_id={tenant_id}, error={e}",
+                    exc_info=True,
+                )
+
         return ChatResult(
             session_id=session_id,
             response=final_response,
@@ -633,6 +708,7 @@ class ChatService:
             llm_latency_ms=llm_latency_ms,
             escalation_requested=escalation_requested,
             escalation_id=escalation_id,
+            scheduling=scheduling_data,
         )
 
     async def _update_contact_from_lead(
@@ -693,6 +769,150 @@ class ChatService:
                 f"Failed to update contact from lead {lead.id}: {e}",
                 exc_info=True
             )
+
+    # ============================================================
+    # SCHEDULING HELPERS
+    # ============================================================
+
+    def _get_scheduling_state(self, messages) -> dict | None:
+        """Read scheduling state from recent system messages with metadata."""
+        # Scan messages in reverse to find the most recent scheduling state
+        for msg in reversed(messages):
+            if msg.role == "system" and msg.message_metadata:
+                meta = msg.message_metadata
+                if isinstance(meta, dict) and "scheduling_state" in meta:
+                    return meta["scheduling_state"]
+        return None
+
+    async def _set_scheduling_state(
+        self, tenant_id: int, conversation_id: int, state: dict
+    ) -> None:
+        """Store scheduling state as a system message with metadata."""
+        await self.conversation_service.add_message(
+            tenant_id, conversation_id, "system", "[scheduling]",
+            metadata={"scheduling_state": state},
+        )
+
+    async def _handle_slot_selection(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        user_message: str,
+        scheduling_state: dict,
+        customer_name: str | None = None,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
+    ) -> ChatResult | None:
+        """Handle a user's time slot selection.
+
+        Parses the user's message to match an offered slot, books the meeting,
+        and returns a confirmation ChatResult. Returns None if no match found
+        (the message will proceed through normal LLM processing).
+        """
+        offered_slots = scheduling_state.get("offered_slots", [])
+        if not offered_slots:
+            return None
+
+        # Try to match the user's message to an offered slot
+        selected_slot = None
+        msg_lower = user_message.strip().lower()
+
+        # Match by number (e.g., "1", "option 1", "number 2")
+        import re
+        num_match = re.search(r'\b(\d{1,2})\b', msg_lower)
+        if num_match:
+            idx = int(num_match.group(1)) - 1  # 1-indexed
+            if 0 <= idx < len(offered_slots):
+                selected_slot = offered_slots[idx]
+
+        # Match by display label substring
+        if not selected_slot:
+            for slot in offered_slots:
+                label_lower = slot.get("display_label", "").lower()
+                if label_lower and label_lower in msg_lower:
+                    selected_slot = slot
+                    break
+
+        # Match by "book" keyword + any partial time reference
+        if not selected_slot and ("book" in msg_lower or "select" in msg_lower or "pick" in msg_lower):
+            if num_match:
+                idx = int(num_match.group(1)) - 1
+                if 0 <= idx < len(offered_slots):
+                    selected_slot = offered_slots[idx]
+
+        if not selected_slot:
+            # User message doesn't match a slot - let it go through normal LLM flow
+            return None
+
+        # Book the meeting
+        from datetime import datetime as dt
+        slot_start = dt.fromisoformat(selected_slot["start"])
+
+        # Get customer name from existing lead if not provided
+        name = customer_name or "Customer"
+        if not customer_name:
+            existing_lead = await self.lead_service.get_lead_by_conversation(
+                tenant_id, conversation_id
+            )
+            if existing_lead and existing_lead.name:
+                name = existing_lead.name
+
+        result = await self.calendar_service.book_meeting(
+            tenant_id=tenant_id,
+            slot_start=slot_start,
+            customer_name=name,
+            customer_email=customer_email,
+            customer_phone=customer_phone,
+            topic="Meeting requested via chatbot",
+        )
+
+        # Clear scheduling state
+        await self._set_scheduling_state(
+            tenant_id, conversation_id, {"awaiting_selection": False},
+        )
+
+        if result.success:
+            confirmation_text = (
+                f"Your meeting has been booked for {selected_slot['display_label']}! "
+                "You should receive a calendar invitation shortly."
+            )
+            scheduling_data = {
+                "mode": "calendar_api",
+                "booking_confirmed": {
+                    "display_label": selected_slot["display_label"],
+                    "event_link": result.event_link,
+                },
+            }
+        else:
+            confirmation_text = (
+                f"I'm sorry, I wasn't able to book that time slot. {result.error or ''} "
+                "Would you like to try a different time?"
+            )
+            scheduling_data = None
+
+        # Add messages to conversation
+        await self.conversation_service.add_message(
+            tenant_id, conversation_id, "assistant", confirmation_text,
+        )
+
+        session_id = str(conversation_id)
+        messages = await self.conversation_service.get_conversation_history(
+            tenant_id, conversation_id
+        )
+        turn_count = len([m for m in messages if m.role == "user"])
+
+        return ChatResult(
+            session_id=session_id,
+            response=confirmation_text,
+            requires_contact_info=False,
+            conversation_complete=False,
+            lead_captured=False,
+            turn_count=turn_count,
+            llm_latency_ms=0.0,
+            escalation_requested=False,
+            escalation_id=None,
+            scheduling=scheduling_data,
+        )
 
     async def _get_or_create_conversation(
         self, tenant_id: int, session_id: str | None

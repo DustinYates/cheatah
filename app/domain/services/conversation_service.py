@@ -44,7 +44,8 @@ class ConversationService:
         return conversation
 
     async def add_message(
-        self, tenant_id: int, conversation_id: int, role: str, content: str
+        self, tenant_id: int, conversation_id: int, role: str, content: str,
+        metadata: dict | None = None,
     ) -> Message:
         """Add a message to a conversation.
 
@@ -53,6 +54,7 @@ class ConversationService:
             conversation_id: Conversation ID
             role: Message role (user, assistant, system)
             content: Message content
+            metadata: Optional JSON metadata for the message
 
         Returns:
             Created message
@@ -68,12 +70,18 @@ class ConversationService:
             tenant_id, conversation_id
         )
 
-        message = await self.message_repo.create(
-            None,  # Messages inherit tenant_id from their Conversation
+        create_kwargs = dict(
             conversation_id=conversation_id,
             role=role,
             content=content,
             sequence_number=sequence_number,
+        )
+        if metadata is not None:
+            create_kwargs["message_metadata"] = metadata
+
+        message = await self.message_repo.create(
+            None,  # Messages inherit tenant_id from their Conversation
+            **create_kwargs,
         )
         return message
 

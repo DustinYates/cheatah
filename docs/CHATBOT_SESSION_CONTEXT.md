@@ -60,7 +60,7 @@ GEMINI_API_KEY=(secret)
 ## Current Tenant for Testing
 - **Tenant ID:** 3
 - **Name:** BSS Cypress-Spring (British Swim Schools)
-- **Telnyx Number:** +12816260873
+- **Telnyx Number:** +12816990999
 
 ---
 

@@ -34,14 +34,14 @@ TENANT_CONFIG = {
     1: {
         "name": "Demo Company",
         "connection_id": "40019b5f-b8cb-403e-9b58-78124ec26560",
-        "voice_phone": "+12817679141",  # 10DLP number
+        "voice_phone": "+12816990999",  # BSS_03 voice line
     },
     3: {
         "name": "BSS Cypress-Spring",
         "connection_id": "40019b95-2d35-4479-9483-4080ad07d86a",
         "messaging_profile_id": "40019b95-2d35-4479-9483-4080ad07d86a",
-        "voice_phone": "+12816260873",
-        "sms_phone": "+12816260873",
+        "voice_phone": "+12816990999",
+        "sms_phone": "+12816990999",
     },
 }
 

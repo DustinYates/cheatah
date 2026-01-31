@@ -1,83 +1,34 @@
 # Telnyx Voice AI Agents Configuration
 
-This document describes the Telnyx Voice AI agents configured for British Swim School.
+This document describes the Telnyx Voice AI agent configured for British Swim School (Tenant 3).
 
 ## Overview
 
-There are **TWO** voice agents configured:
+| Agent | Assistant ID | Phone | Purpose |
+|-------|--------------|-------|---------|
+| **BSS_03** | `assistant-9364a1b8-04ba-4cfa-b77d-c24b1fb011af` | +1-281-699-0999 | Primary voice assistant for BSS Cypress-Spring |
 
-| Agent | Language | Assistant ID | Phone | Purpose |
-|-------|----------|--------------|-------|---------|
-| **ChatterCheetah Voice BSS** | English | `assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d` | +1-281-626-0873 | Primary English assistant (routes Spanish to SP) |
-| **ChatterCheetah Voice BSS SP** | Spanish | `assistant-109f3350-874f-4770-87d4-737450280441` | +1-281-767-9141 | Spanish-speaking assistant |
-
-### Performance Metrics (Both Agents)
-- **Estimated Voice Latency**: ~1350ms
-- **Estimated Cost**: ~$0.082 per minute + telephony fees
+### Performance Metrics
 - **Model**: google/gemini-2.5-flash
 - **API Key**: gemvoice
 
 ---
 
-## Agent 1: ChatterCheetah Voice BSS (English)
+## Agent: BSS_03
 
 ### Basic Info
 
-- **Name**: ChatterCheetah Voice BSS
-- **Assistant ID**: `assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d`
-- **Created**: 12 Jan 2026 9:52 PM
-- **Phone Number**: +1-281-626-0873
-
-### Voice Configuration
-
-| Setting | Value |
-|---------|-------|
-| Provider | Telnyx |
-| Voice Model | NaturalHD |
-| Voice | lyra |
-| Voice Speed | 1 |
-| Transcription Model | deepgram/nova-3 |
-| Transcription Language | Auto (auto-detect) |
-| Smart Format | Enabled |
-| Numerals | Enabled |
-| Noise Suppression | Enabled (Deepfilternet) |
-| Attenuation Limit | 83 (max 0-100) |
-| Advanced Mode | Enabled |
-| Background Audio | Silence |
-| Interruptions | Enabled |
-
-**Speaking Plan Timings:**
-- Wait Seconds: 0.1s
-- On Punctuation: 0.1s
-- On No Punctuation: 0.1s
-- On Number: 0.1s
-
-### Greeting Configuration
-
-- **Mode**: Assistant speaks first
-- **Message**: "Hi, I'm British Swim Schools A.I. Assistant. How can I help you?"
-
-### Spanish Language Routing Logic
-
-This agent implements a **critical language detection rule**:
-```
-IF transcript contains: spanish | espanol | español | "no english" | "don't speak english" | "only spanish"
-   OR English confidence is low/unstable
-THEN:
-   Say: "Sure! one second"
-   Invoke: Handoff tool
-   Transfer to: "ChatterCheetah Voice BSS SP"
-ELSE:
-   Continue in English
-```
+- **Name**: BSS_03
+- **Assistant ID**: `assistant-9364a1b8-04ba-4cfa-b77d-c24b1fb011af`
+- **Phone Number**: +1-281-699-0999
+- **Tenant**: BSS Cypress-Spring (Tenant 3)
 
 ### Tools Configured
 
-1. **Handoff** - Routes to ChatterCheetah Voice BSS SP (Spanish)
-2. **send_registration_link** - Webhook to send SMS registration links
-3. **Send Message** - Send text messages to caller
-4. **Hang Up** - End call when complete
-5. **Transfer** - Transfer to staff at +1-281-601-4588
+1. **send_registration_link** - Webhook to send SMS registration links
+2. **Send Message** - Send text messages to caller
+3. **Hang Up** - End call when complete
+4. **Transfer** - Transfer to staff at +1-281-601-4588
 
 ### Webhook: send_registration_link
 
@@ -95,128 +46,12 @@ ELSE:
 | `level` | string | Yes | Swim level (e.g., "Adult Level 3", "Tadpole") |
 | `caller_phone` | string | No | Caller's phone number |
 
-### Call Settings
-
-| Setting | Value |
-|---------|-------|
-| Max Call Duration | 1800 seconds (30 min) |
-| User Idle Timeout | 60 seconds |
-| Voicemail Detection | Continue assistant |
-| Channel Limit | 10 |
-| AnchorSite | Latency |
-| Record Outbound Calls | Do Not Record |
-| Inbound Call Recording | Disabled |
-| Support Unauthenticated Web Calls | Enabled |
-| Conversation Inactivity | 10000000 minutes (disabled) |
-
-### TeXML Configuration
-
-- **Application Name**: `ai-assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d`
-- **Application ID**: `2871678346117252267`
-- **Outbound Voice Profile ID**: `2859607228711699732`
-
 ### Widget Configuration
 
 ```html
-<telnyx-ai-agent agent-id="assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d"></telnyx-ai-agent>
+<telnyx-ai-agent agent-id="assistant-9364a1b8-04ba-4cfa-b77d-c24b1fb011af"></telnyx-ai-agent>
 <script async src="https://unpkg.com/@telnyx/ai-agent-widget@next"></script>
 ```
-
----
-
-## Agent 2: ChatterCheetah Voice BSS SP (Spanish)
-
-This is the Spanish-speaking assistant that receives transfers from the English assistant when Spanish is detected.
-
-**Transfer Trigger:** When the English assistant detects Spanish keywords, it:
-1. Says "Sure! one second"
-2. Invokes the Handoff tool to transfer to this agent
-
-### Basic Info
-
-- **Name**: ChatterCheetah Voice BSS SP
-- **Assistant ID**: `assistant-109f3350-874f-4770-87d4-737450280441`
-- **Created**: 17 Jan 2026 7:34 AM
-- **Phone Number**: +1-281-767-9141
-
-### Voice Configuration
-
-| Setting | Value |
-|---------|-------|
-| Provider | Telnyx |
-| Voice Model | NaturalHD |
-| Voice | eris |
-| Voice Speed | 1 |
-| Transcription Model | deepgram/nova-3 |
-| Transcription Language | Spanish (Latin America) |
-| Smart Format | Enabled |
-| Numerals | Enabled |
-| Noise Suppression | Enabled (Krisp) |
-| Background Audio | Silence |
-| Interruptions | Enabled |
-
-**Speaking Plan Timings:**
-- Wait Seconds: 0s
-- On Punctuation: 0.3s
-- On No Punctuation: 0.2s
-- On Number: 0.3s
-
-### Tools Configured
-
-1. **Transfer** - Transfer calls to staff at +1-281-601-4588
-2. **Hang Up** - End call when conversation completes
-3. **Send DTMF** - Send DTMF tones during calls
-4. **Send Message** - Send SMS text messages to caller (post-call only)
-
-### Call Settings
-
-| Setting | Value |
-|---------|-------|
-| Max Call Duration | 1800 seconds (30 min) |
-| User Idle Timeout | 60 seconds |
-| Voicemail Detection | Continue assistant |
-| Channel Limit | 10 |
-| AnchorSite | Latency |
-| Record Outbound Calls | Do Not Record |
-| Inbound Call Recording | Enabled |
-| Support Unauthenticated Web Calls | Enabled |
-| Conversation Inactivity | Not configured |
-
-### TeXML Configuration
-
-- **Application Name**: `ai-assistant-109f3350-874f-4770-87d4-737450280441`
-- **Application ID**: `2874870294063875315`
-- **Outbound Voice Profile ID**: `2859607228711699732`
-
-### Webhook Configuration
-
-| Type | URL |
-|------|-----|
-| Delivery Status | `https://chatterchetah-900139201687.us-central1.run.app/api/v1/telnyx` |
-
-### Widget Configuration
-
-```html
-<telnyx-ai-agent agent-id="assistant-109f3350-874f-4770-87d4-737450280441"></telnyx-ai-agent>
-<script async src="https://unpkg.com/@telnyx/ai-agent-widget@next"></script>
-```
-
----
-
-## Key Differences Between Agents
-
-| Feature | Agent SP (Spanish) | Agent EN (English) |
-|---------|-------------------|-------------------|
-| Primary Language | Spanish Only | English (Auto-detect) |
-| Spanish Detection | N/A | Detects & routes to SP |
-| Voice | eris | lyra |
-| Transcription | Spanish (Latin America) | Auto (detect all) |
-| Inbound Recording | Enabled | Disabled |
-| Noise Engine | Krisp | Deepfilternet |
-| Attenuation Limit | N/A | 83 |
-| Advanced Mode | N/A | Enabled |
-| Conversation Timeout | Not configured | 10000000 min (disabled) |
-| Phone Number | +1-281-767-9141 | +1-281-626-0873 |
 
 ---
 
@@ -224,7 +59,7 @@ This is the Spanish-speaking assistant that receives transfers from the English 
 
 ### Webhook Flow
 
-Both agents share the same webhook endpoint for SMS delivery status:
+Webhook endpoint for SMS delivery status:
 ```
 https://chatterchetah-900139201687.us-central1.run.app/api/v1/telnyx
 ```
@@ -343,21 +178,16 @@ https://chatterchetah-900139201687.us-central1.run.app/api/v1/telnyx
 
 | Purpose | Number | Agent |
 |---------|--------|-------|
-| English inbound calls | +1-281-626-0873 | ChatterCheetah Voice BSS |
-| Spanish inbound calls | +1-281-767-9141 | ChatterCheetah Voice BSS SP |
-| Staff transfer (escalation) | +1-281-601-4588 | Both agents |
+| Inbound calls | +1-281-699-0999 | BSS_03 |
+| Staff transfer (escalation) | +1-281-601-4588 | BSS_03 |
 
 ---
 
 ## Deployment Notes
 
-1. Both agents share the same webhook endpoint for SMS delivery
-2. Both agents use the same Outbound Voice Profile ID (`2859607228711699732`)
-3. Agent EN must receive English calls first - it routes Spanish callers to Agent SP
-4. Registration links are sent from the agent's assigned Telnyx number
-5. Call transfer logic uses Handoff (EN→SP) or Transfer (to staff)
-6. Conversation inactivity timeout is disabled on EN, not configured on SP
-7. Data Retention: Enabled on both agents (conversation history stored)
+1. Registration links are sent from the agent's assigned Telnyx number
+2. Call transfer logic uses Transfer (to staff)
+3. Data Retention: Enabled (conversation history stored)
 
 ---
 
@@ -370,6 +200,7 @@ https://chatterchetah-900139201687.us-central1.run.app/api/v1/telnyx
 
 ## Changelog
 
+- **2026-01-31**: Replaced EN/SP dual-agent setup with single BSS_03 agent (assistant-9364a1b8-04ba-4cfa-b77d-c24b1fb011af)
 - **2026-01-26**: Added comprehensive integration architecture, pricing, location mappings
 - **2026-01-26**: Added full Spanish agent (ChatterCheetah Voice BSS SP) configuration
 - **2026-01-26**: Initial documentation created

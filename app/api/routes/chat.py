@@ -43,6 +43,7 @@ class ChatResponse(BaseModel):
     lead_captured: bool = False  # True if lead was captured in this turn
     escalation_requested: bool = False  # True if customer requested to speak with human
     escalation_id: int | None = None  # Escalation record ID if escalation was triggered
+    scheduling: dict | None = None  # Scheduling data {mode, slots[], booking_link, booking_confirmed}
 
 
 async def _validate_widget_api_key(
@@ -160,6 +161,7 @@ async def chat(
             lead_captured=result.lead_captured,
             escalation_requested=result.escalation_requested,
             escalation_id=result.escalation_id,
+            scheduling=result.scheduling,
         )
         
     except ValueError as e:

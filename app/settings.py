@@ -107,6 +107,12 @@ class Settings(BaseSettings):
     gmail_pubsub_auth_token: str | None = None  # Shared secret for Pub/Sub push verification
     frontend_url: str | None = None  # Frontend URL for OAuth redirects
 
+    # Google Calendar OAuth (for meeting scheduling)
+    # Falls back to gmail_client_id/gmail_client_secret if not set
+    google_calendar_client_id: str | None = None
+    google_calendar_client_secret: str | None = None
+    google_calendar_oauth_redirect_uri: str | None = None
+
     # SendGrid (Email sending)
     sendgrid_api_key: str | None = None
     sendgrid_from_email: str = "noreply@yourdomain.com"  # Default from email

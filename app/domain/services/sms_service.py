@@ -17,6 +17,7 @@ from app.domain.services.escalation_service import EscalationService
 from app.domain.services.intent_detector import IntentDetector
 from app.domain.services.opt_in_service import OptInService
 from app.domain.services.prompt_service import PromptService
+from app.domain.services.sms_burst_detector import SmsBurstDetector
 from app.utils.name_validator import validate_name
 from app.infrastructure.telephony.factory import TelephonyProviderFactory
 from app.persistence.models.conversation import Conversation, Message
@@ -328,6 +329,33 @@ class SmsService:
             # Use provider-specific webhook path
             webhook_prefix = factory.get_webhook_path_prefix(sms_config)
             status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1{webhook_prefix}/sms/status"
+
+        # Check for SMS burst/spam pattern before sending
+        try:
+            burst_detector = SmsBurstDetector(self.session)
+            burst_result = await burst_detector.check_outbound_sms(
+                tenant_id=tenant_id,
+                to_number=phone_number,
+                message_content=formatted_response,
+            )
+            if burst_result.should_block:
+                logger.warning(
+                    f"SMS BLOCKED by burst detector - tenant_id={tenant_id}, "
+                    f"to={phone_number}, incident={burst_result.incident_id}, "
+                    f"count={burst_result.message_count}"
+                )
+                return SmsResult(
+                    response_message=formatted_response,
+                    message_sid=None,
+                )
+            if burst_result.is_burst:
+                logger.warning(
+                    f"SMS burst warning (not blocked) - tenant_id={tenant_id}, "
+                    f"to={phone_number}, severity={burst_result.severity}, "
+                    f"incident={burst_result.incident_id}"
+                )
+        except Exception as e:
+            logger.error(f"Burst detection failed (allowing send): {e}", exc_info=True)
 
         # Send via the configured provider
         logger.info(f"SMS sending response - tenant_id={tenant_id}, to={phone_number}, from={from_number}")

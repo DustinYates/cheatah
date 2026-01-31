@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,9 +28,30 @@ from app.persistence.models.tenant_voice_config import TenantVoiceConfig
 from app.persistence.models.tenant_widget_config import TenantWidgetConfig
 from app.persistence.models.tenant_customer_service_config import TenantCustomerServiceConfig
 from app.persistence.models.tenant_prompt_config import TenantPromptConfig
+from app.persistence.repositories.customer_service_config_repository import CustomerServiceConfigRepository
 from app.persistence.repositories.tenant_repository import TenantRepository
 
 router = APIRouter()
+
+
+# --- Jackrabbit API Keys schemas ---
+
+class JackrabbitKeysResponse(BaseModel):
+    """Response schema for Jackrabbit API keys."""
+    tenant_id: int
+    key_1_configured: bool
+    key_2_configured: bool
+    key_1_masked: str | None = None
+    key_2_masked: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class JackrabbitKeysUpdate(BaseModel):
+    """Update schema for Jackrabbit API keys."""
+    jackrabbit_api_key_1: str | None = None
+    jackrabbit_api_key_2: str | None = None
 
 
 def _tenant_to_response(tenant: Tenant) -> AdminTenantResponse:
@@ -429,3 +451,108 @@ async def update_tenant(
             detail="Tenant not found",
         )
     return _tenant_to_response(tenant)
+
+
+def _mask_key(key: str | None) -> str | None:
+    """Mask an API key for display, showing only last 8 chars."""
+    if not key:
+        return None
+    if len(key) <= 8:
+        return "••••" + key
+    return "••••" + key[-8:]
+
+
+@router.get("/tenants/{tenant_id}/jackrabbit-keys", response_model=JackrabbitKeysResponse)
+async def get_jackrabbit_keys(
+    tenant_id: int,
+    current_user: Annotated[User, Depends(require_global_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JackrabbitKeysResponse:
+    """Get Jackrabbit API key status for a tenant."""
+    config_repo = CustomerServiceConfigRepository(db)
+    config = await config_repo.get_by_tenant_id(tenant_id)
+
+    if not config:
+        return JackrabbitKeysResponse(
+            tenant_id=tenant_id,
+            key_1_configured=False,
+            key_2_configured=False,
+        )
+
+    return JackrabbitKeysResponse(
+        tenant_id=tenant_id,
+        key_1_configured=bool(config.jackrabbit_api_key_1),
+        key_2_configured=bool(config.jackrabbit_api_key_2),
+        key_1_masked=_mask_key(config.jackrabbit_api_key_1),
+        key_2_masked=_mask_key(config.jackrabbit_api_key_2),
+    )
+
+
+@router.put("/tenants/{tenant_id}/jackrabbit-keys", response_model=JackrabbitKeysResponse)
+async def update_jackrabbit_keys(
+    tenant_id: int,
+    keys_update: JackrabbitKeysUpdate,
+    current_user: Annotated[User, Depends(require_global_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JackrabbitKeysResponse:
+    """Set or update Jackrabbit API keys for a tenant."""
+    tenant_repo = TenantRepository(db)
+    tenant = await tenant_repo.get_by_id(None, tenant_id)
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found",
+        )
+
+    config_repo = CustomerServiceConfigRepository(db)
+    update_data = {}
+    if keys_update.jackrabbit_api_key_1 is not None:
+        update_data["jackrabbit_api_key_1"] = keys_update.jackrabbit_api_key_1 or None
+    if keys_update.jackrabbit_api_key_2 is not None:
+        update_data["jackrabbit_api_key_2"] = keys_update.jackrabbit_api_key_2 or None
+
+    config = await config_repo.create_or_update(tenant_id, **update_data)
+
+    return JackrabbitKeysResponse(
+        tenant_id=tenant_id,
+        key_1_configured=bool(config.jackrabbit_api_key_1),
+        key_2_configured=bool(config.jackrabbit_api_key_2),
+        key_1_masked=_mask_key(config.jackrabbit_api_key_1),
+        key_2_masked=_mask_key(config.jackrabbit_api_key_2),
+    )
+
+
+@router.delete("/tenants/{tenant_id}/jackrabbit-keys/{key_number}")
+async def delete_jackrabbit_key(
+    tenant_id: int,
+    key_number: int,
+    current_user: Annotated[User, Depends(require_global_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JackrabbitKeysResponse:
+    """Delete a specific Jackrabbit API key (1 or 2) for a tenant."""
+    if key_number not in (1, 2):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="key_number must be 1 or 2",
+        )
+
+    config_repo = CustomerServiceConfigRepository(db)
+    config = await config_repo.get_by_tenant_id(tenant_id)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No Jackrabbit keys configured for this tenant",
+        )
+
+    field = f"jackrabbit_api_key_{key_number}"
+    setattr(config, field, None)
+    await db.commit()
+    await db.refresh(config)
+
+    return JackrabbitKeysResponse(
+        tenant_id=tenant_id,
+        key_1_configured=bool(config.jackrabbit_api_key_1),
+        key_2_configured=bool(config.jackrabbit_api_key_2),
+        key_1_masked=_mask_key(config.jackrabbit_api_key_1),
+        key_2_masked=_mask_key(config.jackrabbit_api_key_2),
+    )

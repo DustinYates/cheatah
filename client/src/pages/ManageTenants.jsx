@@ -26,6 +26,12 @@ export default function ManageTenants() {
   const [editingTenant, setEditingTenant] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  // Jackrabbit API Keys state
+  const [jackrabbitKeys, setJackrabbitKeys] = useState(null);
+  const [jackrabbitKeyInputs, setJackrabbitKeyInputs] = useState({ key_1: '', key_2: '' });
+  const [savingKeys, setSavingKeys] = useState(false);
+  const [keysError, setKeysError] = useState(null);
+
   useEffect(() => {
     fetchTenants();
   }, []);
@@ -114,10 +120,55 @@ export default function ManageTenants() {
     }
   };
 
+  const fetchJackrabbitKeys = async (tenantId) => {
+    setKeysError(null);
+    try {
+      const data = await api.getJackrabbitKeys(tenantId);
+      setJackrabbitKeys(data);
+      setJackrabbitKeyInputs({ key_1: '', key_2: '' });
+    } catch (err) {
+      console.error('Failed to fetch Jackrabbit keys:', err);
+      setJackrabbitKeys(null);
+    }
+  };
+
+  const handleSaveJackrabbitKey = async (keyNumber) => {
+    if (!editingTenant) return;
+    const value = keyNumber === 1 ? jackrabbitKeyInputs.key_1 : jackrabbitKeyInputs.key_2;
+    if (!value.trim()) return;
+    setSavingKeys(true);
+    setKeysError(null);
+    try {
+      const field = keyNumber === 1 ? 'jackrabbit_api_key_1' : 'jackrabbit_api_key_2';
+      const data = await api.updateJackrabbitKeys(editingTenant.id, { [field]: value.trim() });
+      setJackrabbitKeys(data);
+      setJackrabbitKeyInputs((prev) => ({ ...prev, [`key_${keyNumber}`]: '' }));
+    } catch (err) {
+      setKeysError(err.message || 'Failed to save key');
+    } finally {
+      setSavingKeys(false);
+    }
+  };
+
+  const handleDeleteJackrabbitKey = async (keyNumber) => {
+    if (!editingTenant) return;
+    setSavingKeys(true);
+    setKeysError(null);
+    try {
+      const data = await api.deleteJackrabbitKey(editingTenant.id, keyNumber);
+      setJackrabbitKeys(data);
+    } catch (err) {
+      setKeysError(err.message || 'Failed to delete key');
+    } finally {
+      setSavingKeys(false);
+    }
+  };
+
   const handleViewTenant = (index) => {
     setCurrentIndex(index);
     setEditingTenant({ ...tenants[index] });
     setViewMode('single');
+    fetchJackrabbitKeys(tenants[index].id);
   };
 
   const handlePrevTenant = () => {
@@ -125,6 +176,7 @@ export default function ManageTenants() {
       const newIndex = currentIndex - 1;
       setCurrentIndex(newIndex);
       setEditingTenant({ ...tenants[newIndex] });
+      fetchJackrabbitKeys(tenants[newIndex].id);
     }
   };
 
@@ -133,6 +185,7 @@ export default function ManageTenants() {
       const newIndex = currentIndex + 1;
       setCurrentIndex(newIndex);
       setEditingTenant({ ...tenants[newIndex] });
+      fetchJackrabbitKeys(tenants[newIndex].id);
     }
   };
 
@@ -144,6 +197,9 @@ export default function ManageTenants() {
   const handleBackToList = () => {
     setViewMode('list');
     setEditingTenant(null);
+    setJackrabbitKeys(null);
+    setJackrabbitKeyInputs({ key_1: '', key_2: '' });
+    setKeysError(null);
   };
 
   if (loading) {
@@ -277,6 +333,78 @@ export default function ManageTenants() {
             >
               View Tenant Screens →
             </button>
+          </div>
+        </div>
+
+        {/* Jackrabbit API Keys Section */}
+        <div className="tenant-detail-card" style={{ marginTop: '1.5rem' }}>
+          <div className="tenant-detail-header">
+            <h2>Jackrabbit API Keys</h2>
+          </div>
+
+          {keysError && <div className="error-message">{keysError}</div>}
+
+          {[1, 2].map((keyNum) => {
+            const isConfigured = jackrabbitKeys?.[`key_${keyNum}_configured`];
+            const masked = jackrabbitKeys?.[`key_${keyNum}_masked`];
+            const inputValue = jackrabbitKeyInputs[`key_${keyNum}`];
+
+            return (
+              <div key={keyNum} className="detail-field" style={{ marginBottom: '1rem', padding: '0 1.5rem' }}>
+                <label>Key {keyNum}</label>
+                {isConfigured ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div
+                      style={{
+                        flex: 1,
+                        padding: '0.6rem 0.75rem',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '6px',
+                        backgroundColor: '#f8fafc',
+                        fontFamily: 'monospace',
+                        fontSize: '0.9rem',
+                        color: '#64748b',
+                      }}
+                    >
+                      {masked}
+                    </div>
+                    <button
+                      className="btn-danger"
+                      onClick={() => handleDeleteJackrabbitKey(keyNum)}
+                      disabled={savingKeys}
+                      style={{ whiteSpace: 'nowrap' }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <input
+                      type="text"
+                      value={inputValue}
+                      onChange={(e) =>
+                        setJackrabbitKeyInputs((prev) => ({ ...prev, [`key_${keyNum}`]: e.target.value }))
+                      }
+                      placeholder="Enter Jackrabbit API key..."
+                      style={{ flex: 1, fontFamily: 'monospace' }}
+                    />
+                    <button
+                      className="btn-primary"
+                      onClick={() => handleSaveJackrabbitKey(keyNum)}
+                      disabled={savingKeys || !inputValue.trim()}
+                      style={{ whiteSpace: 'nowrap' }}
+                    >
+                      {savingKeys ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <div style={{ padding: '0 1.5rem 1.5rem' }}>
+            <small style={{ color: '#94a3b8' }}>
+              These keys are sent to Zapier for authenticating with the Jackrabbit CRM API (class schedules, customer data).
+            </small>
           </div>
         </div>
       </div>

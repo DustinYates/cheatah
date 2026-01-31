@@ -1,0 +1,49 @@
+.chi-gauge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  cursor: pointer;
+}
+.chi-gauge-label {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+.chi-gauge-detail {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: var(--color-bg-dark, #1a1a2e);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  min-width: 200px;
+  margin-top: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+.chi-detail-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+}
+.chi-signal {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+.chi-signal-name {
+  text-transform: capitalize;
+}
+.chi-signal-weight {
+  font-weight: 600;
+}
+.chi-signal.negative .chi-signal-weight {
+  color: #fca5a5;
+}
+.chi-signal.positive .chi-signal-weight {
+  color: #86efac;
+}

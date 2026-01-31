@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
 import DateRangeFilter from '../components/DateRangeFilter';
+import MetricCard from '../components/MetricCard';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import {
   DATE_RANGE_PRESETS,
@@ -238,22 +239,27 @@ export default function WidgetAnalytics() {
       </div>
       {hasData && (
         <div className="widget-analytics-summary">
-          <div>
-            <span className="summary-value">{formatNumber(data.visibility.impressions)}</span>
-            <span className="summary-label">Impressions</span>
-          </div>
-          <div>
-            <span className="summary-value">{formatPercent(data.attention.open_rate)}</span>
-            <span className="summary-label">Open Rate</span>
-          </div>
-          <div>
-            <span className="summary-value">{formatPercent(data.visibility.above_fold_rate)}</span>
-            <span className="summary-label">Above Fold</span>
-          </div>
-          <div>
-            <span className="summary-value">{formatPercent(data.attention.manual_open_rate)}</span>
-            <span className="summary-label">Manual Opens</span>
-          </div>
+          <MetricCard
+            label="Impressions"
+            value={formatNumber(data.visibility.impressions)}
+            tooltip="Computed using: total widget load events tracked via analytics pixel."
+          />
+          <MetricCard
+            label="Open Rate"
+            value={formatPercent(data.attention.open_rate)}
+            tooltip="Computed using: widget opens (manual + auto) / total impressions."
+          />
+          <MetricCard
+            label="Above Fold"
+            value={formatPercent(data.visibility.above_fold_rate)}
+            tooltip="Computed using: impressions where widget was visible without scrolling / total impressions."
+          />
+          <MetricCard
+            label="Manual Opens"
+            value={formatPercent(data.attention.manual_open_rate)}
+            tooltip="Computed using: user-initiated widget opens / total impressions. Excludes auto-opens."
+            configSummary={isAutoOpenEnabled ? `Auto-open: ${autoOpenDelay}s delay` : 'Auto-open: disabled'}
+          />
         </div>
       )}
     </div>

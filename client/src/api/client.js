@@ -157,6 +157,23 @@ class ApiClient {
     });
   }
 
+  async getJackrabbitKeys(tenantId) {
+    return this.request(`/admin/tenants/${tenantId}/jackrabbit-keys`);
+  }
+
+  async updateJackrabbitKeys(tenantId, keys) {
+    return this.request(`/admin/tenants/${tenantId}/jackrabbit-keys`, {
+      method: 'PUT',
+      body: JSON.stringify(keys),
+    });
+  }
+
+  async deleteJackrabbitKey(tenantId, keyNumber) {
+    return this.request(`/admin/tenants/${tenantId}/jackrabbit-keys/${keyNumber}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getLeads(params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/leads${query ? `?${query}` : ''}`);
@@ -848,6 +865,48 @@ class ApiClient {
     return this.request(`/config/history/${snapshotId}/rollback`, {
       method: 'POST',
     });
+  }
+
+  // Calendar settings methods
+  async getCalendarSettings() {
+    return this.request('/calendar/settings');
+  }
+
+  async updateCalendarSettings(data) {
+    return this.request('/calendar/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async startCalendarOAuth() {
+    return this.request('/calendar/oauth/start', {
+      method: 'POST',
+    });
+  }
+
+  async disconnectCalendar() {
+    return this.request('/calendar/disconnect', {
+      method: 'DELETE',
+    });
+  }
+
+  async getCalendarSlots(dateStart, numDays = 3) {
+    const params = new URLSearchParams();
+    if (dateStart) params.set('date_start', dateStart);
+    params.set('num_days', numDays.toString());
+    return this.request(`/calendar/available-slots?${params}`);
+  }
+
+  async getCalendarEvents(weekOffset = 0) {
+    const params = new URLSearchParams();
+    if (weekOffset !== 0) params.set('week_offset', weekOffset.toString());
+    const qs = params.toString();
+    return this.request(`/calendar/events${qs ? `?${qs}` : ''}`);
+  }
+
+  async getCalendarList() {
+    return this.request('/calendar/calendars');
   }
 }
 

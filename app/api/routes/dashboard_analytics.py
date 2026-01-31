@@ -14,6 +14,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_global_admin, require_tenant_context
+from app.persistence.models.tenant import User
 from app.api.schemas.dashboard_analytics import (
     AnomalyAlertListResponse,
     AnomalyAlertResponse,
@@ -654,7 +655,7 @@ async def get_conversation_chi(
 
 @router.get("/sms-bursts", response_model=SmsBurstDashboardResponse)
 async def get_sms_burst_dashboard(
-    _admin: Annotated[None, Depends(require_global_admin)],
+    _admin: Annotated[User, Depends(require_global_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
     hours: int = Query(24, ge=1, le=168),
@@ -723,7 +724,7 @@ async def get_sms_burst_dashboard(
 @router.patch("/sms-bursts/{incident_id}")
 async def update_burst_incident(
     incident_id: int,
-    _admin: Annotated[None, Depends(require_global_admin)],
+    _admin: Annotated[User, Depends(require_global_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
     new_status: str = Query(..., alias="status"),
@@ -757,6 +758,7 @@ async def update_burst_incident(
 
 @router.get("/sms-burst-config", response_model=SmsBurstConfigResponse)
 async def get_burst_config(
+    _admin: Annotated[User, Depends(require_global_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> SmsBurstConfigResponse:
@@ -786,6 +788,7 @@ async def get_burst_config(
 @router.put("/sms-burst-config", response_model=SmsBurstConfigResponse)
 async def update_burst_config(
     update: SmsBurstConfigUpdate,
+    _admin: Annotated[User, Depends(require_global_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> SmsBurstConfigResponse:

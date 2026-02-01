@@ -44,7 +44,7 @@ Conventions:
 | `GMAIL_PUBSUB_TOPIC` | Global | Pub/Sub topic for Gmail watch | `app/infrastructure/pubsub.py` | Env | `projects/<project>/topics/gmail-push-notifications` |
 | `FRONTEND_URL` | Global | Frontend base URL for redirects | `app/api/routes/tenant_email.py` | Env | `https://<frontend>` |
 | `GEMINI_API_KEY` | Global | Gemini API key | `app/llm/gemini_client.py` | Secret Manager / Env | `<redacted>` |
-| `GEMINI_MODEL` | Global | Gemini model name | `app/llm/gemini_client.py` | Env | `gemini-3-flash-preview` |
+| `GEMINI_MODEL` | Global | Gemini model name | `app/llm/gemini_client.py` | Env | `gemini-2.5-flash` |
 | `AI_INTEGRATIONS_GEMINI_API_KEY` | Global | Alternate Gemini key source | `app/llm/gemini_client.py` | Env | `<redacted>` |
 | `AI_INTEGRATIONS_GEMINI_BASE_URL` | Global | Alternate Gemini base URL | `app/llm/gemini_client.py` | Env | `https://...` |
 | `CHAT_MAX_TURNS` | Global | Chat guardrail (currently not wired into `ChatService`) | `app/settings.py` | Env | `20` |

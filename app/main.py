@@ -148,7 +148,158 @@ async def health_check():
     return {"status": "healthy"}
 
 
-@app.post("/api/v1/telnyx/tools/get-classes")
+@app.post("/api/v1/telnyx/diagnostics")
+async def telnyx_diagnostics():
+    """Diagnose Telnyx connection/phone number/agent configuration for all tenants."""
+    import httpx
+    from fastapi.responses import JSONResponse as JR
+    from sqlalchemy import select as sa_select
+    from app.persistence.database import async_session_factory
+    from app.persistence.models.tenant_sms_config import TenantSmsConfig
+    from app.persistence.models.tenant_voice_config import TenantVoiceConfig
+    from app.persistence.models.tenant import Tenant
+
+    TELNYX_API = "https://api.telnyx.com/v2"
+    results = []
+
+    try:
+        async with async_session_factory() as session:
+            stmt = sa_select(Tenant, TenantSmsConfig, TenantVoiceConfig).outerjoin(
+                TenantSmsConfig, Tenant.id == TenantSmsConfig.tenant_id
+            ).outerjoin(
+                TenantVoiceConfig, Tenant.id == TenantVoiceConfig.tenant_id
+            )
+            rows = (await session.execute(stmt)).all()
+
+            for tenant, sms_cfg, voice_cfg in rows:
+                diag = {
+                    "tenant_id": tenant.id,
+                    "tenant_name": tenant.name,
+                    "phone": sms_cfg.telnyx_phone_number if sms_cfg else None,
+                    "voice_phone": sms_cfg.voice_phone_number if sms_cfg else None,
+                    "connection_id": sms_cfg.telnyx_connection_id if sms_cfg else None,
+                    "messaging_profile_id": sms_cfg.telnyx_messaging_profile_id if sms_cfg else None,
+                    "voice_enabled": sms_cfg.voice_enabled if sms_cfg else False,
+                    "agent_id": voice_cfg.telnyx_agent_id if voice_cfg else None,
+                    "api_key_present": bool(sms_cfg and sms_cfg.telnyx_api_key),
+                    "telnyx_api_checks": {},
+                }
+
+                api_key = sms_cfg.telnyx_api_key if sms_cfg else None
+                if not api_key:
+                    diag["telnyx_api_checks"]["error"] = "No API key configured"
+                    results.append(diag)
+                    continue
+
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                }
+
+                async with httpx.AsyncClient(base_url=TELNYX_API, headers=headers, timeout=15.0) as client:
+                    # Check API key validity
+                    try:
+                        resp = await client.get("/balance")
+                        if resp.status_code == 200:
+                            bal = resp.json().get("data", {})
+                            diag["telnyx_api_checks"]["auth"] = "OK"
+                            diag["telnyx_api_checks"]["balance"] = bal.get("balance")
+                            diag["telnyx_api_checks"]["currency"] = bal.get("currency")
+                        else:
+                            diag["telnyx_api_checks"]["auth"] = f"FAILED ({resp.status_code}): {resp.text[:200]}"
+                            results.append(diag)
+                            continue
+                    except Exception as e:
+                        diag["telnyx_api_checks"]["auth"] = f"ERROR: {e}"
+                        results.append(diag)
+                        continue
+
+                    # Check phone number configuration
+                    if sms_cfg.telnyx_phone_number:
+                        try:
+                            phone = sms_cfg.telnyx_phone_number
+                            resp = await client.get("/phone_numbers", params={
+                                "filter[phone_number]": phone,
+                            })
+                            if resp.status_code == 200:
+                                nums = resp.json().get("data", [])
+                                if nums:
+                                    num = nums[0]
+                                    diag["telnyx_api_checks"]["phone_number"] = {
+                                        "status": num.get("status"),
+                                        "connection_id": num.get("connection_id"),
+                                        "connection_name": num.get("connection_name"),
+                                        "messaging_profile_id": num.get("messaging_profile_id"),
+                                        "tags": num.get("tags"),
+                                    }
+                                else:
+                                    diag["telnyx_api_checks"]["phone_number"] = "NOT FOUND in Telnyx account"
+                            else:
+                                diag["telnyx_api_checks"]["phone_number"] = f"API error: {resp.status_code}"
+                        except Exception as e:
+                            diag["telnyx_api_checks"]["phone_number"] = f"ERROR: {e}"
+
+                    # Check connection details
+                    conn_id = sms_cfg.telnyx_connection_id if sms_cfg else None
+                    if conn_id:
+                        try:
+                            resp = await client.get(f"/connections/{conn_id}")
+                            if resp.status_code == 200:
+                                conn = resp.json().get("data", {})
+                                diag["telnyx_api_checks"]["connection"] = {
+                                    "id": conn.get("id"),
+                                    "name": conn.get("connection_name"),
+                                    "active": conn.get("active"),
+                                    "webhook_event_url": conn.get("webhook_event_url"),
+                                    "webhook_event_failover_url": conn.get("webhook_event_failover_url"),
+                                    "record_type": conn.get("record_type"),
+                                }
+                            else:
+                                diag["telnyx_api_checks"]["connection"] = f"NOT FOUND ({resp.status_code})"
+                        except Exception as e:
+                            diag["telnyx_api_checks"]["connection"] = f"ERROR: {e}"
+                    else:
+                        diag["telnyx_api_checks"]["connection"] = "No connection_id configured in DB"
+
+                    # Check AI assistants (get details for each)
+                    try:
+                        resp = await client.get("/ai/assistants")
+                        if resp.status_code == 200:
+                            assistants = resp.json().get("data", [])
+                            diag["telnyx_api_checks"]["ai_assistants"] = []
+                            for a in assistants:
+                                a_id = a.get("id")
+                                detail = {"id": a_id, "name": a.get("name"), "model": a.get("model")}
+                                # Get full details per assistant
+                                try:
+                                    dresp = await client.get(f"/ai/assistants/{a_id}")
+                                    if dresp.status_code == 200:
+                                        d = dresp.json().get("data", {})
+                                        detail["phone_numbers"] = d.get("phone_numbers")
+                                        detail["webhook_url"] = d.get("webhook_url")
+                                        detail["status"] = d.get("status")
+                                        detail["active"] = d.get("active")
+                                        detail["greeting"] = (d.get("greeting") or "")[:80]
+                                        detail["tools"] = [t.get("type") or t.get("name") for t in (d.get("tools") or [])]
+                                    else:
+                                        detail["detail_error"] = f"{dresp.status_code}"
+                                except Exception as e2:
+                                    detail["detail_error"] = str(e2)
+                                diag["telnyx_api_checks"]["ai_assistants"].append(detail)
+                        else:
+                            diag["telnyx_api_checks"]["ai_assistants"] = f"API error: {resp.status_code} - {resp.text[:200]}"
+                    except Exception as e:
+                        diag["telnyx_api_checks"]["ai_assistants"] = f"ERROR: {e}"
+
+                results.append(diag)
+
+        return JR(content={"diagnostics": results})
+    except Exception as e:
+        import traceback
+        return JR(status_code=500, content={"error": str(e), "traceback": traceback.format_exc()})
+
+
+@app.api_route("/api/v1/telnyx/tools/get-classes", methods=["GET", "POST"])
 async def get_classes_proxy():
     """Proxy endpoint for Telnyx AI Assistant to fetch Jackrabbit class openings."""
     import httpx

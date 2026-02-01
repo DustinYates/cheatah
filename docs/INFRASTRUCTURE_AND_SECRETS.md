@@ -58,7 +58,7 @@ echo -n "YOUR_GENERATED_KEY" | gcloud secrets create field-encryption-key --data
 |---------|-------|
 | **Provider** | Google Gemini |
 | **API Key Secret** | `gemini-api-key` |
-| **Model** | `gemini-3-flash-preview` |
+| **Model** | `gemini-2.5-flash` |
 | **Max Tokens** | 8000 (chat), 1000 (voice extraction) |
 | **Temperature** | 0.3 (chat), 0.1 (extraction) |
 | **Region** | N/A (Google API) |
@@ -149,19 +149,24 @@ echo -n "YOUR_GENERATED_KEY" | gcloud secrets create field-encryption-key --data
 
 | Setting | Value |
 |---------|-------|
-| **Assistant ID** | `d3d25f89-a4df-4ca0-8657-7fe2f53ce348` |
+| **Assistant ID (Tenant 2)** | `assistant-109f3350-874f-4770-87d4-737450280441` |
 | **Insight Group** | `0f29632f-e2e6-424a-973f-4d738ea758d8` |
 
 ### Webhooks (MANDATORY)
 
 | Webhook | URL | Events |
 |---------|-----|--------|
-| **SMS Inbound** | `/webhooks/telnyx/sms` | Incoming SMS |
-| **SMS Status** | `/webhooks/telnyx/sms-status` | Delivery status |
-| **Voice AI Complete** | `/webhooks/telnyx/ai-call-complete` | Call ended |
-| **Voice Progress** | `/webhooks/telnyx/call-progress` | Call state changes |
-| **Dynamic Variables** | `/webhooks/telnyx/dynamic-variables` | Prompt injection |
-| **AI Insights** | `/webhooks/telnyx/ai-insights` | (not firing - bug) |
+| **SMS Inbound** | `/api/v1/telnyx/sms/inbound` | Incoming SMS |
+| **SMS Status** | `/api/v1/telnyx/sms/status` | Delivery status |
+| **Voice AI Complete** | `/api/v1/telnyx/ai-call-complete` | Call ended |
+| **Voice Progress** | `/api/v1/telnyx/call-progress` | Call state changes |
+
+### Telnyx AI Agent Tool Endpoints
+
+| Tool | URL | Purpose |
+|------|-----|---------|
+| **send_registration_link** | `/api/v1/telnyx/tools/send-link` | SMS Jackrabbit registration link to caller |
+| **get_classes** | `/api/v1/telnyx/tools/get-classes` | Proxy to Jackrabbit OpeningsJson API (filters/trims response) |
 
 ### Twilio (Legacy/Alternative)
 
@@ -246,7 +251,6 @@ tenant_sms_configs.twilio_phone_number → Tenant ID lookup
 | Type | URL |
 |------|-----|
 | **Primary** | `https://chattercheatah-900139201687.us-central1.run.app` |
-| **Alternate** | `https://chattercheatah-iyv6z6wp7a-uc.a.run.app` |
 
 ### Secrets Manager Integration
 
@@ -290,18 +294,18 @@ tenant_sms_configs.twilio_phone_number → Tenant ID lookup
 
 | Endpoint | Source | Purpose |
 |----------|--------|---------|
-| `/webhooks/telnyx/sms` | Telnyx | SMS messages |
-| `/webhooks/telnyx/sms-status` | Telnyx | SMS delivery status |
-| `/webhooks/telnyx/ai-call-complete` | Telnyx | Voice call ended |
-| `/webhooks/telnyx/call-progress` | Telnyx | Call state updates |
-| `/webhooks/telnyx/dynamic-variables` | Telnyx | Prompt injection |
-| `/webhooks/telnyx/ai-insights` | Telnyx | Caller insights (broken) |
-| `/webhooks/twilio/sms` | Twilio | SMS messages |
-| `/webhooks/twilio/status` | Twilio | SMS status |
-| `/webhooks/email/gmail-push` | Google Pub/Sub | Gmail notifications |
-| `/webhooks/zapier/customer-lookup-callback` | Zapier | CRM responses |
-| `/webhooks/customer-service/voice` | Telnyx | CS voice calls |
-| `/webhooks/customer-service/sms` | Telnyx | CS SMS |
+| `/api/v1/telnyx/sms/inbound` | Telnyx | SMS messages |
+| `/api/v1/telnyx/sms/status` | Telnyx | SMS delivery status |
+| `/api/v1/telnyx/ai-call-complete` | Telnyx | Voice call ended |
+| `/api/v1/telnyx/call-progress` | Telnyx | Call state updates |
+| `/api/v1/sms/inbound` | Twilio | SMS messages |
+| `/api/v1/sms/status` | Twilio | SMS status |
+| `/api/v1/email/pubsub` | Google Pub/Sub | Gmail notifications |
+| `/api/v1/zapier/callback` | Zapier | CRM responses |
+| `/api/v1/telnyx/tools/send-link` | Telnyx AI Agent | Send registration link via SMS |
+| `/api/v1/telnyx/tools/get-classes` | Telnyx AI Agent | Jackrabbit class openings proxy |
+| `/api/v1/customer-service/voice/inbound` | Telnyx | CS voice calls |
+| `/api/v1/customer-service/sms/inbound` | Telnyx | CS SMS |
 
 ### Signature Verification
 
@@ -440,7 +444,7 @@ tenant_sms_configs.twilio_phone_number → Tenant ID lookup
 | Audit logging | Security | No comprehensive audit trail |
 | Backup strategy | Database | Supabase handles backups |
 | Monitoring/alerting | Ops | No alerting configured |
-| Error tracking | Ops | Using Cloud Logging only |
+| Error tracking | Ops | Sentry available (active if `SENTRY_DSN` configured) |
 | CI/CD pipeline | DevOps | Manual deployments via gcloud |
 | Staging environment | DevOps | Production only |
 | Redis deployment | Caching | Disabled, not deployed |

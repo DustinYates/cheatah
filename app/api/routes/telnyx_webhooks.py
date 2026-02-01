@@ -2948,7 +2948,7 @@ async def send_registration_link_tool(
         )
 
 
-@router.post("/tools/send-link")
+@router.api_route("/tools/send-link", methods=["GET", "POST"])
 async def send_link_tool(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -2966,16 +2966,18 @@ async def send_link_tool(
         first_name, last_name, email, students: Optional caller info
     """
     try:
-        # Parse body
+        # Parse body (JSON for POST, query params for GET)
         try:
             body = await request.json()
         except Exception:
             body = {}
 
-        to_phone = body.get("to", "")
-        org_id = body.get("org_id", "545911")
-        class_id = body.get("class_id")
-        class_name = body.get("class_name", "")
+        # Merge query params as fallback (Telnyx may send GET)
+        params = dict(request.query_params)
+        to_phone = body.get("to") or params.get("to", "")
+        org_id = body.get("org_id") or params.get("org_id", "545911")
+        class_id = body.get("class_id") or params.get("class_id")
+        class_name = body.get("class_name") or params.get("class_name", "")
 
         logger.info(
             f"[TOOL] send_link called - to={to_phone}, org_id={org_id}, "
@@ -2989,20 +2991,31 @@ async def send_link_tool(
                 "result": "Registration link will be sent after the call.",
             })
 
-        # Determine tenant from call context
+        # Determine tenant — Telnyx AI agent tool webhooks don't include
+        # call_control_id headers, and Call records aren't created until
+        # ai-call-complete (after the call ends). So we accept tenant_id
+        # as a query param on the webhook URL configured per-agent in Telnyx.
         tenant_id = None
-        call_control_id = request.headers.get("x-telnyx-call-control-id", "")
-        if call_control_id:
-            from app.persistence.models.call import Call
-            stmt = select(Call).where(Call.call_sid == call_control_id)
-            result = await db.execute(stmt)
-            call_record = result.scalar_one_or_none()
-            if call_record:
-                tenant_id = call_record.tenant_id
 
-        # Fallback: look up tenant by the caller's phone in sms configs
+        # 1) Explicit tenant_id from query param or body (set in Telnyx tool URL)
+        raw_tid = params.get("tenant_id") or body.get("tenant_id")
+        if raw_tid:
+            try:
+                tenant_id = int(raw_tid)
+                logger.info(f"[TOOL] send_link: tenant {tenant_id} from request param")
+            except (ValueError, TypeError):
+                pass
+
+        # 2) Fallback: call_control_id header → Call record lookup
         if not tenant_id:
-            tenant_id = await _get_tenant_from_telnyx_number(to_phone, db)
+            call_control_id = request.headers.get("x-telnyx-call-control-id", "")
+            if call_control_id:
+                from app.persistence.models.call import Call
+                stmt = select(Call).where(Call.call_sid == call_control_id)
+                result = await db.execute(stmt)
+                call_record = result.scalar_one_or_none()
+                if call_record:
+                    tenant_id = call_record.tenant_id
 
         if not tenant_id:
             logger.error("[TOOL] send_link: could not determine tenant")
@@ -3011,11 +3024,48 @@ async def send_link_tool(
                 "message": "Could not determine tenant",
             })
 
-        # Build Jackrabbit registration URL
+        # Build Jackrabbit registration URL with pre-filled data
+        from urllib.parse import urlencode
+
+        first_name = body.get("first_name") or params.get("first_name", "")
+        last_name = body.get("last_name") or params.get("last_name", "")
+        email = body.get("email") or params.get("email", "")
+        students = body.get("students") or []
+
+        url_params: dict[str, str] = {"id": org_id}
         if class_id:
-            reg_url = f"https://app.jackrabbitclass.com/regv2.asp?id={org_id}&classid={class_id}"
-        else:
-            reg_url = f"https://app.jackrabbitclass.com/regv2.asp?id={org_id}"
+            url_params["classid"] = str(class_id)
+
+        # Pre-fill family/contact info (Jackrabbit field names)
+        if last_name:
+            url_params["FamName"] = last_name
+        if first_name:
+            url_params["MFName"] = first_name
+        if last_name:
+            url_params["MLName"] = last_name
+        if email:
+            url_params["MEmail"] = email
+            url_params["ConfirmMEmail"] = email
+        if to_phone:
+            url_params["MCPhone"] = to_phone
+
+        # Pre-fill first student if provided
+        if students and isinstance(students, list) and len(students) > 0:
+            s1 = students[0] if isinstance(students[0], dict) else {}
+            if s1.get("first"):
+                url_params["S1FName"] = s1["first"]
+            if s1.get("last"):
+                url_params["S1LName"] = s1["last"]
+            if s1.get("gender"):
+                url_params["S1Gender"] = s1["gender"]
+            if s1.get("bdate"):
+                url_params["S1BDate"] = s1["bdate"]
+            if s1.get("class_id"):
+                url_params["S1Class1"] = str(s1["class_id"])
+
+        reg_url = f"https://app.jackrabbitclass.com/regv2.asp?{urlencode(url_params)}"
+
+        logger.info(f"[TOOL] send_link built URL: {reg_url}")
 
         # Send SMS via tenant's configured provider
         from app.infrastructure.telephony.factory import TelephonyProviderFactory

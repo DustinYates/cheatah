@@ -212,7 +212,7 @@ DATABASE_URL=postgresql+asyncpg://chattercheatah:dev_password@localhost:5432/cha
 ### Provider & model
 
 - Provider: Gemini (via `google.genai`)
-- Model: configured by `GEMINI_MODEL` (example: `gemini-3-flash-preview`)
+- Model: configured by `GEMINI_MODEL` (example: `gemini-2.5-flash`)
 - Auth: `AI_INTEGRATIONS_GEMINI_API_KEY` (if present) else `GEMINI_API_KEY`
 
 ### Prompt composition model (global base + tenant overlays)

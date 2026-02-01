@@ -90,7 +90,7 @@ Use the admin API to configure customer service for each tenant:
 
 ```bash
 # Create/update customer service configuration
-curl -X PUT "https://your-api.run.app/api/v1/admin/customer-service/config" \
+curl -X PUT "https://chattercheatah-900139201687.us-central1.run.app/api/v1/admin/customer-service/config" \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -129,12 +129,12 @@ Point your customer service phone numbers to the new webhooks:
 
 ### For SMS
 ```
-POST https://your-api.run.app/api/v1/customer-service/sms/inbound
+POST https://chattercheatah-900139201687.us-central1.run.app/api/v1/customer-service/sms/inbound
 ```
 
 ### For Voice
 ```
-POST https://your-api.run.app/api/v1/customer-service/voice/inbound
+POST https://chattercheatah-900139201687.us-central1.run.app/api/v1/customer-service/voice/inbound
 ```
 
 You can configure these in the Twilio Console or via API.
@@ -144,14 +144,14 @@ You can configure these in the Twilio Console or via API.
 ### Test Zapier Connection
 
 ```bash
-curl -X POST "https://your-api.run.app/api/v1/admin/customer-service/test-zapier" \
+curl -X POST "https://chattercheatah-900139201687.us-central1.run.app/api/v1/admin/customer-service/test-zapier" \
   -H "Authorization: Bearer <token>"
 ```
 
 ### View Lookup Statistics
 
 ```bash
-curl "https://your-api.run.app/api/v1/admin/customer-service/lookup-stats?days=7" \
+curl "https://chattercheatah-900139201687.us-central1.run.app/api/v1/admin/customer-service/lookup-stats?days=7" \
   -H "Authorization: Bearer <token>"
 ```
 

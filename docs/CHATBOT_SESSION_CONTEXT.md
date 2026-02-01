@@ -28,7 +28,7 @@ The **web chatbot** is capturing wrong information for names. Example: "Fitness 
 ENVIRONMENT=production
 GCP_PROJECT_ID=chatbots-466618
 GCP_REGION=us-central1
-GEMINI_MODEL=gemini-3-flash-preview
+GEMINI_MODEL=gemini-2.5-flash
 DATABASE_URL=(secret)
 JWT_SECRET_KEY=(secret)
 GEMINI_API_KEY=(secret)

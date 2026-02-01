@@ -134,6 +134,34 @@ def _normalize_phone(phone: str) -> str:
     return normalized
 
 
+def _normalize_spoken_email(email: str) -> str:
+    """Convert spoken email transcription to a proper email address.
+
+    Handles common speech-to-text patterns like:
+      "john at gmail dot com" → "john@gmail.com"
+      "john at a o l dot com" → "john@aol.com"
+    """
+    import re
+
+    e = email.strip().lower()
+    # Remove filler words
+    e = re.sub(r'\b(my email is|my email address is|it\'s|its)\b', '', e).strip()
+    # "at" → @  (but not if already contains @)
+    if "@" not in e:
+        e = re.sub(r'\s+at\s+', '@', e)
+    # "dot" → .
+    e = re.sub(r'\s+dot\s+', '.', e)
+    # Collapse remaining spaces (handles "a o l" → "aol")
+    parts = e.split('@')
+    if len(parts) == 2:
+        local = parts[0].replace(' ', '')
+        domain = parts[1].replace(' ', '')
+        e = f"{local}@{domain}"
+    else:
+        e = e.replace(' ', '')
+    return e
+
+
 async def _detect_language_from_phone(
     to_number: str,
     db: AsyncSession,
@@ -3044,10 +3072,15 @@ async def send_link_tool(
         if last_name:
             url_params["MLName"] = last_name
         if email:
-            url_params["MEmail"] = email
-            url_params["ConfirmMEmail"] = email
+            # Normalize spoken email: "at" → @, "dot" → .
+            normalized_email = _normalize_spoken_email(email)
+            url_params["MEmail"] = normalized_email
+            url_params["ConfirmMEmail"] = normalized_email
         if to_phone:
             url_params["MCPhone"] = to_phone
+
+        # Always set relationship to "Other" (caller may be any relation)
+        url_params["PG1Type"] = "Other"
 
         # Pre-fill first student if provided
         if students and isinstance(students, list) and len(students) > 0:
@@ -3061,7 +3094,11 @@ async def send_link_tool(
             if s1.get("bdate"):
                 url_params["S1BDate"] = s1["bdate"]
             if s1.get("class_id"):
-                url_params["S1Class1"] = str(s1["class_id"])
+                url_params["S1Class"] = str(s1["class_id"])
+
+        # If no student-level class, use top-level class_id for S1Class
+        if "S1Class" not in url_params and class_id:
+            url_params["S1Class"] = str(class_id)
 
         reg_url = f"https://app.jackrabbitclass.com/regv2.asp?{urlencode(url_params)}"
 

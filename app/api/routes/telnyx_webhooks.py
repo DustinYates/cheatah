@@ -3068,7 +3068,7 @@ async def send_link_tool(
         )
 
 
-@router.api_route("/tools/get-classes", methods=["GET", "POST"])
+@router.post("/tools/get-classes")
 async def get_classes_tool() -> JSONResponse:
     """Proxy endpoint for Telnyx AI Assistant to fetch Jackrabbit class openings.
 

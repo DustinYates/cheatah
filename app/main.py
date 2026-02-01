@@ -145,6 +145,17 @@ app.include_router(burst_detection_worker.router, prefix="/workers", tags=["work
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Cloud Run."""
+    return {"status": "healthy"}
+
+
+@app.get("/debug-routes")
+async def debug_routes():
+    """Temporary debug endpoint to verify deployed routes."""
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            routes.append({"path": route.path, "methods": list(route.methods or [])})
+    return {"routes_count": len(routes), "routes": routes}
 
 
 @app.post("/api/v1/telnyx/tools/get-classes")
@@ -182,7 +193,6 @@ async def get_classes_proxy():
         return JR(content={"classes": trimmed})
     except Exception as e:
         return JR(status_code=500, content={"error": str(e)})
-    return {"status": "healthy"}
 
 
 # Serve static files (chat widget and client app)

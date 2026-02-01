@@ -145,6 +145,43 @@ app.include_router(burst_detection_worker.router, prefix="/workers", tags=["work
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Cloud Run."""
+
+
+@app.post("/api/v1/telnyx/tools/get-classes")
+async def get_classes_proxy():
+    """Proxy endpoint for Telnyx AI Assistant to fetch Jackrabbit class openings."""
+    import httpx
+    from fastapi.responses import JSONResponse as JR
+
+    jackrabbit_url = "https://app.jackrabbitclass.com/jr3.0/Openings/OpeningsJson"
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(jackrabbit_url, params={"OrgID": "545911"})
+            resp.raise_for_status()
+            raw = resp.json()
+            rows = raw.get("rows", []) if isinstance(raw, dict) else raw
+
+        trimmed = []
+        for c in rows:
+            openings = c.get("openings", {})
+            calc = openings.get("calculated_openings", 0)
+            if calc <= 0:
+                continue
+            trimmed.append({
+                "id": c.get("id"),
+                "name": c.get("name"),
+                "location": c.get("location_name"),
+                "days": c.get("meeting_days"),
+                "start_time": c.get("start_time"),
+                "end_time": c.get("end_time"),
+                "openings": calc,
+                "fee": (c.get("tuition") or {}).get("fee"),
+            })
+
+        return JR(content={"classes": trimmed})
+    except Exception as e:
+        return JR(status_code=500, content={"error": str(e)})
     return {"status": "healthy"}
 
 

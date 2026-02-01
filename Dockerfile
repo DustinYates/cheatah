@@ -22,8 +22,8 @@ COPY pyproject.toml uv.lock README.md ./
 # Copy app directory for the package build
 COPY app ./app
 
-# Install dependencies using uv (production only, no dev/analysis deps)
-RUN uv sync --frozen --no-dev
+# Install dependencies only (don't install the project itself as a package)
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Production stage
 FROM python:3.11-slim AS production
@@ -48,12 +48,6 @@ COPY --from=backend-builder /app/.venv /app/.venv
 # Copy application code
 COPY --chown=appuser:appuser . .
 
-# Debug: show what's in site-packages and then remove the installed package
-RUN ls -la .venv/lib/python*/site-packages/ | grep -i "chatter\|^d.*app" || echo "No matches found" && \
-    find .venv/lib/python*/site-packages/ -name "*.dist-info" | head -5 && \
-    pip show chattercheatah 2>/dev/null || echo "pip show failed" && \
-    rm -rf .venv/lib/python*/site-packages/chattercheatah* \
-           .venv/lib/python*/site-packages/app || true
 
 # Copy frontend build from frontend builder
 COPY --from=frontend-builder --chown=appuser:appuser /app/client/dist /app/static/client

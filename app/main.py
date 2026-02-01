@@ -145,7 +145,7 @@ app.include_router(burst_detection_worker.router, prefix="/workers", tags=["work
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Cloud Run."""
-    return {"status": "healthy"}
+    return {"status": "healthy", "version": "v15-debug"}
 
 
 @app.get("/debug-routes")

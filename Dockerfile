@@ -48,7 +48,6 @@ COPY --from=backend-builder /app/.venv /app/.venv
 # Copy application code
 COPY --chown=appuser:appuser . .
 
-
 # Copy frontend build from frontend builder
 COPY --from=frontend-builder --chown=appuser:appuser /app/client/dist /app/static/client
 

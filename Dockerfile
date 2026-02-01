@@ -48,6 +48,10 @@ COPY --from=backend-builder /app/.venv /app/.venv
 # Copy application code
 COPY --chown=appuser:appuser . .
 
+# Reinstall the project package so the venv uses the latest source code
+# (uv sync in the builder stage installed the package from an earlier COPY)
+RUN uv sync --frozen --no-dev
+
 # Copy frontend build from frontend builder
 COPY --from=frontend-builder --chown=appuser:appuser /app/client/dist /app/static/client
 

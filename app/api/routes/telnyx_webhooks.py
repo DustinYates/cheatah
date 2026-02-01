@@ -3111,7 +3111,16 @@ async def get_classes_tool() -> JSONResponse:
 
         logger.info(f"[TOOL] get_classes: returning {len(trimmed)} classes (from {len(classes_raw)} total)")
 
-        return JSONResponse(content={"classes": trimmed})
+        return JSONResponse(content={
+            "classes": trimmed,
+            "_debug": {
+                "raw_type": type(data).__name__,
+                "raw_keys": list(data.keys()) if isinstance(data, dict) else None,
+                "total_rows": len(classes_raw),
+                "with_openings": len(trimmed),
+                "sample_openings": classes_raw[0].get("openings") if classes_raw else None,
+            },
+        })
 
     except httpx.HTTPStatusError as e:
         logger.error(f"[TOOL] get_classes Jackrabbit HTTP error: {e.response.status_code}")

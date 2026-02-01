@@ -3085,7 +3085,8 @@ async def get_classes_tool() -> JSONResponse:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(jackrabbit_url, params={"OrgID": org_id})
             resp.raise_for_status()
-            classes_raw = resp.json()
+            data = resp.json()
+            classes_raw = data.get("rows", []) if isinstance(data, dict) else data
 
         # Trim each class to essential fields only
         trimmed = []

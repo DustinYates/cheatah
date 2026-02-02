@@ -664,9 +664,7 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         direct_prompt = await self._get_channel_prompt(tenant_id, "web_prompt")
         if direct_prompt:
             logger.info(f"[PROMPT] Using direct web_prompt for tenant {tenant_id}")
-            # Prepend critical base rules (location guardrails, equipment knowledge)
-            # These MUST be included even with custom prompts to enforce guardrails
-            critical_rules = self._get_critical_base_rules()
+            critical_rules = await self._get_critical_base_rules_for_tenant(tenant_id)
             # Add contact collection context if available
             contact_context = self._build_chat_contact_context(context)
             return critical_rules + direct_prompt + contact_context
@@ -699,9 +697,7 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         direct_prompt = await self._get_channel_prompt(tenant_id, "voice_prompt")
         if direct_prompt:
             logger.info(f"[PROMPT] Using direct voice_prompt for tenant {tenant_id}")
-            # Prepend critical base rules (location guardrails, equipment knowledge)
-            # These MUST be included even with custom prompts to enforce guardrails
-            critical_rules = self._get_critical_base_rules()
+            critical_rules = await self._get_critical_base_rules_for_tenant(tenant_id)
             return critical_rules + direct_prompt
 
         # Fall back to assembled prompt
@@ -729,9 +725,7 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         direct_prompt = await self._get_channel_prompt(tenant_id, "sms_prompt")
         if direct_prompt:
             logger.info(f"[PROMPT] Using direct sms_prompt for tenant {tenant_id}")
-            # Prepend critical base rules (location guardrails, equipment knowledge)
-            # These MUST be included even with custom prompts to enforce guardrails
-            critical_rules = self._get_critical_base_rules()
+            critical_rules = await self._get_critical_base_rules_for_tenant(tenant_id)
             return critical_rules + direct_prompt
 
         # Fall back to assembled prompt
@@ -757,9 +751,9 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         return None
 
     def _get_critical_base_rules(self) -> str:
-        """Get critical base rules that MUST be included in all prompts.
+        """Get critical BSS base rules.
 
-        These rules are prepended to direct channel prompts to ensure
+        These rules are prepended to direct channel prompts for BSS tenants to ensure
         critical guardrails are always in place, even when using custom prompts.
 
         Returns:
@@ -770,6 +764,18 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
 
 {BSS_EQUIPMENT_KNOWLEDGE}
 """
+
+    async def _get_critical_base_rules_for_tenant(self, tenant_id: int) -> str:
+        """Get critical base rules, but only for BSS tenants.
+
+        Non-BSS tenants (business_type != 'bss') get an empty string since
+        the BSS-specific guardrails are irrelevant to their business.
+        """
+        config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
+        business_type = config_record.business_type if config_record else "bss"
+        if business_type == "bss":
+            return self._get_critical_base_rules()
+        return ""
 
     async def get_channel_prompt(self, tenant_id: int, channel: str) -> str | None:
         """Get direct channel prompt for editing.

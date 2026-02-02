@@ -15,6 +15,7 @@ import SavingsAnalytics from './pages/SavingsAnalytics';
 import CommunicationsHealth from './pages/CommunicationsHealth';
 import CustomerHappiness from './pages/CustomerHappiness';
 import SmsBurstMonitor from './pages/SmsBurstMonitor';
+import TopicAnalytics from './pages/TopicAnalytics';
 import Onboarding from './pages/Onboarding';
 import BusinessProfile from './pages/BusinessProfile';
 import WidgetSettings from './pages/WidgetSettings';
@@ -61,6 +62,7 @@ function App() {
             <Route path="analytics/savings" element={<SavingsAnalytics />} />
             <Route path="analytics/health" element={<CommunicationsHealth />} />
             <Route path="analytics/happiness" element={<CustomerHappiness />} />
+            <Route path="analytics/topics" element={<TopicAnalytics />} />
             <Route path="analytics/sms-bursts" element={<SmsBurstMonitor />} />
             <Route path="analytics/plots" element={<Navigate to="/analytics/usage" replace />} />
 

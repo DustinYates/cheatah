@@ -220,6 +220,11 @@ class ApiClient {
     return this.request(`/analytics/savings${query ? `?${query}` : ''}`);
   }
 
+  async getTopicAnalytics(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/analytics/topics${query ? `?${query}` : ''}`);
+  }
+
   async revealTelephonyCredential(field) {
     return this.request('/admin/telephony/credentials/reveal', {
       method: 'POST',

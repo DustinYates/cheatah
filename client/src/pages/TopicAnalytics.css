@@ -1,0 +1,118 @@
+.topics-page {
+  padding: var(--spacing-lg);
+  max-width: 1200px;
+}
+.topics-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-lg);
+}
+.topics-page-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+.topics-page-controls {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+.topics-page-controls select {
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border, #e4e4e7);
+  font-size: 0.85rem;
+}
+
+.topics-summary-row {
+  display: flex;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.topics-card {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border, #e4e4e7);
+  margin-bottom: var(--spacing-md);
+}
+.topics-card h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-sm) 0;
+}
+.topics-card p {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--spacing-md) 0;
+}
+
+.topics-chart-container {
+  width: 100%;
+}
+
+/* Channel breakdown grid */
+.topics-channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.topics-channel-card {
+  background: #f9fafb;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+.topics-channel-card h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-sm) 0;
+  text-transform: capitalize;
+}
+
+/* Horizontal bar rows for channel breakdown */
+.topics-bar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+}
+.topics-bar-label {
+  width: 140px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topics-bar-container {
+  flex: 1;
+  height: 8px;
+  background: #e4e4e7;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.topics-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+.topics-bar-value {
+  width: 70px;
+  text-align: right;
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.topics-empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 768px) {
+  .topics-channel-grid { grid-template-columns: 1fr; }
+}

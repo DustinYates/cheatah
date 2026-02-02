@@ -43,6 +43,9 @@ class Conversation(Base):
     chi_computed_at = Column(DateTime, nullable=True)
     chi_signals = Column(JSON, nullable=True)  # Signal breakdown for explainability
 
+    # Topic classification (computed by topic worker)
+    topic = Column(String(50), nullable=True, index=True)
+
     # Relationships
     tenant = relationship("Tenant", back_populates="conversations")
     contact = relationship("Contact", back_populates="conversations")

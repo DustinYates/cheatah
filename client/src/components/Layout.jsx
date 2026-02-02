@@ -111,6 +111,9 @@ export default function Layout() {
                   <NavLink to="/analytics/health">Health</NavLink>
                 </li>
                 <li>
+                  <NavLink to="/analytics/topics">Topics</NavLink>
+                </li>
+                <li>
                   <NavLink to="/analytics/happiness">Happiness (CHI)</NavLink>
                 </li>
                 {user?.is_global_admin && (

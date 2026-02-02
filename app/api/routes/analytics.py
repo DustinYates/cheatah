@@ -2112,3 +2112,178 @@ async def get_savings_analytics(
             by_asset_type=by_asset_type,
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Topic Analytics
+# ---------------------------------------------------------------------------
+
+
+class TopicCount(BaseModel):
+    """Count for a single topic."""
+
+    topic: str
+    count: int
+    percentage: float
+
+
+class TopicAnalyticsResponse(BaseModel):
+    """Response model for topic analytics."""
+
+    start_date: str
+    end_date: str
+    timezone: str
+    total_classified: int
+    total_unclassified: int
+    topics: list[TopicCount]
+    by_channel: dict[str, list[TopicCount]]
+
+
+TOPIC_LABELS = {
+    "pricing": "Pricing & Costs",
+    "scheduling": "Scheduling & Booking",
+    "hours_location": "Hours & Location",
+    "class_info": "Class Information",
+    "registration": "Registration & Enrollment",
+    "support_request": "Support / Human",
+    "wrong_number": "Wrong Number",
+    "general_inquiry": "General Questions",
+}
+
+
+@router.get("/topics", response_model=TopicAnalyticsResponse)
+async def get_topic_analytics(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    start_date: Annotated[str | None, Query()] = None,
+    end_date: Annotated[str | None, Query()] = None,
+    timezone: Annotated[str | None, Query()] = None,
+    channel: Annotated[str | None, Query()] = None,
+) -> TopicAnalyticsResponse:
+    """Get topic distribution analytics for conversations.
+
+    Returns counts and percentages of conversation topics, optionally
+    filtered by channel, with a per-channel breakdown.
+    """
+    # Resolve date range (same pattern as other analytics endpoints)
+    effective_timezone = _resolve_timezone(timezone)
+    today = date.today()
+
+    parsed_start = _normalize_date(start_date)
+    parsed_end = _normalize_date(end_date)
+
+    if parsed_start is None and parsed_end is None:
+        parsed_end = today
+        parsed_start = parsed_end - timedelta(days=29)
+    elif parsed_start is None and parsed_end is not None:
+        parsed_start = parsed_end - timedelta(days=29)
+    elif parsed_end is None and parsed_start is not None:
+        parsed_end = today
+
+    range_start_date = parsed_start or today - timedelta(days=29)
+    range_end_date = parsed_end or today
+
+    if range_end_date > today:
+        range_end_date = today
+    if range_start_date > range_end_date:
+        range_start_date = range_end_date
+
+    # Convert to UTC datetime range
+    tz = pytz.timezone(effective_timezone)
+    start_local = tz.localize(datetime.combine(range_start_date, time.min))
+    end_local = tz.localize(datetime.combine(range_end_date, time.max))
+    range_start = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
+    range_end = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
+
+    # Build base filters
+    filters = [
+        Conversation.tenant_id == tenant_id,
+        Conversation.created_at >= range_start,
+        Conversation.created_at <= range_end,
+    ]
+    if channel:
+        filters.append(Conversation.channel == channel)
+
+    # Total classified
+    classified_stmt = (
+        select(func.count(Conversation.id))
+        .where(*filters, Conversation.topic.isnot(None))
+    )
+    classified_result = await db.execute(classified_stmt)
+    total_classified = classified_result.scalar() or 0
+
+    # Total unclassified
+    unclassified_stmt = (
+        select(func.count(Conversation.id))
+        .where(*filters, Conversation.topic.is_(None))
+    )
+    unclassified_result = await db.execute(unclassified_stmt)
+    total_unclassified = unclassified_result.scalar() or 0
+
+    # Topic counts (overall)
+    topic_stmt = (
+        select(
+            Conversation.topic,
+            func.count(Conversation.id).label("count"),
+        )
+        .where(*filters, Conversation.topic.isnot(None))
+        .group_by(Conversation.topic)
+        .order_by(func.count(Conversation.id).desc())
+    )
+    topic_result = await db.execute(topic_stmt)
+    topic_rows = list(topic_result)
+
+    topics = [
+        TopicCount(
+            topic=row.topic,
+            count=row.count,
+            percentage=round(row.count / total_classified * 100, 1) if total_classified > 0 else 0,
+        )
+        for row in topic_rows
+    ]
+
+    # Topic counts by channel
+    channel_stmt = (
+        select(
+            Conversation.channel,
+            Conversation.topic,
+            func.count(Conversation.id).label("count"),
+        )
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.created_at >= range_start,
+            Conversation.created_at <= range_end,
+            Conversation.topic.isnot(None),
+        )
+        .group_by(Conversation.channel, Conversation.topic)
+        .order_by(Conversation.channel, func.count(Conversation.id).desc())
+    )
+    channel_result = await db.execute(channel_stmt)
+    channel_rows = list(channel_result)
+
+    # Group by channel
+    by_channel: dict[str, list[TopicCount]] = {}
+    channel_totals: dict[str, int] = {}
+    for row in channel_rows:
+        channel_totals.setdefault(row.channel, 0)
+        channel_totals[row.channel] += row.count
+
+    for row in channel_rows:
+        ch_total = channel_totals.get(row.channel, 1)
+        by_channel.setdefault(row.channel, []).append(
+            TopicCount(
+                topic=row.topic,
+                count=row.count,
+                percentage=round(row.count / ch_total * 100, 1) if ch_total > 0 else 0,
+            )
+        )
+
+    return TopicAnalyticsResponse(
+        start_date=range_start_date.isoformat(),
+        end_date=range_end_date.isoformat(),
+        timezone=effective_timezone,
+        total_classified=total_classified,
+        total_unclassified=total_unclassified,
+        topics=topics,
+        by_channel=by_channel,
+    )

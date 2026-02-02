@@ -120,6 +120,9 @@ class Settings(BaseSettings):
     sendgrid_inbound_parse_domain: str = ""  # e.g., "parse.yourdomain.com"
     sendgrid_default_webhook_secret: str | None = None  # Fallback secret if tenant-specific not set
 
+    # Trestle IQ (reverse phone lookup for form pre-fill)
+    trestle_api_key: str | None = None
+
     # Customer Service / Zapier Integration
     zapier_default_callback_timeout: int = 30  # Default timeout waiting for Zapier callback
     zapier_signature_header: str = "X-Zapier-Signature"  # Header for HMAC signature

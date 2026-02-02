@@ -3060,41 +3060,67 @@ async def send_link_tool(
         email = body.get("email") or params.get("email", "")
         students = body.get("students") or []
 
+        # Reverse phone lookup for accurate caller identity (Trestle IQ)
+        trestle_data: dict[str, str] | None = None
+        if to_phone:
+            try:
+                from app.infrastructure.trestle_client import reverse_phone_lookup
+                trestle_data = await reverse_phone_lookup(to_phone)
+            except Exception as e:
+                logger.warning(f"[TOOL] send_link: Trestle lookup failed: {e}")
+        td = trestle_data or {}
+
+        # Use Trestle data with LLM fallback for name/email
+        effective_first = td.get("first_name") or first_name
+        effective_last = td.get("last_name") or last_name
+        effective_email = td.get("email") or (_normalize_spoken_email(email) if email else "")
+
         url_params: dict[str, str] = {"id": org_id}
         if class_id:
             url_params["classid"] = str(class_id)
 
         # Pre-fill family/contact info (Jackrabbit field names)
-        if last_name:
-            url_params["FamName"] = last_name
-        if first_name:
-            url_params["MFName"] = first_name
-        if last_name:
-            url_params["MLName"] = last_name
-        if email:
-            # Normalize spoken email: "at" → @, "dot" → .
-            normalized_email = _normalize_spoken_email(email)
-            url_params["MEmail"] = normalized_email
-            url_params["ConfirmMEmail"] = normalized_email
+        if effective_last:
+            url_params["FamName"] = effective_last
+        if effective_first:
+            url_params["MFName"] = effective_first
+        if effective_last:
+            url_params["MLName"] = effective_last
+        if effective_email:
+            url_params["MEmail"] = effective_email
+            url_params["ConfirmMEmail"] = effective_email
         if to_phone:
             url_params["MCPhone"] = to_phone
+
+        # Address fields (Trestle only — LLM doesn't collect these)
+        if td.get("address"):
+            url_params["Addr"] = td["address"]
+        if td.get("city"):
+            url_params["City"] = td["city"]
+        if td.get("state"):
+            url_params["State"] = td["state"]
+        if td.get("zip"):
+            url_params["Zip"] = td["zip"]
 
         # Always set relationship to "Other" (caller may be any relation)
         url_params["PG1Type"] = "Other"
 
-        # Pre-fill first student if provided
-        if students and isinstance(students, list) and len(students) > 0:
-            s1 = students[0] if isinstance(students[0], dict) else {}
-            if s1.get("first"):
-                url_params["S1FName"] = s1["first"]
-            if s1.get("last"):
-                url_params["S1LName"] = s1["last"]
-            if s1.get("gender"):
-                url_params["S1Gender"] = s1["gender"]
-            if s1.get("bdate"):
-                url_params["S1BDate"] = s1["bdate"]
-            if s1.get("class_id"):
-                url_params["S1Class"] = str(s1["class_id"])
+        # Pre-fill students (Jackrabbit supports S1-S5, each with up to 15 classes)
+        if students and isinstance(students, list):
+            for idx, student in enumerate(students[:5]):  # Max 5 students
+                if not isinstance(student, dict):
+                    continue
+                n = idx + 1  # S1, S2, S3...
+                if student.get("first"):
+                    url_params[f"S{n}FName"] = student["first"]
+                if student.get("last"):
+                    url_params[f"S{n}LName"] = student["last"]
+                if student.get("gender"):
+                    url_params[f"S{n}Gender"] = student["gender"]
+                if student.get("bdate"):
+                    url_params[f"S{n}BDate"] = student["bdate"]
+                if student.get("class_id"):
+                    url_params[f"S{n}Class"] = str(student["class_id"])
 
         # If no student-level class, use top-level class_id for S1Class
         if "S1Class" not in url_params and class_id:

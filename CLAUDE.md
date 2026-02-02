@@ -142,3 +142,103 @@ Production secrets are in GCP Secret Manager, mounted as env vars in Cloud Run.
 - **Tenant 1 (CP Marketing):** Production tenant, `telnyx_agent_id` cleared
 - **Tenant 2 (testing agency):** Test tenant, phone +12817679141, Telnyx agent `assistant-109f3350-874f-4770-87d4-737450280441`, Jackrabbit integration (OrgID 545911)
 - **Tenant 3 (BSS Cypress-Spring):** Production tenant
+
+## New Tenant Onboarding
+
+### Per-Tenant Integrations
+
+#### 1. Telnyx (SMS + Voice AI) — Primary
+- **Config tables:** `tenant_sms_configs`, `tenant_voice_configs`
+- **Keys needed:** `telnyx_api_key`, `telnyx_messaging_profile_id`, `telnyx_connection_id`, `telnyx_phone_number`, `telnyx_agent_id`
+- **Setup steps:**
+  1. Create/assign Telnyx API v2 key
+  2. Create Messaging Profile and assign phone number
+  3. Configure 10DLC campaign and brand (required for US SMS)
+  4. Create Telnyx AI Assistant with tenant-specific system prompt (see `docs/BSS_VOICE_AGENT_PROMPT_COMBINED.md` for an example)
+  5. Set webhook URLs in Telnyx portal:
+     - Inbound SMS → `POST /api/v1/telnyx/sms/inbound`
+     - SMS Status → `POST /api/v1/telnyx/sms/status`
+     - Call Complete → `POST /api/v1/telnyx/ai-call-complete`
+     - Call Progress → `POST /api/v1/telnyx/call-progress`
+  6. Configure AI Agent tool endpoints:
+     - Send Link → `POST /api/v1/telnyx/tools/send-link`
+     - Get Classes → `POST /api/v1/telnyx/tools/get-classes`
+- **Signature verification:** `telnyx-signature-ed25519` (ED25519), `telnyx-timestamp` (must be within 5 min)
+
+#### 2. Twilio (Legacy/Alternative)
+- **Config table:** `tenant_sms_configs`
+- **Keys needed:** `twilio_account_sid`, `twilio_auth_token`, `twilio_phone_number`
+- **Webhook URLs:** `/api/v1/sms/inbound`, `/api/v1/sms/status`, `/api/v1/voice/inbound`
+
+#### 3. Gmail (OAuth Email)
+- **Config table:** `tenant_email_configs`
+- **Keys stored:** `gmail_email`, `gmail_refresh_token`, `gmail_access_token`
+- **Setup:** Tenant clicks "Connect Gmail" in settings → OAuth flow → tokens stored automatically. Pub/Sub watch auto-renews every 7 days.
+- **Webhook:** Gmail push notifications arrive at `POST /api/v1/email/pubsub` via Google Pub/Sub
+
+#### 4. SendGrid (Outbound + Inbound Parse Email)
+- **Config table:** `tenant_email_configs`
+- **Keys needed:** `sendgrid_api_key`, `sendgrid_from_email`, `sendgrid_parse_address`, `sendgrid_webhook_secret`
+- **Webhook:** Inbound email → `POST /api/v1/sendgrid/inbound`
+
+#### 5. Zapier + Jackrabbit (Customer Service CRM)
+- **Config table:** `tenant_customer_service_configs`
+- **Keys needed:** `zapier_webhook_url`, `zapier_callback_secret`, `jackrabbit_api_key_1`, `jackrabbit_api_key_2`
+- **Setup:**
+  1. Create Zapier Zaps with "Catch Hook" triggers (customer lookup + query)
+  2. Configure Jackrabbit actions in Zapier
+  3. Store webhook URLs and callback secret in config
+- **Callback webhooks:** `/api/v1/zapier/callback`, `/api/v1/zapier/customer-update`
+
+#### 6. Business Profile + Widget
+- **Config tables:** `tenant_business_profiles`, `tenant_widget_configs`
+- **Data:** business name, website URL, phone, email, widget styling/customization
+- **Widget assets:** stored in GCS at `tenants/{tenant_id}/widget-assets/`
+
+### Global Integrations (configured once, shared across all tenants)
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Supabase PostgreSQL connection |
+| `JWT_SECRET_KEY` | JWT token signing |
+| `FIELD_ENCRYPTION_KEY` | Fernet encryption of API keys in DB |
+| `GEMINI_API_KEY` | Google Gemini LLM |
+| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` | Shared Gmail OAuth app |
+| `GMAIL_PUBSUB_TOPIC` / `GMAIL_PUBSUB_AUTH_TOKEN` | Gmail push notifications |
+| `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL` | SendGrid fallback (optional) |
+| `TRESTLE_API_KEY` | Trestle IQ reverse phone lookup (optional) |
+| `SCRAPINGBEE_API_KEY` | Website scraping fallback (optional) |
+| `SENTRY_DSN` | Error tracking (optional) |
+| `GCP_PROJECT_ID` / `GCP_REGION` | Google Cloud project |
+| `GCS_WIDGET_ASSETS_BUCKET` | Widget asset storage bucket |
+| `CLOUD_TASKS_QUEUE_NAME` / `CLOUD_TASKS_WORKER_URL` | Background task queue |
+| `CLOUD_TASKS_EMAIL_WORKER_URL` | Email worker endpoint |
+| `REDIS_ENABLED` / `REDIS_URL` | Redis caching (optional, currently off) |
+
+### All Webhook Endpoints (unauthenticated/public)
+
+| Path | Source | Purpose |
+|------|--------|---------|
+| `/api/v1/telnyx/sms/inbound` | Telnyx | Inbound SMS |
+| `/api/v1/telnyx/sms/status` | Telnyx | SMS delivery status |
+| `/api/v1/telnyx/ai-call-complete` | Telnyx | Voice call complete + transcript |
+| `/api/v1/telnyx/call-progress` | Telnyx | Call state updates |
+| `/api/v1/telnyx/tools/send-link` | Telnyx AI Agent | Send SMS registration link |
+| `/api/v1/telnyx/tools/get-classes` | Telnyx AI Agent | Jackrabbit class proxy |
+| `/api/v1/sms/inbound` | Twilio | Inbound SMS |
+| `/api/v1/sms/status` | Twilio | SMS delivery status |
+| `/api/v1/voice/inbound` | Twilio | Inbound voice call |
+| `/api/v1/email/pubsub` | Google Pub/Sub | Gmail push notifications |
+| `/api/v1/sendgrid/inbound` | SendGrid | Inbound email parse |
+| `/api/v1/zapier/callback` | Zapier | Async lookup callback |
+| `/api/v1/zapier/customer-update` | Zapier | Cache invalidation |
+
+### Minimum Onboarding Checklist
+
+1. Create tenant record in DB (via admin API or direct insert)
+2. Set up Telnyx: API key, messaging profile, phone number, AI assistant with custom prompt, all webhooks
+3. Fill in `tenant_business_profiles` (business name, website, phone, email)
+4. Connect Gmail via OAuth (if using email channel)
+5. Set up Zapier + Jackrabbit integration (if applicable)
+6. Configure `tenant_widget_configs` for chat widget styling
+7. Optional: SendGrid for outbound email, Twilio as SMS/voice fallback, Google Calendar

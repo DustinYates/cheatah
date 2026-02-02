@@ -1,37 +1,27 @@
 <!--
 ConvoPro Chat Widget - WordPress Embed Code
 Add this to your WordPress footer or use a plugin like "Insert Headers and Footers"
+
+Replace TENANT_ID and API_KEY with your tenant's values.
 -->
 
-<!-- Load the chat widget script -->
-<script src="https://chattercheatah-iyv6z6wp7a-uc.a.run.app/static/chat-widget.js"></script>
-
-<!-- Initialize the widget after page loads -->
+<script src="https://chattercheatah-900139201687.us-central1.run.app/static/chat-widget.js"></script>
 <script>
 (function() {
-  // Wait for both the page and the widget script to load
   function initChatWidget() {
     if (typeof ConvoPro !== 'undefined') {
-      try {
-        ConvoPro.init({
-          apiUrl: 'https://chattercheatah-iyv6z6wp7a-uc.a.run.app/api/v1',
-          tenantId: 4  // The Best Chatbot tenant ID
-        });
-        console.log('ConvoPro widget initialized successfully');
-      } catch (error) {
-        console.error('Error initializing chat widget:', error);
-      }
+      ConvoPro.init({
+        apiUrl: 'https://chattercheatah-900139201687.us-central1.run.app/api/v1',
+        tenantId: TENANT_ID,
+        apiKey: 'API_KEY'
+      });
     } else {
-      // Retry if script hasn't loaded yet
       setTimeout(initChatWidget, 100);
     }
   }
-  
-  // Initialize when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initChatWidget);
   } else {
-    // DOM already loaded
     initChatWidget();
   }
 })();

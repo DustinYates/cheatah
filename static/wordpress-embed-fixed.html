@@ -1,28 +1,22 @@
 <!--
-ConvoPro Chat Widget - WordPress Embed Code (FIXED)
-Use tenant ID 1 which exists in production
+ConvoPro Chat Widget - WordPress Embed Code
+Tenant 2 (ConvoPro demo)
 -->
 
-<script src="https://chattercheatah-iyv6z6wp7a-uc.a.run.app/static/chat-widget.js"></script>
+<script src="https://chattercheatah-900139201687.us-central1.run.app/static/chat-widget.js"></script>
 <script>
 (function() {
   function initChatWidget() {
     if (typeof ConvoPro !== 'undefined') {
-      try {
-        ConvoPro.init({
-          apiUrl: 'https://chattercheatah-iyv6z6wp7a-uc.a.run.app/api/v1',
-          tenantId: 1,  // Using tenant ID 1 (exists in production)
-          scrollBehavior: 'top'
-        });
-        console.log('Chat widget initialized successfully');
-      } catch (error) {
-        console.error('Chat widget error:', error);
-      }
+      ConvoPro.init({
+        apiUrl: 'https://chattercheatah-900139201687.us-central1.run.app/api/v1',
+        tenantId: 2,
+        apiKey: 'e14687eda4713db6c4f361b5f5cd70b4b1313b4f4ca2569fa0c7330b292822a4'
+      });
     } else {
       setTimeout(initChatWidget, 100);
     }
   }
-  
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initChatWidget);
   } else {

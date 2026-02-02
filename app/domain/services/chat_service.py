@@ -19,9 +19,11 @@ from app.domain.services.promise_detector import PromiseDetector, DetectedPromis
 from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
 from app.domain.services.user_request_detector import UserRequestDetector
 from app.domain.services.prompt_service import PromptService
+from app.infrastructure.jackrabbit_client import fetch_classes, format_classes_for_prompt
 from app.utils.name_validator import validate_name, extract_name_from_explicit_statement
 from app.llm.orchestrator import LLMOrchestrator
 from app.persistence.models.conversation import Conversation, Message
+from app.persistence.repositories.customer_service_config_repository import CustomerServiceConfigRepository
 from app.persistence.repositories.tenant_repository import TenantRepository
 from app.settings import settings
 
@@ -91,6 +93,7 @@ class ChatService:
         self.prompt_service = PromptService(session)
         self.llm_orchestrator = LLMOrchestrator()
         self.tenant_repo = TenantRepository(session)
+        self.cs_config_repo = CustomerServiceConfigRepository(session)
         self.calendar_service = CalendarService(session)
         self.intent_detector = IntentDetector()
 
@@ -270,6 +273,9 @@ class ChatService:
             "turn_count": turn_count,
         }
         
+        # Fetch live class schedule from Jackrabbit (if configured for this tenant)
+        class_schedule_context = await self._get_class_schedule_context(tenant_id)
+
         # Use core chat processing logic with chat-specific prompt method
         llm_response, llm_latency_ms = await self._process_chat_core(
             tenant_id=tenant_id,
@@ -278,6 +284,7 @@ class ChatService:
             messages=messages,
             system_prompt_method=self.prompt_service.compose_prompt_chat,
             prompt_context=prompt_context,
+            additional_context=class_schedule_context,
         )
 
         # Add assistant response
@@ -943,6 +950,23 @@ class ChatService:
             channel="web",
             external_id=None,
         )
+
+    async def _get_class_schedule_context(self, tenant_id: int) -> str | None:
+        """Fetch live class schedule from Jackrabbit for prompt injection."""
+        try:
+            config = await self.cs_config_repo.get_by_tenant_id(tenant_id)
+            if not config or not config.settings:
+                return None
+            org_id = config.settings.get("jackrabbit_org_id")
+            if not org_id:
+                return None
+            classes = await fetch_classes(org_id)
+            if not classes:
+                return None
+            return format_classes_for_prompt(classes)
+        except Exception as e:
+            logger.warning(f"Failed to fetch class schedule for tenant {tenant_id}: {e}")
+            return None
 
     def _build_conversation_context(
         self,

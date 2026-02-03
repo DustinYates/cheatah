@@ -41,7 +41,8 @@ export default function ManageTenants() {
     setError(null);
     try {
       const data = await api.getTenants();
-      setTenants(Array.isArray(data) ? data : []);
+      const sorted = Array.isArray(data) ? data.sort((a, b) => a.id - b.id) : [];
+      setTenants(sorted);
     } catch (err) {
       console.error('Failed to fetch tenants:', err);
       setError(err.message || 'Failed to load tenants');

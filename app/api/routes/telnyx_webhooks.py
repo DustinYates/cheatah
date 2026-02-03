@@ -1842,6 +1842,8 @@ async def telnyx_ai_call_complete(
             detected_language = await _detect_language_from_phone(to_number, db) if to_number else None
 
             # Create new Call record
+            # Only set ended_at if we have a real end time (not defaulted to now)
+            # This prevents started_at==ended_at which breaks duration calculations
             call = Call(
                 tenant_id=tenant_id,
                 call_sid=call_sid_to_use,
@@ -1852,7 +1854,7 @@ async def telnyx_ai_call_complete(
                 duration=int(duration) if duration else 0,
                 recording_url=recording_url or None,
                 started_at=actual_start,
-                ended_at=actual_end,
+                ended_at=actual_end if actual_end != actual_start else None,
                 language=detected_language,
             )
             db.add(call)
@@ -1860,10 +1862,24 @@ async def telnyx_ai_call_complete(
             logger.info(f"Created new Call record: id={call.id}, language={detected_language}")
 
         # If duration is still 0, try to calculate from Telnyx API conversation timestamps
-        if (not call.duration or call.duration == 0) and call_id and settings.telnyx_api_key:
+        # Use tenant's Telnyx API key if global one not available
+        telnyx_api_key_for_duration = settings.telnyx_api_key
+        if not telnyx_api_key_for_duration and tenant_id:
+            # Fetch tenant's Telnyx API key from config
+            try:
+                tenant_config_stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
+                tenant_config_result = await db.execute(tenant_config_stmt)
+                tenant_config = tenant_config_result.scalar_one_or_none()
+                if tenant_config and tenant_config.telnyx_api_key:
+                    telnyx_api_key_for_duration = tenant_config.telnyx_api_key
+                    logger.info(f"Using tenant {tenant_id}'s Telnyx API key for duration calculation")
+            except Exception as e:
+                logger.warning(f"Failed to fetch tenant Telnyx API key: {e}")
+
+        if (not call.duration or call.duration == 0) and call_id and telnyx_api_key_for_duration:
             try:
                 from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
-                telnyx_ai_duration = TelnyxAIService(settings.telnyx_api_key)
+                telnyx_ai_duration = TelnyxAIService(telnyx_api_key_for_duration)
                 conv_data = await telnyx_ai_duration.find_conversation_by_call_control_id(call_id)
                 if conv_data:
                     conv_created = conv_data.get("created_at")
@@ -1884,8 +1900,9 @@ async def telnyx_ai_call_complete(
                         if conv_id:
                             msgs = await telnyx_ai_duration.get_conversation_messages(conv_id)
                             if msgs and len(msgs) >= 2:
-                                first_ts = msgs[0].get("created_at") or msgs[0].get("timestamp")
-                                last_ts = msgs[-1].get("created_at") or msgs[-1].get("timestamp")
+                                # Messages are returned newest-first, so use last element as start
+                                first_ts = msgs[-1].get("created_at") or msgs[-1].get("timestamp")
+                                last_ts = msgs[0].get("created_at") or msgs[0].get("timestamp")
                                 if first_ts and last_ts:
                                     from dateutil import parser as date_parser
                                     start_dt = date_parser.parse(str(first_ts))

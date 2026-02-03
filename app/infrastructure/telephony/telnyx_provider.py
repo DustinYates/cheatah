@@ -203,15 +203,45 @@ class TelnyxAIService:
         """
         try:
             async with self._get_client() as client:
-                # Get recent conversations and filter by metadata
-                response = await client.get("/ai/conversations")
+                # Get recent conversations and filter by call_control_id
+                # Telnyx may store this in various places
+                response = await client.get("/ai/conversations", params={"page[size]": 100})
                 response.raise_for_status()
                 data = response.json()
 
+                logger.info(f"[TELNYX-API] Searching for call_control_id: {call_control_id}")
+                logger.info(f"[TELNYX-API] Found {len(data.get('data', []))} conversations")
+
                 for conv in data.get("data", []):
-                    metadata = conv.get("metadata", {})
+                    # Check multiple places where call_control_id might be stored
+                    metadata = conv.get("metadata", {}) or {}
+
+                    # Check metadata.call_control_id
                     if metadata.get("call_control_id") == call_control_id:
+                        logger.info(f"[TELNYX-API] Found conversation by metadata.call_control_id: {conv.get('id')}")
                         return conv
+
+                    # Check direct call_control_id field
+                    if conv.get("call_control_id") == call_control_id:
+                        logger.info(f"[TELNYX-API] Found conversation by direct call_control_id: {conv.get('id')}")
+                        return conv
+
+                    # Check if call_control_id is in the conversation ID itself (some formats)
+                    if conv.get("id") and call_control_id in str(conv.get("id")):
+                        logger.info(f"[TELNYX-API] Found conversation by ID match: {conv.get('id')}")
+                        return conv
+
+                    # Check metadata.telnyx_call_control_id (alternative field name)
+                    if metadata.get("telnyx_call_control_id") == call_control_id:
+                        logger.info(f"[TELNYX-API] Found conversation by metadata.telnyx_call_control_id: {conv.get('id')}")
+                        return conv
+
+                logger.warning(f"[TELNYX-API] No conversation found for call_control_id: {call_control_id}")
+                # Log first conversation's structure for debugging
+                if data.get("data"):
+                    sample = data["data"][0]
+                    logger.info(f"[TELNYX-API] Sample conversation keys: {list(sample.keys())}")
+                    logger.info(f"[TELNYX-API] Sample metadata: {sample.get('metadata', {})}")
                 return None
         except httpx.HTTPError as e:
             logger.warning(f"Failed to find conversation by call_control_id: {e}")

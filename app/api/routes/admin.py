@@ -556,3 +556,168 @@ async def delete_jackrabbit_key(
         key_1_masked=_mask_key(config.jackrabbit_api_key_1),
         key_2_masked=_mask_key(config.jackrabbit_api_key_2),
     )
+
+
+# --- Call Duration Backfill ---
+
+
+class BackfillCallDurationResponse(BaseModel):
+    """Response schema for call duration backfill."""
+    total_calls_found: int
+    calls_updated: int
+    calls_failed: int
+    details: list[dict]
+
+
+@router.post("/backfill-call-durations")
+async def backfill_call_durations(
+    current_user: Annotated[User, Depends(require_global_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: int | None = None,
+    limit: int = 100,
+) -> BackfillCallDurationResponse:
+    """Backfill call durations for calls with missing duration data.
+
+    This endpoint finds calls where:
+    - duration is 0 or NULL
+    - started_at equals ended_at (or ended_at is NULL)
+
+    For each call, it attempts to calculate the duration from the Telnyx API
+    using the conversation timestamps or message timestamps.
+
+    Args:
+        tenant_id: Optional tenant ID to filter calls
+        limit: Maximum number of calls to process (default 100)
+    """
+    import logging
+    from datetime import timedelta
+    from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+
+    logger = logging.getLogger(__name__)
+
+    # Find calls with missing duration data
+    query = select(Call).where(
+        (Call.duration == 0) | (Call.duration.is_(None)),
+        (Call.ended_at.is_(None)) | (Call.ended_at == Call.started_at),
+    ).order_by(Call.created_at.desc()).limit(limit)
+
+    if tenant_id:
+        query = query.where(Call.tenant_id == tenant_id)
+
+    result = await db.execute(query)
+    calls = result.scalars().all()
+
+    logger.info(f"Found {len(calls)} calls with missing duration data")
+
+    updated = 0
+    failed = 0
+    details = []
+
+    # Get unique tenant IDs for API key lookup
+    tenant_ids = set(call.tenant_id for call in calls)
+
+    # Fetch Telnyx API keys for each tenant
+    tenant_api_keys = {}
+    for tid in tenant_ids:
+        config_result = await db.execute(
+            select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tid)
+        )
+        config = config_result.scalar_one_or_none()
+        if config and config.telnyx_api_key:
+            tenant_api_keys[tid] = config.telnyx_api_key
+
+    for call in calls:
+        api_key = tenant_api_keys.get(call.tenant_id)
+        if not api_key:
+            details.append({
+                "call_id": call.id,
+                "status": "skipped",
+                "reason": "no_api_key",
+            })
+            failed += 1
+            continue
+
+        try:
+            telnyx_ai = TelnyxAIService(api_key)
+
+            # Try to find conversation by call_sid (call_control_id)
+            conv_data = await telnyx_ai.find_conversation_by_call_control_id(call.call_sid)
+
+            if conv_data:
+                # Try created_at/updated_at timestamps first
+                conv_created = conv_data.get("created_at")
+                conv_updated = conv_data.get("updated_at")
+
+                if conv_created and conv_updated and conv_created != conv_updated:
+                    from dateutil import parser as date_parser
+                    start_dt = date_parser.parse(str(conv_created))
+                    end_dt = date_parser.parse(str(conv_updated))
+                    calculated_duration = int((end_dt - start_dt).total_seconds())
+
+                    if calculated_duration > 0:
+                        call.duration = calculated_duration
+                        call.started_at = start_dt.replace(tzinfo=None)
+                        call.ended_at = end_dt.replace(tzinfo=None)
+                        updated += 1
+                        details.append({
+                            "call_id": call.id,
+                            "status": "updated",
+                            "duration": calculated_duration,
+                            "source": "conversation_timestamps",
+                        })
+                        continue
+
+                # Fallback: try message timestamps
+                conv_id = conv_data.get("id")
+                if conv_id:
+                    msgs = await telnyx_ai.get_conversation_messages(conv_id)
+                    if msgs and len(msgs) >= 2:
+                        # Messages are returned newest-first, so use last element as start
+                        first_ts = msgs[-1].get("created_at") or msgs[-1].get("timestamp")
+                        last_ts = msgs[0].get("created_at") or msgs[0].get("timestamp")
+
+                        if first_ts and last_ts:
+                            from dateutil import parser as date_parser
+                            start_dt = date_parser.parse(str(first_ts))
+                            end_dt = date_parser.parse(str(last_ts))
+                            calculated_duration = int((end_dt - start_dt).total_seconds())
+
+                            if calculated_duration > 0:
+                                call.duration = calculated_duration
+                                call.started_at = start_dt.replace(tzinfo=None)
+                                call.ended_at = end_dt.replace(tzinfo=None)
+                                updated += 1
+                                details.append({
+                                    "call_id": call.id,
+                                    "status": "updated",
+                                    "duration": calculated_duration,
+                                    "source": "message_timestamps",
+                                })
+                                continue
+
+            # If we got here, we couldn't calculate duration
+            details.append({
+                "call_id": call.id,
+                "status": "skipped",
+                "reason": "no_conversation_found" if not conv_data else "no_timestamps",
+            })
+            failed += 1
+
+        except Exception as e:
+            logger.warning(f"Failed to backfill call {call.id}: {e}")
+            details.append({
+                "call_id": call.id,
+                "status": "error",
+                "reason": str(e),
+            })
+            failed += 1
+
+    # Commit updates
+    await db.commit()
+
+    return BackfillCallDurationResponse(
+        total_calls_found=len(calls),
+        calls_updated=updated,
+        calls_failed=failed,
+        details=details,
+    )

@@ -119,11 +119,6 @@ export default function Layout() {
                 <li>
                   <NavLink to="/analytics/happiness">Happiness (CHI)</NavLink>
                 </li>
-                {user?.is_global_admin && (
-                  <li>
-                    <NavLink to="/analytics/sms-bursts">SMS Bursts</NavLink>
-                  </li>
-                )}
               </ul>
             )}
           </li>

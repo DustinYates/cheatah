@@ -64,6 +64,15 @@ function VoiceCallDetails({ details }) {
 }
 
 /**
+ * Format message timestamp for display
+ */
+function formatMessageTime(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+/**
  * Render type-specific detail view for SMS and chatbot messages
  * Now handles grouped conversation messages
  */
@@ -76,8 +85,15 @@ function MessageDetails({ details }) {
           <div className="conversation-messages">
             {details.messages.map((msg, idx) => (
               <div key={idx} className={`conversation-message ${msg.role}`}>
-                <div className="conversation-message-role">
-                  {msg.role === 'user' ? 'User' : 'Bot'}
+                <div className="conversation-message-header">
+                  <span className="conversation-message-role">
+                    {msg.role === 'user' ? 'USER' : 'BOT'}
+                  </span>
+                  {msg.created_at && (
+                    <span className="conversation-message-time">
+                      {formatMessageTime(msg.created_at)}
+                    </span>
+                  )}
                 </div>
                 <div className="conversation-message-content">{msg.content}</div>
               </div>

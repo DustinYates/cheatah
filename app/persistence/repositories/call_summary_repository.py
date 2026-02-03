@@ -88,21 +88,23 @@ class CallSummaryRepository(BaseRepository[CallSummary]):
         intent: str | None = None,
         outcome: str | None = None,
         summary_text: str | None = None,
+        transcript: str | None = None,
         extracted_fields: dict | None = None,
         contact_id: int | None = None,
         lead_id: int | None = None,
     ) -> CallSummary:
         """Create a new call summary.
-        
+
         Args:
             call_id: Call ID (required)
             intent: Detected intent
             outcome: Call outcome
             summary_text: Summary text
+            transcript: Full conversation transcript
             extracted_fields: Extracted structured data
             contact_id: Contact ID (optional)
             lead_id: Lead ID (optional)
-            
+
         Returns:
             Created CallSummary entity
         """
@@ -113,6 +115,7 @@ class CallSummaryRepository(BaseRepository[CallSummary]):
             intent=intent,
             outcome=outcome,
             summary_text=summary_text,
+            transcript=transcript,
             extracted_fields=extracted_fields,
         )
         self.session.add(summary)
@@ -126,41 +129,45 @@ class CallSummaryRepository(BaseRepository[CallSummary]):
         intent: str | None = None,
         outcome: str | None = None,
         summary_text: str | None = None,
+        transcript: str | None = None,
         extracted_fields: dict | None = None,
         contact_id: int | None = None,
         lead_id: int | None = None,
     ) -> CallSummary | None:
         """Update an existing call summary.
-        
+
         Args:
             call_id: Call ID
             intent: Detected intent
             outcome: Call outcome
             summary_text: Summary text
+            transcript: Full conversation transcript
             extracted_fields: Extracted structured data
             contact_id: Contact ID
             lead_id: Lead ID
-            
+
         Returns:
             Updated CallSummary entity or None if not found
         """
         summary = await self.get_by_call_id(call_id)
         if not summary:
             return None
-        
+
         if intent is not None:
             summary.intent = intent
         if outcome is not None:
             summary.outcome = outcome
         if summary_text is not None:
             summary.summary_text = summary_text
+        if transcript is not None:
+            summary.transcript = transcript
         if extracted_fields is not None:
             summary.extracted_fields = extracted_fields
         if contact_id is not None:
             summary.contact_id = contact_id
         if lead_id is not None:
             summary.lead_id = lead_id
-        
+
         await self.session.commit()
         await self.session.refresh(summary)
         return summary

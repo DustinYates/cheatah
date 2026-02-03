@@ -11,6 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.api.deps import require_tenant_context
+from app.api.analytics_deps import (
+    AnalyticsContext7d,
+    AnalyticsContext30d,
+    AnalyticsDateRange,
+    normalize_date,
+    resolve_timezone,
+)
 from app.persistence.database import get_db
 from app.domain.services.pushback_detector import PushbackDetector
 from app.domain.services.repetition_detector import RepetitionDetector
@@ -49,35 +56,8 @@ class UsageResponse(BaseModel):
     series: list[UsageDay]
 
 
-def _normalize_date(value: date | datetime | str | None) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return datetime.fromisoformat(value).date()
-        except ValueError:
-            try:
-                return datetime.strptime(value, "%Y-%m-%d").date()
-            except ValueError:
-                return None
-    return None
-
-
-def _resolve_timezone(value: str | None) -> str:
-    if not value:
-        return "UTC"
-    try:
-        pytz.timezone(value)
-        return value
-    except pytz.UnknownTimeZoneError:
-        return "UTC"
-
-
 def _supports_timezone(db: AsyncSession) -> bool:
+    """Check if database supports timezone functions."""
     try:
         return db.bind and db.bind.dialect.name == "postgresql"
     except AttributeError:
@@ -85,6 +65,7 @@ def _supports_timezone(db: AsyncSession) -> bool:
 
 
 def _day_bucket(column, timezone_name: str, use_timezone: bool):
+    """Create a date bucket expression for grouping by day."""
     if use_timezone and timezone_name != "UTC":
         return cast(func.timezone(timezone_name, column), Date).label("day")
     return cast(column, Date).label("day")
@@ -93,60 +74,12 @@ def _day_bucket(column, timezone_name: str, use_timezone: bool):
 @router.get("/usage", response_model=UsageResponse)
 async def get_usage(
     db: Annotated[AsyncSession, Depends(get_db)],
-    tenant_id: Annotated[int, Depends(require_tenant_context)],
-    start_date: Annotated[str | None, Query()] = None,
-    end_date: Annotated[str | None, Query()] = None,
-    timezone: Annotated[str | None, Query()] = None,
+    ctx: AnalyticsContext7d,
 ) -> UsageResponse:
     """Get daily usage metrics for SMS, chatbot, and calls."""
-    tenant_result = await db.execute(
-        select(Tenant.created_at).where(Tenant.id == tenant_id)
-    )
-    tenant_created_at = tenant_result.scalar_one_or_none()
-    if not tenant_created_at:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant not found",
-        )
-
-    sms_config_result = await db.execute(
-        select(TenantSmsConfig.timezone).where(TenantSmsConfig.tenant_id == tenant_id)
-    )
-    tenant_timezone = sms_config_result.scalar_one_or_none()
-    requested_timezone = _resolve_timezone(timezone)
-    effective_timezone = _resolve_timezone(tenant_timezone) if tenant_timezone else requested_timezone
     use_timezone = _supports_timezone(db)
 
-    tenant_start_date = tenant_created_at.date()
-    today = datetime.utcnow().date()
-    parsed_start = _normalize_date(start_date)
-    parsed_end = _normalize_date(end_date)
-
-    if parsed_start is None and parsed_end is None:
-        parsed_end = today
-        parsed_start = parsed_end - timedelta(days=6)
-    elif parsed_start is None and parsed_end is not None:
-        parsed_start = parsed_end - timedelta(days=6)
-    elif parsed_end is None and parsed_start is not None:
-        parsed_end = today
-
-    range_start = parsed_start or tenant_start_date
-    range_end = parsed_end or today
-
-    if range_start < tenant_start_date:
-        range_start = tenant_start_date
-    if range_end > today:
-        range_end = today
-    if range_start > range_end:
-        range_start = range_end
-
-    tz = pytz.timezone(effective_timezone)
-    start_local = tz.localize(datetime.combine(range_start, time.min))
-    end_local = tz.localize(datetime.combine(range_end, time.max))
-    start_datetime = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
-    end_datetime = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
-
-    sms_day = _day_bucket(Message.created_at, effective_timezone, use_timezone)
+    sms_day = _day_bucket(Message.created_at, ctx.timezone, use_timezone)
     sms_stmt = (
         select(
             sms_day,
@@ -156,11 +89,11 @@ async def get_usage(
         .select_from(Message)
         .join(Conversation, Conversation.id == Message.conversation_id)
         .where(
-            Conversation.tenant_id == tenant_id,
+            Conversation.tenant_id == ctx.tenant_id,
             Conversation.channel == "sms",
             Message.role.in_(["user", "assistant"]),
-            Message.created_at >= start_datetime,
-            Message.created_at <= end_datetime,
+            Message.created_at >= ctx.start_datetime,
+            Message.created_at <= ctx.end_datetime,
         )
         .group_by(sms_day, Message.role)
     )
@@ -169,7 +102,7 @@ async def get_usage(
     sms_in = {}
     sms_out = {}
     for row in sms_result:
-        day = _normalize_date(row.day)
+        day = normalize_date(row.day)
         if not day:
             continue
         if row.role == "user":
@@ -177,7 +110,7 @@ async def get_usage(
         elif row.role == "assistant":
             sms_out[day] = int(row.count or 0)
 
-    chat_day = _day_bucket(Message.created_at, effective_timezone, use_timezone)
+    chat_day = _day_bucket(Message.created_at, ctx.timezone, use_timezone)
     chat_stmt = (
         select(
             chat_day,
@@ -186,11 +119,11 @@ async def get_usage(
         .select_from(Message)
         .join(Conversation, Conversation.id == Message.conversation_id)
         .where(
-            Conversation.tenant_id == tenant_id,
+            Conversation.tenant_id == ctx.tenant_id,
             Conversation.channel == "web",
             Message.role == "user",
-            Message.created_at >= start_datetime,
-            Message.created_at <= end_datetime,
+            Message.created_at >= ctx.start_datetime,
+            Message.created_at <= ctx.end_datetime,
         )
         .group_by(chat_day)
     )
@@ -198,13 +131,13 @@ async def get_usage(
 
     chat_interactions = {}
     for row in chat_result:
-        day = _normalize_date(row.day)
+        day = normalize_date(row.day)
         if not day:
             continue
         chat_interactions[day] = int(row.count or 0)
 
     call_timestamp = func.coalesce(Call.started_at, Call.created_at)
-    calls_day = _day_bucket(call_timestamp, effective_timezone, use_timezone)
+    calls_day = _day_bucket(call_timestamp, ctx.timezone, use_timezone)
     duration_seconds = func.coalesce(
         func.nullif(Call.duration, 0),
         func.extract("epoch", Call.ended_at - Call.started_at),
@@ -217,9 +150,9 @@ async def get_usage(
             func.count(Call.id).label("call_count"),
         )
         .where(
-            Call.tenant_id == tenant_id,
-            call_timestamp >= start_datetime,
-            call_timestamp <= end_datetime,
+            Call.tenant_id == ctx.tenant_id,
+            call_timestamp >= ctx.start_datetime,
+            call_timestamp <= ctx.end_datetime,
         )
         .group_by(calls_day)
     )
@@ -228,7 +161,7 @@ async def get_usage(
     call_minutes = {}
     call_counts = {}
     for row in calls_result:
-        day = _normalize_date(row.day)
+        day = normalize_date(row.day)
         if not day:
             continue
         seconds = float(row.duration_seconds or 0)
@@ -236,8 +169,8 @@ async def get_usage(
         call_counts[day] = int(row.call_count or 0)
 
     series = []
-    current = range_start
-    while current <= range_end:
+    current = ctx.start_date
+    while current <= ctx.end_date:
         series.append(
             UsageDay(
                 date=current.isoformat(),
@@ -251,10 +184,10 @@ async def get_usage(
         current += timedelta(days=1)
 
     return UsageResponse(
-        onboarded_date=tenant_start_date.isoformat(),
-        start_date=range_start.isoformat(),
-        end_date=range_end.isoformat(),
-        timezone=effective_timezone,
+        onboarded_date=ctx.tenant_start_date.isoformat(),
+        start_date=ctx.start_date.isoformat(),
+        end_date=ctx.end_date.isoformat(),
+        timezone=ctx.timezone,
         series=series,
     )
 
@@ -457,64 +390,9 @@ class ConversationAnalyticsResponse(BaseModel):
 @router.get("/conversations", response_model=ConversationAnalyticsResponse)
 async def get_conversation_analytics(
     db: Annotated[AsyncSession, Depends(get_db)],
-    tenant_id: Annotated[int, Depends(require_tenant_context)],
-    start_date: Annotated[str | None, Query()] = None,
-    end_date: Annotated[str | None, Query()] = None,
-    timezone: Annotated[str | None, Query()] = None,
+    ctx: AnalyticsContext30d,
 ) -> ConversationAnalyticsResponse:
     """Get conversation analytics including length, escalation rate, intents, and response times."""
-    # Get tenant info
-    tenant_result = await db.execute(
-        select(Tenant.created_at).where(Tenant.id == tenant_id)
-    )
-    tenant_created_at = tenant_result.scalar_one_or_none()
-    if not tenant_created_at:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant not found",
-        )
-
-    # Resolve timezone
-    sms_config_result = await db.execute(
-        select(TenantSmsConfig.timezone).where(TenantSmsConfig.tenant_id == tenant_id)
-    )
-    tenant_timezone = sms_config_result.scalar_one_or_none()
-    requested_timezone = _resolve_timezone(timezone)
-    effective_timezone = (
-        _resolve_timezone(tenant_timezone) if tenant_timezone else requested_timezone
-    )
-
-    # Parse date range
-    tenant_start_date = tenant_created_at.date()
-    today = datetime.utcnow().date()
-    parsed_start = _normalize_date(start_date)
-    parsed_end = _normalize_date(end_date)
-
-    if parsed_start is None and parsed_end is None:
-        parsed_end = today
-        parsed_start = parsed_end - timedelta(days=29)  # Default to 30 days
-    elif parsed_start is None and parsed_end is not None:
-        parsed_start = parsed_end - timedelta(days=29)
-    elif parsed_end is None and parsed_start is not None:
-        parsed_end = today
-
-    range_start = parsed_start or tenant_start_date
-    range_end = parsed_end or today
-
-    if range_start < tenant_start_date:
-        range_start = tenant_start_date
-    if range_end > today:
-        range_end = today
-    if range_start > range_end:
-        range_start = range_end
-
-    # Convert to UTC datetime range
-    tz = pytz.timezone(effective_timezone)
-    start_local = tz.localize(datetime.combine(range_start, time.min))
-    end_local = tz.localize(datetime.combine(range_end, time.max))
-    start_datetime = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
-    end_datetime = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
-
     # Query 1: Conversation length metrics
     conv_metrics_stmt = (
         select(
@@ -528,9 +406,9 @@ async def get_conversation_analytics(
         .select_from(Conversation)
         .join(Message, Message.conversation_id == Conversation.id)
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
         )
         .group_by(Conversation.id, Conversation.channel)
     )
@@ -586,9 +464,9 @@ async def get_conversation_analytics(
     escalation_count_stmt = (
         select(func.count(Escalation.id))
         .where(
-            Escalation.tenant_id == tenant_id,
-            Escalation.created_at >= start_datetime,
-            Escalation.created_at <= end_datetime,
+            Escalation.tenant_id == ctx.tenant_id,
+            Escalation.created_at >= ctx.start_datetime,
+            Escalation.created_at <= ctx.end_datetime,
         )
     )
     escalation_result = await db.execute(escalation_count_stmt)
@@ -616,9 +494,9 @@ async def get_conversation_analytics(
         .select_from(CallSummary)
         .join(Call, Call.id == CallSummary.call_id)
         .where(
-            Call.tenant_id == tenant_id,
-            call_timestamp >= start_datetime,
-            call_timestamp <= end_datetime,
+            Call.tenant_id == ctx.tenant_id,
+            call_timestamp >= ctx.start_datetime,
+            call_timestamp <= ctx.end_datetime,
             CallSummary.intent.isnot(None),
         )
         .group_by(CallSummary.intent)
@@ -663,9 +541,9 @@ async def get_conversation_analytics(
             ),
         )
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
             UserMessage.role == "user",
         )
         .group_by(Conversation.channel)
@@ -700,9 +578,9 @@ async def get_conversation_analytics(
             func.count(Conversation.id).label("count"),
         )
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
         )
         .group_by(Conversation.channel)
     )
@@ -719,9 +597,9 @@ async def get_conversation_analytics(
             func.count(Escalation.id).label("count"),
         )
         .where(
-            Escalation.tenant_id == tenant_id,
-            Escalation.created_at >= start_datetime,
-            Escalation.created_at <= end_datetime,
+            Escalation.tenant_id == ctx.tenant_id,
+            Escalation.created_at >= ctx.start_datetime,
+            Escalation.created_at <= ctx.end_datetime,
         )
         .group_by(
             channel_cast_expr,
@@ -768,9 +646,9 @@ async def get_conversation_analytics(
             ),
         )
         .where(
-            Escalation.tenant_id == tenant_id,
-            Escalation.created_at >= start_datetime,
-            Escalation.created_at <= end_datetime,
+            Escalation.tenant_id == ctx.tenant_id,
+            Escalation.created_at >= ctx.start_datetime,
+            Escalation.created_at <= ctx.end_datetime,
         )
         .group_by(Escalation.id)
     )
@@ -822,9 +700,9 @@ async def get_conversation_analytics(
             Lead.extra_data,
         )
         .where(
-            Lead.tenant_id == tenant_id,
-            Lead.created_at >= start_datetime,
-            Lead.created_at <= end_datetime,
+            Lead.tenant_id == ctx.tenant_id,
+            Lead.created_at >= ctx.start_datetime,
+            Lead.created_at <= ctx.end_datetime,
             Lead.extra_data.isnot(None),
         )
     )
@@ -861,9 +739,9 @@ async def get_conversation_analytics(
         .select_from(Conversation)
         .outerjoin(Lead, Lead.conversation_id == Conversation.id)
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
         )
         .group_by(Conversation.channel)
     )
@@ -906,9 +784,9 @@ async def get_conversation_analytics(
         .select_from(Conversation)
         .outerjoin(Escalation, Escalation.conversation_id == Conversation.id)
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
             Escalation.id.is_(None),
         )
     )
@@ -932,9 +810,9 @@ async def get_conversation_analytics(
         .join(Conversation, Conversation.id == Lead.conversation_id)
         .outerjoin(Escalation, Escalation.conversation_id == Conversation.id)
         .where(
-            Lead.tenant_id == tenant_id,
-            Lead.created_at >= start_datetime,
-            Lead.created_at <= end_datetime,
+            Lead.tenant_id == ctx.tenant_id,
+            Lead.created_at >= ctx.start_datetime,
+            Lead.created_at <= ctx.end_datetime,
             Escalation.id.is_(None),
         )
     )
@@ -970,9 +848,9 @@ async def get_conversation_analytics(
             ),
         )
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
             UserMessage.role == "user",
         )
     )
@@ -1047,9 +925,9 @@ async def get_conversation_analytics(
         .select_from(Conversation)
         .outerjoin(Message, Message.conversation_id == Conversation.id)
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
         )
         .group_by(Conversation.id)
     )
@@ -1060,10 +938,10 @@ async def get_conversation_analytics(
     conv_with_leads_stmt = (
         select(func.distinct(Lead.conversation_id))
         .where(
-            Lead.tenant_id == tenant_id,
+            Lead.tenant_id == ctx.tenant_id,
             Lead.conversation_id.isnot(None),
-            Lead.created_at >= start_datetime,
-            Lead.created_at <= end_datetime,
+            Lead.created_at >= ctx.start_datetime,
+            Lead.created_at <= ctx.end_datetime,
         )
     )
     conv_with_leads_result = await db.execute(conv_with_leads_stmt)
@@ -1073,11 +951,11 @@ async def get_conversation_analytics(
     conv_with_links_stmt = (
         select(func.distinct(Lead.conversation_id))
         .where(
-            Lead.tenant_id == tenant_id,
+            Lead.tenant_id == ctx.tenant_id,
             Lead.conversation_id.isnot(None),
             Lead.extra_data.isnot(None),
-            Lead.created_at >= start_datetime,
-            Lead.created_at <= end_datetime,
+            Lead.created_at >= ctx.start_datetime,
+            Lead.created_at <= ctx.end_datetime,
         )
     )
     conv_with_links_result = await db.execute(conv_with_links_stmt)
@@ -1087,10 +965,10 @@ async def get_conversation_analytics(
     conv_with_esc_stmt = (
         select(func.distinct(Escalation.conversation_id))
         .where(
-            Escalation.tenant_id == tenant_id,
+            Escalation.tenant_id == ctx.tenant_id,
             Escalation.conversation_id.isnot(None),
-            Escalation.created_at >= start_datetime,
-            Escalation.created_at <= end_datetime,
+            Escalation.created_at >= ctx.start_datetime,
+            Escalation.created_at <= ctx.end_datetime,
         )
     )
     conv_with_esc_result = await db.execute(conv_with_esc_stmt)
@@ -1136,9 +1014,9 @@ async def get_conversation_analytics(
         .select_from(Message)
         .join(Conversation, Conversation.id == Message.conversation_id)
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
             Message.role == "user",
             Message.content.isnot(None),
         )
@@ -1186,9 +1064,9 @@ async def get_conversation_analytics(
         .select_from(Message)
         .join(Conversation, Conversation.id == Message.conversation_id)
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
             Message.content.isnot(None),
         )
         .order_by(Message.conversation_id, Message.sequence_number)
@@ -1268,14 +1146,15 @@ async def get_conversation_analytics(
         .select_from(CallSummary)
         .join(Call, Call.id == CallSummary.call_id)
         .where(
-            Call.tenant_id == tenant_id,
-            func.coalesce(Call.started_at, Call.created_at) >= start_datetime,
-            func.coalesce(Call.started_at, Call.created_at) <= end_datetime,
+            Call.tenant_id == ctx.tenant_id,
+            func.coalesce(Call.started_at, Call.created_at) >= ctx.start_datetime,
+            func.coalesce(Call.started_at, Call.created_at) <= ctx.end_datetime,
         )
     )
     call_demand_result = await db.execute(call_demand_stmt)
 
     location_mentions = 0
+    tz = pytz.timezone(ctx.timezone)
 
     for row in call_demand_result:
         # Track time of day (convert UTC to tenant timezone)
@@ -1313,9 +1192,9 @@ async def get_conversation_analytics(
         .select_from(Message)
         .join(Conversation, Conversation.id == Message.conversation_id)
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
             Message.role == "user",
             Message.content.isnot(None),
         )
@@ -1377,9 +1256,9 @@ async def get_conversation_analytics(
                 func.sum(duration_seconds).label("total_seconds"),
             )
             .where(
-                Call.tenant_id == tenant_id,
-                call_timestamp >= start_datetime,
-                call_timestamp <= end_datetime,
+                Call.tenant_id == ctx.tenant_id,
+                call_timestamp >= ctx.start_datetime,
+                call_timestamp <= ctx.end_datetime,
             )
             .group_by(func.coalesce(Call.language, "unknown"))
         )
@@ -1394,9 +1273,9 @@ async def get_conversation_analytics(
             .select_from(Call)
             .join(CallSummary, CallSummary.call_id == Call.id)
             .where(
-                Call.tenant_id == tenant_id,
-                call_timestamp >= start_datetime,
-                call_timestamp <= end_datetime,
+                Call.tenant_id == ctx.tenant_id,
+                call_timestamp >= ctx.start_datetime,
+                call_timestamp <= ctx.end_datetime,
                 CallSummary.lead_id.isnot(None),
             )
             .group_by(func.coalesce(Call.language, "unknown"))
@@ -1444,9 +1323,9 @@ async def get_conversation_analytics(
         phone_call_stats = None
 
     return ConversationAnalyticsResponse(
-        start_date=range_start.isoformat(),
-        end_date=range_end.isoformat(),
-        timezone=effective_timezone,
+        start_date=ctx.start_date.isoformat(),
+        end_date=ctx.end_date.isoformat(),
+        timezone=ctx.timezone,
         conversation_length=conversation_length,
         escalation_metrics=escalation_metrics,
         intent_distribution=intent_distribution,
@@ -1508,73 +1387,18 @@ class WidgetAnalyticsResponse(BaseModel):
 @router.get("/widget", response_model=WidgetAnalyticsResponse)
 async def get_widget_analytics(
     db: Annotated[AsyncSession, Depends(get_db)],
-    tenant_id: Annotated[int, Depends(require_tenant_context)],
-    start_date: Annotated[str | None, Query()] = None,
-    end_date: Annotated[str | None, Query()] = None,
-    timezone: Annotated[str | None, Query()] = None,
+    ctx: AnalyticsContext30d,
 ) -> WidgetAnalyticsResponse:
     """Get widget engagement analytics including visibility and attention metrics."""
-    # Get tenant info
-    tenant_result = await db.execute(
-        select(Tenant.created_at).where(Tenant.id == tenant_id)
-    )
-    tenant_created_at = tenant_result.scalar_one_or_none()
-    if not tenant_created_at:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant not found",
-        )
-
-    # Resolve timezone
-    sms_config_result = await db.execute(
-        select(TenantSmsConfig.timezone).where(TenantSmsConfig.tenant_id == tenant_id)
-    )
-    tenant_timezone = sms_config_result.scalar_one_or_none()
-    requested_timezone = _resolve_timezone(timezone)
-    effective_timezone = (
-        _resolve_timezone(tenant_timezone) if tenant_timezone else requested_timezone
-    )
-
-    # Parse date range
-    tenant_start_date = tenant_created_at.date()
-    today = datetime.utcnow().date()
-    parsed_start = _normalize_date(start_date)
-    parsed_end = _normalize_date(end_date)
-
-    if parsed_start is None and parsed_end is None:
-        parsed_end = today
-        parsed_start = parsed_end - timedelta(days=29)  # Default to 30 days
-    elif parsed_start is None and parsed_end is not None:
-        parsed_start = parsed_end - timedelta(days=29)
-    elif parsed_end is None and parsed_start is not None:
-        parsed_end = today
-
-    range_start = parsed_start or tenant_start_date
-    range_end = parsed_end or today
-
-    if range_start < tenant_start_date:
-        range_start = tenant_start_date
-    if range_end > today:
-        range_end = today
-    if range_start > range_end:
-        range_start = range_end
-
-    # Convert to UTC datetime range
-    tz = pytz.timezone(effective_timezone)
-    start_local = tz.localize(datetime.combine(range_start, time.min))
-    end_local = tz.localize(datetime.combine(range_end, time.max))
-    start_datetime = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
-    end_datetime = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
-
     # Helper function to count events by type
     async def count_events(event_type: str) -> int:
         stmt = (
             select(func.count(WidgetEvent.id))
             .where(
-                WidgetEvent.tenant_id == tenant_id,
+                WidgetEvent.tenant_id == ctx.tenant_id,
                 WidgetEvent.event_type == event_type,
-                WidgetEvent.created_at >= start_datetime,
-                WidgetEvent.created_at <= end_datetime,
+                WidgetEvent.created_at >= ctx.start_datetime,
+                WidgetEvent.created_at <= ctx.end_datetime,
             )
         )
         result = await db.execute(stmt)
@@ -1603,10 +1427,10 @@ async def get_widget_analytics(
     viewport_stmt = (
         select(WidgetEvent.event_data)
         .where(
-            WidgetEvent.tenant_id == tenant_id,
+            WidgetEvent.tenant_id == ctx.tenant_id,
             WidgetEvent.event_type == "viewport_visible",
-            WidgetEvent.created_at >= start_datetime,
-            WidgetEvent.created_at <= end_datetime,
+            WidgetEvent.created_at >= ctx.start_datetime,
+            WidgetEvent.created_at <= ctx.end_datetime,
         )
     )
     viewport_result = await db.execute(viewport_stmt)
@@ -1657,9 +1481,9 @@ async def get_widget_analytics(
     )
 
     return WidgetAnalyticsResponse(
-        start_date=range_start.isoformat(),
-        end_date=range_end.isoformat(),
-        timezone=effective_timezone,
+        start_date=ctx.start_date.isoformat(),
+        end_date=ctx.end_date.isoformat(),
+        timezone=ctx.timezone,
         visibility=visibility_metrics,
         attention=attention_metrics,
     )
@@ -1698,64 +1522,9 @@ class SettingsSnapshotsResponse(BaseModel):
 @router.get("/widget/settings-snapshots", response_model=SettingsSnapshotsResponse)
 async def get_widget_settings_snapshots(
     db: Annotated[AsyncSession, Depends(get_db)],
-    tenant_id: Annotated[int, Depends(require_tenant_context)],
-    start_date: Annotated[str | None, Query()] = None,
-    end_date: Annotated[str | None, Query()] = None,
-    timezone: Annotated[str | None, Query()] = None,
+    ctx: AnalyticsContext30d,
 ) -> SettingsSnapshotsResponse:
     """Get unique widget settings configurations and their performance metrics for A/B testing analysis."""
-    # Get tenant info
-    tenant_result = await db.execute(
-        select(Tenant.created_at).where(Tenant.id == tenant_id)
-    )
-    tenant_created_at = tenant_result.scalar_one_or_none()
-    if not tenant_created_at:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant not found",
-        )
-
-    # Resolve timezone
-    sms_config_result = await db.execute(
-        select(TenantSmsConfig.timezone).where(TenantSmsConfig.tenant_id == tenant_id)
-    )
-    tenant_timezone = sms_config_result.scalar_one_or_none()
-    requested_timezone = _resolve_timezone(timezone)
-    effective_timezone = (
-        _resolve_timezone(tenant_timezone) if tenant_timezone else requested_timezone
-    )
-
-    # Parse date range
-    tenant_start_date = tenant_created_at.date()
-    today = datetime.utcnow().date()
-    parsed_start = _normalize_date(start_date)
-    parsed_end = _normalize_date(end_date)
-
-    if parsed_start is None and parsed_end is None:
-        parsed_end = today
-        parsed_start = parsed_end - timedelta(days=29)
-    elif parsed_start is None and parsed_end is not None:
-        parsed_start = parsed_end - timedelta(days=29)
-    elif parsed_end is None and parsed_start is not None:
-        parsed_end = today
-
-    range_start = parsed_start or tenant_start_date
-    range_end = parsed_end or today
-
-    if range_start < tenant_start_date:
-        range_start = tenant_start_date
-    if range_end > today:
-        range_end = today
-    if range_start > range_end:
-        range_start = range_end
-
-    # Convert to UTC datetime range
-    tz = pytz.timezone(effective_timezone)
-    start_local = tz.localize(datetime.combine(range_start, time.min))
-    end_local = tz.localize(datetime.combine(range_end, time.max))
-    start_datetime = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
-    end_datetime = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
-
     # Get all impression events with settings snapshots
     impressions_stmt = (
         select(
@@ -1764,10 +1533,10 @@ async def get_widget_settings_snapshots(
             WidgetEvent.created_at,
         )
         .where(
-            WidgetEvent.tenant_id == tenant_id,
+            WidgetEvent.tenant_id == ctx.tenant_id,
             WidgetEvent.event_type == "impression",
-            WidgetEvent.created_at >= start_datetime,
-            WidgetEvent.created_at <= end_datetime,
+            WidgetEvent.created_at >= ctx.start_datetime,
+            WidgetEvent.created_at <= ctx.end_datetime,
             WidgetEvent.settings_snapshot.isnot(None),
         )
     )
@@ -1817,10 +1586,10 @@ async def get_widget_settings_snapshots(
                 WidgetEvent.event_type,
             )
             .where(
-                WidgetEvent.tenant_id == tenant_id,
+                WidgetEvent.tenant_id == ctx.tenant_id,
                 WidgetEvent.event_type.in_(["widget_open", "manual_open", "auto_open"]),
-                WidgetEvent.created_at >= start_datetime,
-                WidgetEvent.created_at <= end_datetime,
+                WidgetEvent.created_at >= ctx.start_datetime,
+                WidgetEvent.created_at <= ctx.end_datetime,
                 WidgetEvent.visitor_id.in_(list(all_visitor_ids)),
             )
         )
@@ -1875,9 +1644,9 @@ async def get_widget_settings_snapshots(
         variations = []
 
     return SettingsSnapshotsResponse(
-        start_date=range_start.isoformat(),
-        end_date=range_end.isoformat(),
-        timezone=effective_timezone,
+        start_date=ctx.start_date.isoformat(),
+        end_date=ctx.end_date.isoformat(),
+        timezone=ctx.timezone,
         variations=variations,
         total_variations=len(variations),
     )
@@ -1930,64 +1699,9 @@ WEB_MINUTES_PER_MESSAGE = 1.5
 @router.get("/savings", response_model=SavingsAnalyticsResponse)
 async def get_savings_analytics(
     db: Annotated[AsyncSession, Depends(get_db)],
-    tenant_id: Annotated[int, Depends(require_tenant_context)],
-    start_date: Annotated[str | None, Query()] = None,
-    end_date: Annotated[str | None, Query()] = None,
-    timezone: Annotated[str | None, Query()] = None,
+    ctx: AnalyticsContext30d,
 ) -> SavingsAnalyticsResponse:
     """Get savings analytics showing cost savings from AI handling calls and messages."""
-    # Get tenant info
-    tenant_result = await db.execute(
-        select(Tenant.created_at).where(Tenant.id == tenant_id)
-    )
-    tenant_created_at = tenant_result.scalar_one_or_none()
-    if not tenant_created_at:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant not found",
-        )
-
-    # Resolve timezone
-    sms_config_result = await db.execute(
-        select(TenantSmsConfig.timezone).where(TenantSmsConfig.tenant_id == tenant_id)
-    )
-    tenant_timezone = sms_config_result.scalar_one_or_none()
-    requested_timezone = _resolve_timezone(timezone)
-    effective_timezone = (
-        _resolve_timezone(tenant_timezone) if tenant_timezone else requested_timezone
-    )
-
-    # Parse date range
-    tenant_start_date = tenant_created_at.date()
-    today = datetime.utcnow().date()
-    parsed_start = _normalize_date(start_date)
-    parsed_end = _normalize_date(end_date)
-
-    if parsed_start is None and parsed_end is None:
-        parsed_end = today
-        parsed_start = parsed_end - timedelta(days=29)
-    elif parsed_start is None and parsed_end is not None:
-        parsed_start = parsed_end - timedelta(days=29)
-    elif parsed_end is None and parsed_start is not None:
-        parsed_end = today
-
-    range_start = parsed_start or tenant_start_date
-    range_end = parsed_end or today
-
-    if range_start < tenant_start_date:
-        range_start = tenant_start_date
-    if range_end > today:
-        range_end = today
-    if range_start > range_end:
-        range_start = range_end
-
-    # Convert to UTC datetime range
-    tz = pytz.timezone(effective_timezone)
-    start_local = tz.localize(datetime.combine(range_start, time.min))
-    end_local = tz.localize(datetime.combine(range_end, time.max))
-    start_datetime = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
-    end_datetime = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
-
     # Query 1: Voice call duration
     call_timestamp = func.coalesce(Call.started_at, Call.created_at)
     duration_seconds = func.coalesce(
@@ -2001,9 +1715,9 @@ async def get_savings_analytics(
             func.sum(duration_seconds).label("total_seconds"),
         )
         .where(
-            Call.tenant_id == tenant_id,
-            call_timestamp >= start_datetime,
-            call_timestamp <= end_datetime,
+            Call.tenant_id == ctx.tenant_id,
+            call_timestamp >= ctx.start_datetime,
+            call_timestamp <= ctx.end_datetime,
         )
     )
     voice_result = await db.execute(voice_stmt)
@@ -2019,11 +1733,11 @@ async def get_savings_analytics(
         .select_from(Message)
         .join(Conversation, Conversation.id == Message.conversation_id)
         .where(
-            Conversation.tenant_id == tenant_id,
+            Conversation.tenant_id == ctx.tenant_id,
             Conversation.channel == "sms",
             Message.role == "assistant",
-            Message.created_at >= start_datetime,
-            Message.created_at <= end_datetime,
+            Message.created_at >= ctx.start_datetime,
+            Message.created_at <= ctx.end_datetime,
         )
     )
     sms_result = await db.execute(sms_msg_stmt)
@@ -2037,11 +1751,11 @@ async def get_savings_analytics(
         .select_from(Message)
         .join(Conversation, Conversation.id == Message.conversation_id)
         .where(
-            Conversation.tenant_id == tenant_id,
+            Conversation.tenant_id == ctx.tenant_id,
             Conversation.channel == "web",
             Message.role == "assistant",
-            Message.created_at >= start_datetime,
-            Message.created_at <= end_datetime,
+            Message.created_at >= ctx.start_datetime,
+            Message.created_at <= ctx.end_datetime,
         )
     )
     web_result = await db.execute(web_msg_stmt)
@@ -2062,9 +1776,9 @@ async def get_savings_analytics(
             func.count(func.distinct(SentAsset.phone_normalized)).label("unique_phones"),
         )
         .where(
-            SentAsset.tenant_id == tenant_id,
-            SentAsset.sent_at >= start_datetime,
-            SentAsset.sent_at <= end_datetime,
+            SentAsset.tenant_id == ctx.tenant_id,
+            SentAsset.sent_at >= ctx.start_datetime,
+            SentAsset.sent_at <= ctx.end_datetime,
         )
         .group_by(SentAsset.asset_type)
     )
@@ -2087,10 +1801,10 @@ async def get_savings_analytics(
     conv_exists = (
         select(Conversation.id)
         .where(
-            Conversation.tenant_id == tenant_id,
+            Conversation.tenant_id == ctx.tenant_id,
             Conversation.phone_number == JackrabbitCustomer.phone_number,
-            Conversation.created_at >= start_datetime,
-            Conversation.created_at <= end_datetime,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
         )
         .correlate(JackrabbitCustomer)
         .exists()
@@ -2099,10 +1813,10 @@ async def get_savings_analytics(
     call_exists = (
         select(Call.id)
         .where(
-            Call.tenant_id == tenant_id,
+            Call.tenant_id == ctx.tenant_id,
             Call.from_number == JackrabbitCustomer.phone_number,
-            call_ts >= start_datetime,
-            call_ts <= end_datetime,
+            call_ts >= ctx.start_datetime,
+            call_ts <= ctx.end_datetime,
         )
         .correlate(JackrabbitCustomer)
         .exists()
@@ -2110,11 +1824,11 @@ async def get_savings_analytics(
     lead_email_exists = (
         select(Lead.id)
         .where(
-            Lead.tenant_id == tenant_id,
+            Lead.tenant_id == ctx.tenant_id,
             JackrabbitCustomer.email.isnot(None),
             Lead.email == JackrabbitCustomer.email,
-            Lead.created_at >= start_datetime,
-            Lead.created_at <= end_datetime,
+            Lead.created_at >= ctx.start_datetime,
+            Lead.created_at <= ctx.end_datetime,
         )
         .correlate(JackrabbitCustomer)
         .exists()
@@ -2127,7 +1841,7 @@ async def get_savings_analytics(
             ),
         )
         .where(
-            JackrabbitCustomer.tenant_id == tenant_id,
+            JackrabbitCustomer.tenant_id == ctx.tenant_id,
             conv_exists | call_exists | lead_email_exists,
         )
     )
@@ -2137,9 +1851,9 @@ async def get_savings_analytics(
     verified_phones = int(enrollment_row.verified_phones or 0)
 
     return SavingsAnalyticsResponse(
-        start_date=range_start.isoformat(),
-        end_date=range_end.isoformat(),
-        timezone=effective_timezone,
+        start_date=ctx.start_date.isoformat(),
+        end_date=ctx.end_date.isoformat(),
+        timezone=ctx.timezone,
         total_hours_saved=round(total_hours, 2),
         total_offshore_savings=total_offshore,
         total_onshore_savings=total_onshore,
@@ -2214,10 +1928,7 @@ TOPIC_LABELS = {
 @router.get("/topics", response_model=TopicAnalyticsResponse)
 async def get_topic_analytics(
     db: Annotated[AsyncSession, Depends(get_db)],
-    tenant_id: Annotated[int, Depends(require_tenant_context)],
-    start_date: Annotated[str | None, Query()] = None,
-    end_date: Annotated[str | None, Query()] = None,
-    timezone: Annotated[str | None, Query()] = None,
+    ctx: AnalyticsContext30d,
     channel: Annotated[str | None, Query()] = None,
 ) -> TopicAnalyticsResponse:
     """Get topic distribution analytics for conversations.
@@ -2225,41 +1936,11 @@ async def get_topic_analytics(
     Returns counts and percentages of conversation topics, optionally
     filtered by channel, with a per-channel breakdown.
     """
-    # Resolve date range (same pattern as other analytics endpoints)
-    effective_timezone = _resolve_timezone(timezone)
-    today = date.today()
-
-    parsed_start = _normalize_date(start_date)
-    parsed_end = _normalize_date(end_date)
-
-    if parsed_start is None and parsed_end is None:
-        parsed_end = today
-        parsed_start = parsed_end - timedelta(days=29)
-    elif parsed_start is None and parsed_end is not None:
-        parsed_start = parsed_end - timedelta(days=29)
-    elif parsed_end is None and parsed_start is not None:
-        parsed_end = today
-
-    range_start_date = parsed_start or today - timedelta(days=29)
-    range_end_date = parsed_end or today
-
-    if range_end_date > today:
-        range_end_date = today
-    if range_start_date > range_end_date:
-        range_start_date = range_end_date
-
-    # Convert to UTC datetime range
-    tz = pytz.timezone(effective_timezone)
-    start_local = tz.localize(datetime.combine(range_start_date, time.min))
-    end_local = tz.localize(datetime.combine(range_end_date, time.max))
-    range_start = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
-    range_end = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
-
     # Build base filters
     filters = [
-        Conversation.tenant_id == tenant_id,
-        Conversation.created_at >= range_start,
-        Conversation.created_at <= range_end,
+        Conversation.tenant_id == ctx.tenant_id,
+        Conversation.created_at >= ctx.start_datetime,
+        Conversation.created_at <= ctx.end_datetime,
     ]
     if channel:
         filters.append(Conversation.channel == channel)
@@ -2310,9 +1991,9 @@ async def get_topic_analytics(
             func.count(Conversation.id).label("count"),
         )
         .where(
-            Conversation.tenant_id == tenant_id,
-            Conversation.created_at >= range_start,
-            Conversation.created_at <= range_end,
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.created_at >= ctx.start_datetime,
+            Conversation.created_at <= ctx.end_datetime,
             Conversation.topic.isnot(None),
         )
         .group_by(Conversation.channel, Conversation.topic)
@@ -2339,9 +2020,9 @@ async def get_topic_analytics(
         )
 
     return TopicAnalyticsResponse(
-        start_date=range_start_date.isoformat(),
-        end_date=range_end_date.isoformat(),
-        timezone=effective_timezone,
+        start_date=ctx.start_date.isoformat(),
+        end_date=ctx.end_date.isoformat(),
+        timezone=ctx.timezone,
         total_classified=total_classified,
         total_unclassified=total_unclassified,
         topics=topics,

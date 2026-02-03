@@ -78,8 +78,6 @@ function CollapsibleSection({ title, badge, helperText, defaultOpen = false, chi
 const CHANNEL_TABS = [
   { key: 'web', label: 'Web Chat', icon: '💬', description: 'Website chatbot prompt' },
   { key: 'voice', label: 'Voice', icon: '📞', description: 'Phone/voice bot prompt' },
-  { key: 'voice_es', label: 'Voice (Spanish)', icon: '📞', description: 'Spanish phone/voice bot prompt' },
-  { key: 'sms', label: 'SMS', icon: '📱', description: 'Text message bot prompt' },
 ];
 
 function ChannelPromptsSection({

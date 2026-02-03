@@ -3,7 +3,8 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.persistence.database import Base
@@ -30,7 +31,14 @@ class Contact(Base):
     name = Column(String(255), nullable=True)
     source = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
+
+    # Profile fields
+    location = Column(String(255), nullable=True)  # e.g., "Houston, TX"
+    company = Column(String(255), nullable=True)
+    role = Column(String(255), nullable=True)
+    tags = Column(JSONB, nullable=True, default=list)  # ["swimming", "pricing"]
+    notes = Column(Text, nullable=True)  # Free-form notes
+
     # Soft delete columns
     deleted_at = Column(DateTime, nullable=True)
     deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True)

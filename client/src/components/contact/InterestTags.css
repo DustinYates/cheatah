@@ -1,0 +1,127 @@
+.interest-tags {
+  background: var(--color-bg-card, #fff);
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.interest-tags-header {
+  margin-bottom: 12px;
+}
+
+.interest-tags-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary, #111827);
+  margin: 0;
+}
+
+.tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.no-tags {
+  font-size: 13px;
+  color: var(--color-text-tertiary, #9ca3af);
+  font-style: italic;
+}
+
+/* Tag pill */
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.tag-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+  border-radius: 50%;
+  margin-left: 2px;
+}
+
+.tag-remove:hover {
+  opacity: 1;
+}
+
+/* Add tag button */
+.add-tag-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--color-bg-secondary, #f9fafb);
+  border: 1px dashed var(--color-border, #d1d5db);
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.add-tag-btn:hover {
+  background: var(--color-bg-hover, #f3f4f6);
+  border-color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-primary, #111827);
+}
+
+/* Tag input */
+.tag-input-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tag-input {
+  width: 100px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--color-primary, #4a9b5e);
+  border-radius: 20px;
+  outline: none;
+  background: var(--color-bg-card, #fff);
+}
+
+.tag-input:focus {
+  box-shadow: 0 0 0 2px rgba(74, 155, 94, 0.2);
+}
+
+.tag-input-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: var(--color-primary, #4a9b5e);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.tag-input-add:hover:not(:disabled) {
+  background: var(--color-primary-dark, #3d8049);
+}
+
+.tag-input-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

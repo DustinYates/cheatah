@@ -1,9 +1,17 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import EditContactModal from '../components/EditContactModal';
+import {
+  ContactProfileHeader,
+  ActivityHeatmap,
+  ActivityFeed,
+  InterestTags,
+  CollapsibleSection,
+} from '../components/contact';
 import { formatDateTimeParts } from '../utils/dateFormat';
 import './ContactDetail.css';
 
@@ -44,23 +52,15 @@ export default function ContactDetail() {
   const [loadingEmails, setLoadingEmails] = useState(true);
   const [dncStatus, setDncStatus] = useState({ is_blocked: false, record: null });
   const [dncLoading, setDncLoading] = useState(false);
+  const [heatmapData, setHeatmapData] = useState(null);
+  const [loadingHeatmap, setLoadingHeatmap] = useState(true);
 
   const fetchContact = useCallback(async () => {
     const data = await api.getContact(id, true);
     return data;
   }, [id]);
 
-  const fetchConversation = useCallback(async () => {
-    try {
-      const data = await api.getContactConversation(id);
-      return data;
-    } catch (err) {
-      return null;
-    }
-  }, [id]);
-
   const { data: contact, loading: contactLoading, error: contactError, refetch } = useFetchData(fetchContact);
-  const { data: conversation, loading: convLoading } = useFetchData(fetchConversation);
 
   useEffect(() => {
     if (id) {
@@ -68,6 +68,7 @@ export default function ContactDetail() {
       fetchMergeHistory();
       fetchCalls();
       fetchEmailConversations();
+      fetchHeatmap();
     }
   }, [id]);
 
@@ -96,14 +97,12 @@ export default function ContactDetail() {
     setDncLoading(true);
     try {
       if (dncStatus.is_blocked) {
-        // Unblock
         await api.post('/dnc/unblock', {
           phone: contact.phone,
           email: contact.email,
           reason: 'Manually unblocked from contact detail page',
         });
       } else {
-        // Block
         await api.post('/dnc/block', {
           phone: contact.phone,
           email: contact.email,
@@ -115,6 +114,18 @@ export default function ContactDetail() {
       setError(err.message || 'Failed to update DNC status');
     } finally {
       setDncLoading(false);
+    }
+  };
+
+  const fetchHeatmap = async () => {
+    setLoadingHeatmap(true);
+    try {
+      const data = await api.getContactActivityHeatmap(id, 365);
+      setHeatmapData(data);
+    } catch (err) {
+      console.error('Failed to fetch heatmap:', err);
+    } finally {
+      setLoadingHeatmap(false);
     }
   };
 
@@ -170,10 +181,10 @@ export default function ContactDetail() {
 
   const handleAddAlias = async () => {
     if (!newAlias.value.trim()) return;
-    
+
     setAddingAlias(true);
     setError('');
-    
+
     try {
       const alias = await api.addContactAlias(id, {
         alias_type: newAlias.alias_type,
@@ -211,6 +222,28 @@ export default function ContactDetail() {
     }
   };
 
+  const handleAddTag = async (tag) => {
+    const currentTags = contact.tags || [];
+    if (!currentTags.includes(tag)) {
+      try {
+        await api.updateContact(id, { tags: [...currentTags, tag] });
+        refetch();
+      } catch (err) {
+        setError(err.message || 'Failed to add tag');
+      }
+    }
+  };
+
+  const handleRemoveTag = async (tag) => {
+    const currentTags = contact.tags || [];
+    try {
+      await api.updateContact(id, { tags: currentTags.filter(t => t !== tag) });
+      refetch();
+    } catch (err) {
+      setError(err.message || 'Failed to remove tag');
+    }
+  };
+
   const handleEditSuccess = () => {
     setShowEditModal(false);
     refetch();
@@ -222,6 +255,15 @@ export default function ContactDetail() {
     phone: aliases.filter(a => a.alias_type === 'phone'),
     name: aliases.filter(a => a.alias_type === 'name'),
   };
+
+  // Calculate stats from heatmap data
+  const stats = heatmapData ? {
+    total: heatmapData.total_interactions,
+    sms: heatmapData.data.reduce((acc, d) => acc + (d.sms || 0), 0),
+    call: heatmapData.data.reduce((acc, d) => acc + (d.call || 0), 0),
+    email: heatmapData.data.reduce((acc, d) => acc + (d.email || 0), 0),
+    chat: heatmapData.data.reduce((acc, d) => acc + (d.chat || 0), 0),
+  } : { total: 0, sms: 0, call: 0, email: 0, chat: 0 };
 
   if (contactLoading) {
     return <LoadingState message="Loading contact..." fullPage />;
@@ -238,352 +280,297 @@ export default function ContactDetail() {
   if (!contact) {
     return (
       <div className="contact-detail-page">
-        <EmptyState icon="👤" title="Contact not found" />
+        <EmptyState icon="user" title="Contact not found" />
       </div>
     );
   }
 
   return (
-    <div className="contact-detail-page">
-      <div className="page-header">
-        <button className="back-btn" onClick={() => navigate('/contacts')}>
-          ← Back to Contacts
-        </button>
-        <div className="header-actions">
-          <button className="btn-edit" onClick={() => setShowEditModal(true)}>
-            ✏️ Edit Contact
-          </button>
-        </div>
-      </div>
+    <div className="contact-detail-page redesigned">
+      {/* Back button */}
+      <button className="back-btn" onClick={() => navigate('/contacts')}>
+        <ArrowLeft size={18} />
+        Back to Contacts
+      </button>
 
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="contact-detail-grid">
-        {/* Contact Info Card */}
-        <div className="contact-info-card">
-          <div className="contact-avatar-large">
-            {(contact.name || 'U')[0].toUpperCase()}
-          </div>
-          <h2>
-            {contact.name || 'Unknown'}
-            {dncStatus.is_blocked && (
-              <span className="dnc-badge" title="Do Not Contact">DNC</span>
+      {/* Profile Header */}
+      <ContactProfileHeader
+        contact={contact}
+        stats={stats}
+        dncStatus={dncStatus}
+        onEdit={() => setShowEditModal(true)}
+        onToggleDnc={handleToggleDnc}
+        dncLoading={dncLoading}
+      />
+
+      {/* Main content grid */}
+      <div className="contact-content-grid">
+        {/* Left sidebar */}
+        <aside className="contact-sidebar">
+          {/* Activity Heatmap */}
+          {!loadingHeatmap && heatmapData && (
+            <ActivityHeatmap
+              data={heatmapData.data}
+              startDate={heatmapData.start_date}
+              endDate={heatmapData.end_date}
+              total={heatmapData.total_interactions}
+            />
+          )}
+
+          {/* Interest Tags */}
+          <InterestTags
+            tags={contact.tags || []}
+            onAdd={handleAddTag}
+            onRemove={handleRemoveTag}
+            editable={true}
+          />
+
+          {/* Notes */}
+          {contact.notes && (
+            <div className="notes-section">
+              <h3 className="notes-title">Notes</h3>
+              <p className="notes-content">{contact.notes}</p>
+            </div>
+          )}
+        </aside>
+
+        {/* Main content */}
+        <main className="contact-main">
+          {/* Activity Feed */}
+          <ActivityFeed contactId={contact.id} pageSize={10} />
+
+          {/* Aliases */}
+          <CollapsibleSection
+            title="Aliases & Identifiers"
+            count={aliases.length}
+            icon="id"
+            emptyMessage="No aliases added"
+          >
+            {loadingAliases ? (
+              <LoadingState message="Loading aliases..." />
+            ) : (
+              <div className="aliases-content">
+                {/* Email Aliases */}
+                {groupedAliases.email.length > 0 && (
+                  <div className="alias-group">
+                    <h4>Emails</h4>
+                    <div className="alias-list">
+                      {groupedAliases.email.map(alias => (
+                        <div key={alias.id} className={`alias-item ${alias.is_primary ? 'primary' : ''}`}>
+                          <span className="alias-value">{alias.value}</span>
+                          {alias.is_primary ? (
+                            <span className="primary-badge">Primary</span>
+                          ) : (
+                            <div className="alias-actions">
+                              <button className="btn-set-primary" onClick={() => handleSetPrimary(alias.id, 'email')}>
+                                Set Primary
+                              </button>
+                              <button className="btn-remove-alias" onClick={() => handleRemoveAlias(alias.id)}>
+                                x
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Phone Aliases */}
+                {groupedAliases.phone.length > 0 && (
+                  <div className="alias-group">
+                    <h4>Phone Numbers</h4>
+                    <div className="alias-list">
+                      {groupedAliases.phone.map(alias => (
+                        <div key={alias.id} className={`alias-item ${alias.is_primary ? 'primary' : ''}`}>
+                          <span className="alias-value">{alias.value}</span>
+                          {alias.is_primary ? (
+                            <span className="primary-badge">Primary</span>
+                          ) : (
+                            <div className="alias-actions">
+                              <button className="btn-set-primary" onClick={() => handleSetPrimary(alias.id, 'phone')}>
+                                Set Primary
+                              </button>
+                              <button className="btn-remove-alias" onClick={() => handleRemoveAlias(alias.id)}>
+                                x
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Name Aliases */}
+                {groupedAliases.name.length > 0 && (
+                  <div className="alias-group">
+                    <h4>Name Variations</h4>
+                    <div className="alias-list">
+                      {groupedAliases.name.map(alias => (
+                        <div key={alias.id} className={`alias-item ${alias.is_primary ? 'primary' : ''}`}>
+                          <span className="alias-value">{alias.value}</span>
+                          {alias.is_primary ? (
+                            <span className="primary-badge">Primary</span>
+                          ) : (
+                            <div className="alias-actions">
+                              <button className="btn-set-primary" onClick={() => handleSetPrimary(alias.id, 'name')}>
+                                Set Primary
+                              </button>
+                              <button className="btn-remove-alias" onClick={() => handleRemoveAlias(alias.id)}>
+                                x
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Add New Alias */}
+                <div className="add-alias-section">
+                  <h4>Add New Alias</h4>
+                  <div className="add-alias-form">
+                    <select
+                      value={newAlias.alias_type}
+                      onChange={(e) => setNewAlias(prev => ({ ...prev, alias_type: e.target.value }))}
+                      disabled={addingAlias}
+                    >
+                      <option value="email">Email</option>
+                      <option value="phone">Phone</option>
+                      <option value="name">Name</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={newAlias.value}
+                      onChange={(e) => setNewAlias(prev => ({ ...prev, value: e.target.value }))}
+                      placeholder={`Enter ${newAlias.alias_type}...`}
+                      disabled={addingAlias}
+                    />
+                    <button
+                      className="btn-add-alias"
+                      onClick={handleAddAlias}
+                      disabled={addingAlias || !newAlias.value.trim()}
+                    >
+                      {addingAlias ? 'Adding...' : 'Add'}
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
-          </h2>
-          {(contact.phone || contact.email) && (
-            <button
-              className={`dnc-toggle-btn ${dncStatus.is_blocked ? 'blocked' : ''}`}
-              onClick={handleToggleDnc}
-              disabled={dncLoading}
-            >
-              {dncLoading
-                ? 'Updating...'
-                : dncStatus.is_blocked
-                ? 'Remove from DNC List'
-                : 'Add to Do Not Contact'}
-            </button>
-          )}
-          <div className="contact-details">
-            <div className="detail-row">
-              <span className="label">Email:</span>
-              <span className="value">{contact.email || '-'}</span>
-            </div>
-            <div className="detail-row">
-              <span className="label">Phone:</span>
-              <span className="value">{contact.phone || '-'}</span>
-            </div>
-            <div className="detail-row">
-              <span className="label">Source:</span>
-              <span className="value">{contact.source || 'web_chat'}</span>
-            </div>
-            <div className="detail-row">
-              <span className="label">Added:</span>
-              <span className="value">{formatDateTimeParts(contact.created_at).date}</span>
-            </div>
-          </div>
-        </div>
+          </CollapsibleSection>
 
-        {/* Aliases Card */}
-        <div className="aliases-card">
-          <h3>Aliases & Alternate Identifiers</h3>
-          <p className="card-description">
-            Manage alternate emails, phone numbers, and name spellings for this contact.
-          </p>
-
-          {loadingAliases ? (
-            <LoadingState message="Loading aliases..." />
-          ) : (
-            <div className="aliases-content">
-              {/* Email Aliases */}
-              <div className="alias-group">
-                <h4>Emails</h4>
-                {groupedAliases.email.length > 0 ? (
-                  <div className="alias-list">
-                    {groupedAliases.email.map(alias => (
-                      <div key={alias.id} className={`alias-item ${alias.is_primary ? 'primary' : ''}`}>
-                        <span className="alias-value">{alias.value}</span>
-                        {alias.is_primary ? (
-                          <span className="primary-badge">Primary</span>
-                        ) : (
-                          <div className="alias-actions">
-                            <button
-                              className="btn-set-primary"
-                              onClick={() => handleSetPrimary(alias.id, 'email')}
-                            >
-                              Set Primary
-                            </button>
-                            <button
-                              className="btn-remove-alias"
-                              onClick={() => handleRemoveAlias(alias.id)}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        )}
+          {/* Merge History */}
+          <CollapsibleSection
+            title="Merge History"
+            count={mergeHistory.length}
+            icon="merge"
+            emptyMessage="No contacts merged into this record"
+          >
+            {loadingHistory ? (
+              <LoadingState message="Loading merge history..." />
+            ) : (
+              <div className="merge-history-list">
+                {mergeHistory.map(entry => (
+                  <div key={entry.id} className="merge-entry">
+                    <div className="merge-entry-header">
+                      <span className="merge-date">
+                        {entry.merged_at ? formatDateTimeParts(entry.merged_at).date : 'Unknown date'}
+                      </span>
+                      {entry.merged_by && (
+                        <span className="merge-by">by {entry.merged_by}</span>
+                      )}
+                    </div>
+                    {entry.merged_contact_data && (
+                      <div className="merge-contact-data">
+                        <span><strong>Name:</strong> {entry.merged_contact_data.name || '-'}</span>
+                        <span><strong>Email:</strong> {entry.merged_contact_data.email || '-'}</span>
+                        <span><strong>Phone:</strong> {entry.merged_contact_data.phone || '-'}</span>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="no-aliases">No email aliases</p>
-                )}
-              </div>
-
-              {/* Phone Aliases */}
-              <div className="alias-group">
-                <h4>Phone Numbers</h4>
-                {groupedAliases.phone.length > 0 ? (
-                  <div className="alias-list">
-                    {groupedAliases.phone.map(alias => (
-                      <div key={alias.id} className={`alias-item ${alias.is_primary ? 'primary' : ''}`}>
-                        <span className="alias-value">{alias.value}</span>
-                        {alias.is_primary ? (
-                          <span className="primary-badge">Primary</span>
-                        ) : (
-                          <div className="alias-actions">
-                            <button
-                              className="btn-set-primary"
-                              onClick={() => handleSetPrimary(alias.id, 'phone')}
-                            >
-                              Set Primary
-                            </button>
-                            <button
-                              className="btn-remove-alias"
-                              onClick={() => handleRemoveAlias(alias.id)}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="no-aliases">No phone aliases</p>
-                )}
-              </div>
-
-              {/* Name Aliases */}
-              <div className="alias-group">
-                <h4>Name Variations</h4>
-                {groupedAliases.name.length > 0 ? (
-                  <div className="alias-list">
-                    {groupedAliases.name.map(alias => (
-                      <div key={alias.id} className={`alias-item ${alias.is_primary ? 'primary' : ''}`}>
-                        <span className="alias-value">{alias.value}</span>
-                        {alias.is_primary ? (
-                          <span className="primary-badge">Primary</span>
-                        ) : (
-                          <div className="alias-actions">
-                            <button
-                              className="btn-set-primary"
-                              onClick={() => handleSetPrimary(alias.id, 'name')}
-                            >
-                              Set Primary
-                            </button>
-                            <button
-                              className="btn-remove-alias"
-                              onClick={() => handleRemoveAlias(alias.id)}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="no-aliases">No name variations</p>
-                )}
-              </div>
-
-              {/* Add New Alias */}
-              <div className="add-alias-section">
-                <h4>Add New Alias</h4>
-                <div className="add-alias-form">
-                  <select
-                    value={newAlias.alias_type}
-                    onChange={(e) => setNewAlias(prev => ({ ...prev, alias_type: e.target.value }))}
-                    disabled={addingAlias}
-                  >
-                    <option value="email">Email</option>
-                    <option value="phone">Phone</option>
-                    <option value="name">Name</option>
-                  </select>
-                  <input
-                    type="text"
-                    value={newAlias.value}
-                    onChange={(e) => setNewAlias(prev => ({ ...prev, value: e.target.value }))}
-                    placeholder={`Enter ${newAlias.alias_type}...`}
-                    disabled={addingAlias}
-                  />
-                  <button
-                    className="btn-add-alias"
-                    onClick={handleAddAlias}
-                    disabled={addingAlias || !newAlias.value.trim()}
-                  >
-                    {addingAlias ? 'Adding...' : 'Add'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Merge History Card */}
-        {mergeHistory.length > 0 && (
-          <div className="merge-history-card">
-            <h3>Merge History</h3>
-            <p className="card-description">
-              Contacts that have been merged into this record.
-            </p>
-            <div className="merge-history-list">
-              {mergeHistory.map(entry => (
-                <div key={entry.id} className="merge-entry">
-                  <div className="merge-entry-header">
-                    <span className="merge-date">
-                      {entry.merged_at ? formatDateTimeParts(entry.merged_at).date : 'Unknown date'}
-                    </span>
-                    {entry.merged_by && (
-                      <span className="merge-by">by {entry.merged_by}</span>
                     )}
                   </div>
-                  {entry.merged_contact_data && (
-                    <div className="merge-contact-data">
-                      <span><strong>Name:</strong> {entry.merged_contact_data.name || '-'}</span>
-                      <span><strong>Email:</strong> {entry.merged_contact_data.email || '-'}</span>
-                      <span><strong>Phone:</strong> {entry.merged_contact_data.phone || '-'}</span>
+                ))}
+              </div>
+            )}
+          </CollapsibleSection>
+
+          {/* Email Conversations */}
+          <CollapsibleSection
+            title="Email Conversations"
+            count={emailConversations.length}
+            icon="mail"
+            emptyMessage="No email conversations found"
+          >
+            {loadingEmails ? (
+              <LoadingState message="Loading emails..." />
+            ) : (
+              <div className="emails-list">
+                {emailConversations.map((email) => (
+                  <div key={email.id} className="email-item">
+                    <div className="email-item-header">
+                      <span className="email-subject">{email.subject || '(No subject)'}</span>
+                      <span className={`email-status status-${email.status}`}>{email.status}</span>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Email Conversations Card */}
-        <div className="emails-card">
-          <h3>✉️ Email Conversations</h3>
-          {loadingEmails ? (
-            <LoadingState message="Loading emails..." />
-          ) : emailConversations.length > 0 ? (
-            <div className="emails-list">
-              {emailConversations.map((email) => (
-                <div key={email.id} className="email-item">
-                  <div className="email-item-header">
-                    <span className="email-subject">{email.subject || '(No subject)'}</span>
-                    <span className={`email-status status-${email.status}`}>{email.status}</span>
-                  </div>
-                  <div className="email-item-body">
-                    <span className="email-from">{email.from_email}</span>
-                    <span className="email-count">{email.message_count} message{email.message_count !== 1 ? 's' : ''}</span>
-                  </div>
-                  <div className="email-item-footer">
-                    <span className="email-date">
-                      {email.last_response_at 
-                        ? `Last response: ${formatDateTimeParts(email.last_response_at).date}`
-                        : `Created: ${formatDateTimeParts(email.created_at).date}`
-                      }
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState 
-              icon="✉️" 
-              title="No email conversations" 
-              description="No email threads found for this contact."
-            />
-          )}
-        </div>
-
-        {/* Voice Calls Card */}
-        <div className="calls-card">
-          <h3>📞 Voice Calls</h3>
-          {loadingCalls ? (
-            <LoadingState message="Loading calls..." />
-          ) : calls.length > 0 ? (
-            <div className="calls-list">
-              {calls.map((call) => {
-                const { date, time } = formatDateTimeParts(call.created_at);
-                return (
-                  <div 
-                    key={call.id} 
-                    className="call-item"
-                    onClick={() => setSelectedCall(call)}
-                  >
-                    <div className="call-item-header">
-                      <span className="call-date">{date}</span>
-                      <span className="call-time">{time}</span>
+                    <div className="email-item-body">
+                      <span className="email-from">{email.from_email}</span>
+                      <span className="email-count">{email.message_count} message{email.message_count !== 1 ? 's' : ''}</span>
                     </div>
-                  <div className="call-item-body">
-                    <span className="call-duration">{formatDuration(call.duration)}</span>
-                    {call.intent && (
-                      <span className="call-intent">{INTENT_LABELS[call.intent] || call.intent}</span>
-                    )}
+                    <div className="email-item-footer">
+                      <span className="email-date">
+                        {email.last_response_at
+                          ? `Last response: ${formatDateTimeParts(email.last_response_at).date}`
+                          : `Created: ${formatDateTimeParts(email.created_at).date}`
+                        }
+                      </span>
+                    </div>
                   </div>
-                  {call.summary_preview && (
-                    <div className="call-summary-preview">{call.summary_preview}</div>
-                  )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <EmptyState 
-              icon="📞" 
-              title="No voice calls" 
-              description="No voice calls found for this contact."
-            />
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </CollapsibleSection>
 
-        {/* Conversation Card */}
-        <div className="conversation-card">
-          <h3>Conversation History</h3>
-          {convLoading ? (
-            <LoadingState message="Loading conversation..." />
-          ) : conversation && conversation.messages?.length > 0 ? (
-            <div className="messages-list">
-              {conversation.messages.map((msg, idx) => {
-                const { date, time, tzAbbr } = formatDateTimeParts(msg.created_at);
-                return (
-                  <div key={idx} className={`message ${msg.role}`}>
-                    <div className="message-role">{msg.role === 'user' ? '👤 User' : '🤖 Bot'}</div>
-                    <div className="message-content">{msg.content}</div>
-                    <div className="message-time">{`${date} ${time} ${tzAbbr}`.trim()}</div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <EmptyState 
-              icon="💬" 
-              title="No conversation history" 
-              description="No chat messages found for this contact."
-            />
-          )}
-        </div>
+          {/* Voice Calls */}
+          <CollapsibleSection
+            title="Voice Calls"
+            count={calls.length}
+            icon="phone"
+            emptyMessage="No voice calls found"
+          >
+            {loadingCalls ? (
+              <LoadingState message="Loading calls..." />
+            ) : (
+              <div className="calls-list">
+                {calls.map((call) => {
+                  const { date, time } = formatDateTimeParts(call.created_at);
+                  return (
+                    <div
+                      key={call.id}
+                      className="call-item"
+                      onClick={() => setSelectedCall(call)}
+                    >
+                      <div className="call-item-header">
+                        <span className="call-date">{date}</span>
+                        <span className="call-time">{time}</span>
+                      </div>
+                      <div className="call-item-body">
+                        <span className="call-duration">{formatDuration(call.duration)}</span>
+                        {call.intent && (
+                          <span className="call-intent">{INTENT_LABELS[call.intent] || call.intent}</span>
+                        )}
+                      </div>
+                      {call.summary_preview && (
+                        <div className="call-summary-preview">{call.summary_preview}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CollapsibleSection>
+        </main>
       </div>
 
       {/* Call Detail Modal */}
@@ -592,7 +579,7 @@ export default function ContactDetail() {
           <div className="call-detail-modal" onClick={(e) => e.stopPropagation()}>
             <div className="call-detail-modal-header">
               <h3>Call Details</h3>
-              <button className="btn-close" onClick={() => setSelectedCall(null)}>×</button>
+              <button className="btn-close" onClick={() => setSelectedCall(null)}>x</button>
             </div>
             <div className="call-detail-modal-body">
               <div className="call-detail-row">
@@ -600,7 +587,7 @@ export default function ContactDetail() {
                 <span className="value">
                   {selectedCallDate
                     ? `${selectedCallDate.date} ${selectedCallDate.time} ${selectedCallDate.tzAbbr}`.trim()
-                    : '—'}
+                    : '-'}
                 </span>
               </div>
               <div className="call-detail-row">
@@ -631,13 +618,13 @@ export default function ContactDetail() {
               )}
               {selectedCall.recording_url && (
                 <div className="call-detail-recording">
-                  <a 
+                  <a
                     href={selectedCall.recording_url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn-listen"
                   >
-                    🎧 Listen to Recording
+                    Listen to Recording
                   </a>
                 </div>
               )}

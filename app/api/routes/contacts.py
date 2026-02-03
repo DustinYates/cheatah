@@ -3,7 +3,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select, or_, func, union_all
+from datetime import datetime, timedelta
+from sqlalchemy import select, or_, func, union_all, cast, Date, literal_column, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_tenant_context
@@ -36,6 +37,12 @@ class ContactResponse(BaseModel):
     created_at: str
     first_contacted: str | None = None
     last_contacted: str | None = None
+    # Profile fields
+    location: str | None = None
+    company: str | None = None
+    role: str | None = None
+    tags: list[str] | None = None
+    notes: str | None = None
 
     class Config:
         from_attributes = True
@@ -66,6 +73,12 @@ class UpdateContactRequest(BaseModel):
     email: str | None = None
     phone: str | None = None
     source: str | None = None
+    # Profile fields
+    location: str | None = None
+    company: str | None = None
+    role: str | None = None
+    tags: list[str] | None = None
+    notes: str | None = None
 
 
 class DuplicateGroup(BaseModel):
@@ -132,10 +145,57 @@ class MergeHistoryEntry(BaseModel):
 
 class CombinedHistoryResponse(BaseModel):
     """Combined conversation history response."""
-    
+
     conversations: list[dict]
     merge_history: list[MergeHistoryEntry]
     aliases: list[ContactAliasResponse]
+
+
+# Activity Heatmap schemas
+class DayActivity(BaseModel):
+    """Activity count for a single day."""
+    date: str  # YYYY-MM-DD
+    count: int
+    sms: int = 0
+    call: int = 0
+    email: int = 0
+    chat: int = 0
+
+
+class ActivityHeatmapResponse(BaseModel):
+    """Activity heatmap response for GitHub-style contribution graph."""
+    start_date: str
+    end_date: str
+    data: list[DayActivity]
+    total_interactions: int
+
+
+# Activity Feed schemas
+class ActivityItemDetails(BaseModel):
+    """Details for an activity item."""
+    duration: int | None = None  # For calls, in seconds
+    intent: str | None = None
+    outcome: str | None = None
+    channel: str | None = None
+    message_count: int | None = None
+    subject: str | None = None
+
+
+class ActivityItem(BaseModel):
+    """A single item in the activity feed."""
+    id: str
+    type: str  # call, sms, email, chat
+    timestamp: str
+    summary: str
+    details: ActivityItemDetails | None = None
+
+
+class ActivityFeedResponse(BaseModel):
+    """Activity feed response with pagination."""
+    items: list[ActivityItem]
+    total: int
+    page: int
+    has_more: bool
 
 
 async def _get_customer_names_by_phone(
@@ -260,6 +320,12 @@ def _contact_to_response(
         created_at=contact.created_at.isoformat() if contact.created_at else "",
         first_contacted=first_contacted,
         last_contacted=last_contacted,
+        # Profile fields
+        location=contact.location,
+        company=contact.company,
+        role=contact.role,
+        tags=contact.tags or [],
+        notes=contact.notes,
     )
 
 
@@ -646,10 +712,21 @@ async def update_contact(
         update_data["phone"] = request.phone
     if request.source is not None:
         update_data["source"] = request.source
-    
+    # Profile fields
+    if request.location is not None:
+        update_data["location"] = request.location
+    if request.company is not None:
+        update_data["company"] = request.company
+    if request.role is not None:
+        update_data["role"] = request.role
+    if request.tags is not None:
+        update_data["tags"] = request.tags
+    if request.notes is not None:
+        update_data["notes"] = request.notes
+
     if update_data:
         contact = await repo.update(tenant_id, contact_id, **update_data)
-    
+
     return _contact_to_response(contact)
 
 
@@ -865,6 +942,267 @@ async def get_combined_history(
             )
             for a in aliases
         ],
+    )
+
+
+@router.get("/{contact_id}/activity-heatmap", response_model=ActivityHeatmapResponse)
+async def get_contact_activity_heatmap(
+    contact_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    days: int = Query(365, ge=30, le=730),
+) -> ActivityHeatmapResponse:
+    """Get daily interaction counts for activity heatmap.
+
+    Returns interaction data grouped by day for the past N days,
+    suitable for rendering a GitHub-style contribution graph.
+    """
+    from app.persistence.models.tenant_email_config import EmailConversation
+
+    repo = ContactRepository(db)
+    contact = await repo.get_by_id(tenant_id, contact_id)
+
+    if not contact:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contact not found",
+        )
+
+    end_date = datetime.utcnow().date()
+    start_date = end_date - timedelta(days=days)
+
+    # Subquery 1: SMS/Chat messages via Contact -> Lead -> Conversation -> Message
+    messages_query = (
+        select(
+            cast(Message.created_at, Date).label("date"),
+            Conversation.channel.label("channel"),
+        )
+        .select_from(Contact)
+        .join(Lead, Contact.lead_id == Lead.id)
+        .join(Conversation, Lead.conversation_id == Conversation.id)
+        .join(Message, Message.conversation_id == Conversation.id)
+        .where(
+            Contact.id == contact_id,
+            Message.created_at >= start_date,
+            Message.role != "system",  # Exclude system messages
+        )
+    )
+
+    # Subquery 2: Calls via CallSummary
+    calls_query = (
+        select(
+            cast(Call.started_at, Date).label("date"),
+            literal_column("'call'").label("channel"),
+        )
+        .select_from(CallSummary)
+        .join(Call, CallSummary.call_id == Call.id)
+        .where(
+            CallSummary.contact_id == contact_id,
+            Call.started_at >= start_date,
+        )
+    )
+
+    # Subquery 3: Emails via EmailConversation
+    emails_query = (
+        select(
+            cast(EmailConversation.created_at, Date).label("date"),
+            literal_column("'email'").label("channel"),
+        )
+        .select_from(EmailConversation)
+        .where(
+            EmailConversation.contact_id == contact_id,
+            EmailConversation.created_at >= start_date,
+        )
+    )
+
+    # Combine all queries
+    combined = union_all(messages_query, calls_query, emails_query).subquery()
+
+    # Aggregate by date
+    result = await db.execute(
+        select(
+            combined.c.date,
+            func.count().label("total"),
+            func.sum(func.cast(combined.c.channel == "sms", Integer)).label("sms"),
+            func.sum(func.cast(combined.c.channel == "call", Integer)).label("call"),
+            func.sum(func.cast(combined.c.channel == "email", Integer)).label("email"),
+            func.sum(func.cast(combined.c.channel == "web", Integer)).label("chat"),
+        )
+        .group_by(combined.c.date)
+        .order_by(combined.c.date)
+    )
+
+    # Build response data
+    activity_by_date: dict[str, DayActivity] = {}
+    total_interactions = 0
+
+    for row in result:
+        date_str = row.date.isoformat() if row.date else None
+        if date_str:
+            activity_by_date[date_str] = DayActivity(
+                date=date_str,
+                count=row.total or 0,
+                sms=row.sms or 0,
+                call=row.call or 0,
+                email=row.email or 0,
+                chat=row.chat or 0,
+            )
+            total_interactions += row.total or 0
+
+    return ActivityHeatmapResponse(
+        start_date=start_date.isoformat(),
+        end_date=end_date.isoformat(),
+        data=list(activity_by_date.values()),
+        total_interactions=total_interactions,
+    )
+
+
+@router.get("/{contact_id}/activity-feed", response_model=ActivityFeedResponse)
+async def get_contact_activity_feed(
+    contact_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    channel: str | None = Query(None, description="Filter by channel: call, sms, email, chat"),
+) -> ActivityFeedResponse:
+    """Get paginated chronological activity feed for a contact.
+
+    Returns a unified feed of all interactions (calls, SMS, emails, chat)
+    sorted by most recent first.
+    """
+    from app.persistence.models.tenant_email_config import EmailConversation
+
+    repo = ContactRepository(db)
+    contact = await repo.get_by_id(tenant_id, contact_id)
+
+    if not contact:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contact not found",
+        )
+
+    items: list[ActivityItem] = []
+
+    # Get calls with summaries
+    if not channel or channel == "call":
+        calls_stmt = (
+            select(Call, CallSummary)
+            .select_from(CallSummary)
+            .join(Call, CallSummary.call_id == Call.id)
+            .where(CallSummary.contact_id == contact_id)
+            .order_by(Call.started_at.desc())
+        )
+        calls_result = await db.execute(calls_stmt)
+        for call, summary in calls_result:
+            duration_str = ""
+            if call.duration:
+                mins = call.duration // 60
+                secs = call.duration % 60
+                duration_str = f"{mins}m {secs}s"
+
+            intent_label = summary.intent.replace("_", " ").title() if summary.intent else ""
+            summary_text = f"{duration_str} - {intent_label}" if duration_str and intent_label else (duration_str or intent_label or "Voice call")
+
+            items.append(ActivityItem(
+                id=f"call-{call.id}",
+                type="call",
+                timestamp=call.started_at.isoformat() if call.started_at else "",
+                summary=summary_text,
+                details=ActivityItemDetails(
+                    duration=call.duration,
+                    intent=summary.intent,
+                    outcome=summary.outcome,
+                ),
+            ))
+
+    # Get conversations (SMS and web chat)
+    if not channel or channel in ("sms", "chat"):
+        if contact.lead_id:
+            conv_stmt = (
+                select(Conversation)
+                .select_from(Lead)
+                .join(Conversation, Lead.conversation_id == Conversation.id)
+                .where(Lead.contact_id == contact_id)
+            )
+            if channel == "sms":
+                conv_stmt = conv_stmt.where(Conversation.channel == "sms")
+            elif channel == "chat":
+                conv_stmt = conv_stmt.where(Conversation.channel == "web")
+
+            conv_result = await db.execute(conv_stmt)
+            for (conv,) in conv_result:
+                # Get message count and preview
+                msg_count_stmt = select(func.count()).where(
+                    Message.conversation_id == conv.id,
+                    Message.role != "system"
+                )
+                msg_count = (await db.execute(msg_count_stmt)).scalar() or 0
+
+                # Get last message for preview
+                last_msg_stmt = (
+                    select(Message)
+                    .where(Message.conversation_id == conv.id, Message.role == "user")
+                    .order_by(Message.created_at.desc())
+                    .limit(1)
+                )
+                last_msg_result = await db.execute(last_msg_stmt)
+                last_msg = last_msg_result.scalar_one_or_none()
+
+                preview = ""
+                if last_msg and last_msg.content:
+                    preview = last_msg.content[:100] + ("..." if len(last_msg.content) > 100 else "")
+
+                conv_type = "sms" if conv.channel == "sms" else "chat"
+                items.append(ActivityItem(
+                    id=f"{conv_type}-{conv.id}",
+                    type=conv_type,
+                    timestamp=conv.updated_at.isoformat() if conv.updated_at else conv.created_at.isoformat(),
+                    summary=preview or f"{msg_count} messages",
+                    details=ActivityItemDetails(
+                        channel=conv.channel,
+                        message_count=msg_count,
+                    ),
+                ))
+
+    # Get email conversations
+    if not channel or channel == "email":
+        email_stmt = (
+            select(EmailConversation)
+            .where(EmailConversation.contact_id == contact_id)
+            .order_by(EmailConversation.updated_at.desc())
+        )
+        email_result = await db.execute(email_stmt)
+        for (email_conv,) in email_result:
+            items.append(ActivityItem(
+                id=f"email-{email_conv.id}",
+                type="email",
+                timestamp=email_conv.last_response_at.isoformat() if email_conv.last_response_at else email_conv.created_at.isoformat(),
+                summary=email_conv.subject or "(No subject)",
+                details=ActivityItemDetails(
+                    channel="email",
+                    message_count=email_conv.message_count,
+                    subject=email_conv.subject,
+                ),
+            ))
+
+    # Sort all items by timestamp (most recent first)
+    items.sort(key=lambda x: x.timestamp, reverse=True)
+
+    # Calculate pagination
+    total = len(items)
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    paginated_items = items[start_idx:end_idx]
+    has_more = end_idx < total
+
+    return ActivityFeedResponse(
+        items=paginated_items,
+        total=total,
+        page=page,
+        has_more=has_more,
     )
 
 

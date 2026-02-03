@@ -1,6 +1,72 @@
+/* Contact Detail Page - GitHub-style Redesign */
+
 .contact-detail-page {
   padding: 24px;
 }
+
+.contact-detail-page.redesigned {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Main content grid for redesigned layout */
+.contact-content-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 24px;
+}
+
+.contact-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.contact-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Notes section */
+.notes-section {
+  background: var(--color-bg-card, #fff);
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.notes-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary, #111827);
+  margin: 0 0 12px 0;
+}
+
+.notes-content {
+  font-size: 14px;
+  color: var(--color-text-secondary, #6b7280);
+  line-height: 1.6;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* Responsive layout for redesigned page */
+@media (max-width: 900px) {
+  .contact-detail-page.redesigned .contact-content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-detail-page.redesigned .contact-sidebar {
+    order: 2;
+  }
+
+  .contact-detail-page.redesigned .contact-main {
+    order: 1;
+  }
+}
+
+/* Legacy styles below */
 
 .contact-detail-page .page-header {
   display: flex;

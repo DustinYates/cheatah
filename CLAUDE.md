@@ -139,9 +139,11 @@ Production secrets are in GCP Secret Manager, mounted as env vars in Cloud Run.
 
 ## Current Tenant Setup
 
-- **Tenant 1 (CP Marketing):** Production tenant, `telnyx_agent_id` cleared
-- **Tenant 2 (testing agency):** Test tenant, phone +12817679141, Telnyx agent `assistant-109f3350-874f-4770-87d4-737450280441`, Jackrabbit integration (OrgID 545911)
-- **Tenant 3 (BSS Cypress-Spring):** Production tenant
+| Tenant ID | Name | Phone | Website | Telnyx Agent |
+|-----------|------|-------|---------|--------------|
+| 1 | ConvoPro | +12816260873 | https://thebestchatbot.com | — |
+| 2 | XXX | — | https://getconvopro.com/ | `assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d` |
+| 3 | BSS Cypress-Spring | +12816990999 | https://britishswimschool.com/cypress-spring | — |
 
 ## New Tenant Onboarding
 

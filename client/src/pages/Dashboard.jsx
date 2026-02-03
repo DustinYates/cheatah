@@ -4,7 +4,6 @@ import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import LeadDetailsModal from '../components/LeadDetailsModal';
-import CHIGauge from '../components/CHIGauge';
 import './Dashboard.css';
 
 // Robot icon SVG component
@@ -300,7 +299,6 @@ export default function Dashboard() {
   const [calendarWeekStart, setCalendarWeekStart] = useState('');
   const [calendarWeekEnd, setCalendarWeekEnd] = useState('');
   const [calendarLoading, setCalendarLoading] = useState(false);
-  const [chiData, setChiData] = useState(null);
   const [leadsLimit, setLeadsLimit] = useState(() => {
     const saved = localStorage.getItem('dashboard_leads_limit');
     return saved ? parseInt(saved, 10) : 50;
@@ -349,11 +347,10 @@ export default function Dashboard() {
     setCallsLoading(true);
     setError('');
     try {
-      const [leadsResult, callsResult, calendarResult, chiResult] = await Promise.allSettled([
+      const [leadsResult, callsResult, calendarResult] = await Promise.allSettled([
         api.getLeads({ limit: leadsLimit }),
         api.getCalls({ page: 1, page_size: 5 }),
         api.getCalendarEvents(0),
-        api.request('/analytics/chi?days=7'),
       ]);
 
       if (leadsResult.status === 'fulfilled') {
@@ -383,12 +380,6 @@ export default function Dashboard() {
         setCalendarWeekEnd(calData.week_end || '');
       } else {
         setCalendarEvents([]);
-      }
-
-      if (chiResult.status === 'fulfilled') {
-        setChiData(chiResult.value);
-      } else {
-        setChiData(null);
       }
     } catch (err) {
       setError('Failed to load dashboard data');
@@ -951,42 +942,6 @@ export default function Dashboard() {
               })()}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Customer Happiness Index */}
-      {chiData && (
-        <div className="card chi-dashboard-card">
-          <div className="card-header">
-            <h2>Customer Happiness (CHI)</h2>
-            <a className="card-link" href="/analytics/happiness">View details</a>
-          </div>
-          <div className="chi-dashboard-row">
-            <CHIGauge score={chiData.summary?.avg_chi_today} size={64} label="Today" />
-            <CHIGauge score={chiData.summary?.avg_chi_7d} size={64} label="7d Avg" />
-            <div className="chi-dashboard-stat">
-              <span className="chi-dashboard-stat-value">
-                {chiData.summary?.trend_pct != null
-                  ? `${chiData.summary.trend_pct > 0 ? '+' : ''}${chiData.summary.trend_pct}%`
-                  : '--'}
-              </span>
-              <span className="chi-dashboard-stat-label">Trend</span>
-            </div>
-            <div className="chi-dashboard-stat">
-              <span className="chi-dashboard-stat-value">
-                {chiData.summary?.conversations_scored?.toLocaleString() || '0'}
-              </span>
-              <span className="chi-dashboard-stat-label">Scored</span>
-            </div>
-            {chiData.top_frustration_drivers?.length > 0 && (
-              <div className="chi-dashboard-stat">
-                <span className="chi-dashboard-stat-value chi-dashboard-stat-value--warn">
-                  {chiData.top_frustration_drivers[0].signal.replace(/_/g, ' ')}
-                </span>
-                <span className="chi-dashboard-stat-label">Top frustration</span>
-              </div>
-            )}
-          </div>
         </div>
       )}
 

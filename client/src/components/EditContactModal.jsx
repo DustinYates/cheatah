@@ -9,6 +9,11 @@ export default function EditContactModal({ contact, onSuccess, onCancel }) {
     name: contact?.name || '',
     email: contact?.email || '',
     phone: contact?.phone || '',
+    // Profile fields
+    location: contact?.location || '',
+    company: contact?.company || '',
+    role: contact?.role || '',
+    notes: contact?.notes || '',
   });
   const [aliases, setAliases] = useState([]);
   const [loadingAliases, setLoadingAliases] = useState(true);
@@ -48,6 +53,11 @@ export default function EditContactModal({ contact, onSuccess, onCancel }) {
         name: formData.name || null,
         email: formData.email || null,
         phone: formData.phone || null,
+        // Profile fields
+        location: formData.location || null,
+        company: formData.company || null,
+        role: formData.role || null,
+        notes: formData.notes || null,
       });
       onSuccess();
     } catch (err) {
@@ -160,6 +170,60 @@ export default function EditContactModal({ contact, onSuccess, onCancel }) {
                   value={formData.phone}
                   onChange={handleChange}
                   placeholder="+1 555-123-4567"
+                />
+              </div>
+            </div>
+
+            <div className="form-section">
+              <h3>Profile Information</h3>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="location">Location</label>
+                  <input
+                    type="text"
+                    id="location"
+                    name="location"
+                    value={formData.location}
+                    onChange={handleChange}
+                    placeholder="City, State"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="company">Company</label>
+                  <input
+                    type="text"
+                    id="company"
+                    name="company"
+                    value={formData.company}
+                    onChange={handleChange}
+                    placeholder="Company name"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="role">Role / Title</label>
+                <input
+                  type="text"
+                  id="role"
+                  name="role"
+                  value={formData.role}
+                  onChange={handleChange}
+                  placeholder="Job title or role"
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="notes">Notes</label>
+                <textarea
+                  id="notes"
+                  name="notes"
+                  value={formData.notes}
+                  onChange={handleChange}
+                  placeholder="Add notes about this contact..."
+                  rows={4}
                 />
               </div>
             </div>

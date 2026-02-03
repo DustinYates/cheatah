@@ -604,6 +604,22 @@ class ApiClient {
     return this.request(`/contacts/${contactId}/merge-history`);
   }
 
+  // Contact activity methods
+  async getContactActivityHeatmap(contactId, days = 365) {
+    return this.request(`/contacts/${contactId}/activity-heatmap?days=${days}`);
+  }
+
+  async getContactActivityFeed(contactId, page = 1, pageSize = 20, channel = null) {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      page_size: pageSize.toString(),
+    });
+    if (channel) {
+      params.set('channel', channel);
+    }
+    return this.request(`/contacts/${contactId}/activity-feed?${params}`);
+  }
+
   // Contact alias methods
   async getContactAliases(contactId, aliasType = null) {
     const query = aliasType ? `?alias_type=${aliasType}` : '';

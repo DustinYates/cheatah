@@ -34,7 +34,10 @@ class CallSummary(Base):
     
     # Summary content
     summary_text = Column(Text, nullable=True)
-    
+
+    # Full conversation transcript
+    transcript = Column(Text, nullable=True)
+
     # Extracted structured data
     extracted_fields = Column(JSON, nullable=True)
     # Schema: {name, phone, email, reason, urgency, preferred_callback_time}

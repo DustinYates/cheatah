@@ -485,22 +485,22 @@ export default function EmailSettings() {
           <>
             {/* Subject-Specific Templates */}
             <div className="form-group">
-              <label>SMS Templates by Subject</label>
+              <label>Auto-Reply Templates</label>
               <small style={{ display: 'block', marginBottom: '0.5rem' }}>
-                Configure the SMS message and delay for each email subject. Only emails matching a template will trigger an SMS follow-up.
+                Set up automatic SMS replies for emails. Each template triggers when an email subject matches the phrase you specify.
               </small>
 
               {Object.keys(subjectTemplates).length === 0 ? (
                 <div className="template-empty">
-                  No templates configured. Add a template below to start sending SMS follow-ups for specific email subjects.
+                  No templates yet. Add one below to start sending automatic SMS replies.
                 </div>
               ) : (
                 <div className="template-list">
                   {Object.entries(subjectTemplates).map(([subject, templateData]) => (
                     <div key={subject} className="template-item">
                       <div className="template-header">
-                        <span className="template-subject">Subject: "{subject}"</span>
-                        <span className="template-delay">Wait: {getTemplateDelay(templateData)} min</span>
+                        <span className="template-subject">Emails containing "{subject}"</span>
+                        <span className="template-delay">Sends after {getTemplateDelay(templateData)} min</span>
                         <div className="template-actions">
                           <button
                             type="button"
@@ -529,7 +529,7 @@ export default function EmailSettings() {
               <div className="template-add-form">
                 <h4>{editingTemplate ? 'Edit Template' : 'Add New Template'}</h4>
                 <div className="template-form-group">
-                  <label htmlFor="template-subject">Subject Prefix</label>
+                  <label htmlFor="template-subject">Match emails containing</label>
                   <input
                     ref={templateSubjectInputRef}
                     id="template-subject"
@@ -556,7 +556,7 @@ export default function EmailSettings() {
                     </small>
                   </div>
                   <div className="template-form-group template-form-group-delay">
-                    <label htmlFor="template-delay">Wait Time</label>
+                    <label htmlFor="template-delay">Send after</label>
                     <div className="delay-input-wrapper">
                       <input
                         id="template-delay"

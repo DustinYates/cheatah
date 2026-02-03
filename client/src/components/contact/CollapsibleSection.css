@@ -1,0 +1,102 @@
+.collapsible-section {
+  background: var(--color-bg-card, #fff);
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.collapsible-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--color-bg-card, #fff);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.collapsible-section-header:hover {
+  background: var(--color-bg-hover, #f9fafb);
+}
+
+.collapsible-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary, #111827);
+}
+
+.section-icon {
+  font-size: 16px;
+}
+
+.section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--color-bg-secondary, #f3f4f6);
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.section-chevron {
+  color: var(--color-text-tertiary, #9ca3af);
+  transition: transform 0.2s ease;
+}
+
+.section-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+/* Content */
+.collapsible-section-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease-out;
+}
+
+.collapsible-section-content.open {
+  max-height: 2000px;
+  transition: max-height 0.4s ease-in;
+}
+
+.collapsible-section-inner {
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  padding-top: 16px;
+}
+
+.section-empty {
+  color: var(--color-text-tertiary, #9ca3af);
+  font-size: 14px;
+  font-style: italic;
+  margin: 0;
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* Hover state for items inside */
+.collapsible-section-inner .alias-item,
+.collapsible-section-inner .merge-entry,
+.collapsible-section-inner .email-item,
+.collapsible-section-inner .call-item {
+  transition: background 0.15s;
+}
+
+.collapsible-section-inner .alias-item:hover,
+.collapsible-section-inner .merge-entry:hover,
+.collapsible-section-inner .email-item:hover,
+.collapsible-section-inner .call-item:hover {
+  background: var(--color-bg-hover, #f9fafb);
+}

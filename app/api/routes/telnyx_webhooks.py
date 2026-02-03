@@ -1992,6 +1992,7 @@ async def telnyx_ai_call_complete(
             existing_summary.intent = final_intent
             existing_summary.outcome = outcome
             existing_summary.summary_text = summary or None
+            existing_summary.transcript = transcript or None
             existing_summary.extracted_fields = {
                 "name": caller_name or None,
                 "email": caller_email or None,
@@ -2006,6 +2007,7 @@ async def telnyx_ai_call_complete(
                 intent=final_intent,
                 outcome=outcome,
                 summary_text=summary or None,
+                transcript=transcript or None,
                 extracted_fields={
                     "name": caller_name or None,
                     "email": caller_email or None,
@@ -2016,6 +2018,31 @@ async def telnyx_ai_call_complete(
             logger.info(f"Created CallSummary for call_id={call.id}, intent={final_intent}, outcome={outcome}, name={caller_name}")
 
         await db.commit()
+
+        # =============================================================
+        # Check voice transcript for Do Not Contact (DNC) requests
+        # =============================================================
+        # If caller said "don't contact me", "stop calling me", etc. in the call,
+        # auto-add them to the DNC list
+        if transcript and from_number:
+            from app.domain.services.compliance_handler import ComplianceHandler
+            from app.domain.services.dnc_service import DncService
+
+            compliance_handler = ComplianceHandler()
+            if compliance_handler.is_dnc_request(transcript):
+                try:
+                    normalized_from = _normalize_phone(from_number)
+                    dnc_service = DncService(db)
+                    await dnc_service.block(
+                        tenant_id=tenant_id,
+                        phone=normalized_from,
+                        source_channel="voice",
+                        source_message=transcript[:500],
+                    )
+                    await db.commit()
+                    logger.info(f"DNC block via voice call - tenant_id={tenant_id}, phone={normalized_from}")
+                except Exception as e:
+                    logger.warning(f"Failed to add voice caller to DNC list: {e}")
 
         # =============================================================
         # Auto-send registration SMS if user requested registration info

@@ -131,52 +131,6 @@ export default function Calls() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="calls-filters">
-        <div className="filter-group">
-          <label>Intent</label>
-          <select
-            value={filters.intent}
-            onChange={(e) => handleFilterChange('intent', e.target.value)}
-          >
-            <option value="">All Intents</option>
-            {Object.entries(INTENT_LABELS).map(([key, { label }]) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="filter-group">
-          <label>Outcome</label>
-          <select
-            value={filters.outcome}
-            onChange={(e) => handleFilterChange('outcome', e.target.value)}
-          >
-            <option value="">All Outcomes</option>
-            {Object.entries(OUTCOME_LABELS).map(([key, { label }]) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="filter-group">
-          <label>Status</label>
-          <select
-            value={filters.status}
-            onChange={(e) => handleFilterChange('status', e.target.value)}
-          >
-            <option value="">All Statuses</option>
-            <option value="completed">Completed</option>
-            <option value="busy">Busy</option>
-            <option value="no-answer">No Answer</option>
-            <option value="failed">Failed</option>
-          </select>
-        </div>
-        {hasActiveFilters && (
-          <button className="btn-clear-filters" onClick={clearFilters}>
-            Clear Filters
-          </button>
-        )}
-      </div>
-
       {/* Calls Table */}
       {calls.length === 0 ? (
         <EmptyState
@@ -197,9 +151,6 @@ export default function Calls() {
                   <th>Caller</th>
                   <th>Name</th>
                   <th>Duration</th>
-                  <th>Intent</th>
-                  <th>Outcome</th>
-                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -214,35 +165,6 @@ export default function Calls() {
                       <td className="caller-cell">{formatPhone(call.from_number)}</td>
                       <td className="name-cell">{call.summary?.extracted_fields?.name || '—'}</td>
                       <td className="duration-cell">{formatDuration(call.duration)}</td>
-                      <td>
-                        {call.summary?.intent ? (
-                          <span 
-                            className="badge intent-badge"
-                            style={{ backgroundColor: `${INTENT_LABELS[call.summary.intent]?.color}20`, color: INTENT_LABELS[call.summary.intent]?.color }}
-                          >
-                            {INTENT_LABELS[call.summary.intent]?.label || call.summary.intent}
-                          </span>
-                        ) : (
-                          <span className="badge badge-empty">-</span>
-                        )}
-                      </td>
-                      <td>
-                        {call.summary?.outcome ? (
-                          <span 
-                            className="badge outcome-badge"
-                            style={{ backgroundColor: `${OUTCOME_LABELS[call.summary.outcome]?.color}20`, color: OUTCOME_LABELS[call.summary.outcome]?.color }}
-                          >
-                            {OUTCOME_LABELS[call.summary.outcome]?.label || call.summary.outcome}
-                          </span>
-                        ) : (
-                          <span className="badge badge-empty">-</span>
-                        )}
-                      </td>
-                      <td>
-                        <span className={`badge status-badge status-${call.status}`}>
-                          {call.status}
-                        </span>
-                      </td>
                     </tr>
                   );
                 })}

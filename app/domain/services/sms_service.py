@@ -197,6 +197,18 @@ class SmsService:
             }
             await self.session.commit()
 
+        # Build handoff context from source web chat if this is a handoff conversation
+        handoff_context = None
+        if conversation.source_conversation_id:
+            handoff_context = await self._build_handoff_context(
+                conversation.source_conversation_id
+            )
+            if handoff_context:
+                logger.info(
+                    f"Loaded chat handoff context for SMS conversation {conversation.id} "
+                    f"from chat {conversation.source_conversation_id}"
+                )
+
         # Check if this is a follow-up conversation and extract qualification data
         lead = await self._get_lead_for_conversation(tenant_id, conversation.id)
         is_followup = False
@@ -262,14 +274,14 @@ class SmsService:
                 user_message=message_body,
             )
         else:
-            # Process with regular SMS prompt
+            # Process with regular SMS prompt (include handoff context if available)
             llm_response, llm_latency_ms = await self.chat_service._process_chat_core(
                 tenant_id=tenant_id,
                 conversation_id=conversation.id,
                 user_message=message_body,
                 messages=messages,
                 system_prompt_method=self.prompt_service.compose_prompt_sms,
-                additional_context=None,
+                additional_context=handoff_context,
             )
 
         # Capture lead from SMS conversation (we always have phone number)
@@ -574,6 +586,48 @@ class SmsService:
         lead_repo = LeadRepository(self.session)
         return await lead_repo.get_by_conversation(tenant_id, conversation_id)
 
+    async def _build_handoff_context(self, source_conversation_id: int) -> str | None:
+        """Build context string from the source chat conversation for handoff continuity.
+
+        Args:
+            source_conversation_id: ID of the source web chat conversation
+
+        Returns:
+            Context string or None if no messages found
+        """
+        try:
+            from sqlalchemy import select
+            from app.persistence.models.conversation import Message
+
+            stmt = (
+                select(Message)
+                .where(
+                    Message.conversation_id == source_conversation_id,
+                    Message.role.in_(["user", "assistant"]),
+                )
+                .order_by(Message.sequence_number.desc())
+                .limit(10)
+            )
+            result = await self.session.execute(stmt)
+            messages = list(reversed(result.scalars().all()))
+
+            if not messages:
+                return None
+
+            parts = [
+                "PREVIOUS WEB CHAT CONTEXT (continue this conversation naturally, "
+                "do NOT re-introduce yourself or re-ask questions already answered):"
+            ]
+            for msg in messages:
+                role_label = "Customer" if msg.role == "user" else "Agent"
+                content = msg.content[:300] if len(msg.content) > 300 else msg.content
+                parts.append(f"{role_label}: {content}")
+
+            return "\n".join(parts)
+        except Exception as e:
+            logger.error(f"Failed to build handoff context: {e}", exc_info=True)
+            return None
+
     async def _build_qualification_context(self, lead: Lead) -> dict:
         """Build context about what qualification data has been collected.
 
@@ -733,9 +787,41 @@ Respond with ONLY valid JSON, no explanation:
                 lead_service = LeadService(self.session)
                 await lead_service.bump_lead_activity(tenant_id, existing_lead.id)
             else:
-                # Create new lead with phone number (always available) + extracted info
+                # If this is a handoff conversation, try to reuse the chat lead
                 from app.domain.services.lead_service import LeadService
                 lead_service = LeadService(self.session)
+
+                if conversation.source_conversation_id:
+                    source_lead = await lead_repo.get_by_conversation(
+                        tenant_id, conversation.source_conversation_id
+                    )
+                    if source_lead:
+                        # Update the source lead with phone + any new info
+                        if not source_lead.phone:
+                            source_lead.phone = phone_number
+                        if extracted_name and not source_lead.name:
+                            validated_name = validate_name(extracted_name, require_explicit=name_is_explicit)
+                            if validated_name:
+                                source_lead.name = validated_name
+                        if extracted_email and not source_lead.email:
+                            source_lead.email = extracted_email
+                        # Track the linked SMS conversation
+                        extra_data = source_lead.extra_data or {}
+                        extra_data.setdefault("linked_conversations", [])
+                        if conversation.id not in extra_data["linked_conversations"]:
+                            extra_data["linked_conversations"].append(conversation.id)
+                        source_lead.extra_data = extra_data
+                        from datetime import datetime
+                        source_lead.updated_at = datetime.utcnow()
+                        await self.session.commit()
+                        await lead_service.bump_lead_activity(tenant_id, source_lead.id)
+                        logger.info(
+                            f"Unified SMS lead with chat lead - tenant_id={tenant_id}, "
+                            f"lead_id={source_lead.id}, sms_conv={conversation.id}"
+                        )
+                        return
+
+                # Create new lead with phone number (always available) + extracted info
                 lead = await lead_service.capture_lead(
                     tenant_id=tenant_id,
                     conversation_id=conversation.id,

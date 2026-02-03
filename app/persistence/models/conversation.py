@@ -35,6 +35,7 @@ class Conversation(Base):
     external_id = Column(String(255), nullable=True, index=True)  # For idempotency
     phone_number = Column(String(50), nullable=True, index=True)  # For SMS conversations
     contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=True, index=True)
+    source_conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -49,6 +50,7 @@ class Conversation(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="conversations")
     contact = relationship("Contact", back_populates="conversations")
+    source_conversation = relationship("Conversation", remote_side="Conversation.id", foreign_keys=[source_conversation_id])
     messages = relationship(
         "Message", back_populates="conversation", cascade="all, delete-orphan", order_by="Message.sequence_number"
     )

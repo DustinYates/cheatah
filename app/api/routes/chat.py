@@ -44,6 +44,8 @@ class ChatResponse(BaseModel):
     escalation_requested: bool = False  # True if customer requested to speak with human
     escalation_id: int | None = None  # Escalation record ID if escalation was triggered
     scheduling: dict | None = None  # Scheduling data {mode, slots[], booking_link, booking_confirmed}
+    handoff_initiated: bool = False  # True if chat-to-SMS handoff was triggered
+    handoff_phone: str | None = None  # Phone number handoff was sent to
 
 
 async def _validate_widget_api_key(
@@ -162,6 +164,8 @@ async def chat(
             escalation_requested=result.escalation_requested,
             escalation_id=result.escalation_id,
             scheduling=result.scheduling,
+            handoff_initiated=result.handoff_initiated,
+            handoff_phone=result.handoff_phone,
         )
         
     except ValueError as e:

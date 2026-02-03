@@ -16,6 +16,7 @@ from app.domain.services.lead_service import LeadService
 from app.domain.services.contact_service import ContactService
 from app.domain.services.pending_promise_service import PendingPromiseService
 from app.domain.services.promise_detector import PromiseDetector, DetectedPromise
+from app.domain.services.chat_sms_handoff_service import ChatSmsHandoffService
 from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
 from app.domain.services.user_request_detector import UserRequestDetector
 from app.domain.services.prompt_service import PromptService
@@ -47,6 +48,18 @@ _BOT_GREETING_NAME_PATTERN = re.compile(
     r"(?:nice to meet you|great to meet you|hello|hi there|hey there|thanks|thank you),?\s+([A-Z][a-z]+)",
     re.IGNORECASE
 )
+# Patterns for chat-to-SMS handoff detection
+_BOT_HANDOFF_OFFER_PATTERN = re.compile(
+    r"(?:text you|send you a text|continue (?:this |our )?(?:conversation )?(?:via|over|through|by) (?:text|sms)|"
+    r"reach out (?:via|over|through) text|follow up (?:via|over|by) text|"
+    r"send (?:that|this|the info|the details|the link) (?:to your phone|via text|by text))",
+    re.IGNORECASE,
+)
+_USER_HANDOFF_REQUEST_PATTERN = re.compile(
+    r"(?:text me|can you text|send me a text|prefer text|rather text|switch to text|"
+    r"continue (?:via|over|by) text|message me|send it to my phone)",
+    re.IGNORECASE,
+)
 # Pattern to detect when assistant asked for user's name
 _NAME_REQUEST_PATTERN = re.compile(
     r"(?:who am i (?:chatting|speaking|talking) with|what(?:'s| is) your name|may i (?:have|get) your name|"
@@ -69,6 +82,8 @@ class ChatResult:
     escalation_requested: bool = False
     escalation_id: int | None = None
     scheduling: dict | None = None  # {mode, slots[], booking_link, booking_confirmed}
+    handoff_initiated: bool = False
+    handoff_phone: str | None = None
 
 
 class ChatService:
@@ -645,6 +660,43 @@ class ChatService:
                         f"conversation_id={conversation.id}, asset_type={promise.asset_type}"
                     )
 
+        # ============================================================
+        # CHAT-TO-SMS HANDOFF: If bot offered to text or user requested,
+        # initiate handoff to SMS channel
+        # ============================================================
+        handoff_initiated = False
+        handoff_phone = None
+        if customer_phone and not sms_confirmation:
+            # Check if bot offered to text OR user requested text
+            bot_offered = bool(_BOT_HANDOFF_OFFER_PATTERN.search(llm_response))
+            user_requested = bool(_USER_HANDOFF_REQUEST_PATTERN.search(user_message))
+            if bot_offered or user_requested:
+                try:
+                    handoff_service = ChatSmsHandoffService(self.session)
+                    handoff_result = await handoff_service.initiate_handoff(
+                        tenant_id=tenant_id,
+                        chat_conversation_id=conversation.id,
+                        phone=customer_phone,
+                        customer_name=customer_name,
+                    )
+                    if handoff_result.status == "sent":
+                        handoff_initiated = True
+                        handoff_phone = customer_phone
+                        sms_confirmation = "\n\nI've just sent you a text message! Feel free to continue our conversation there."
+                        logger.info(
+                            f"Chat-to-SMS handoff triggered - tenant_id={tenant_id}, "
+                            f"conversation_id={conversation.id}, sms_conv={handoff_result.sms_conversation_id}"
+                        )
+                    elif handoff_result.status == "skipped":
+                        logger.info(
+                            f"Chat-to-SMS handoff skipped (already done) - tenant_id={tenant_id}"
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Chat-to-SMS handoff failed - tenant_id={tenant_id}, error={e}",
+                        exc_info=True,
+                    )
+
         # Build final response with optional SMS confirmation
         final_response = llm_response
         if sms_confirmation:
@@ -716,6 +768,8 @@ class ChatService:
             escalation_requested=escalation_requested,
             escalation_id=escalation_id,
             scheduling=scheduling_data,
+            handoff_initiated=handoff_initiated,
+            handoff_phone=handoff_phone,
         )
 
     async def _update_contact_from_lead(

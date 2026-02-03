@@ -8,6 +8,7 @@ import Prompts from './pages/Prompts';
 import Contacts from './pages/Contacts';
 import ContactDetail from './pages/ContactDetail';
 import Calls from './pages/Calls';
+import Inbox from './pages/Inbox';
 import Plots from './pages/Plots';
 import ConversationAnalytics from './pages/ConversationAnalytics';
 import WidgetAnalytics from './pages/WidgetAnalytics';
@@ -55,6 +56,7 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="contacts" element={<Contacts />} />
             <Route path="contacts/:id" element={<ContactDetail />} />
+            <Route path="inbox" element={<Inbox />} />
             <Route path="calls" element={<Calls />} />
             <Route path="analytics/usage" element={<Plots />} />
             <Route path="analytics/conversations" element={<ConversationAnalytics />} />

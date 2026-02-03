@@ -30,6 +30,11 @@ ACKNOWLEDGEMENT_WORDS = {
     # Generic terms
     "name", "email", "phone", "address", "contact",
     "unknown", "anonymous", "none", "null", "n/a", "na", "nil",
+    # Skill level / descriptor words (not names)
+    "beginner", "intermediate", "advanced", "experienced",
+    "adult", "child", "children", "kid", "kids", "teen", "infant",
+    "swimming", "swim", "lessons", "classes", "registration",
+    "pricing", "schedule", "information", "interested",
     # Single letters/very short
     "a", "b", "c", "i", "u", "r", "y", "n",
 }

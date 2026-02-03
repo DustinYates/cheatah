@@ -56,14 +56,11 @@ class FollowUpMessageService:
 
         # 2. Build context for LLM
         lead_source = lead.extra_data.get("source") if lead.extra_data else "contact"
-        lead_name = lead.name or ""
-        first_name = lead_name.split()[0] if lead_name else ""
-
         time_since_contact = self._get_time_since_contact(lead.created_at)
 
         context = {
-            "lead_name": lead_name,
-            "first_name": first_name,
+            "lead_name": "",
+            "first_name": "",
             "lead_source": lead_source,
             "time_since_contact": time_since_contact,
             "conversation_summary": conversation_summary,
@@ -137,7 +134,7 @@ class FollowUpMessageService:
         prompt_parts = [system_prompt]
 
         prompt_parts.append("\n\nFOLLOW-UP CONTEXT:")
-        prompt_parts.append(f"- Lead name: {context.get('first_name') or 'Unknown'}")
+        prompt_parts.append("- Lead name: Unknown (do NOT guess or use a name — just say 'Hi!')")
         prompt_parts.append(f"- How they contacted us: {context.get('lead_source', 'unknown')}")
         prompt_parts.append(f"- Time since contact: {context.get('time_since_contact', 'recently')}")
 
@@ -190,17 +187,9 @@ class FollowUpMessageService:
 
     def _generate_fallback_message(self, lead: Lead, source: str) -> str:
         """Generate template-based fallback message."""
-        first_name = (lead.name or "").split()[0] if lead.name else ""
-
         if source == "voice_call":
-            if first_name:
-                return f"Hi {first_name}! Thanks for calling earlier. How can I help you today?"
             return "Hi! Thanks for calling earlier. How can I help you today?"
         elif source == "email":
-            if first_name:
-                return f"Hi {first_name}! We saw your 'get in touch' form. Can I help answer any questions?"
             return "Hi! We saw your 'get in touch' form. Can I help answer any questions?"
         else:
-            if first_name:
-                return f"Hi {first_name}! Following up on your inquiry. How can I help?"
             return "Hi! Following up on your inquiry. How can I help?"

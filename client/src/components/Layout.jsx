@@ -9,7 +9,7 @@ export default function Layout() {
   const location = useLocation();
   const [analyticsOpen, setAnalyticsOpen] = useState(location.pathname.startsWith('/analytics'));
   const [communicationsOpen, setCommunicationsOpen] = useState(
-    location.pathname.startsWith('/calls')
+    location.pathname.startsWith('/calls') || location.pathname.startsWith('/inbox')
   );
   const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/settings'));
 
@@ -79,6 +79,9 @@ export default function Layout() {
             </button>
             {communicationsOpen && (
               <ul className="nav-submenu">
+                <li>
+                  <NavLink to="/inbox">Inbox</NavLink>
+                </li>
                 <li>
                   <NavLink to="/calls">Calls</NavLink>
                 </li>

@@ -913,6 +913,42 @@ class ApiClient {
   async getCalendarList() {
     return this.request('/calendar/calendars');
   }
+
+  // Inbox
+  async getInboxConversations(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/inbox/conversations${query ? `?${query}` : ''}`);
+  }
+
+  async getInboxConversation(conversationId) {
+    return this.request(`/inbox/conversations/${conversationId}`);
+  }
+
+  async replyToConversation(conversationId, content) {
+    return this.request(`/inbox/conversations/${conversationId}/reply`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  async resolveConversation(conversationId) {
+    return this.request(`/inbox/conversations/${conversationId}/resolve`, {
+      method: 'POST',
+    });
+  }
+
+  async reopenConversation(conversationId) {
+    return this.request(`/inbox/conversations/${conversationId}/reopen`, {
+      method: 'POST',
+    });
+  }
+
+  async resolveInboxEscalation(escalationId, notes = null) {
+    return this.request(`/inbox/escalations/${escalationId}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  }
 }
 
 export const api = new ApiClient();

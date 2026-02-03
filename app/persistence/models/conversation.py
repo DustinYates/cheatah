@@ -47,6 +47,9 @@ class Conversation(Base):
     # Topic classification (computed by topic worker)
     topic = Column(String(50), nullable=True, index=True)
 
+    # Inbox status
+    status = Column(String(20), nullable=False, default="open", index=True)  # open, resolved
+
     # Relationships
     tenant = relationship("Tenant", back_populates="conversations")
     contact = relationship("Contact", back_populates="conversations")

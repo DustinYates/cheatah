@@ -210,9 +210,8 @@ class ChatSmsHandoffService:
         profile = result.scalar_one_or_none()
         business_name = profile.business_name if profile else "us"
 
-        name_part = f" {customer_name}" if customer_name else ""
         return (
-            f"Hi{name_part}! This is {business_name} following up from our chat. "
+            f"Hi! This is {business_name} following up from our chat. "
             f"Feel free to continue the conversation here via text!"
         )
 

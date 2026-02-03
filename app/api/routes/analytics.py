@@ -22,6 +22,7 @@ from app.persistence.models.lead import Lead
 from app.persistence.models.tenant import Tenant
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.sent_asset import SentAsset
+from app.persistence.models.jackrabbit_customer import JackrabbitCustomer
 from app.persistence.models.widget_event import WidgetEvent
 
 router = APIRouter()
@@ -1901,6 +1902,8 @@ class ConversionMetrics(BaseModel):
     total_links_sent: int
     unique_phones_sent: int
     by_asset_type: dict[str, int]
+    verified_enrollments: int = 0
+    verified_phones: int = 0
 
 
 class SavingsAnalyticsResponse(BaseModel):
@@ -2078,6 +2081,61 @@ async def get_savings_analytics(
         unique_phones_sent += phones
         by_asset_type[row.asset_type] = count
 
+    # Query 5: Jackrabbit enrollment verification
+    # Cross-reference Jackrabbit customers with AI interactions (conversations,
+    # calls, leads) to count verified conversions.
+    conv_exists = (
+        select(Conversation.id)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.phone_number == JackrabbitCustomer.phone_number,
+            Conversation.created_at >= start_datetime,
+            Conversation.created_at <= end_datetime,
+        )
+        .correlate(JackrabbitCustomer)
+        .exists()
+    )
+    call_ts = func.coalesce(Call.started_at, Call.created_at)
+    call_exists = (
+        select(Call.id)
+        .where(
+            Call.tenant_id == tenant_id,
+            Call.from_number == JackrabbitCustomer.phone_number,
+            call_ts >= start_datetime,
+            call_ts <= end_datetime,
+        )
+        .correlate(JackrabbitCustomer)
+        .exists()
+    )
+    lead_email_exists = (
+        select(Lead.id)
+        .where(
+            Lead.tenant_id == tenant_id,
+            JackrabbitCustomer.email.isnot(None),
+            Lead.email == JackrabbitCustomer.email,
+            Lead.created_at >= start_datetime,
+            Lead.created_at <= end_datetime,
+        )
+        .correlate(JackrabbitCustomer)
+        .exists()
+    )
+    enrollment_stmt = (
+        select(
+            func.count(func.distinct(JackrabbitCustomer.id)).label("verified_count"),
+            func.count(func.distinct(JackrabbitCustomer.phone_number)).label(
+                "verified_phones"
+            ),
+        )
+        .where(
+            JackrabbitCustomer.tenant_id == tenant_id,
+            conv_exists | call_exists | lead_email_exists,
+        )
+    )
+    enrollment_result = await db.execute(enrollment_stmt)
+    enrollment_row = enrollment_result.one()
+    verified_enrollments = int(enrollment_row.verified_count or 0)
+    verified_phones = int(enrollment_row.verified_phones or 0)
+
     return SavingsAnalyticsResponse(
         start_date=range_start.isoformat(),
         end_date=range_end.isoformat(),
@@ -2110,6 +2168,8 @@ async def get_savings_analytics(
             total_links_sent=total_links_sent,
             unique_phones_sent=unique_phones_sent,
             by_asset_type=by_asset_type,
+            verified_enrollments=verified_enrollments,
+            verified_phones=verified_phones,
         ),
     )
 

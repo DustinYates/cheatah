@@ -50,14 +50,20 @@ _BOT_GREETING_NAME_PATTERN = re.compile(
 )
 # Patterns for chat-to-SMS handoff detection
 _BOT_HANDOFF_OFFER_PATTERN = re.compile(
-    r"(?:text you|send you a text|continue (?:this |our )?(?:conversation )?(?:via|over|through|by) (?:text|sms)|"
+    r"(?:text you|send you a text|(?:firing|sending|shoot) .{0,20}text|"
+    r"continue (?:this |our )?(?:conversation )?(?:via|over|through|by) (?:text|sms)|"
     r"reach out (?:via|over|through) text|follow up (?:via|over|by) text|"
-    r"send (?:that|this|the info|the details|the link) (?:to your phone|via text|by text))",
+    r"send (?:that|this|the info|the details|the link|it) (?:to your phone|via text|by text|over)|"
+    r"(?:more )?details (?:via|by|over) text|"
+    r"text (?:to|at) \d{3}[\s\-]?\d{3}[\s\-]?\d{4}|"
+    r"(?:i'(?:ll|m)|let me) (?:send|text|shoot|fire))",
     re.IGNORECASE,
 )
 _USER_HANDOFF_REQUEST_PATTERN = re.compile(
-    r"(?:text me|can you text|send me a text|prefer text|rather text|switch to text|"
-    r"continue (?:via|over|by) text|message me|send it to my phone)",
+    r"(?:text me|can you text|send (?:me )?a? ?text|prefer text|rather text|switch to text|"
+    r"continue (?:via|over|by) text|message me|send it to my phone|"
+    r"send the (?:first )?text|text (?:this|that|it) to|shoot .{0,10}text|"
+    r"(?:can you |could you )?(?:text|message|sms) (?:me|my|this|that|\d))",
     re.IGNORECASE,
 )
 # Pattern to detect when assistant asked for user's name
@@ -426,6 +432,19 @@ class ChatService:
             )
             if existing_lead_after:
                 lead_captured = True
+
+        # Link conversation to contact if not already linked
+        # This ensures the SMS handoff and lead timeline can find the conversation
+        if not conversation.contact_id:
+            lead_for_linking = existing_lead or await self.lead_service.get_lead_by_conversation(
+                tenant_id, conversation.id
+            )
+            if lead_for_linking and lead_for_linking.contact_id:
+                conversation.contact_id = lead_for_linking.contact_id
+                await self.session.commit()
+                logger.info(
+                    f"Linked conversation {conversation.id} to contact {lead_for_linking.contact_id}"
+                )
 
         # Check for user requests and AI promises to send information (registration links, schedules, etc.)
         # Get phone number from user input, extracted info, or existing lead

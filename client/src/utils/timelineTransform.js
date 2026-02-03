@@ -123,8 +123,9 @@ export function buildUnifiedTimeline(lead, conversationData) {
     const { type: itemType, icon: itemIcon } = typeMap[channelType] || typeMap.chatbot;
 
     // Group all messages from the same conversation together
+    // Filter out system messages (internal context like handoff context) - they're not customer-facing
     const messages = conv.messages
-      .filter(msg => msg.created_at) // Skip messages without timestamps
+      .filter(msg => msg.created_at && msg.role !== 'system')
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Sort oldest first for display
 
     if (messages.length > 0) {

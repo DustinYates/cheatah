@@ -35,6 +35,15 @@ ACKNOWLEDGEMENT_WORDS = {
     "adult", "child", "children", "kid", "kids", "teen", "infant",
     "swimming", "swim", "lessons", "classes", "registration",
     "pricing", "schedule", "information", "interested",
+    # Business types / industries (not person names)
+    "hvac", "plumbing", "plumber", "electrical", "electrician",
+    "roofing", "roofer", "landscaping", "landscaper",
+    "dental", "dentist", "medical", "restaurant", "retail",
+    "salon", "spa", "auto", "automotive", "mechanic",
+    "construction", "remodel", "remodeling", "cleaning",
+    "pest", "moving", "painting", "painter", "flooring",
+    "insurance", "accounting", "legal", "fitness", "gym",
+    "daycare", "tutoring", "photography", "catering",
     # Single letters/very short
     "a", "b", "c", "i", "u", "r", "y", "n",
 }

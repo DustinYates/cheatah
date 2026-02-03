@@ -1264,8 +1264,21 @@ class ChatService:
         for i, msg in enumerate(messages):
             logger.info(f"  Message {i}: role={msg.role}, content={msg.content[:80]}...")
 
-        for msg in messages:
-            if msg.role == "assistant" and _NAME_REQUEST_PATTERN.search(msg.content):
+        # Only check PREVIOUS assistant messages for name requests, not the latest one.
+        # The latest assistant message (last in list) was just generated this turn —
+        # the user hasn't responded to it yet. If that message asks "what's your name?",
+        # we'd incorrectly match the user's CURRENT message (answer to the previous question)
+        # as a name. e.g., bot asks "what business?" → user says "Hvac" → bot responds
+        # "Great! What's your name?" — we'd wrongly extract "Hvac" as the name.
+        previous_assistant_msgs = [
+            msg for msg in messages if msg.role == "assistant"
+        ]
+        # Exclude the last assistant message (current turn's response)
+        if previous_assistant_msgs:
+            previous_assistant_msgs = previous_assistant_msgs[:-1]
+
+        for msg in previous_assistant_msgs:
+            if _NAME_REQUEST_PATTERN.search(msg.content):
                 assistant_asked_for_name = True
                 logger.info(f"Q&A PATTERN: Found name request in: {msg.content[:100]}...")
                 break

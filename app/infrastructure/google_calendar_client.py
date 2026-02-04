@@ -100,7 +100,6 @@ class GoogleCalendarClient:
 
         authorization_url, returned_state = flow.authorization_url(
             access_type="offline",
-            include_granted_scopes="true",
             prompt="consent",
             state=state,
         )
@@ -136,6 +135,10 @@ class GoogleCalendarClient:
                 scopes=cls.SCOPES,
                 redirect_uri=redirect_uri,
             )
+            # Allow Google to return additional scopes (e.g., Gmail scopes
+            # previously granted to the same OAuth app/client_id)
+            import os
+            os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
             flow.fetch_token(code=code)
             credentials = flow.credentials
 

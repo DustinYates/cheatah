@@ -117,7 +117,6 @@ class GmailClient:
 
         authorization_url, returned_state = flow.authorization_url(
             access_type="offline",
-            include_granted_scopes="true",
             prompt="consent",  # Force consent to get refresh token
             state=state,
         )
@@ -157,6 +156,10 @@ class GmailClient:
                 scopes=cls.SCOPES,
                 redirect_uri=redirect_uri,
             )
+            # Allow Google to return additional scopes (e.g., Calendar scopes
+            # previously granted to the same OAuth app/client_id)
+            import os
+            os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
             flow.fetch_token(code=code)
             credentials = flow.credentials
 

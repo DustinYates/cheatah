@@ -965,6 +965,194 @@ class ApiClient {
       body: JSON.stringify({ notes }),
     });
   }
+
+  // Customers API
+  async getCustomers(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/customers${query ? `?${query}` : ''}`);
+  }
+
+  async getCustomer(customerId) {
+    return this.request(`/customers/${customerId}`);
+  }
+
+  async createCustomer(data) {
+    return this.request('/customers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateCustomer(customerId, data) {
+    return this.request(`/customers/${customerId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteCustomer(customerId) {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const selectedTenant = this.getSelectedTenant();
+    const userInfo = this.getUserInfo();
+    if (userInfo?.is_global_admin && selectedTenant) {
+      headers['X-Tenant-Id'] = selectedTenant.toString();
+    }
+
+    const response = await fetch(`${API_BASE}/customers/${customerId}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (response.status === 401) {
+      this.setToken(null);
+      localStorage.removeItem('userInfo');
+      localStorage.removeItem('selectedTenantId');
+      window.location.href = '/login';
+      throw new Error('Unauthorized');
+    }
+
+    if (response.status === 204) {
+      return true;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Delete failed' }));
+      throw new Error(error.detail || 'Delete failed');
+    }
+
+    return true;
+  }
+
+  async searchCustomers(query) {
+    return this.request(`/customers/search?q=${encodeURIComponent(query)}`);
+  }
+
+  async getCustomerStats() {
+    return this.request('/customers/stats');
+  }
+
+  // Customer Support Config API
+  async getCustomerSupportConfig() {
+    return this.request('/customer-support/config');
+  }
+
+  async updateCustomerSupportConfig(data) {
+    return this.request('/customer-support/config', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ==================== Forum API ====================
+
+  async getMyForums() {
+    return this.request('/forums/my-forums');
+  }
+
+  async getForum(forumSlug) {
+    return this.request(`/forums/${forumSlug}`);
+  }
+
+  async getForumPosts(forumSlug, categorySlug, params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/forums/${forumSlug}/${categorySlug}${query ? `?${query}` : ''}`);
+  }
+
+  async getForumPost(forumSlug, categorySlug, postId) {
+    return this.request(`/forums/${forumSlug}/${categorySlug}/${postId}`);
+  }
+
+  async createForumPost(forumSlug, categorySlug, data) {
+    return this.request(`/forums/${forumSlug}/${categorySlug}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async togglePostVote(forumSlug, categorySlug, postId) {
+    return this.request(`/forums/${forumSlug}/${categorySlug}/${postId}/vote`, {
+      method: 'POST',
+    });
+  }
+
+  async archivePost(forumSlug, categorySlug, postId, data) {
+    return this.request(`/forums/${forumSlug}/${categorySlug}/${postId}/archive`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ==================== User Groups API (Admin) ====================
+
+  async getUserGroups() {
+    return this.request('/admin/groups');
+  }
+
+  async createUserGroup(data) {
+    return this.request('/admin/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getUserGroup(groupId) {
+    return this.request(`/admin/groups/${groupId}`);
+  }
+
+  async updateUserGroup(groupId, data) {
+    return this.request(`/admin/groups/${groupId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteUserGroup(groupId) {
+    return this.request(`/admin/groups/${groupId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getGroupMembers(groupId) {
+    return this.request(`/admin/groups/${groupId}/members`);
+  }
+
+  async addGroupMember(groupId, userId, role = 'member') {
+    return this.request(`/admin/groups/${groupId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, role }),
+    });
+  }
+
+  async removeGroupMember(groupId, userId) {
+    return this.request(`/admin/groups/${groupId}/members/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async searchAvailableUsers(groupId, search = '') {
+    return this.request(`/admin/groups/${groupId}/available-users?search=${encodeURIComponent(search)}`);
+  }
+
+  async createForumForGroup(groupId, data) {
+    return this.request(`/admin/groups/${groupId}/forum`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createForumCategory(groupId, data) {
+    return this.request(`/admin/groups/${groupId}/forum/categories`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const api = new ApiClient();

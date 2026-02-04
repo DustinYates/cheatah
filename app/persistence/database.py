@@ -82,3 +82,23 @@ async def get_db() -> AsyncSession:
                 pass  # Ignore errors during cleanup
             await session.close()
 
+
+async def get_db_no_rls() -> AsyncSession:
+    """Dependency for getting database session WITHOUT RLS tenant context.
+
+    Use this for cross-tenant operations like forums where access is controlled
+    via group membership rather than tenant isolation.
+
+    WARNING: Only use this for intentionally cross-tenant features.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            # Explicitly clear tenant context to ensure no RLS filtering
+            await session.execute(text("SET app.current_tenant_id = ''"))
+            yield session
+        except Exception as e:
+            logger.error(f"Database session (no RLS) error: {e}", exc_info=True)
+            raise
+        finally:
+            await session.close()
+

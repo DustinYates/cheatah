@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../api/client';
 import './Layout.css';
 
 export default function Layout() {
@@ -12,6 +13,23 @@ export default function Layout() {
     location.pathname.startsWith('/calls')
   );
   const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/settings'));
+  const [forumsOpen, setForumsOpen] = useState(location.pathname.startsWith('/forums'));
+  const [hasForumAccess, setHasForumAccess] = useState(false);
+
+  // Check if user has forum access
+  useEffect(() => {
+    const checkForumAccess = async () => {
+      try {
+        const forums = await api.getMyForums();
+        setHasForumAccess(forums && forums.length > 0);
+      } catch (err) {
+        setHasForumAccess(false);
+      }
+    };
+    if (user) {
+      checkForumAccess();
+    }
+  }, [user]);
 
   const handleLogout = () => {
     logout();
@@ -64,7 +82,10 @@ export default function Layout() {
         
         <ul className="nav-links">
           <li>
-            <NavLink to="/" end>Dashboard</NavLink>
+            <NavLink to="/" end>Leads</NavLink>
+          </li>
+          <li>
+            <NavLink to="/customers">Customers</NavLink>
           </li>
           <li>
             <NavLink to="/contacts">Contacts</NavLink>
@@ -141,6 +162,9 @@ export default function Layout() {
                   <NavLink to="/settings/email">Email Setup</NavLink>
                 </li>
                 <li>
+                  <NavLink to="/settings/calendar">Calendar</NavLink>
+                </li>
+                <li>
                   <NavLink to="/settings/sms">SMS Settings</NavLink>
                 </li>
                 <li>
@@ -148,6 +172,9 @@ export default function Layout() {
                 </li>
                 <li>
                   <NavLink to="/settings/dnc">Do Not Contact</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/settings/customer-support">Customer Support</NavLink>
                 </li>
                 {user?.is_global_admin && (
                   <li>
@@ -160,6 +187,24 @@ export default function Layout() {
               </ul>
             )}
           </li>
+          {hasForumAccess && (
+            <li className="nav-section">
+              <button
+                className={`nav-section-toggle ${forumsOpen ? 'open' : ''}`}
+                onClick={() => setForumsOpen(!forumsOpen)}
+              >
+                Forums
+                <span className="toggle-icon">{forumsOpen ? '−' : '+'}</span>
+              </button>
+              {forumsOpen && (
+                <ul className="nav-submenu">
+                  <li>
+                    <NavLink to="/forums">Browse Forums</NavLink>
+                  </li>
+                </ul>
+              )}
+            </li>
+          )}
           {user?.is_global_admin && !selectedTenantId && (
             <li>
               <NavLink to="/admin/tenants">Manage Tenants</NavLink>

@@ -7,6 +7,8 @@ from app.persistence.repositories.message_repository import MessageRepository
 from app.persistence.repositories.prompt_repository import PromptRepository
 from app.persistence.repositories.tenant_repository import TenantRepository
 from app.persistence.repositories.user_repository import UserRepository
+from app.persistence.repositories.customer_repository import CustomerRepository
+from app.persistence.repositories.customer_support_config_repository import CustomerSupportConfigRepository
 
 __all__ = [
     "BaseRepository",
@@ -16,5 +18,7 @@ __all__ = [
     "MessageRepository",
     "LeadRepository",
     "PromptRepository",
+    "CustomerRepository",
+    "CustomerSupportConfigRepository",
 ]
 

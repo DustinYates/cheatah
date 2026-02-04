@@ -1,4 +1,4 @@
-import { format, isToday, isYesterday } from 'date-fns';
+import { format, isToday, isYesterday, formatDistanceToNow as dateFnsDistanceToNow } from 'date-fns';
 import { toZonedTime, format as formatTz } from 'date-fns-tz';
 
 const CENTRAL_TZ = 'America/Chicago';
@@ -75,6 +75,21 @@ export function formatLocalDateTime(dateString) {
     return format(date, 'MMM d, yyyy h:mm a');
   } catch (error) {
     console.error('Local date formatting error:', error);
+    return '—';
+  }
+}
+
+export function formatDistanceToNow(dateString) {
+  try {
+    if (!dateString) return '—';
+
+    const normalized = normalizeTimestamp(dateString);
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return '—';
+
+    return dateFnsDistanceToNow(date, { addSuffix: true });
+  } catch (error) {
+    console.error('Distance to now formatting error:', error);
     return '—';
   }
 }

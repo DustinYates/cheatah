@@ -7,6 +7,9 @@ import Dashboard from './pages/Dashboard';
 import Prompts from './pages/Prompts';
 import Contacts from './pages/Contacts';
 import ContactDetail from './pages/ContactDetail';
+import Customers from './pages/Customers';
+import CustomerDetail from './pages/CustomerDetail';
+import CustomerSupportSettings from './pages/CustomerSupportSettings';
 import Calls from './pages/Calls';
 import Inbox from './pages/Inbox';
 import Plots from './pages/Plots';
@@ -29,6 +32,10 @@ import ManageTenants from './pages/ManageTenants';
 import PromptWizard from './pages/PromptWizard';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
+import Forums from './pages/Forums';
+import ForumDetail from './pages/ForumDetail';
+import ForumPost from './pages/ForumPost';
+import NewForumPost from './pages/NewForumPost';
 import './App.css';
 
 function App() {
@@ -55,6 +62,8 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="contacts" element={<Contacts />} />
             <Route path="contacts/:id" element={<ContactDetail />} />
+            <Route path="customers" element={<Customers />} />
+            <Route path="customers/:id" element={<CustomerDetail />} />
             <Route path="inbox" element={<Inbox />} />
             <Route path="calls" element={<Calls />} />
             <Route path="analytics/usage" element={<Plots />} />
@@ -77,6 +86,7 @@ function App() {
             <Route path="settings/escalation" element={<EscalationSettings />} />
             <Route path="settings/calendar" element={<CalendarSettings />} />
             <Route path="settings/dnc" element={<DncList />} />
+            <Route path="settings/customer-support" element={<CustomerSupportSettings />} />
             <Route path="telephony-settings" element={<Navigate to="/settings/telephony" replace />} />
             <Route path="sms" element={<Navigate to="/settings/sms" replace />} />
             <Route path="settings/profile" element={<BusinessProfile />} />
@@ -85,6 +95,13 @@ function App() {
             <Route path="prompts" element={<Navigate to="/settings/prompts" replace />} />
             <Route path="prompts/wizard" element={<Navigate to="/settings/prompts/wizard" replace />} />
             <Route path="email" element={<Navigate to="/settings/email" replace />} />
+
+            {/* Forum routes */}
+            <Route path="forums" element={<Forums />} />
+            <Route path="forums/:forumSlug" element={<ForumDetail />} />
+            <Route path="forums/:forumSlug/:categorySlug" element={<ForumDetail />} />
+            <Route path="forums/:forumSlug/:categorySlug/new" element={<NewForumPost />} />
+            <Route path="forums/:forumSlug/:categorySlug/:postId" element={<ForumPost />} />
 
             <Route path="admin/tenants" element={<ManageTenants />} />
           </Route>

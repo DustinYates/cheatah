@@ -446,6 +446,26 @@ class ChatService:
                     f"Linked conversation {conversation.id} to contact {lead_for_linking.contact_id}"
                 )
 
+        # ============================================================
+        # HIGH INTENT LEAD NOTIFICATION: Check if this conversation
+        # shows high enrollment intent and notify business owner
+        # ============================================================
+        try:
+            await self._check_and_notify_high_intent_lead(
+                tenant_id=tenant_id,
+                conversation_id=conversation.id,
+                user_message=user_message,
+                messages=messages,
+                lead=existing_lead or await self.lead_service.get_lead_by_conversation(tenant_id, conversation.id),
+                extracted_name=extracted_name,
+                extracted_phone=extracted_phone,
+                extracted_email=extracted_email,
+                channel="chat",
+            )
+        except Exception as e:
+            # Don't let notification failure affect the chat flow
+            logger.error(f"Failed to check/send high intent lead notification: {e}", exc_info=True)
+
         # Check for user requests and AI promises to send information (registration links, schedules, etc.)
         # Get phone number from user input, extracted info, or existing lead
         customer_phone = (
@@ -1041,6 +1061,88 @@ class ChatService:
             logger.warning(f"Failed to fetch class schedule for tenant {tenant_id}: {e}")
             return None
 
+    async def _check_and_notify_high_intent_lead(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        user_message: str,
+        messages: list,
+        lead,
+        extracted_name: str | None,
+        extracted_phone: str | None,
+        extracted_email: str | None,
+        channel: str = "chat",
+    ) -> None:
+        """Check for high enrollment intent and notify business owner if detected.
+
+        Args:
+            tenant_id: Tenant ID
+            conversation_id: Conversation ID
+            user_message: Current user message
+            messages: Full conversation history
+            lead: Lead object (if exists)
+            extracted_name: Name extracted from conversation
+            extracted_phone: Phone extracted from conversation
+            extracted_email: Email extracted from conversation
+            channel: Communication channel (chat, sms, voice, email)
+        """
+        from app.domain.services.intent_detector import IntentDetector
+        from app.infrastructure.notifications import NotificationService
+
+        # Build conversation history strings for intent detection
+        conversation_history = [msg.content for msg in messages if hasattr(msg, "content")]
+
+        # Determine contact info status
+        has_phone = bool(extracted_phone or (lead and lead.phone))
+        has_email = bool(extracted_email or (lead and lead.email))
+
+        # Detect enrollment intent
+        intent_detector = IntentDetector()
+        intent_result = intent_detector.detect_enrollment_intent(
+            message=user_message,
+            conversation_history=conversation_history,
+            has_phone=has_phone,
+            has_email=has_email,
+        )
+
+        if not intent_result.is_high_intent:
+            logger.debug(
+                f"No high intent detected - tenant_id={tenant_id}, "
+                f"conversation_id={conversation_id}, confidence={intent_result.confidence:.2f}"
+            )
+            return
+
+        logger.info(
+            f"High enrollment intent detected - tenant_id={tenant_id}, "
+            f"conversation_id={conversation_id}, confidence={intent_result.confidence:.2f}, "
+            f"keywords={intent_result.keywords}, boost_factors={intent_result.boost_factors}"
+        )
+
+        # Get customer info
+        customer_name = extracted_name or (lead.name if lead else None)
+        customer_phone = extracted_phone or (lead.phone if lead else None)
+        customer_email = extracted_email or (lead.email if lead else None)
+
+        # Send notification
+        notification_service = NotificationService(self.session)
+        result = await notification_service.notify_high_intent_lead(
+            tenant_id=tenant_id,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            customer_email=customer_email,
+            channel=channel,
+            message_preview=user_message[:150],
+            confidence=intent_result.confidence,
+            keywords=intent_result.keywords,
+            conversation_id=conversation_id,
+            lead_id=lead.id if lead else None,
+        )
+
+        logger.info(
+            f"Lead notification result - tenant_id={tenant_id}, "
+            f"conversation_id={conversation_id}, status={result.get('status')}"
+        )
+
     def _build_conversation_context(
         self,
         system_prompt: str,
@@ -1225,7 +1327,12 @@ class ChatService:
         messages: list[Message],
         current_user_message: str,
     ) -> dict[str, str | None | bool]:
-        """Extract contact information from conversation messages using LLM with regex fallback.
+        """Extract contact information from conversation using LLM as primary method.
+
+        The LLM reads the full conversation transcript and uses context to identify
+        the user's name, email, and phone. This is more reliable than regex patterns
+        because the LLM understands conversational context (e.g., when the bot asks
+        "who am I chatting with?" and the user responds "Regina").
 
         Args:
             messages: Previous messages in conversation
@@ -1235,92 +1342,7 @@ class ChatService:
             Dictionary with 'name', 'email', 'phone' keys (values may be None),
             and 'name_is_explicit' bool indicating if name came from explicit introduction
         """
-        # First, try regex extraction from the current message as a quick fallback
-        # Use " | " as separator to prevent regex patterns from matching across message boundaries
-        # e.g., without this, "Jamiyah" + " " + "Comfortable floating" would match as "Jamiyah Comfortable"
-        all_text = current_user_message
-        for msg in messages:
-            if msg.role == "user":
-                all_text += " | " + msg.content
-
-        regex_email = self._extract_email_regex(all_text)
-        regex_phone = self._extract_phone_regex(all_text)
-        regex_name, name_is_explicit = self._extract_name_regex(all_text)
-        
-        logger.debug(
-            f"Regex extraction results - name={regex_name}, email={regex_email}, phone={regex_phone}"
-        )
-
-        # Fallback 1: Check if assistant asked for name and user responded with a name-like word
-        # This is the most reliable fallback - we detect the Q&A pattern directly
-        name_after_request = None
-        # Find the assistant message that asked for a name (look through recent messages)
-        # Note: messages may include the NEW response, so we need to check all assistant messages
-        # for a name request, not just the last one
-        assistant_asked_for_name = False
-
-        # Log all messages for debugging
-        logger.info(f"Q&A PATTERN CHECK: current_user_message='{current_user_message}', num_messages={len(messages)}")
-        for i, msg in enumerate(messages):
-            logger.info(f"  Message {i}: role={msg.role}, content={msg.content[:80]}...")
-
-        # Only check PREVIOUS assistant messages for name requests, not the latest one.
-        # The latest assistant message (last in list) was just generated this turn —
-        # the user hasn't responded to it yet. If that message asks "what's your name?",
-        # we'd incorrectly match the user's CURRENT message (answer to the previous question)
-        # as a name. e.g., bot asks "what business?" → user says "Hvac" → bot responds
-        # "Great! What's your name?" — we'd wrongly extract "Hvac" as the name.
-        previous_assistant_msgs = [
-            msg for msg in messages if msg.role == "assistant"
-        ]
-        # Exclude the last assistant message (current turn's response)
-        if previous_assistant_msgs:
-            previous_assistant_msgs = previous_assistant_msgs[:-1]
-
-        for msg in previous_assistant_msgs:
-            if _NAME_REQUEST_PATTERN.search(msg.content):
-                assistant_asked_for_name = True
-                logger.info(f"Q&A PATTERN: Found name request in: {msg.content[:100]}...")
-                break
-
-        if assistant_asked_for_name:
-            # Assistant asked for name at some point - check if current user message looks like a name
-            # A name response is typically 1-2 words, all letters, not a common phrase
-            user_response = current_user_message.strip()
-            words = user_response.split()
-            logger.info(f"Q&A PATTERN: Checking if '{user_response}' is a name (words={words}, len={len(words)}, all_alpha={all(w.isalpha() for w in words)})")
-            if len(words) <= 2 and all(w.isalpha() for w in words):
-                # Validate as a name
-                validated = validate_name(user_response, require_explicit=True)
-                logger.info(f"Q&A PATTERN: validate_name('{user_response}') returned '{validated}'")
-                if validated:
-                    name_after_request = validated
-                    logger.info(f"Q&A PATTERN SUCCESS: Extracted name '{name_after_request}' from Q&A pattern")
-                else:
-                    logger.info(f"Q&A PATTERN: Name validation failed for '{user_response}'")
-            else:
-                logger.info(f"Q&A PATTERN: User response '{user_response}' doesn't look like a name")
-        else:
-            logger.info("Q&A PATTERN: No name request found in assistant messages")
-
-        # Fallback 2: Extract name from bot's greeting response (e.g., "Nice to meet you, Dustin")
-        # This is reliable since the bot only greets by name when it recognized the name
-        bot_greeting_name = None
-        for msg in messages:
-            if msg.role == "assistant":
-                match = _BOT_GREETING_NAME_PATTERN.search(msg.content)
-                if match:
-                    potential_name = match.group(1).strip()
-                    # Validate it's a real name (not a common word)
-                    validated = validate_name(potential_name, require_explicit=True)
-                    if validated:
-                        bot_greeting_name = validated
-                        logger.info(f"Extracted name from bot greeting: '{bot_greeting_name}'")
-
-        # Build conversation text for LLM extraction
-        # Include BOTH user and assistant messages for context
-        # This is critical for name extraction - the LLM needs to see that
-        # the bot asked "what is your name?" to know that "chuck" is a name
+        # Build full conversation transcript for LLM
         conversation_text = []
         for msg in messages:
             if msg.role == "user":
@@ -1328,209 +1350,115 @@ class ChatService:
             elif msg.role == "assistant":
                 conversation_text.append(f"Assistant: {msg.content}")
         conversation_text.append(f"User: {current_user_message}")
-        
-        # Limit to recent messages to avoid large prompts
-        # Increased limit since we now include both user and assistant messages
-        recent_messages = conversation_text[-15:]  # Last 15 messages (user + assistant)
-        
-        extraction_prompt = """Analyze the following conversation messages and extract any contact information the user has provided.
 
-Conversation:
-{}
+        # Use last 20 messages for context (covers most conversations fully)
+        recent_messages = conversation_text[-20:]
+        transcript = "\n".join(recent_messages)
 
-Extract the following information if present:
-- name: The user's full name or first name
-- email: The user's email address
-- phone: The user's phone number (any format)
+        # Also run regex for email/phone (these are reliable patterns)
+        all_user_text = current_user_message
+        for msg in messages:
+            if msg.role == "user":
+                all_user_text += " | " + msg.content
+        regex_email = self._extract_email_regex(all_user_text)
+        regex_phone = self._extract_phone_regex(all_user_text)
 
-NAME EXTRACTION RULES (IMPORTANT):
-- Look for names in ALL these patterns:
-  * Direct introductions: "I'm John", "my name is Sarah", "I am Mike", "this is Jane"
-  * Casual introductions: "im ralph", "im John Anthony", "John here", "it's Sarah"
-  * Name first with comma: "scott, im 68 years old", "john, I need help", "sarah, can you help me"
-  * Names stated alone when asked: If the assistant asks for the user's name in ANY way (e.g., "what's your name?", "who am I chatting with?", "who am I speaking with?", "may I have your name?", "and your name is?", "who is this?") and the user's next message is just a single word or two words that look like a name, extract it as their name.
-  * Single-word name responses: If user responds with just "John" or "Sarah" or "dustin" after being asked for their name, that IS their name - extract it.
-  * Names in context: "You can call me Mike", "My friends call me Sam"
-- Extract the COMPLETE name including first and last name if provided
-- Names can be lowercase (e.g., "dustin" or "sarah") - users often type without capitalization in chat
-- Do NOT extract business names, product names, or other non-person names
-- If multiple names are mentioned, extract the most recent or most clearly stated one
-- CRITICAL: Do NOT include pronouns (he, she, they, him, her, them) as part of the name!
-  * If one message says "Ashley" and the next says "He loves to swim", the name is ONLY "Ashley", NOT "Ashley He"
-  * Pronouns at the start of messages refer to someone being discussed, not the user's last name
-- CRITICAL: Do NOT combine topic/inquiry words from one message with names from another message!
-  * If user first asks "Pricing for adult swim lessons" and later says "Tarnisha", the name is ONLY "Tarnisha", NOT "Tarnisha Pricing"
-  * Words like pricing, schedule, registration, classes, lessons, information are NEVER part of a person's name
-  * Only extract words that are clearly stated as part of someone's name in the same statement
+        # LLM extraction prompt - focused on reading context
+        extraction_prompt = f"""Read this conversation transcript and identify the USER's contact information.
 
-GENERAL RULES:
-- Only extract information explicitly stated by the user
-- Do not make up or infer contact details
-- Return null for any field not found
+TRANSCRIPT:
+{transcript}
 
-Respond with ONLY a valid JSON object in this exact format, no other text:
-{{"name": null, "email": null, "phone": null}}""".format("\n".join(recent_messages))
+YOUR TASK: Extract the user's name, email, and phone number based on the conversation context.
 
-        # Determine best name extraction with priority:
-        # 1. Q&A pattern (name_after_request) - most reliable, user directly answered "what's your name?"
-        # 2. Bot greeting extraction - reliable, bot greeted user by name it recognized
-        # 3. Regex explicit intro (e.g., "I'm John") - reliable explicit statement
-        # 4. Regex capitalized pattern - least reliable, prone to false positives like "Spring Texas"
-        if name_after_request:
-            # Q&A pattern is most reliable - user responded directly to name question
-            fallback_name = name_after_request
-            fallback_name_is_explicit = True
-            logger.info(f"Using Q&A pattern name '{name_after_request}' (highest priority)")
-        elif bot_greeting_name:
-            # Bot already recognized and greeted by name
-            fallback_name = bot_greeting_name
-            fallback_name_is_explicit = True
-            logger.info(f"Using bot greeting name '{bot_greeting_name}'")
-        elif regex_name and name_is_explicit:
-            # Explicit introduction like "I'm John" or "my name is Sarah"
-            fallback_name = regex_name
-            fallback_name_is_explicit = True
-            logger.info(f"Using explicit regex name '{regex_name}'")
-        elif regex_name:
-            # Capitalized pattern - less reliable, don't mark as explicit
-            fallback_name = regex_name
-            fallback_name_is_explicit = False
-            logger.info(f"Using capitalized pattern name '{regex_name}' (not explicit)")
-        else:
-            fallback_name = None
-            fallback_name_is_explicit = False
+NAME EXTRACTION - Read the conversation carefully:
+1. Look for when the assistant asks for the user's name (e.g., "who am I chatting with?", "what's your name?", "may I have your name?")
+2. The user's response to that question IS their name
+3. Also look for confirmations like "Nice to meet you, Regina!" - the assistant confirmed the name
+4. Look for explicit introductions: "I'm John", "my name is Sarah", "this is Mike"
+5. If the user gives first name then last name separately, combine them (e.g., "Regina" then "Edwards-Thicklin" = "Regina Edwards-Thicklin")
+6. Email addresses can hint at names (e.g., "thicklin.regina@yahoo.com" suggests "Regina")
 
-        result = {"name": fallback_name, "email": regex_email, "phone": regex_phone, "name_is_explicit": fallback_name_is_explicit}
-        
+IMPORTANT - These are NOT names:
+- Common words: for, the, and, with, looking, pricing, interested, etc.
+- Verbs: need, want, help, calling, texting, checking
+- Responses: yes, no, ok, sure, thanks
+- Business terms: hvac, plumbing, dental, swim, lessons
+
+EMAIL/PHONE: Extract any email address or phone number the user provided.
+
+Respond with ONLY this JSON (no other text):
+{{"name": null, "email": null, "phone": null}}
+
+Replace null with the actual value if found. Use null if not found or uncertain."""
+
+        result = {"name": None, "email": regex_email, "phone": regex_phone, "name_is_explicit": False}
+
         try:
-            logger.debug(f"Attempting LLM extraction with prompt length: {len(extraction_prompt)}")
+            logger.debug(f"LLM name extraction - transcript length: {len(transcript)} chars")
             response = await self.llm_orchestrator.generate(
                 extraction_prompt,
-                context={"temperature": 0.0, "max_tokens": 200},  # Very deterministic
+                context={"temperature": 0.0, "max_tokens": 150},
             )
-            
-            logger.debug(f"LLM extraction response: {response[:200]}...")
-            
+
             # Parse JSON response
-            # Clean up response - sometimes LLM adds extra text or markdown
             response = response.strip()
 
-            # Strip markdown code blocks if present (```json ... ```, `` ... ``, or `json ... `)
-            # Handle various backtick patterns LLMs might use
+            # Strip markdown code blocks if present
             if response.startswith("`"):
-                # Remove leading backticks and optional language hint
                 response = response.lstrip("`")
                 if response.lower().startswith("json"):
-                    response = response[4:].lstrip()  # Remove "json" and whitespace
-                # Handle multiline code blocks
+                    response = response[4:].lstrip()
                 if "\n" in response:
                     lines = response.split("\n")
-                    # Remove trailing backticks line if present
                     if lines and lines[-1].strip().replace("`", "") == "":
                         lines = lines[:-1]
                     response = "\n".join(lines).strip()
-                # Remove any trailing backticks
                 response = response.rstrip("`").strip()
 
-            # Try to find JSON in response
+            # Extract JSON
             if response.startswith("{"):
                 json_end = response.rfind("}") + 1
                 response = response[:json_end]
             else:
-                # Try to extract JSON from response
                 start = response.find("{")
                 end = response.rfind("}") + 1
                 if start != -1 and end > start:
                     response = response[start:end]
                 else:
-                    logger.warning(f"Could not find JSON in LLM response: {response[:200]}")
-                    # Use regex results as fallback
+                    logger.warning(f"No JSON in LLM response: {response[:100]}")
                     return result
-            
+
             extracted = json.loads(response)
-            
-            # Merge LLM results with regex fallback (LLM takes precedence for name)
             llm_name = extracted.get("name")
             llm_email = extracted.get("email")
             llm_phone = extracted.get("phone")
 
-            # If LLM found a name, it's ALWAYS considered explicit because the LLM
-            # only extracts names when users clearly state their name in conversation.
-            # This allows LLM-extracted names to override previously captured (possibly
-            # incorrect) names like generic placeholders or misextracted text.
-            # Fallback chain: LLM name -> regex name -> name_after_request -> bot greeting name
-            if llm_name and llm_name != "null":
-                final_name = llm_name
-                final_name_is_explicit = True
-            elif regex_name:
-                final_name = regex_name
-                final_name_is_explicit = name_is_explicit
-            elif name_after_request:
-                # Assistant asked for name, user replied with what looks like a name
-                final_name = name_after_request
-                final_name_is_explicit = True
-                logger.info(f"Using Q&A pattern fallback for name: '{name_after_request}'")
-            elif bot_greeting_name:
-                # Bot greeted user by name, so we know this is their name
-                final_name = bot_greeting_name
-                final_name_is_explicit = True
-                logger.info(f"Using bot greeting fallback for name: '{bot_greeting_name}'")
-            else:
-                final_name = None
-                final_name_is_explicit = False
+            logger.info(f"LLM extraction: name={llm_name}, email={llm_email}, phone={llm_phone}")
 
-            logger.info(
-                f"Name extraction result: llm_name={llm_name}, regex_name={regex_name}, "
-                f"name_after_request={name_after_request}, bot_greeting_name={bot_greeting_name}, "
-                f"final_name={final_name}, is_explicit={final_name_is_explicit}"
-            )
+            # Validate and use LLM name
+            if llm_name and llm_name != "null" and isinstance(llm_name, str):
+                validated_name = validate_name(llm_name, require_explicit=True)
+                if validated_name:
+                    result["name"] = validated_name
+                    result["name_is_explicit"] = True
+                    logger.info(f"Using LLM-extracted name: '{validated_name}'")
+                else:
+                    logger.info(f"LLM name '{llm_name}' rejected by validation")
 
-            result = {
-                "name": final_name,
-                "email": llm_email if llm_email and llm_email != "null" else regex_email,
-                "phone": llm_phone if llm_phone and llm_phone != "null" else regex_phone,
-                "name_is_explicit": final_name_is_explicit,
-            }
-            
-            # Clean up empty strings (skip boolean fields)
-            for key in ['name', 'email', 'phone']:
-                if result[key] == "" or result[key] == "null":
-                    result[key] = None
+            # Use LLM email/phone if regex didn't find them
+            if llm_email and llm_email != "null" and not result["email"]:
+                result["email"] = llm_email
+            if llm_phone and llm_phone != "null" and not result["phone"]:
+                result["phone"] = llm_phone
 
-            # Validate the extracted name using strict validation
-            if result["name"]:
-                validated_name = validate_name(
-                    result["name"],
-                    require_explicit=result.get("name_is_explicit", False)
-                )
-                if validated_name != result["name"]:
-                    logger.info(
-                        f"Name validation changed: '{result['name']}' -> '{validated_name}'"
-                    )
-                result["name"] = validated_name
-
-            logger.debug(f"Final extracted contact info: {result}")
             return result
-            
+
         except json.JSONDecodeError as e:
-            logger.warning(
-                f"Failed to parse contact extraction response: {e}, response: {response[:200]}"
-            )
-            # Validate regex result before returning as fallback
-            if result["name"]:
-                result["name"] = validate_name(
-                    result["name"],
-                    require_explicit=result.get("name_is_explicit", False)
-                )
+            logger.warning(f"Failed to parse LLM response: {e}")
             return result
         except Exception as e:
-            logger.error(f"Contact extraction failed: {e}", exc_info=True)
-            # Validate regex result before returning as fallback
-            if result["name"]:
-                result["name"] = validate_name(
-                    result["name"],
-                    require_explicit=result.get("name_is_explicit", False)
-                )
+            logger.error(f"LLM extraction failed: {e}", exc_info=True)
             return result
 
     async def _process_chat_core(

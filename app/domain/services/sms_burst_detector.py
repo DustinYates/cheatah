@@ -351,6 +351,17 @@ class SmsBurstDetector:
                 f"cause={likely_cause}, incident_id={incident_id}, block={should_block}"
             )
 
+            # Notify admin of the burst incident
+            try:
+                from app.domain.services.admin_alert_service import AdminAlertService
+
+                # Get the incident object for notification
+                incident_for_notify = existing if existing else incident
+                alert_service = AdminAlertService(self.session)
+                await alert_service.notify_sms_burst(incident_for_notify)
+            except Exception as notify_err:
+                logger.error(f"Failed to notify admin of SMS burst: {notify_err}", exc_info=True)
+
             return BurstCheckResult(
                 is_burst=True,
                 severity=severity,

@@ -303,7 +303,18 @@ async def _create_alert(
     )
     db.add(alert)
     await db.commit()
+    await db.refresh(alert)
+
     logger.warning(
         f"Anomaly alert created: tenant={tenant_id}, type={alert_type}, "
         f"current={current_value}, baseline={baseline_value}"
     )
+
+    # Notify admin of the anomaly
+    try:
+        from app.domain.services.admin_alert_service import AdminAlertService
+
+        alert_service = AdminAlertService(db)
+        await alert_service.notify_anomaly(alert)
+    except Exception as notify_err:
+        logger.error(f"Failed to notify admin of anomaly: {notify_err}", exc_info=True)

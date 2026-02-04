@@ -67,6 +67,11 @@ class NotificationType:
     VOICEMAIL = "voicemail"
     SYSTEM = "system"
     EMAIL_PROMISE = "email_promise"
+    HIGH_INTENT_LEAD = "high_intent_lead"
+    # Admin alert types
+    SMS_BURST = "sms_burst"
+    ANOMALY_ALERT = "anomaly_alert"
+    SERVICE_OUTAGE = "service_outage"
 
 
 # Notification priorities

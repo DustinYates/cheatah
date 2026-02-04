@@ -391,6 +391,264 @@ class NotificationService:
             priority=NotificationPriority.HIGH,
         )
 
+    async def notify_high_intent_lead(
+        self,
+        tenant_id: int,
+        customer_name: str | None,
+        customer_phone: str | None,
+        customer_email: str | None,
+        channel: str,
+        message_preview: str,
+        confidence: float,
+        keywords: list[str],
+        conversation_id: int | None = None,
+        lead_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Alert tenant when a high enrollment intent lead is detected.
+
+        Sends SMS to business owner or configured notification phone when
+        the AI detects strong enrollment signals in a conversation.
+
+        Args:
+            tenant_id: Tenant ID
+            customer_name: Customer's name (if known)
+            customer_phone: Customer's phone number (if known)
+            customer_email: Customer's email address (if known)
+            channel: Channel where intent was detected ("chat", "voice", "sms", "email")
+            message_preview: Snippet of the message showing intent
+            confidence: Intent confidence score (0.0 to 1.0)
+            keywords: Keywords that triggered the detection
+            conversation_id: Conversation ID for tracking
+            lead_id: Lead ID if created
+
+        Returns:
+            Notification result
+        """
+        # Get lead notification settings from SMS config
+        lead_notification_settings = await self._get_lead_notification_settings(tenant_id)
+
+        if not lead_notification_settings.get("enabled", False):
+            logger.debug(f"Lead notifications disabled for tenant {tenant_id}")
+            return {"status": "disabled", "reason": "lead_notifications_disabled"}
+
+        # Check if this channel is being monitored
+        monitored_channels = lead_notification_settings.get("channels", ["sms", "chat", "voice", "email"])
+        if channel not in monitored_channels:
+            logger.debug(f"Channel {channel} not monitored for tenant {tenant_id}")
+            return {"status": "skipped", "reason": f"channel_{channel}_not_monitored"}
+
+        # Check quiet hours (9 PM - 8 AM default)
+        if lead_notification_settings.get("quiet_hours_enabled", True):
+            if await self._is_lead_notification_quiet_hours(tenant_id, lead_notification_settings):
+                logger.info(f"Quiet hours active for tenant {tenant_id}, skipping lead notification")
+                return {"status": "quiet_hours", "reason": "outside_notification_hours"}
+
+        # Build notification message
+        customer_label = customer_name or "Unknown Customer"
+        contact_info = customer_phone or customer_email or "No contact info"
+
+        # Format: "Hot Lead! John via Chat: "I want to sign up my 4 year old" Phone: +1234567890"
+        message = f"Hot Lead! {customer_label} via {channel.title()}:\n"
+        message += f'"{message_preview[:100]}"\n'
+        if customer_phone:
+            message += f"Phone: {customer_phone}"
+        elif customer_email:
+            message += f"Email: {customer_email}"
+
+        metadata = {
+            "customer_name": customer_name,
+            "customer_phone": customer_phone,
+            "customer_email": customer_email,
+            "channel": channel,
+            "message_preview": message_preview,
+            "confidence": confidence,
+            "keywords": keywords,
+            "conversation_id": conversation_id,
+            "lead_id": lead_id,
+        }
+
+        logger.info(
+            f"Sending high intent lead alert - tenant_id={tenant_id}, "
+            f"customer={customer_name or 'Unknown'}, channel={channel}, "
+            f"confidence={confidence:.2f}, keywords={keywords}"
+        )
+
+        # Send SMS directly to configured phone (bypass admin lookup)
+        result = await self._send_lead_notification_sms(
+            tenant_id=tenant_id,
+            message=message,
+            lead_notification_settings=lead_notification_settings,
+        )
+
+        return {
+            "status": result.get("status", "error"),
+            "notification_type": NotificationType.HIGH_INTENT_LEAD,
+            "metadata": metadata,
+            "sms_result": result,
+        }
+
+    async def _get_lead_notification_settings(self, tenant_id: int) -> dict:
+        """Get lead notification settings from tenant SMS config.
+
+        Args:
+            tenant_id: Tenant ID
+
+        Returns:
+            Dict with lead notification settings (enabled, phone, channels, quiet_hours_enabled)
+        """
+        from app.persistence.models.tenant_sms_config import TenantSmsConfig
+
+        stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
+        result = await self.session.execute(stmt)
+        sms_config = result.scalar_one_or_none()
+
+        if not sms_config:
+            return {"enabled": False}
+
+        # Lead notification settings are stored in the settings JSON column
+        settings_json = sms_config.settings or {}
+        if isinstance(settings_json, str):
+            import json
+            settings_json = json.loads(settings_json)
+
+        return {
+            "enabled": settings_json.get("lead_notification_enabled", False),
+            "phone": settings_json.get("lead_notification_phone"),
+            "channels": settings_json.get("lead_notification_channels", ["sms", "chat", "voice", "email"]),
+            "quiet_hours_enabled": settings_json.get("lead_notification_quiet_hours_enabled", True),
+        }
+
+    async def _is_lead_notification_quiet_hours(
+        self,
+        tenant_id: int,
+        lead_notification_settings: dict,
+    ) -> bool:
+        """Check if current time is within quiet hours for lead notifications.
+
+        Uses fixed quiet hours: 9 PM - 8 AM in tenant's timezone.
+
+        Args:
+            tenant_id: Tenant ID
+            lead_notification_settings: Lead notification settings
+
+        Returns:
+            True if currently in quiet hours
+        """
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        # Get tenant timezone from SMS config
+        from app.persistence.models.tenant_sms_config import TenantSmsConfig
+
+        stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
+        result = await self.session.execute(stmt)
+        sms_config = result.scalar_one_or_none()
+
+        timezone_str = "America/Chicago"  # Default
+        if sms_config:
+            timezone_str = sms_config.timezone or "America/Chicago"
+
+        try:
+            tz = ZoneInfo(timezone_str)
+        except Exception:
+            logger.warning(f"Invalid timezone: {timezone_str}, using America/Chicago")
+            tz = ZoneInfo("America/Chicago")
+
+        now = datetime.now(tz)
+        current_hour = now.hour
+
+        # Quiet hours: 9 PM (21:00) to 8 AM (08:00)
+        # In quiet hours if hour >= 21 OR hour < 8
+        return current_hour >= 21 or current_hour < 8
+
+    async def _send_lead_notification_sms(
+        self,
+        tenant_id: int,
+        message: str,
+        lead_notification_settings: dict,
+    ) -> dict[str, Any]:
+        """Send SMS notification to the configured lead notification phone.
+
+        Args:
+            tenant_id: Tenant ID
+            message: SMS message
+            lead_notification_settings: Lead notification settings (contains phone override)
+
+        Returns:
+            Result dictionary with status and details
+        """
+        from app.persistence.models.tenant_sms_config import TenantSmsConfig
+        from app.persistence.models.tenant import TenantBusinessProfile
+        from app.infrastructure.telephony.telnyx_provider import TelnyxSmsProvider
+
+        # Get SMS config for Telnyx credentials
+        stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
+        result = await self.session.execute(stmt)
+        sms_config = result.scalar_one_or_none()
+
+        if not sms_config:
+            logger.warning(f"No SMS config for tenant {tenant_id}, cannot send lead notification")
+            return {"status": "not_configured", "note": "Tenant SMS not configured"}
+
+        # Determine destination phone:
+        # 1. First check lead_notification_phone override
+        # 2. Fall back to business profile phone
+        to_number = lead_notification_settings.get("phone")
+
+        if not to_number:
+            # Get business profile phone
+            stmt = select(TenantBusinessProfile).where(TenantBusinessProfile.tenant_id == tenant_id)
+            result = await self.session.execute(stmt)
+            business_profile = result.scalar_one_or_none()
+
+            if business_profile:
+                to_number = business_profile.phone_number
+
+        if not to_number:
+            logger.warning(f"No phone number for lead notification - tenant {tenant_id}")
+            return {"status": "no_phone", "note": "No notification phone configured"}
+
+        # Get Telnyx config
+        from_number = sms_config.telnyx_phone_number
+        api_key = sms_config.telnyx_api_key
+        messaging_profile_id = sms_config.telnyx_messaging_profile_id
+
+        if not from_number or not api_key:
+            logger.warning(f"No Telnyx config for tenant {tenant_id}, cannot send lead notification")
+            return {"status": "not_configured", "note": "Telnyx SMS not configured"}
+
+        # Format destination phone number (ensure E.164 format)
+        if not to_number.startswith("+"):
+            to_number = f"+1{to_number.replace('-', '').replace(' ', '').replace('(', '').replace(')', '')}"
+
+        try:
+            telnyx_provider = TelnyxSmsProvider(
+                api_key=api_key,
+                messaging_profile_id=messaging_profile_id,
+            )
+
+            sms_result = await telnyx_provider.send_sms(
+                to=to_number,
+                from_=from_number,
+                body=message[:160],  # SMS character limit
+            )
+
+            logger.info(
+                f"Lead notification SMS sent - tenant_id={tenant_id}, "
+                f"to={to_number}, message_id={sms_result.message_id}"
+            )
+
+            return {
+                "status": "sent",
+                "message_id": sms_result.message_id,
+                "to": to_number,
+                "provider": "telnyx",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to send lead notification SMS: {e}", exc_info=True)
+            return {"status": "error", "error": str(e), "to": to_number}
+
     async def _create_in_app_notification(
         self,
         tenant_id: int,

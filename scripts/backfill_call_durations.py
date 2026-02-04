@@ -56,8 +56,10 @@ async def backfill():
                 if conv_data:
                     conv_created = conv_data.get("created_at")
                     conv_updated = conv_data.get("updated_at")
-                    print(f"  Conv timestamps: created={conv_created}, updated={conv_updated}")
+                    last_message_at = conv_data.get("last_message_at")
+                    print(f"  Conv timestamps: created={conv_created}, updated={conv_updated}, last_message_at={last_message_at}")
 
+                    # Try created_at vs updated_at first
                     if conv_created and conv_updated and conv_created != conv_updated:
                         from dateutil import parser as date_parser
                         start_dt = date_parser.parse(str(conv_created))
@@ -70,6 +72,21 @@ async def backfill():
                             call.ended_at = end_dt.replace(tzinfo=None)
                             updated += 1
                             print(f"Call {call.id}: Updated duration to {calculated_duration}s")
+                            continue
+
+                    # Fallback: try created_at vs last_message_at (useful for 1-message conversations)
+                    if conv_created and last_message_at and conv_created != last_message_at:
+                        from dateutil import parser as date_parser
+                        start_dt = date_parser.parse(str(conv_created))
+                        end_dt = date_parser.parse(str(last_message_at))
+                        calculated_duration = int((end_dt - start_dt).total_seconds())
+
+                        if calculated_duration > 0:
+                            call.duration = calculated_duration
+                            call.started_at = start_dt.replace(tzinfo=None)
+                            call.ended_at = end_dt.replace(tzinfo=None)
+                            updated += 1
+                            print(f"Call {call.id}: Updated duration to {calculated_duration}s (from last_message_at)")
                             continue
 
                     # Fallback: try message timestamps

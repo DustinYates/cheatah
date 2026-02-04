@@ -129,6 +129,12 @@ class Settings(BaseSettings):
     customer_service_cache_ttl_seconds: int = 3600  # 1 hour cache for Jackrabbit customers
     customer_lookup_retry_count: int = 2  # Number of retries for failed lookups
 
+    # Admin Alerting (for system-wide issue notifications)
+    admin_alert_phone: str | None = None  # Global admin phone for critical alerts (E.164)
+    admin_alert_email: str | None = None  # Global admin email for alerts (not currently used)
+    admin_alert_enabled: bool = True  # Master toggle for admin alerts
+    admin_alert_error_threshold: int = 3  # Number of errors before alerting for service issues
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

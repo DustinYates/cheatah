@@ -1824,6 +1824,8 @@ async def telnyx_ai_call_complete(
         if call:
             # Update existing call with any new data
             logger.info(f"Found existing Call record: id={call.id}, updating with insights data")
+            # Mark as completed since this is the call completion webhook
+            call.status = "completed"
             # Only update fields if we have new non-empty values
             if duration and int(duration) > 0 and (not call.duration or call.duration == 0):
                 call.duration = int(duration)
@@ -1834,6 +1836,10 @@ async def telnyx_ai_call_complete(
                 call.started_at = actual_start
             if actual_end != now and (not call.ended_at or call.ended_at == call.started_at):
                 call.ended_at = actual_end
+            # Fallback: if ended_at is still NULL, set it to now (call has ended)
+            if not call.ended_at:
+                call.ended_at = now
+                logger.info(f"Set ended_at to now as fallback for call {call.id}")
             # Detect and set language if not already set
             if not call.language and to_number:
                 call.language = await _detect_language_from_phone(to_number, db)
@@ -1842,8 +1848,8 @@ async def telnyx_ai_call_complete(
             detected_language = await _detect_language_from_phone(to_number, db) if to_number else None
 
             # Create new Call record
-            # Only set ended_at if we have a real end time (not defaulted to now)
-            # This prevents started_at==ended_at which breaks duration calculations
+            # For call completion webhook, always set ended_at (call has ended)
+            # If we have explicit different timestamps use them, otherwise use now
             call = Call(
                 tenant_id=tenant_id,
                 call_sid=call_sid_to_use,
@@ -1854,7 +1860,7 @@ async def telnyx_ai_call_complete(
                 duration=int(duration) if duration else 0,
                 recording_url=recording_url or None,
                 started_at=actual_start,
-                ended_at=actual_end if actual_end != actual_start else None,
+                ended_at=actual_end if actual_end != actual_start else now,
                 language=detected_language,
             )
             db.add(call)
@@ -1884,6 +1890,9 @@ async def telnyx_ai_call_complete(
                 if conv_data:
                     conv_created = conv_data.get("created_at")
                     conv_updated = conv_data.get("updated_at")
+                    last_message_at = conv_data.get("last_message_at")
+
+                    # Try created_at vs updated_at first
                     if conv_created and conv_updated and conv_created != conv_updated:
                         from dateutil import parser as date_parser
                         start_dt = date_parser.parse(str(conv_created))
@@ -1894,6 +1903,17 @@ async def telnyx_ai_call_complete(
                             call.started_at = start_dt.replace(tzinfo=None)
                             call.ended_at = end_dt.replace(tzinfo=None)
                             logger.info(f"Calculated duration from Telnyx conversation timestamps: {calculated_duration}s")
+                    # Fallback: try created_at vs last_message_at (useful for 1-message conversations)
+                    elif conv_created and last_message_at and conv_created != last_message_at:
+                        from dateutil import parser as date_parser
+                        start_dt = date_parser.parse(str(conv_created))
+                        end_dt = date_parser.parse(str(last_message_at))
+                        calculated_duration = int((end_dt - start_dt).total_seconds())
+                        if calculated_duration > 0:
+                            call.duration = calculated_duration
+                            call.started_at = start_dt.replace(tzinfo=None)
+                            call.ended_at = end_dt.replace(tzinfo=None)
+                            logger.info(f"Calculated duration from last_message_at: {calculated_duration}s")
                     else:
                         # Fallback: use conversation messages timestamps
                         conv_id = conv_data.get("id")

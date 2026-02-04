@@ -75,6 +75,11 @@ class SmsSettingsResponse(BaseModel):
     # Subject-specific templates for email follow-ups
     # Maps subject prefix to {message, delay_minutes}
     followup_subject_templates: dict[str, SubjectTemplate] | None
+    # Lead notification settings
+    lead_notification_enabled: bool = False
+    lead_notification_phone: str | None = None  # Override phone (defaults to business phone)
+    lead_notification_channels: list[str] = ["sms", "chat", "voice", "email"]
+    lead_notification_quiet_hours_enabled: bool = True
 
 
 class UpdateSmsSettingsRequest(BaseModel):
@@ -94,6 +99,11 @@ class UpdateSmsSettingsRequest(BaseModel):
     # Subject-specific templates for email follow-ups
     # Maps email subject prefix to {message, delay_minutes}
     followup_subject_templates: dict[str, SubjectTemplate] | None = None
+    # Lead notification settings
+    lead_notification_enabled: bool = False
+    lead_notification_phone: str | None = None  # Override phone (defaults to business phone)
+    lead_notification_channels: list[str] = ["sms", "chat", "voice", "email"]
+    lead_notification_quiet_hours_enabled: bool = True
     # Admin-only: update assigned phone number
     phone_number: str | None = None
 
@@ -156,6 +166,10 @@ async def get_sms_settings(
             followup_sources=["email", "voice_call", "sms"],
             followup_initial_message=None,
             followup_subject_templates=None,
+            lead_notification_enabled=False,
+            lead_notification_phone=None,
+            lead_notification_channels=["sms", "chat", "voice", "email"],
+            lead_notification_quiet_hours_enabled=True,
         )
 
     # Extract follow-up settings from config.settings JSON
@@ -175,6 +189,10 @@ async def get_sms_settings(
         followup_sources=settings_json.get("followup_sources", ["email", "voice_call", "sms"]),
         followup_initial_message=settings_json.get("followup_initial_message"),
         followup_subject_templates=normalize_subject_templates(settings_json.get("followup_subject_templates")),
+        lead_notification_enabled=settings_json.get("lead_notification_enabled", False),
+        lead_notification_phone=settings_json.get("lead_notification_phone"),
+        lead_notification_channels=settings_json.get("lead_notification_channels", ["sms", "chat", "voice", "email"]),
+        lead_notification_quiet_hours_enabled=settings_json.get("lead_notification_quiet_hours_enabled", True),
     )
 
 
@@ -228,6 +246,10 @@ async def update_sms_settings(
         "followup_sources": settings_data.followup_sources,
         "followup_initial_message": settings_data.followup_initial_message,
         "followup_subject_templates": templates_dict,
+        "lead_notification_enabled": settings_data.lead_notification_enabled,
+        "lead_notification_phone": settings_data.lead_notification_phone,
+        "lead_notification_channels": settings_data.lead_notification_channels,
+        "lead_notification_quiet_hours_enabled": settings_data.lead_notification_quiet_hours_enabled,
     }
 
     if not config:
@@ -288,6 +310,10 @@ async def update_sms_settings(
         followup_sources=settings_json.get("followup_sources", ["email", "voice_call", "sms"]),
         followup_initial_message=settings_json.get("followup_initial_message"),
         followup_subject_templates=normalize_subject_templates(settings_json.get("followup_subject_templates")),
+        lead_notification_enabled=settings_json.get("lead_notification_enabled", False),
+        lead_notification_phone=settings_json.get("lead_notification_phone"),
+        lead_notification_channels=settings_json.get("lead_notification_channels", ["sms", "chat", "voice", "email"]),
+        lead_notification_quiet_hours_enabled=settings_json.get("lead_notification_quiet_hours_enabled", True),
     )
 
 

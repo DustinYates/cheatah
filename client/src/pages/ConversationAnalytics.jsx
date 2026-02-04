@@ -1058,19 +1058,54 @@ export default function ConversationAnalytics() {
                 </div>
               )}
 
-              {/* Time of Day */}
+              {/* Time of Day - Histogram */}
               {Object.keys(data.demand.by_hour_of_day).length > 0 && (
-                <div>
+                <div style={{ gridColumn: 'span 2' }}>
                   <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>Peak Hours</h3>
                   {(() => {
                     const hours = data.demand.by_hour_of_day;
-                    const sortedHours = Object.entries(hours).sort((a, b) => b[1] - a[1]).slice(0, 5);
-                    return sortedHours.map(([hour, count]) => (
-                      <div key={hour} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', fontSize: '0.875rem' }}>
-                        <span>{parseInt(hour) === 0 ? '12 AM' : parseInt(hour) < 12 ? `${hour} AM` : parseInt(hour) === 12 ? '12 PM' : `${parseInt(hour) - 12} PM`}</span>
-                        <span style={{ fontWeight: 600 }}>{count} requests</span>
+                    const maxCount = Math.max(1, ...Object.values(hours));
+                    const formatHourLabel = (h) => {
+                      const hour = parseInt(h);
+                      if (hour === 0) return '12a';
+                      if (hour < 12) return `${hour}a`;
+                      if (hour === 12) return '12p';
+                      return `${hour - 12}p`;
+                    };
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '100px' }}>
+                          {Array.from({ length: 24 }, (_, hour) => {
+                            const count = hours[hour] || hours[String(hour)] || 0;
+                            const heightPct = (count / maxCount) * 100;
+                            return (
+                              <div
+                                key={hour}
+                                style={{
+                                  flex: 1,
+                                  height: `${Math.max(heightPct, count > 0 ? 4 : 0)}%`,
+                                  backgroundColor: count > 0 ? 'var(--color-primary)' : 'var(--color-bg-light)',
+                                  borderRadius: '2px 2px 0 0',
+                                  minHeight: count > 0 ? '4px' : '0',
+                                  cursor: 'pointer',
+                                  transition: 'opacity 0.15s',
+                                }}
+                                title={`${formatHourLabel(hour)}: ${count} requests`}
+                                onMouseEnter={(e) => (e.target.style.opacity = '0.8')}
+                                onMouseLeave={(e) => (e.target.style.opacity = '1')}
+                              />
+                            );
+                          })}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.625rem', color: 'var(--color-text-muted)' }}>
+                          <span>12a</span>
+                          <span>6a</span>
+                          <span>12p</span>
+                          <span>6p</span>
+                          <span>11p</span>
+                        </div>
                       </div>
-                    ));
+                    );
                   })()}
                 </div>
               )}

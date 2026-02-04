@@ -31,6 +31,7 @@ from app.persistence.models.sms_burst_incident import SmsBurstIncident
 from app.persistence.models.sms_burst_config import SmsBurstConfig
 from app.persistence.models.communications_health_snapshot import CommunicationsHealthSnapshot
 from app.persistence.models.anomaly_alert import AnomalyAlert
+from app.persistence.models.service_health_incident import ServiceHealthIncident
 
 __all__ = [
     "AuditAction",
@@ -73,5 +74,6 @@ __all__ = [
     "SmsBurstConfig",
     "CommunicationsHealthSnapshot",
     "AnomalyAlert",
+    "ServiceHealthIncident",
 ]
 

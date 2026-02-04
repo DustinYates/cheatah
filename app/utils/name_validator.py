@@ -15,7 +15,7 @@ ACKNOWLEDGEMENT_WORDS = {
     "thanks", "thank", "thx", "ty", "thank you", "thankyou",
     "please", "pls", "plz",
     # Negatives
-    "no", "nope", "nah", "na", "nay",
+    "no", "nope", "nah", "na", "nay", "not",
     # Common short responses
     "can", "will", "would", "could", "should", "may", "might",
     "maybe", "perhaps", "possibly",
@@ -30,6 +30,12 @@ ACKNOWLEDGEMENT_WORDS = {
     # Generic terms
     "name", "email", "phone", "address", "contact",
     "unknown", "anonymous", "none", "null", "n/a", "na", "nil",
+    # Common English words that are NOT names (regex extraction false positives)
+    "the", "and", "for", "are", "but", "you", "all", "here", "there",
+    "this", "that", "with", "from", "have", "has", "had", "been", "being",
+    "was", "were", "any", "some", "about", "into", "over", "also",
+    "looking", "calling", "texting", "asking", "waiting", "checking",
+    "need", "want", "help", "get", "got", "let", "see", "know",
     # Skill level / descriptor words (not names)
     "beginner", "intermediate", "advanced", "experienced",
     "adult", "child", "children", "kid", "kids", "teen", "infant",

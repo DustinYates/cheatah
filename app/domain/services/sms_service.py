@@ -305,6 +305,26 @@ class SmsService:
             messages=messages,
         )
 
+        # ============================================================
+        # HIGH INTENT LEAD NOTIFICATION: Check if this conversation
+        # shows high enrollment intent and notify business owner
+        # ============================================================
+        try:
+            # Get updated lead with any newly captured info
+            updated_lead = await self._get_lead_for_conversation(tenant_id, conversation.id)
+            await self._check_and_notify_high_intent_lead(
+                tenant_id=tenant_id,
+                conversation_id=conversation.id,
+                user_message=message_body,
+                messages=messages,
+                lead=updated_lead,
+                phone_number=phone_number,
+                channel="sms",
+            )
+        except Exception as e:
+            # Don't let notification failure affect the SMS flow
+            logger.error(f"Failed to check/send high intent lead notification: {e}", exc_info=True)
+
         # Format response for SMS (short, no markdown)
         formatted_response = self._format_sms_response(llm_response)
         logger.info(f"SMS LLM response received - tenant_id={tenant_id}, latency_ms={llm_latency_ms}, response_length={len(formatted_response)}")
@@ -585,6 +605,83 @@ class SmsService:
         """
         lead_repo = LeadRepository(self.session)
         return await lead_repo.get_by_conversation(tenant_id, conversation_id)
+
+    async def _check_and_notify_high_intent_lead(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        user_message: str,
+        messages: list,
+        lead,
+        phone_number: str,
+        channel: str = "sms",
+    ) -> None:
+        """Check for high enrollment intent and notify business owner if detected.
+
+        Args:
+            tenant_id: Tenant ID
+            conversation_id: Conversation ID
+            user_message: Current user message
+            messages: Full conversation history
+            lead: Lead object (if exists)
+            phone_number: User's phone number
+            channel: Communication channel
+        """
+        from app.domain.services.intent_detector import IntentDetector
+        from app.infrastructure.notifications import NotificationService
+
+        # Build conversation history strings for intent detection
+        conversation_history = [msg.content for msg in messages if hasattr(msg, "content")]
+
+        # For SMS, we always have phone
+        has_phone = True
+        has_email = bool(lead and lead.email)
+
+        # Detect enrollment intent
+        intent_detector = IntentDetector()
+        intent_result = intent_detector.detect_enrollment_intent(
+            message=user_message,
+            conversation_history=conversation_history,
+            has_phone=has_phone,
+            has_email=has_email,
+        )
+
+        if not intent_result.is_high_intent:
+            logger.debug(
+                f"No high intent detected (SMS) - tenant_id={tenant_id}, "
+                f"conversation_id={conversation_id}, confidence={intent_result.confidence:.2f}"
+            )
+            return
+
+        logger.info(
+            f"High enrollment intent detected (SMS) - tenant_id={tenant_id}, "
+            f"conversation_id={conversation_id}, confidence={intent_result.confidence:.2f}, "
+            f"keywords={intent_result.keywords}"
+        )
+
+        # Get customer info
+        customer_name = lead.name if lead else None
+        customer_email = lead.email if lead else None
+
+        # Send notification
+        notification_service = NotificationService(self.session)
+        result = await notification_service.notify_high_intent_lead(
+            tenant_id=tenant_id,
+            customer_name=customer_name,
+            customer_phone=phone_number,
+            customer_email=customer_email,
+            channel=channel,
+            message_preview=user_message[:150],
+            confidence=intent_result.confidence,
+            keywords=intent_result.keywords,
+            conversation_id=conversation_id,
+            lead_id=lead.id if lead else None,
+        )
+
+        logger.info(
+            f"Lead notification result (SMS) - tenant_id={tenant_id}, "
+            f"conversation_id={conversation_id}, status={result.get('status')}"
+        )
 
     async def _build_handoff_context(self, source_conversation_id: int) -> str | None:
         """Build context string from the source chat conversation for handoff continuity.

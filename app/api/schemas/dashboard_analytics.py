@@ -67,6 +67,17 @@ class HeatmapResponse(BaseModel):
     cells: list[HeatmapCell] = []
 
 
+class YearlyActivityCell(BaseModel):
+    date: str  # YYYY-MM-DD
+    calls: int = 0
+    sms: int = 0
+    emails: int = 0
+
+
+class YearlyActivityResponse(BaseModel):
+    cells: list[YearlyActivityCell] = []
+
+
 # --- Anomaly Alerts ---
 
 class AnomalyAlertResponse(BaseModel):

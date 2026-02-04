@@ -1,0 +1,128 @@
+.yearly-graph-container {
+  position: relative;
+  padding-bottom: 40px;
+}
+
+.yearly-graph {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-x: auto;
+}
+
+.yearly-month-row {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.yearly-day-spacer {
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.yearly-month-cell {
+  width: 12px;
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.yearly-day-row {
+  display: flex;
+  gap: 3px;
+}
+
+.yearly-day-label {
+  width: 28px;
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  height: 12px;
+}
+
+.yearly-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: transform 0.1s;
+  flex-shrink: 0;
+}
+
+.yearly-cell:hover {
+  transform: scale(1.3);
+  z-index: 1;
+}
+
+/* GitHub-style green levels */
+.yearly-cell.level-0 {
+  background-color: var(--color-bg-tertiary, #ebedf0);
+}
+
+.yearly-cell.level-1 {
+  background-color: #9be9a8;
+}
+
+.yearly-cell.level-2 {
+  background-color: #40c463;
+}
+
+.yearly-cell.level-3 {
+  background-color: #30a14e;
+}
+
+.yearly-cell.level-4 {
+  background-color: #216e39;
+}
+
+.yearly-cell.level-future {
+  background-color: transparent;
+  cursor: default;
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  .yearly-cell.level-0 {
+    background-color: #161b22;
+  }
+}
+
+.yearly-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  margin-top: 8px;
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+}
+
+.yearly-legend .yearly-cell {
+  cursor: default;
+}
+
+.yearly-legend .yearly-cell:hover {
+  transform: none;
+}
+
+.yearly-legend-label {
+  margin: 0 4px;
+}
+
+.yearly-tooltip {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-bg-dark, #1a1a2e);
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  z-index: 10;
+}

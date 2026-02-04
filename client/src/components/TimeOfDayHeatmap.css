@@ -1,10 +1,12 @@
 .heatmap-container {
   position: relative;
+  padding-bottom: 32px;
 }
 .heatmap-grid {
   display: grid;
-  grid-template-columns: 40px repeat(24, 1fr);
-  gap: 2px;
+  grid-template-columns: 40px repeat(24, 12px);
+  grid-auto-rows: 12px;
+  gap: 3px;
 }
 .heatmap-corner {
   /* empty top-left */
@@ -13,7 +15,7 @@
   font-size: 0.6rem;
   color: var(--color-text-muted);
   text-align: center;
-  padding-bottom: 2px;
+  line-height: 12px;
 }
 .heatmap-day-label {
   font-size: 0.7rem;
@@ -21,11 +23,12 @@
   display: flex;
   align-items: center;
   font-weight: 500;
+  height: 12px;
 }
 .heatmap-cell {
-  aspect-ratio: 1;
+  width: 12px;
+  height: 12px;
   border-radius: 2px;
-  min-height: 16px;
   cursor: pointer;
   transition: transform 0.1s;
 }
@@ -36,7 +39,7 @@
 }
 .heatmap-tooltip-fixed {
   position: absolute;
-  bottom: -28px;
+  bottom: 0;
   left: 50%;
   transform: translateX(-50%);
   background: var(--color-bg-dark, #1a1a2e);

@@ -39,6 +39,8 @@ from app.api.schemas.dashboard_analytics import (
     SmsBurstIncidentResponse,
     SmsBurstSummary,
     TrendComparison,
+    YearlyActivityCell,
+    YearlyActivityResponse,
 )
 from app.domain.services.chi_service import CHIService
 from app.persistence.database import get_db
@@ -398,6 +400,82 @@ async def get_communications_heatmap(
                 cells.append(HeatmapCell(day=day, hour=hour, calls=c, sms=s))
 
     return HeatmapResponse(cells=cells)
+
+
+@router.get("/communications-health/yearly", response_model=YearlyActivityResponse)
+async def get_yearly_activity(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> YearlyActivityResponse:
+    """Get daily activity data for the past year (GitHub-style contribution graph)."""
+    now = datetime.utcnow()
+    start = now - timedelta(days=365)
+
+    # Calls by date
+    call_stmt = (
+        select(
+            func.date(Call.started_at).label("date"),
+            func.count().label("cnt"),
+        )
+        .where(Call.tenant_id == tenant_id, Call.started_at >= start)
+        .group_by(func.date(Call.started_at))
+    )
+    call_res = await db.execute(call_stmt)
+    call_data = {str(r.date): r.cnt for r in call_res.all()}
+
+    # SMS by date
+    sms_stmt = (
+        select(
+            func.date(Message.created_at).label("date"),
+            func.count().label("cnt"),
+        )
+        .join(Conversation)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.channel == "sms",
+            Message.created_at >= start,
+        )
+        .group_by(func.date(Message.created_at))
+    )
+    sms_res = await db.execute(sms_stmt)
+    sms_data = {str(r.date): r.cnt for r in sms_res.all()}
+
+    # Emails by date
+    email_stmt = (
+        select(
+            func.date(Message.created_at).label("date"),
+            func.count().label("cnt"),
+        )
+        .join(Conversation)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.channel == "email",
+            Message.created_at >= start,
+        )
+        .group_by(func.date(Message.created_at))
+    )
+    email_res = await db.execute(email_stmt)
+    email_data = {str(r.date): r.cnt for r in email_res.all()}
+
+    # Generate all dates in range
+    cells = []
+    current = start.date()
+    end_date = now.date()
+    while current <= end_date:
+        date_str = current.isoformat()
+        calls = call_data.get(date_str, 0)
+        sms = sms_data.get(date_str, 0)
+        emails = email_data.get(date_str, 0)
+        if calls or sms or emails:
+            cells.append(YearlyActivityCell(
+                date=date_str,
+                calls=calls,
+                sms=sms,
+                emails=emails,
+            ))
+        current += timedelta(days=1)
+
+    return YearlyActivityResponse(cells=cells)
 
 
 # ============================================================

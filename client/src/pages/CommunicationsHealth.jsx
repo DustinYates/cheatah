@@ -5,6 +5,7 @@ import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import MetricCard from '../components/MetricCard';
 import AlertBanner from '../components/AlertBanner';
 import TimeOfDayHeatmap from '../components/TimeOfDayHeatmap';
+import YearlyActivityGraph from '../components/YearlyActivityGraph';
 import SideDrawer from '../components/SideDrawer';
 import './CommunicationsHealth.css';
 
@@ -31,6 +32,7 @@ export default function CommunicationsHealth() {
   const { selectedTenantId } = useAuth();
   const [data, setData] = useState(null);
   const [heatmap, setHeatmap] = useState(null);
+  const [yearly, setYearly] = useState(null);
   const [anomalies, setAnomalies] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -43,13 +45,15 @@ export default function CommunicationsHealth() {
     setLoading(true);
     setError(null);
     try {
-      const [health, heatmapRes, anomalyRes] = await Promise.all([
+      const [health, heatmapRes, yearlyRes, anomalyRes] = await Promise.all([
         api.request(`/analytics/communications-health?days=${days}`),
         api.request(`/analytics/communications-health/heatmap?days=${days}`),
+        api.request('/analytics/communications-health/yearly'),
         api.request('/analytics/anomalies?status=active'),
       ]);
       setData(health);
       setHeatmap(heatmapRes);
+      setYearly(yearlyRes);
       setAnomalies(anomalyRes);
     } catch (err) {
       setError(err.message);
@@ -177,6 +181,12 @@ export default function CommunicationsHealth() {
       <section className="comms-health-card">
         <h2>Volume by Time of Day</h2>
         <TimeOfDayHeatmap cells={heatmap?.cells || []} metric="calls" />
+      </section>
+
+      {/* Yearly Activity */}
+      <section className="comms-health-card">
+        <h2>Activity Over the Past Year</h2>
+        <YearlyActivityGraph data={yearly?.cells || []} metric="total" />
       </section>
 
       {/* Anomaly alerts */}

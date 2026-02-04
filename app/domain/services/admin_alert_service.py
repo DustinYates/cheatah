@@ -1,9 +1,14 @@
-"""Admin alert service for system-wide issue notifications.
+"""Admin alert service for per-tenant issue notifications.
 
-Sends SMS notifications to admins when tenants experience issues:
+Sends SMS notifications to tenant admins when issues occur:
 - SMS bursts (spam/loops)
 - Anomaly alerts (volume drops, escalation spikes)
 - Service health issues (API failures)
+
+Each tenant can configure their own alert phone and enable/disable alerts
+via escalation_settings in TenantPromptConfig:
+- escalation_settings.admin_alerts_enabled (default: True)
+- escalation_settings.alert_phone_override (or falls back to business profile phone)
 """
 
 import logging
@@ -27,13 +32,52 @@ BURST_COOLDOWN_MINUTES = 30
 ANOMALY_COOLDOWN_MINUTES = 60
 SERVICE_HEALTH_COOLDOWN_MINUTES = 30
 
+# Default error threshold for service health alerts
+DEFAULT_ERROR_THRESHOLD = 3
+
 
 class AdminAlertService:
-    """Centralized service for admin notifications about system issues."""
+    """Centralized service for admin notifications about system issues.
+
+    Configuration is per-tenant via escalation_settings in TenantPromptConfig:
+    {
+        "escalation_settings": {
+            "admin_alerts_enabled": true,  // Toggle alerts on/off
+            "alert_phone_override": "+1234567890"  // Override destination phone
+        }
+    }
+    """
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize admin alert service."""
         self.session = session
+
+    async def _get_tenant_alert_settings(self, tenant_id: int) -> dict[str, Any]:
+        """Get tenant's admin alert settings from escalation_settings.
+
+        Returns dict with:
+            - enabled: bool (default True)
+            - alert_phone: str | None
+        """
+        from app.persistence.models.tenant_prompt_config import TenantPromptConfig
+
+        try:
+            stmt = select(TenantPromptConfig.config_json).where(
+                TenantPromptConfig.tenant_id == tenant_id
+            )
+            result = await self.session.execute(stmt)
+            config_json = result.scalar_one_or_none()
+
+            if config_json:
+                escalation_settings = config_json.get("escalation_settings", {})
+                return {
+                    "enabled": escalation_settings.get("admin_alerts_enabled", True),
+                    "alert_phone": escalation_settings.get("alert_phone_override"),
+                }
+        except Exception as e:
+            logger.warning(f"Failed to get alert settings for tenant {tenant_id}: {e}")
+
+        return {"enabled": True, "alert_phone": None}
 
     async def notify_sms_burst(
         self,
@@ -47,8 +91,10 @@ class AdminAlertService:
         Returns:
             Dictionary with notification status and details
         """
-        if not settings.admin_alert_enabled:
-            return {"status": "disabled", "reason": "admin_alert_enabled is False"}
+        # Check per-tenant settings
+        alert_settings = await self._get_tenant_alert_settings(incident.tenant_id)
+        if not alert_settings["enabled"]:
+            return {"status": "disabled", "reason": "admin_alerts_enabled is False for tenant"}
 
         # Check if already notified within cooldown period
         if incident.admin_notified_at:
@@ -100,8 +146,10 @@ class AdminAlertService:
         Returns:
             Dictionary with notification status and details
         """
-        if not settings.admin_alert_enabled:
-            return {"status": "disabled", "reason": "admin_alert_enabled is False"}
+        # Check per-tenant settings
+        alert_settings = await self._get_tenant_alert_settings(alert.tenant_id)
+        if not alert_settings["enabled"]:
+            return {"status": "disabled", "reason": "admin_alerts_enabled is False for tenant"}
 
         # Check if already notified within cooldown period
         if alert.admin_notified_at:
@@ -163,8 +211,16 @@ class AdminAlertService:
         Returns:
             Dictionary with notification status and details
         """
-        if not settings.admin_alert_enabled:
-            return {"status": "disabled", "reason": "admin_alert_enabled is False"}
+        # For tenant-specific incidents, check per-tenant settings
+        # For global incidents (no tenant_id), use global setting
+        if incident.tenant_id:
+            alert_settings = await self._get_tenant_alert_settings(incident.tenant_id)
+            if not alert_settings["enabled"]:
+                return {"status": "disabled", "reason": "admin_alerts_enabled is False for tenant"}
+        else:
+            # Global incident - use global setting
+            if not settings.admin_alert_enabled:
+                return {"status": "disabled", "reason": "global admin_alert_enabled is False"}
 
         # Check if already notified within cooldown period
         if incident.admin_notified_at:
@@ -305,13 +361,19 @@ class AdminAlertService:
         self,
         tenant_id: int,
         message: str,
+        alert_phone: str | None = None,
     ) -> dict[str, Any]:
         """Send SMS notification to tenant admin using tenant's Telnyx config.
 
-        Uses the business profile phone or alert_phone_override as destination.
+        Args:
+            tenant_id: The tenant to send the alert for
+            message: The alert message
+            alert_phone: Pre-fetched alert phone (optional, will look up if not provided)
+
+        Uses alert_phone_override from escalation_settings, or falls back to
+        business profile phone.
         """
         from app.infrastructure.telephony.telnyx_provider import TelnyxSmsProvider
-        from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 
         try:
             # Get tenant's SMS config for Telnyx credentials
@@ -323,18 +385,12 @@ class AdminAlertService:
                 logger.warning(f"No Telnyx config for tenant {tenant_id}, cannot send admin SMS")
                 return {"status": "not_configured", "reason": "no Telnyx config"}
 
-            # Get destination phone (alert_phone_override or business profile)
-            to_number = None
-
-            # Check for alert_phone_override in prompt config
-            stmt = select(TenantPromptConfig.config_json).where(
-                TenantPromptConfig.tenant_id == tenant_id
-            )
-            result = await self.session.execute(stmt)
-            config_json = result.scalar_one_or_none()
-            if config_json:
-                escalation_settings = config_json.get("escalation_settings", {})
-                to_number = escalation_settings.get("alert_phone_override")
+            # Get destination phone if not provided
+            to_number = alert_phone
+            if not to_number:
+                # Look up from escalation_settings
+                alert_settings = await self._get_tenant_alert_settings(tenant_id)
+                to_number = alert_settings.get("alert_phone")
 
             # Fall back to business profile phone
             if not to_number:

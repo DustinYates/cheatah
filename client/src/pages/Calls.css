@@ -426,6 +426,69 @@
   color: #059669;
 }
 
+/* Transcript Section */
+.call-transcript-section {
+  background: var(--color-bg-light);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.call-transcript-section h3 {
+  margin: 0 0 var(--spacing-sm) 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.transcript-messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.transcript-message {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+}
+
+.transcript-message.transcript-customer {
+  background: var(--color-bg-card);
+  border-left: 3px solid #3b82f6;
+}
+
+.transcript-message.transcript-agent {
+  background: rgba(16, 185, 129, 0.08);
+  border-left: 3px solid #10b981;
+}
+
+.transcript-speaker {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.transcript-customer .transcript-speaker {
+  color: #3b82f6;
+}
+
+.transcript-agent .transcript-speaker {
+  color: #10b981;
+}
+
+.transcript-content {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
 /* Recording Button */
 .btn-recording {
   display: inline-flex;

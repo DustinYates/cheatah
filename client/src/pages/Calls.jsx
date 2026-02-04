@@ -6,12 +6,11 @@ import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatDateTimeParts } from '../utils/dateFormat';
 import './Calls.css';
 
-// Format duration as mm:ss
+// Format duration rounded up to nearest minute
 function formatDuration(seconds) {
   if (!seconds) return '-';
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  const mins = Math.ceil(seconds / 60);
+  return `${mins} min`;
 }
 
 // Format phone number for display
@@ -45,6 +44,34 @@ const OUTCOME_LABELS = {
   dismissed: { label: 'Dismissed', color: '#ef4444' },
   incomplete: { label: 'Incomplete', color: '#9ca3af' },
 };
+
+// Parse transcript string into message array
+function parseTranscript(transcript, callerName) {
+  if (!transcript) return [];
+
+  const lines = transcript.split('\n').filter(line => line.trim());
+  const messages = [];
+
+  for (const line of lines) {
+    // Match patterns like "User: message", "Assistant: message", "user: message", etc.
+    const match = line.match(/^(User|Assistant|user|assistant|Customer|Agent|customer|agent):\s*(.+)/i);
+    if (match) {
+      const role = match[1].toLowerCase();
+      const content = match[2].trim();
+      const isCustomer = role === 'user' || role === 'customer';
+      messages.push({
+        role: isCustomer ? 'customer' : 'agent',
+        speaker: isCustomer ? (callerName || 'Customer') : 'Agent',
+        content,
+      });
+    } else if (line.trim() && messages.length > 0) {
+      // Continuation of previous message
+      messages[messages.length - 1].content += ' ' + line.trim();
+    }
+  }
+
+  return messages;
+}
 
 export default function Calls() {
   const { user, selectedTenantId } = useAuth();
@@ -310,16 +337,33 @@ export default function Calls() {
                 </div>
               )}
 
+              {selectedCall.summary?.transcript && (
+                <div className="call-transcript-section">
+                  <h3>Transcript</h3>
+                  <div className="transcript-messages">
+                    {parseTranscript(
+                      selectedCall.summary.transcript,
+                      selectedCall.summary?.extracted_fields?.name
+                    ).map((msg, idx) => (
+                      <div key={idx} className={`transcript-message transcript-${msg.role}`}>
+                        <span className="transcript-speaker">{msg.speaker}</span>
+                        <p className="transcript-content">{msg.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {selectedCall.recording_url && (
                 <div className="call-recording-section">
                   <h3>Recording</h3>
-                  <a 
+                  <a
                     href={selectedCall.recording_url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn-recording"
                   >
-                    🎧 Listen to Recording
+                    Listen to Recording
                   </a>
                 </div>
               )}

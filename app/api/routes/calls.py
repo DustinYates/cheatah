@@ -27,11 +27,12 @@ router = APIRouter()
 class CallSummaryResponse(BaseModel):
     """Call summary response model."""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: int
     intent: str | None = None
     outcome: str | None = None
     summary_text: str | None = None
+    transcript: str | None = None
     extracted_fields: dict | None = None
     contact_id: int | None = None
     lead_id: int | None = None
@@ -166,12 +167,13 @@ async def list_calls(
                 intent=call.summary.intent,
                 outcome=call.summary.outcome,
                 summary_text=call.summary.summary_text,
+                transcript=call.summary.transcript,
                 extracted_fields=call.summary.extracted_fields,
                 contact_id=call.summary.contact_id,
                 lead_id=call.summary.lead_id,
                 created_at=call.summary.created_at,
             )
-        
+
         call_responses.append(CallResponse(
             id=call.id,
             tenant_id=call.tenant_id,
@@ -240,12 +242,13 @@ async def get_call(
             intent=call.summary.intent,
             outcome=call.summary.outcome,
             summary_text=call.summary.summary_text,
+            transcript=call.summary.transcript,
             extracted_fields=call.summary.extracted_fields,
             contact_id=call.summary.contact_id,
             lead_id=call.summary.lead_id,
             created_at=call.summary.created_at,
         )
-    
+
     return CallResponse(
         id=call.id,
         tenant_id=call.tenant_id,

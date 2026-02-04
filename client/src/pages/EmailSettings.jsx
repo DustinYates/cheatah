@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
@@ -22,25 +22,8 @@ export default function EmailSettings() {
   });
   const [newPrefix, setNewPrefix] = useState('');
 
-  // SMS follow-up settings state
-  const [followupEnabled, setFollowupEnabled] = useState(false);
-  const [followupDelayMinutes, setFollowupDelayMinutes] = useState(5);
-
-  // Subject-specific SMS templates state
-  // Templates are now { subject: { message, delay_minutes } }
-  const [subjectTemplates, setSubjectTemplates] = useState({});
-  const [newTemplateSubject, setNewTemplateSubject] = useState('');
-  const [newTemplateMessage, setNewTemplateMessage] = useState('');
-  const [newTemplateDelay, setNewTemplateDelay] = useState(5);
-  const [editingTemplate, setEditingTemplate] = useState(null);
-  const templateSubjectInputRef = useRef(null);
-
   const fetchSettings = useCallback(() => api.getEmailSettings(), []);
   const { data: settings, loading, error, refetch } = useFetchData(fetchSettings);
-
-  // Fetch SMS settings for subject templates
-  const fetchSmsSettings = useCallback(() => api.getSmsSettings(), []);
-  const { data: smsSettings, loading: smsLoading, refetch: refetchSms } = useFetchData(fetchSmsSettings);
 
   // Check for OAuth callback params
   useEffect(() => {
@@ -68,17 +51,6 @@ export default function EmailSettings() {
     }
   }, [settings]);
 
-  // Initialize SMS follow-up settings from SMS settings
-  useEffect(() => {
-    if (smsSettings) {
-      setFollowupEnabled(smsSettings.followup_enabled ?? false);
-      setFollowupDelayMinutes(smsSettings.followup_delay_minutes ?? 5);
-      if (smsSettings.followup_subject_templates) {
-        setSubjectTemplates(smsSettings.followup_subject_templates);
-      }
-    }
-  }, [smsSettings]);
-
   const handleAddPrefix = () => {
     const trimmed = newPrefix.trim();
     if (trimmed && !formData.lead_capture_subject_prefixes.includes(trimmed)) {
@@ -104,77 +76,6 @@ export default function EmailSettings() {
     }
   };
 
-  // Subject template handlers
-  // Helper to get message from template (handles both old string format and new object format)
-  const getTemplateMessage = (templateData) => {
-    if (typeof templateData === 'string') return templateData;
-    return templateData?.message || '';
-  };
-
-  // Helper to get delay from template (handles both old string format and new object format)
-  const getTemplateDelay = (templateData) => {
-    if (typeof templateData === 'string') return followupDelayMinutes; // Fall back to global delay
-    return templateData?.delay_minutes ?? followupDelayMinutes;
-  };
-
-  const handleAddTemplate = () => {
-    const subject = newTemplateSubject.trim();
-    const message = newTemplateMessage.trim();
-    if (subject && message) {
-      setSubjectTemplates(prev => ({
-        ...prev,
-        [subject]: { message, delay_minutes: newTemplateDelay },
-      }));
-      setNewTemplateSubject('');
-      setNewTemplateMessage('');
-      setNewTemplateDelay(5);
-      // Auto-focus subject input for adding multiple templates quickly
-      setTimeout(() => templateSubjectInputRef.current?.focus(), 0);
-    }
-  };
-
-  const handleRemoveTemplate = (subject) => {
-    setSubjectTemplates(prev => {
-      const updated = { ...prev };
-      delete updated[subject];
-      return updated;
-    });
-  };
-
-  const handleEditTemplate = (subject) => {
-    setEditingTemplate(subject);
-    setNewTemplateSubject(subject);
-    setNewTemplateMessage(getTemplateMessage(subjectTemplates[subject]));
-    setNewTemplateDelay(getTemplateDelay(subjectTemplates[subject]));
-  };
-
-  const handleSaveEditTemplate = () => {
-    const subject = newTemplateSubject.trim();
-    const message = newTemplateMessage.trim();
-    if (subject && message) {
-      setSubjectTemplates(prev => {
-        const updated = { ...prev };
-        // If subject changed, remove old key
-        if (editingTemplate && editingTemplate !== subject) {
-          delete updated[editingTemplate];
-        }
-        updated[subject] = { message, delay_minutes: newTemplateDelay };
-        return updated;
-      });
-      setNewTemplateSubject('');
-      setNewTemplateMessage('');
-      setNewTemplateDelay(5);
-      setEditingTemplate(null);
-    }
-  };
-
-  const handleCancelEditTemplate = () => {
-    setNewTemplateSubject('');
-    setNewTemplateMessage('');
-    setNewTemplateDelay(5);
-    setEditingTemplate(null);
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -182,18 +83,7 @@ export default function EmailSettings() {
     setSaving(true);
 
     try {
-      // Save email settings
       await api.updateEmailSettings(formData);
-
-      // Save SMS subject templates if there are any configured
-      if (Object.keys(subjectTemplates).length > 0 || smsSettings?.followup_subject_templates) {
-        await api.updateSmsSettings({
-          ...smsSettings,
-          followup_subject_templates: Object.keys(subjectTemplates).length > 0 ? subjectTemplates : null,
-        });
-        refetchSms();
-      }
-
       setSuccess('Settings updated successfully');
       refetch();
     } catch (err) {
@@ -452,225 +342,6 @@ export default function EmailSettings() {
           </button>
         </form>
       )}
-
-      {/* SMS Follow-up Section */}
-      <section className="settings-section">
-        <h2>SMS Follow-up for Email Leads</h2>
-        <p className="section-description">
-          Automatically send an SMS follow-up when a lead is captured from an email.
-        </p>
-
-        {/* Enable/Disable Toggle */}
-        <div className="form-group">
-          <label className="email-processing-toggle">
-            <span className="email-processing-toggle__text">
-              {followupEnabled ? 'SMS follow-up enabled' : 'SMS follow-up disabled'}
-            </span>
-            <span className="email-processing-toggle__control">
-              <input
-                type="checkbox"
-                checked={followupEnabled}
-                onChange={(e) => setFollowupEnabled(e.target.checked)}
-                className="email-processing-toggle__input"
-              />
-              <span className="email-processing-toggle__switch" aria-hidden="true"></span>
-            </span>
-          </label>
-          <small>
-            When enabled, an SMS will be sent to leads captured from emails that match the subject prefixes above.
-          </small>
-        </div>
-
-        {followupEnabled && (
-          <>
-            {/* Subject-Specific Templates */}
-            <div className="form-group">
-              <label>Auto-Reply Templates</label>
-              <small style={{ display: 'block', marginBottom: '0.5rem' }}>
-                Set up automatic SMS replies for emails. Each template triggers when an email subject matches the phrase you specify.
-              </small>
-
-              {Object.keys(subjectTemplates).length === 0 ? (
-                <div className="template-empty">
-                  No templates yet. Add one below to start sending automatic SMS replies.
-                </div>
-              ) : (
-                <div className="template-list">
-                  {Object.entries(subjectTemplates).map(([subject, templateData]) => (
-                    <div key={subject} className="template-item">
-                      <div className="template-header">
-                        <span className="template-subject">Emails containing "{subject}"</span>
-                        <span className="template-delay">Sends after {getTemplateDelay(templateData)} min</span>
-                        <div className="template-actions">
-                          <button
-                            type="button"
-                            className="template-edit"
-                            onClick={() => handleEditTemplate(subject)}
-                            title="Edit template"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="template-remove"
-                            onClick={() => handleRemoveTemplate(subject)}
-                            title="Remove template"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                      <div className="template-message">{getTemplateMessage(templateData)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="template-add-form">
-                <h4>{editingTemplate ? 'Edit Template' : 'Add New Template'}</h4>
-                <div className="template-form-group">
-                  <label htmlFor="template-subject">Match emails containing</label>
-                  <input
-                    ref={templateSubjectInputRef}
-                    id="template-subject"
-                    type="text"
-                    value={newTemplateSubject}
-                    onChange={(e) => setNewTemplateSubject(e.target.value)}
-                    placeholder="e.g., Get In Touch"
-                    className="template-input"
-                  />
-                </div>
-                <div className="template-form-row">
-                  <div className="template-form-group template-form-group-message">
-                    <label htmlFor="template-message">SMS Message</label>
-                    <textarea
-                      id="template-message"
-                      value={newTemplateMessage}
-                      onChange={(e) => setNewTemplateMessage(e.target.value)}
-                      placeholder="Hi, {first_name}. Thank you for reaching out..."
-                      className="template-textarea"
-                      rows={3}
-                    />
-                    <small className="template-help">
-                      Use {'{first_name}'} or {'{name}'} as placeholders for the lead's name.
-                    </small>
-                  </div>
-                  <div className="template-form-group template-form-group-delay">
-                    <label htmlFor="template-delay">Send after</label>
-                    <div className="delay-input-wrapper">
-                      <input
-                        id="template-delay"
-                        type="number"
-                        min="0"
-                        max="60"
-                        value={newTemplateDelay}
-                        onChange={(e) => setNewTemplateDelay(parseInt(e.target.value, 10) || 0)}
-                        className="template-delay-input"
-                      />
-                      <span className="delay-unit">min</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="template-form-actions">
-                  {editingTemplate ? (
-                    <>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={handleCancelEditTemplate}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={handleSaveEditTemplate}
-                        disabled={!newTemplateSubject.trim() || !newTemplateMessage.trim()}
-                      >
-                        Save Changes
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={handleAddTemplate}
-                      disabled={!newTemplateSubject.trim() || !newTemplateMessage.trim()}
-                    >
-                      Add Template
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        <button
-          type="button"
-          className="save-btn"
-          disabled={saving}
-          onClick={async () => {
-            setSaving(true);
-            setFormError('');
-            setSuccess('');
-            try {
-              // Add any pending template from the form first
-              let templatesToSave = { ...subjectTemplates };
-              const pendingSubject = newTemplateSubject.trim();
-              const pendingMessage = newTemplateMessage.trim();
-              if (pendingSubject && pendingMessage) {
-                templatesToSave[pendingSubject] = { message: pendingMessage, delay_minutes: newTemplateDelay };
-                setNewTemplateSubject('');
-                setNewTemplateMessage('');
-                setNewTemplateDelay(5);
-                setEditingTemplate(null);
-                setSubjectTemplates(templatesToSave);
-              }
-
-              // Ensure we have a base settings object even if smsSettings hasn't loaded
-              const baseSettings = smsSettings || {
-                is_enabled: true,
-                auto_reply_enabled: false,
-                auto_reply_message: null,
-                initial_outreach_message: null,
-                business_hours_enabled: false,
-                timezone: 'America/Chicago',
-                business_hours: null,
-              };
-
-              const payload = {
-                ...baseSettings,
-                followup_enabled: followupEnabled,
-                followup_delay_minutes: followupDelayMinutes,
-                followup_sources: ['email'],
-                followup_initial_message: null,
-                followup_subject_templates: Object.keys(templatesToSave).length > 0 ? templatesToSave : null,
-              };
-
-              console.log('[EmailSettings] Saving follow-up settings:', {
-                smsSettingsLoaded: !!smsSettings,
-                followupEnabled,
-                followupDelayMinutes,
-                templatesCount: Object.keys(templatesToSave).length,
-                payload,
-              });
-
-              const response = await api.updateSmsSettings(payload);
-              console.log('[EmailSettings] Save response:', response);
-
-              refetchSms();
-              setSuccess('SMS follow-up settings saved successfully');
-            } catch (err) {
-              setFormError(err.message || 'Failed to save SMS follow-up settings');
-            } finally {
-              setSaving(false);
-            }
-          }}
-        >
-          {saving ? 'Saving...' : 'Save Follow-up Settings'}
-        </button>
-      </section>
     </div>
   );
 }

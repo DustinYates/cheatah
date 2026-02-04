@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, ErrorState, EmptyState } from '../components/ui';
 
@@ -54,6 +54,11 @@ export default function SmsSettings() {
     followup_delay_minutes: 5,
     followup_sources: ['email'],
     followup_initial_message: '',
+    // Lead notification settings
+    lead_notification_enabled: false,
+    lead_notification_phone: '',
+    lead_notification_channels: ['sms', 'chat', 'voice', 'email'],
+    lead_notification_quiet_hours_enabled: true,
   });
   const [originalSettings, setOriginalSettings] = useState(null);
   const [phoneNumberDraft, setPhoneNumberDraft] = useState('');
@@ -61,6 +66,13 @@ export default function SmsSettings() {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
+
+  // Subject-specific SMS templates for email leads
+  const [newTemplateSubject, setNewTemplateSubject] = useState('');
+  const [newTemplateMessage, setNewTemplateMessage] = useState('');
+  const [newTemplateDelay, setNewTemplateDelay] = useState(5);
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const templateSubjectInputRef = useRef(null);
 
   const isDirty = useMemo(() => {
     if (!originalSettings) return false;
@@ -110,6 +122,10 @@ export default function SmsSettings() {
           followup_delay_minutes: 5,
           followup_sources: ['email'],
           followup_initial_message: '',
+          lead_notification_enabled: false,
+          lead_notification_phone: '',
+          lead_notification_channels: ['sms', 'chat', 'voice', 'email'],
+          lead_notification_quiet_hours_enabled: true,
         };
         setSettings(defaultState);
         setOriginalSettings(defaultState);
@@ -133,6 +149,10 @@ export default function SmsSettings() {
           followup_delay_minutes: 5,
           followup_sources: ['email'],
           followup_initial_message: '',
+          lead_notification_enabled: false,
+          lead_notification_phone: '',
+          lead_notification_channels: ['sms', 'chat', 'voice', 'email'],
+          lead_notification_quiet_hours_enabled: true,
         };
         setSettings(defaultState);
         setOriginalSettings(defaultState);
@@ -180,6 +200,11 @@ export default function SmsSettings() {
         followup_initial_message: settings.followup_initial_message,
         // Preserve subject templates configured in Email Settings
         followup_subject_templates: settings.followup_subject_templates,
+        // Lead notification settings
+        lead_notification_enabled: settings.lead_notification_enabled,
+        lead_notification_phone: settings.lead_notification_phone || null,
+        lead_notification_channels: settings.lead_notification_channels,
+        lead_notification_quiet_hours_enabled: settings.lead_notification_quiet_hours_enabled,
       };
 
       // Include phone_number only if admin and it has changed
@@ -223,6 +248,71 @@ export default function SmsSettings() {
 
   const updateSetting = (key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Helper to get message from template (handles both old string format and new object format)
+  const getTemplateMessage = (templateData) => {
+    if (typeof templateData === 'string') return templateData;
+    return templateData?.message || '';
+  };
+
+  // Helper to get delay from template
+  const getTemplateDelay = (templateData) => {
+    if (typeof templateData === 'string') return settings.followup_delay_minutes;
+    return templateData?.delay_minutes ?? settings.followup_delay_minutes;
+  };
+
+  const handleAddTemplate = () => {
+    const subject = newTemplateSubject.trim();
+    const message = newTemplateMessage.trim();
+    if (subject && message) {
+      const newTemplates = {
+        ...(settings.followup_subject_templates || {}),
+        [subject]: { message, delay_minutes: newTemplateDelay },
+      };
+      updateSetting('followup_subject_templates', newTemplates);
+      setNewTemplateSubject('');
+      setNewTemplateMessage('');
+      setNewTemplateDelay(5);
+      setTimeout(() => templateSubjectInputRef.current?.focus(), 0);
+    }
+  };
+
+  const handleRemoveTemplate = (subject) => {
+    const updated = { ...(settings.followup_subject_templates || {}) };
+    delete updated[subject];
+    updateSetting('followup_subject_templates', Object.keys(updated).length > 0 ? updated : null);
+  };
+
+  const handleEditTemplate = (subject) => {
+    setEditingTemplate(subject);
+    setNewTemplateSubject(subject);
+    setNewTemplateMessage(getTemplateMessage(settings.followup_subject_templates[subject]));
+    setNewTemplateDelay(getTemplateDelay(settings.followup_subject_templates[subject]));
+  };
+
+  const handleSaveEditTemplate = () => {
+    const subject = newTemplateSubject.trim();
+    const message = newTemplateMessage.trim();
+    if (subject && message) {
+      const updated = { ...(settings.followup_subject_templates || {}) };
+      if (editingTemplate && editingTemplate !== subject) {
+        delete updated[editingTemplate];
+      }
+      updated[subject] = { message, delay_minutes: newTemplateDelay };
+      updateSetting('followup_subject_templates', updated);
+      setNewTemplateSubject('');
+      setNewTemplateMessage('');
+      setNewTemplateDelay(5);
+      setEditingTemplate(null);
+    }
+  };
+
+  const handleCancelEditTemplate = () => {
+    setNewTemplateSubject('');
+    setNewTemplateMessage('');
+    setNewTemplateDelay(5);
+    setEditingTemplate(null);
   };
 
   const needsTenant = user?.is_global_admin && !selectedTenantId;
@@ -374,6 +464,253 @@ export default function SmsSettings() {
           </div>
         </section>
 
+        {/* Card B: Lead Notifications */}
+        <section className="sms-card">
+          <div className="sms-card__header">
+            <h2 className="sms-card__title">Lead Notifications</h2>
+            <span className="sms-card__badge sms-card__badge--new">NEW</span>
+          </div>
+          <div className="sms-card__body">
+            <p className="sms-card__description">
+              Get notified via SMS when the AI detects a customer with high enrollment intent.
+            </p>
+
+            {/* Enable Toggle */}
+            <div className="sms-field sms-field--toggle">
+              <label className="sms-toggle" htmlFor="lead-notification-enabled">
+                <input
+                  id="lead-notification-enabled"
+                  type="checkbox"
+                  checked={settings.lead_notification_enabled}
+                  onChange={(e) => updateSetting('lead_notification_enabled', e.target.checked)}
+                  className="sms-toggle__input"
+                />
+                <span className="sms-toggle__switch" />
+                <span className="sms-toggle__label">Enable Lead Notifications</span>
+              </label>
+              <p className="sms-field__description">
+                Receive real-time SMS alerts when a potential customer shows strong interest in enrolling.
+              </p>
+            </div>
+
+            {/* Notification Phone */}
+            <div className="sms-field">
+              <label className="sms-field__label">Notification Phone</label>
+              <input
+                type="tel"
+                className="sms-input sms-input--phone"
+                value={settings.lead_notification_phone || ''}
+                onChange={(e) => updateSetting('lead_notification_phone', e.target.value)}
+                placeholder="Use business phone"
+                disabled={!settings.lead_notification_enabled}
+              />
+              <p className="sms-field__hint">
+                Leave blank to receive alerts at your business profile phone number.
+              </p>
+            </div>
+
+            {/* Channel Selection */}
+            <div className="sms-field">
+              <label className="sms-field__label">Monitor Channels</label>
+              <div className="sms-chip-group">
+                {['sms', 'chat', 'voice', 'email'].map((channel) => (
+                  <button
+                    key={channel}
+                    type="button"
+                    className={`sms-chip ${settings.lead_notification_channels.includes(channel) ? 'sms-chip--active' : ''}`}
+                    onClick={() => {
+                      const channels = settings.lead_notification_channels;
+                      if (channels.includes(channel)) {
+                        updateSetting('lead_notification_channels', channels.filter(c => c !== channel));
+                      } else {
+                        updateSetting('lead_notification_channels', [...channels, channel]);
+                      }
+                    }}
+                    disabled={!settings.lead_notification_enabled}
+                  >
+                    {channel === 'sms' ? 'SMS' : channel.charAt(0).toUpperCase() + channel.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <p className="sms-field__hint">
+                Select which channels to monitor for high-intent leads.
+              </p>
+            </div>
+
+            {/* Quiet Hours Toggle */}
+            <div className="sms-field sms-field--toggle">
+              <label className="sms-toggle" htmlFor="lead-notification-quiet-hours">
+                <input
+                  id="lead-notification-quiet-hours"
+                  type="checkbox"
+                  checked={settings.lead_notification_quiet_hours_enabled}
+                  onChange={(e) => updateSetting('lead_notification_quiet_hours_enabled', e.target.checked)}
+                  disabled={!settings.lead_notification_enabled}
+                  className="sms-toggle__input"
+                />
+                <span className="sms-toggle__switch" />
+                <span className="sms-toggle__label">Respect Quiet Hours</span>
+              </label>
+              <p className="sms-field__description">
+                No notifications between 9 PM and 8 AM in your timezone.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Card C: SMS Follow-up for Email Leads */}
+        <section className="sms-card">
+          <div className="sms-card__header">
+            <h2 className="sms-card__title">SMS Follow-up for Email Leads</h2>
+          </div>
+          <div className="sms-card__body">
+            <p className="sms-card__description">
+              Automatically send an SMS follow-up when a lead is captured from an email.
+            </p>
+
+            {/* Enable Toggle */}
+            <div className="sms-field sms-field--toggle">
+              <label className="sms-toggle" htmlFor="followup-enabled">
+                <input
+                  id="followup-enabled"
+                  type="checkbox"
+                  checked={settings.followup_enabled}
+                  onChange={(e) => updateSetting('followup_enabled', e.target.checked)}
+                  className="sms-toggle__input"
+                />
+                <span className="sms-toggle__switch" />
+                <span className="sms-toggle__label">SMS follow-up enabled</span>
+              </label>
+              <p className="sms-field__description">
+                When enabled, an SMS will be sent to leads captured from emails that match the configured templates.
+              </p>
+            </div>
+
+            {settings.followup_enabled && (
+              <>
+                {/* Auto-Reply Templates */}
+                <div className="sms-field">
+                  <label className="sms-field__label">Auto-Reply Templates</label>
+                  <p className="sms-field__hint" style={{ marginBottom: '0.75rem' }}>
+                    Set up automatic SMS replies for emails. Each template triggers when an email subject contains the phrase you specify.
+                  </p>
+
+                  {(!settings.followup_subject_templates || Object.keys(settings.followup_subject_templates).length === 0) ? (
+                    <div className="sms-template-empty">
+                      No templates yet. Add one below to start sending automatic SMS replies.
+                    </div>
+                  ) : (
+                    <div className="sms-template-list">
+                      {Object.entries(settings.followup_subject_templates).map(([subject, templateData]) => (
+                        <div key={subject} className="sms-template-item">
+                          <div className="sms-template-header">
+                            <span className="sms-template-subject">Emails containing "{subject}"</span>
+                            <span className="sms-template-delay">Sends after {getTemplateDelay(templateData)} min</span>
+                            <div className="sms-template-actions">
+                              <button
+                                type="button"
+                                className="sms-template-edit"
+                                onClick={() => handleEditTemplate(subject)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="sms-template-remove"
+                                onClick={() => handleRemoveTemplate(subject)}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          </div>
+                          <div className="sms-template-message">{getTemplateMessage(templateData)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="sms-template-form">
+                    <h4 className="sms-template-form__title">{editingTemplate ? 'Edit Template' : 'Add New Template'}</h4>
+                    <div className="sms-field">
+                      <label className="sms-field__label" htmlFor="template-subject">Match emails containing</label>
+                      <input
+                        ref={templateSubjectInputRef}
+                        id="template-subject"
+                        type="text"
+                        className="sms-input"
+                        value={newTemplateSubject}
+                        onChange={(e) => setNewTemplateSubject(e.target.value)}
+                        placeholder="e.g., Get In Touch"
+                      />
+                    </div>
+                    <div className="sms-template-form__row">
+                      <div className="sms-field sms-template-form__message">
+                        <label className="sms-field__label" htmlFor="template-message">SMS Message</label>
+                        <textarea
+                          id="template-message"
+                          className="sms-textarea"
+                          value={newTemplateMessage}
+                          onChange={(e) => setNewTemplateMessage(e.target.value)}
+                          placeholder="Hi, {first_name}. Thank you for reaching out..."
+                          rows={3}
+                        />
+                        <p className="sms-field__hint">
+                          Use {'{first_name}'} or {'{name}'} as placeholders for the lead's name.
+                        </p>
+                      </div>
+                      <div className="sms-field sms-template-form__delay">
+                        <label className="sms-field__label" htmlFor="template-delay">Send after</label>
+                        <div className="sms-input-group">
+                          <input
+                            id="template-delay"
+                            type="number"
+                            className="sms-input sms-input--number"
+                            min="0"
+                            max="60"
+                            value={newTemplateDelay}
+                            onChange={(e) => setNewTemplateDelay(parseInt(e.target.value, 10) || 0)}
+                          />
+                          <span className="sms-input-group__suffix">min</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="sms-template-form__actions">
+                      {editingTemplate ? (
+                        <>
+                          <button
+                            type="button"
+                            className="sms-btn sms-btn--secondary"
+                            onClick={handleCancelEditTemplate}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="sms-btn sms-btn--primary"
+                            onClick={handleSaveEditTemplate}
+                            disabled={!newTemplateSubject.trim() || !newTemplateMessage.trim()}
+                          >
+                            Save Changes
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="sms-btn sms-btn--secondary"
+                          onClick={handleAddTemplate}
+                          disabled={!newTemplateSubject.trim() || !newTemplateMessage.trim()}
+                        >
+                          Add Template
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+
       </div>
 
       {/* Bottom Save Button (always visible) */}
@@ -509,6 +846,10 @@ export default function SmsSettings() {
           border-radius: 4px;
           background: #f3f4f6;
           color: #6b7280;
+        }
+        .sms-card__badge--new {
+          background: #dbeafe;
+          color: #1e40af;
         }
         .sms-card__body {
           padding: 1.25rem;
@@ -977,6 +1318,122 @@ export default function SmsSettings() {
         .sms-btn--lg {
           padding: 0.75rem 2rem;
           font-size: 1rem;
+        }
+        .sms-btn--secondary {
+          background: #fff;
+          color: #4b5563;
+          border: 1px solid #d1d5db;
+        }
+        .sms-btn--secondary:hover:not(:disabled) {
+          background: #f9fafb;
+          border-color: #9ca3af;
+        }
+
+        /* Template Styles */
+        .sms-template-empty {
+          padding: 1rem;
+          background: #f9fafb;
+          border: 1px dashed #d1d5db;
+          border-radius: 8px;
+          color: #6b7280;
+          font-size: 0.875rem;
+          text-align: center;
+        }
+        .sms-template-list {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          margin-bottom: 1rem;
+        }
+        .sms-template-item {
+          padding: 0.875rem;
+          background: #fff;
+          border: 1px solid #e5e5e5;
+          border-radius: 8px;
+        }
+        .sms-template-header {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          margin-bottom: 0.5rem;
+          flex-wrap: wrap;
+        }
+        .sms-template-subject {
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: #111;
+        }
+        .sms-template-delay {
+          font-size: 0.75rem;
+          padding: 0.25rem 0.5rem;
+          background: #dcfce7;
+          color: #166534;
+          border-radius: 4px;
+          font-weight: 500;
+        }
+        .sms-template-actions {
+          margin-left: auto;
+          display: flex;
+          gap: 0.5rem;
+        }
+        .sms-template-edit {
+          padding: 0.25rem 0.5rem;
+          font-size: 0.75rem;
+          background: #fff;
+          border: 1px solid #d1d5db;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+        .sms-template-edit:hover {
+          background: #f9fafb;
+        }
+        .sms-template-remove {
+          padding: 0.25rem 0.5rem;
+          font-size: 0.875rem;
+          font-weight: 600;
+          background: #fff;
+          border: 1px solid #fca5a5;
+          border-radius: 4px;
+          color: #dc2626;
+          cursor: pointer;
+        }
+        .sms-template-remove:hover {
+          background: #fef2f2;
+        }
+        .sms-template-message {
+          font-size: 0.8125rem;
+          color: #4b5563;
+          line-height: 1.5;
+        }
+        .sms-template-form {
+          padding: 1rem;
+          background: #f9fafb;
+          border-radius: 8px;
+          margin-top: 1rem;
+        }
+        .sms-template-form__title {
+          font-size: 0.9375rem;
+          font-weight: 600;
+          margin: 0 0 1rem;
+          color: #111;
+        }
+        .sms-template-form__row {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 1rem;
+          margin-top: 1rem;
+        }
+        .sms-template-form__message {
+          flex: 1;
+        }
+        .sms-template-form__delay {
+          width: 120px;
+        }
+        .sms-template-form__actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 0.5rem;
+          margin-top: 1rem;
         }
 
         /* Actions */

@@ -3099,6 +3099,7 @@ async def send_link_tool(
                 pass
 
         # 2) Fallback: call_control_id header → Call record lookup
+        call_control_id = ""
         if not tenant_id:
             call_control_id = request.headers.get("x-telnyx-call-control-id", "")
             if call_control_id:
@@ -3108,6 +3109,29 @@ async def send_link_tool(
                 call_record = result.scalar_one_or_none()
                 if call_record:
                     tenant_id = call_record.tenant_id
+
+        # 3) Fallback: query Telnyx API for the call's "to" number, then resolve tenant
+        #    Call records aren't created until ai-call-complete (after call ends),
+        #    but tools fire during the call, so we need the API lookup.
+        if not tenant_id and call_control_id and settings.telnyx_api_key:
+            try:
+                import httpx
+                async with httpx.AsyncClient(
+                    base_url="https://api.telnyx.com/v2",
+                    headers={"Authorization": f"Bearer {settings.telnyx_api_key}"},
+                    timeout=10.0,
+                ) as client:
+                    resp = await client.get(f"/calls/{call_control_id}")
+                    if resp.status_code == 200:
+                        call_data = resp.json().get("data", {})
+                        telnyx_to_number = call_data.get("to")
+                        logger.info(f"[TOOL] send_link: Telnyx API lookup - to={telnyx_to_number}")
+                        if telnyx_to_number:
+                            tenant_id = await _get_tenant_from_telnyx_number(telnyx_to_number, db)
+                    else:
+                        logger.warning(f"[TOOL] send_link: Telnyx API call lookup failed: {resp.status_code}")
+            except Exception as e:
+                logger.warning(f"[TOOL] send_link: Telnyx API call lookup error: {e}")
 
         if not tenant_id:
             logger.error("[TOOL] send_link: could not determine tenant")

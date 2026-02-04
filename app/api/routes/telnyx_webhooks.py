@@ -3231,6 +3231,26 @@ async def send_link_tool(
             f"message_id={sms_result.message_id}, url={reg_url}"
         )
 
+        # Create SentAsset record for dedup - prevents ai-call-complete from sending duplicate
+        try:
+            from app.persistence.models.sent_asset import SentAsset
+            from datetime import timezone
+
+            phone_normalized = normalize_phone_for_dedup(formatted_to)
+            sent_asset = SentAsset(
+                tenant_id=tenant_id,
+                phone_normalized=phone_normalized,
+                asset_type="registration_link",
+                conversation_id=None,  # Tool calls don't have conversation context
+                sent_at=datetime.now(timezone.utc),
+                message_id=sms_result.message_id,
+            )
+            db.add(sent_asset)
+            await db.commit()
+            logger.info(f"[TOOL] Created SentAsset dedup record: phone={phone_normalized}, tenant={tenant_id}")
+        except Exception as dedup_err:
+            logger.warning(f"[TOOL] Failed to create SentAsset dedup record (SMS still sent): {dedup_err}")
+
         return JSONResponse(content={
             "status": "ok",
             "message_id": sms_result.message_id,

@@ -1230,7 +1230,38 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
                 conversation_id=conversation.id,
                 should_send_followup=should_send_followup,
             )
-            
+
+            # Check enrollment intent and send lead notification
+            try:
+                from app.domain.services.intent_detector import IntentDetector
+                intent_detector = IntentDetector()
+                conversation_history = [m.content for m in messages if m.content]
+                intent_result = intent_detector.detect_enrollment_intent(
+                    message=all_user_text,
+                    conversation_history=conversation_history,
+                    has_phone=bool(call.from_number),
+                    has_email=bool(extracted_data.email),
+                )
+                if intent_result.is_high_intent:
+                    await self.notification_service.notify_high_intent_lead(
+                        tenant_id=call.tenant_id,
+                        customer_name=extracted_data.name,
+                        customer_phone=call.from_number,
+                        customer_email=extracted_data.email,
+                        channel="voice",
+                        message_preview=all_user_text[:150],
+                        confidence=intent_result.confidence,
+                        keywords=intent_result.keywords,
+                        conversation_id=conversation.id,
+                        lead_id=lead_id,
+                    )
+                    logger.info(
+                        f"Voice lead notification sent - tenant_id={call.tenant_id}, "
+                        f"lead_id={lead_id}, confidence={intent_result.confidence:.2f}"
+                    )
+            except Exception as e:
+                logger.error(f"Failed to check/send voice lead notification: {e}", exc_info=True)
+
             # Create summary
             summary = await self.call_summary_repo.create_summary(
                 call_id=call_id,

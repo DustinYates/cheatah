@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Phone, Mail, Calendar, RefreshCw, Edit2, Save, X, DollarSign, Users } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Calendar, RefreshCw, Edit2, Save, X, DollarSign, Users, MapPin, Clock, BookOpen } from 'lucide-react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -237,11 +237,59 @@ export default function CustomerDetail() {
           </div>
         </div>
 
-        {customer.account_data && Object.keys(customer.account_data).length > 0 && (
+        {/* Enrollments Section */}
+        {customer.account_data?.enrollments && customer.account_data.enrollments.length > 0 && (
+          <div className="enrollments-section">
+            <h3><BookOpen size={16} /> Current Enrollments</h3>
+            <div className="enrollments-list">
+              {customer.account_data.enrollments.map((enrollment, idx) => (
+                <div key={idx} className="enrollment-card">
+                  <div className="enrollment-header">
+                    <span className="class-name">{enrollment.class_name}</span>
+                    <span className={`enrollment-status status-${enrollment.status || 'active'}`}>
+                      {enrollment.status || 'Active'}
+                    </span>
+                  </div>
+                  <div className="enrollment-details">
+                    {enrollment.location && (
+                      <div className="enrollment-detail">
+                        <MapPin size={12} />
+                        <span>{enrollment.location}</span>
+                      </div>
+                    )}
+                    {enrollment.schedule && (
+                      <div className="enrollment-detail">
+                        <Clock size={12} />
+                        <span>{enrollment.schedule}</span>
+                      </div>
+                    )}
+                    {enrollment.instructor && (
+                      <div className="enrollment-detail">
+                        <User size={12} />
+                        <span>{enrollment.instructor}</span>
+                      </div>
+                    )}
+                    {enrollment.start_date && (
+                      <div className="enrollment-detail">
+                        <Calendar size={12} />
+                        <span>Started: {enrollment.start_date}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Other Account Data */}
+        {customer.account_data && Object.keys(customer.account_data).filter(k => k !== 'enrollments').length > 0 && (
           <div className="account-data-section">
             <h3>Account Data</h3>
             <div className="account-data-grid">
-              {Object.entries(customer.account_data).map(([key, value]) => (
+              {Object.entries(customer.account_data)
+                .filter(([key]) => key !== 'enrollments')
+                .map(([key, value]) => (
                 <div key={key} className="account-data-item">
                   <span className="data-label">{key.replace(/_/g, ' ')}</span>
                   <span className="data-value">

@@ -1,6 +1,6 @@
-# Gmail OAuth Setup Guide
+# Google OAuth Setup Guide (Gmail + Calendar)
 
-This guide will help you set up Gmail OAuth credentials for the Email Responder feature.
+This guide covers OAuth setup for both Gmail (Email Responder) and Google Calendar (Scheduling) features. Both use the same OAuth client credentials.
 
 ## Prerequisites
 
@@ -24,6 +24,8 @@ This guide will help you set up Gmail OAuth credentials for the Email Responder 
      - `https://www.googleapis.com/auth/gmail.readonly`
      - `https://www.googleapis.com/auth/gmail.send`
      - `https://www.googleapis.com/auth/gmail.modify`
+     - `https://www.googleapis.com/auth/calendar.readonly` (for Calendar)
+     - `https://www.googleapis.com/auth/calendar.events` (for Calendar)
    - Click "Save and Continue"
    - **Test users**: Add any email addresses that will be testing the integration
    - Click "Save and Continue"
@@ -36,10 +38,11 @@ This guide will help you set up Gmail OAuth credentials for the Email Responder 
 
 3. Configure the OAuth client:
    - **Application type**: Web application
-   - **Name**: `Chatter Cheetah Gmail Client`
-   - **Authorized redirect URIs**: Add:
+   - **Name**: `Chatter Cheetah OAuth Client`
+   - **Authorized redirect URIs**: Add both:
      ```
      https://chattercheatah-900139201687.us-central1.run.app/api/v1/email/oauth/callback
+     https://chattercheatah-900139201687.us-central1.run.app/api/v1/calendar/oauth/callback
      ```
    - Click **"CREATE"**
 
@@ -116,7 +119,7 @@ gcloud run services update chattercheatah \
     --region=us-central1 \
     --project=chatbots-466618 \
     --update-secrets="GMAIL_CLIENT_ID=gmail-client-id:latest,GMAIL_CLIENT_SECRET=gmail-client-secret:latest" \
-    --update-env-vars="GMAIL_OAUTH_REDIRECT_URI=https://chattercheatah-900139201687.us-central1.run.app/api/v1/email/oauth/callback,GMAIL_PUBSUB_TOPIC=projects/chatbots-466618/topics/gmail-push-notifications"
+    --update-env-vars="GMAIL_OAUTH_REDIRECT_URI=https://chattercheatah-900139201687.us-central1.run.app/api/v1/email/oauth/callback,GMAIL_PUBSUB_TOPIC=projects/chatbots-466618/topics/gmail-push-notifications,GOOGLE_CALENDAR_OAUTH_REDIRECT_URI=https://chattercheatah-900139201687.us-central1.run.app/api/v1/calendar/oauth/callback"
 ```
 
 ## Troubleshooting
@@ -173,6 +176,22 @@ gcloud pubsub topics create gmail-push-notifications \
 
 Then grant permissions as described above.
 
+## Google Calendar Integration
+
+Calendar uses the same OAuth client as Gmail. Once OAuth is set up:
+
+1. Go to **Settings → Calendar** in the admin panel
+2. Click **"Connect Google Calendar"**
+3. Authorize the app to access your calendar
+4. Configure scheduling preferences (available hours, meeting duration, etc.)
+
+**Features:**
+- Tenants can connect their Google Calendar for meeting scheduling
+- Chatbot can show available time slots based on calendar free/busy
+- Meetings are automatically created when customers book
+
+**Note:** Calendar scopes (`calendar.readonly`, `calendar.events`) are "sensitive" scopes (not "restricted" like Gmail), so they only require basic Google verification.
+
 ## Next Steps
 
 After setup is complete:
@@ -181,6 +200,7 @@ After setup is complete:
 2. Configure business hours and auto-reply settings
 3. Enable the email responder
 4. Test by sending an email to the connected Gmail address
+5. Connect Google Calendar via the Calendar Settings page (optional)
 
 ## Security Notes
 

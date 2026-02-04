@@ -424,6 +424,19 @@ class NotificationService:
         Returns:
             Notification result
         """
+        # Deduplicate: only send one lead notification per conversation
+        if conversation_id:
+            existing = await self.session.execute(
+                select(Notification).where(
+                    Notification.tenant_id == tenant_id,
+                    Notification.notification_type == NotificationType.HIGH_INTENT_LEAD,
+                    Notification.extra_data["conversation_id"].astext == str(conversation_id),
+                ).limit(1)
+            )
+            if existing.scalar_one_or_none():
+                logger.debug(f"Lead notification already sent for conversation {conversation_id}")
+                return {"status": "already_sent", "reason": "duplicate_conversation"}
+
         # Get lead notification settings from SMS config
         lead_notification_settings = await self._get_lead_notification_settings(tenant_id)
 
@@ -479,6 +492,24 @@ class NotificationService:
             message=message,
             lead_notification_settings=lead_notification_settings,
         )
+
+        # Create in-app notification record (serves as dedup marker + audit trail)
+        try:
+            notification = Notification(
+                tenant_id=tenant_id,
+                user_id=None,  # Tenant-wide, not user-specific
+                notification_type=NotificationType.HIGH_INTENT_LEAD,
+                title=f"Hot Lead: {customer_label} via {channel.title()}",
+                message=message,
+                extra_data=metadata,
+                priority=NotificationPriority.HIGH,
+                is_read=False,
+            )
+            self.session.add(notification)
+            await self.session.commit()
+            logger.debug(f"Created lead notification record for conversation {conversation_id}")
+        except Exception as e:
+            logger.error(f"Failed to create lead notification record: {e}", exc_info=True)
 
         return {
             "status": result.get("status", "error"),

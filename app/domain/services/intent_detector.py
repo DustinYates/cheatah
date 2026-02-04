@@ -71,8 +71,8 @@ class IntentDetector:
         "beginner", "intermediate", "advanced", "level 1", "level 2"
     ]
 
-    # Default threshold for high intent
-    ENROLLMENT_CONFIDENCE_THRESHOLD = 0.7
+    # Threshold for lead notification (lowered to notify on any lead with contact info)
+    ENROLLMENT_CONFIDENCE_THRESHOLD = 0.10
 
     def detect_intent(self, message: str) -> IntentResult:
         """Detect intent from message text.

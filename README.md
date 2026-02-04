@@ -74,6 +74,7 @@ Set the following in `.env`:
 | `TELNYX_API_KEY` | Telnyx API key for SMS/Voice |
 | `GMAIL_CLIENT_ID` | Gmail OAuth client ID |
 | `GMAIL_CLIENT_SECRET` | Gmail OAuth client secret |
+| `GOOGLE_CALENDAR_OAUTH_REDIRECT_URI` | Calendar OAuth callback URL |
 
 ## Project Structure
 

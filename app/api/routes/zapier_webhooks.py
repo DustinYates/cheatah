@@ -9,7 +9,9 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.domain.services.jackrabbit_data_transformer import transform_jackrabbit_to_account_data
 from app.domain.services.zapier_integration_service import ZapierIntegrationService
+from app.persistence.repositories.customer_repository import CustomerRepository
 from app.persistence.repositories.jackrabbit_customer_repository import JackrabbitCustomerRepository
 from app.settings import settings
 
@@ -175,6 +177,19 @@ async def zapier_customer_update(
             email=payload.customer_data.get("email"),
             name=payload.customer_data.get("name"),
             customer_data=payload.customer_data,
+        )
+
+        # Sync to customers table for UI display
+        main_customer_repo = CustomerRepository(db)
+        account_data = transform_jackrabbit_to_account_data(payload.customer_data)
+        await main_customer_repo.upsert_from_jackrabbit(
+            tenant_id=payload.tenant_id,
+            external_customer_id=payload.jackrabbit_id,
+            phone=payload.phone_number,
+            name=payload.customer_data.get("name"),
+            email=payload.customer_data.get("email"),
+            account_data=account_data,
+            jackrabbit_customer_id=customer.id,
         )
 
         logger.info(

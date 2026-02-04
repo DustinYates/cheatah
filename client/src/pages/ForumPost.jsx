@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
-import { LoadingState, ErrorState } from '../components/ui';
+import { LoadingState, ErrorState, EmojiPicker } from '../components/ui';
 import { formatDistanceToNow } from '../utils/dateFormat';
 import './Forums.css';
 
@@ -141,8 +141,11 @@ function Comment({ comment, onVote, onReply, onDelete, currentUserId, depth = 0,
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [replyContent, setReplyContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const replyTextareaRef = useRef(null);
 
-  const replies = allComments.filter(c => c.parent_comment_id === comment.id);
+  const replies = allComments
+    .filter(c => c.parent_comment_id === comment.id)
+    .sort((a, b) => b.score - a.score);
   const maxDepth = 4;
 
   const handleSubmitReply = async (e) => {
@@ -156,6 +159,23 @@ function Comment({ comment, onVote, onReply, onDelete, currentUserId, depth = 0,
       setShowReplyForm(false);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleEmojiSelect = (emoji) => {
+    const textarea = replyTextareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newContent = replyContent.substring(0, start) + emoji + replyContent.substring(end);
+      setReplyContent(newContent);
+      // Set cursor position after emoji
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
+        textarea.focus();
+      }, 0);
+    } else {
+      setReplyContent(replyContent + emoji);
     }
   };
 
@@ -178,7 +198,7 @@ function Comment({ comment, onVote, onReply, onDelete, currentUserId, depth = 0,
       <div className="comment-body">
         <div className="comment-header">
           <span className="comment-author">
-            {comment.author_email || 'Anonymous'}
+            {comment.author_email?.split('@')[0] || 'Anonymous'}
             {comment.author_tenant_name && <span className="comment-tenant">({comment.author_tenant_name})</span>}
           </span>
           <span className="comment-time">{formatDistanceToNow(comment.created_at)}</span>
@@ -200,12 +220,18 @@ function Comment({ comment, onVote, onReply, onDelete, currentUserId, depth = 0,
         )}
         {showReplyForm && (
           <form className="reply-form" onSubmit={handleSubmitReply}>
-            <textarea
-              value={replyContent}
-              onChange={(e) => setReplyContent(e.target.value)}
-              placeholder="Write a reply..."
-              rows={2}
-            />
+            <div className="composer-wrapper">
+              <textarea
+                ref={replyTextareaRef}
+                value={replyContent}
+                onChange={(e) => setReplyContent(e.target.value)}
+                placeholder="Write a reply..."
+                rows={2}
+              />
+              <div className="composer-toolbar">
+                <EmojiPicker onSelect={handleEmojiSelect} position="top" />
+              </div>
+            </div>
             <div className="reply-form-actions">
               <button type="button" className="btn-secondary btn-sm" onClick={() => setShowReplyForm(false)}>
                 Cancel
@@ -240,6 +266,7 @@ function CommentsSection({ forumSlug, categorySlug, postId, isArchived }) {
   const [error, setError] = useState(null);
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const commentTextareaRef = useRef(null);
   const { user } = useAuth();
 
   const fetchComments = useCallback(async () => {
@@ -311,7 +338,25 @@ function CommentsSection({ forumSlug, categorySlug, postId, isArchived }) {
     }
   };
 
-  const topLevelComments = comments.filter(c => !c.parent_comment_id);
+  const handleEmojiSelect = (emoji) => {
+    const textarea = commentTextareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const updated = newComment.substring(0, start) + emoji + newComment.substring(end);
+      setNewComment(updated);
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
+        textarea.focus();
+      }, 0);
+    } else {
+      setNewComment(newComment + emoji);
+    }
+  };
+
+  const topLevelComments = comments
+    .filter(c => !c.parent_comment_id)
+    .sort((a, b) => b.score - a.score);
 
   if (loading) {
     return <div className="comments-loading">Loading comments...</div>;
@@ -323,19 +368,27 @@ function CommentsSection({ forumSlug, categorySlug, postId, isArchived }) {
 
   return (
     <div className="comments-section">
-      <h3 className="comments-title">{comments.length} Comment{comments.length !== 1 ? 's' : ''}</h3>
+      <div className="comments-divider">
+        <span>{comments.length} Comment{comments.length !== 1 ? 's' : ''}</span>
+      </div>
 
       {!isArchived && (
         <form className="comment-form" onSubmit={handleSubmitComment}>
-          <textarea
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            placeholder="What are your thoughts?"
-            rows={3}
-          />
-          <button type="submit" className="btn-primary" disabled={isSubmitting || !newComment.trim()}>
-            {isSubmitting ? 'Posting...' : 'Comment'}
-          </button>
+          <div className="composer-wrapper">
+            <textarea
+              ref={commentTextareaRef}
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Share your thoughts..."
+              rows={3}
+            />
+            <div className="composer-toolbar">
+              <EmojiPicker onSelect={handleEmojiSelect} position="top" />
+              <button type="submit" className="btn-primary" disabled={isSubmitting || !newComment.trim()}>
+                {isSubmitting ? 'Posting...' : 'Comment'}
+              </button>
+            </div>
+          </div>
         </form>
       )}
 
@@ -418,6 +471,19 @@ export default function ForumPost() {
   const currentVoteData = voteData || { user_has_voted: post.user_has_voted, vote_count: post.vote_count };
   const isArchived = post.status !== 'active';
 
+  // Map status to display label
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'planned': return 'Planned';
+      case 'in_progress': return 'In Progress';
+      case 'implemented':
+      case 'shipped': return 'Shipped';
+      case 'resolved': return 'Resolved';
+      case 'archived': return 'Archived';
+      default: return status;
+    }
+  };
+
   return (
     <div className="post-detail-page">
       <div className="forum-breadcrumb">
@@ -428,84 +494,98 @@ export default function ForumPost() {
         <Link to={`/forums/${forumSlug}/${categorySlug}`}>{post.category_name}</Link>
       </div>
 
-      <div className="post-detail-container">
-        {/* Sidebar with votes and actions */}
-        <div className="post-sidebar">
-          {allowsVoting && (
-            <div className="post-vote-box">
-              <button
-                className={`vote-arrow up ${currentVoteData.user_has_voted ? 'active' : ''}`}
-                onClick={handleVote}
-                disabled={isArchived}
-                title={currentVoteData.user_has_voted ? 'Remove vote' : 'Upvote'}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 4l-8 8h5v8h6v-8h5z" />
-                </svg>
-              </button>
-              <span className={`post-vote-count ${currentVoteData.user_has_voted ? 'voted' : ''}`}>
-                {currentVoteData.vote_count}
+      {/* Post Article Card */}
+      <article className="post-article">
+        {/* Header with badges, title, meta */}
+        <header className="post-article-header">
+          <div className="post-badges">
+            {post.is_pinned && <span className="badge badge--pinned">Pinned</span>}
+            {isArchived && (
+              <span className={`badge badge--${post.status.replace('_', '-')}`}>
+                {getStatusLabel(post.status)}
               </span>
-            </div>
-          )}
-
-          {user?.is_global_admin && !isArchived && (
-            <button
-              className="sidebar-action-btn"
-              onClick={() => setShowArchiveModal(true)}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />
-              </svg>
-              Archive
-            </button>
-          )}
-        </div>
-
-        {/* Main content */}
-        <div className="post-main">
-          <div className="post-detail-header">
-            <div className="post-badges">
-              {post.is_pinned && <span className="post-pinned-badge">Pinned</span>}
-              {isArchived && (
-                <span className={`post-status-badge ${post.status}`}>
-                  {post.status === 'implemented' ? 'Implemented' :
-                   post.status === 'resolved' ? 'Resolved' : 'Archived'}
-                </span>
+            )}
+          </div>
+          <h1 className="post-article-title">{post.title}</h1>
+          <div className="post-article-meta">
+            <span className="post-author">
+              by {post.author_email?.split('@')[0] || 'Anonymous'}
+              {post.author_tenant_name && (
+                <span className="post-tenant"> ({post.author_tenant_name})</span>
               )}
-            </div>
-            <h1 className="post-detail-title">{post.title}</h1>
-
-            <div className="post-detail-meta">
-              <span>
-                Posted by <strong>{post.author_email}</strong>
-                {post.author_tenant_name && ` (${post.author_tenant_name})`}
-              </span>
-              <span>{formatDistanceToNow(post.created_at)}</span>
-            </div>
+            </span>
+            <span className="meta-separator">·</span>
+            <span>{formatDistanceToNow(post.created_at)}</span>
           </div>
+        </header>
 
-          {/* Resolution notes for archived posts */}
-          {isArchived && post.resolution_notes && (
-            <div className="archive-section">
-              <h3>Resolution Notes</h3>
-              <p>{post.resolution_notes}</p>
-            </div>
-          )}
-
-          <div className="post-detail-content">
-            <p>{post.content}</p>
+        {/* Resolution notes for archived posts */}
+        {isArchived && post.resolution_notes && (
+          <div className="post-resolution-notes">
+            <h3>Resolution Notes</h3>
+            <p>{post.resolution_notes}</p>
           </div>
+        )}
 
-          {/* Comments Section */}
-          <CommentsSection
-            forumSlug={forumSlug}
-            categorySlug={categorySlug}
-            postId={postId}
-            isArchived={isArchived}
-          />
+        {/* Post Content */}
+        <div className="post-article-content">
+          <p>{post.content}</p>
         </div>
-      </div>
+
+        {/* Action Bar */}
+        <footer className="post-action-bar">
+          <div className="action-bar-left">
+            {allowsVoting && (
+              <div className="vote-buttons-inline">
+                <button
+                  className={`vote-arrow vote-up ${currentVoteData.user_has_voted ? 'active' : ''}`}
+                  onClick={handleVote}
+                  disabled={isArchived}
+                  aria-label={currentVoteData.user_has_voted ? 'Remove vote' : 'Upvote'}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 4l-8 8h5v8h6v-8h5z" />
+                  </svg>
+                </button>
+                <span className={`vote-score ${currentVoteData.user_has_voted ? 'upvoted' : ''}`}>
+                  {currentVoteData.vote_count}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="action-bar-right">
+            <button className="action-btn" title="Share">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="18" cy="5" r="3" />
+                <circle cx="6" cy="12" r="3" />
+                <circle cx="18" cy="19" r="3" />
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+              </svg>
+              Share
+            </button>
+            {user?.is_global_admin && !isArchived && (
+              <button
+                className="action-btn"
+                onClick={() => setShowArchiveModal(true)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />
+                </svg>
+                Archive
+              </button>
+            )}
+          </div>
+        </footer>
+      </article>
+
+      {/* Comments Section */}
+      <CommentsSection
+        forumSlug={forumSlug}
+        categorySlug={categorySlug}
+        postId={postId}
+        isArchived={isArchived}
+      />
 
       <ArchiveModal
         isOpen={showArchiveModal}

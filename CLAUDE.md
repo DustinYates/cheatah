@@ -112,6 +112,7 @@ Each tenant has 1:1 config rows:
 - `tenant_sms_configs` — Telnyx/Twilio phone, API keys, messaging profile
 - `tenant_voice_configs` — Telnyx agent ID, handoff mode, transfer number
 - `tenant_email_configs` — Gmail OAuth, SendGrid settings
+- `tenant_calendar_configs` — Google Calendar OAuth, scheduling preferences
 - `tenant_widget_configs` — Chat widget customization
 - `tenant_business_profiles` — Business info, scraped website data
 - `tenant_customer_service_configs` — Jackrabbit API keys, Zapier integration
@@ -205,8 +206,9 @@ Production secrets are in GCP Secret Manager, mounted as env vars in Cloud Run.
 | `JWT_SECRET_KEY` | JWT token signing |
 | `FIELD_ENCRYPTION_KEY` | Fernet encryption of API keys in DB |
 | `GEMINI_API_KEY` | Google Gemini LLM |
-| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` | Shared Gmail OAuth app |
+| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` | Shared Google OAuth app (Gmail + Calendar) |
 | `GMAIL_PUBSUB_TOPIC` / `GMAIL_PUBSUB_AUTH_TOKEN` | Gmail push notifications |
+| `GOOGLE_CALENDAR_OAUTH_REDIRECT_URI` | Calendar OAuth callback URL |
 | `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL` | SendGrid fallback (optional) |
 | `TRESTLE_API_KEY` | Trestle IQ reverse phone lookup (optional) |
 | `SCRAPINGBEE_API_KEY` | Website scraping fallback (optional) |
@@ -243,7 +245,8 @@ Production secrets are in GCP Secret Manager, mounted as env vars in Cloud Run.
 4. Connect Gmail via OAuth (if using email channel)
 5. Set up Zapier + Jackrabbit integration (if applicable)
 6. Configure `tenant_widget_configs` for chat widget styling
-7. Optional: SendGrid for outbound email, Twilio as SMS/voice fallback, Google Calendar
+7. Connect Google Calendar via Settings → Calendar (optional)
+8. Optional: SendGrid for outbound email, Twilio as SMS/voice fallback
 
 ## Workflow Orchestration
 

@@ -16,45 +16,76 @@ function PostCard({ post, forumSlug, categorySlug, allowsVoting, onVote }) {
     }
   };
 
+  // Generate preview from content (strip HTML, truncate)
+  const getPreview = (content) => {
+    if (!content) return '';
+    // Remove HTML tags and trim
+    const text = content.replace(/<[^>]*>/g, '').trim();
+    return text.length > 150 ? text.substring(0, 150) + '...' : text;
+  };
+
+  // Map status to display label
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'planned': return 'Planned';
+      case 'in_progress': return 'In Progress';
+      case 'implemented':
+      case 'shipped': return 'Shipped';
+      case 'resolved': return 'Resolved';
+      case 'archived': return 'Archived';
+      default: return status;
+    }
+  };
+
+  const preview = getPreview(post.content);
+
   return (
     <Link
       to={`/forums/${forumSlug}/${categorySlug}/${post.id}`}
       className="post-card"
     >
       {allowsVoting && (
-        <div className="post-vote-section">
+        <div className="vote-column">
           <button
-            className={`vote-btn ${post.user_has_voted ? 'voted' : ''}`}
+            className={`vote-arrow vote-up ${post.user_has_voted ? 'active' : ''}`}
             onClick={handleVoteClick}
             disabled={post.status !== 'active'}
+            aria-label="Vote"
           >
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 4l-8 8h5v8h6v-8h5z" />
             </svg>
-            <span className="vote-count">{post.vote_count}</span>
-            <span className="vote-label">votes</span>
           </button>
+          <span className="vote-score">{post.vote_count || 0}</span>
         </div>
       )}
-      <div className="post-content">
-        <h3 className="post-title">
-          {post.is_pinned && <span className="post-pinned-badge">Pinned</span>}
-          {post.status !== 'active' && (
-            <span className={`post-status-badge ${post.status}`}>
-              {post.status === 'implemented' ? 'Implemented' :
-               post.status === 'resolved' ? 'Resolved' : 'Archived'}
+      <div className="post-card-main">
+        <div className="post-card-badges">
+          {post.is_pinned && <span className="badge badge--pinned">Pinned</span>}
+          {post.status && post.status !== 'active' && (
+            <span className={`badge badge--${post.status.replace('_', '-')}`}>
+              {getStatusLabel(post.status)}
             </span>
           )}
-          {post.title}
-        </h3>
-        <div className="post-meta">
+        </div>
+        <h3 className="post-card-title">{post.title}</h3>
+        {preview && <p className="post-card-preview">{preview}</p>}
+        <div className="post-card-meta">
           <span className="post-author">
-            by {post.author_email}
+            by {post.author_email?.split('@')[0] || 'Anonymous'}
             {post.author_tenant_name && (
               <span className="post-tenant"> ({post.author_tenant_name})</span>
             )}
           </span>
+          <span className="meta-separator">·</span>
           <span>{formatDistanceToNow(post.created_at)}</span>
+          <span className="meta-separator">·</span>
+          <span className="post-comment-count">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            {post.comment_count || 0}
+          </span>
         </div>
       </div>
     </Link>
@@ -98,7 +129,7 @@ export default function ForumDetail() {
     fetchPosts();
   }, [forumSlug, activeCategory?.slug, postStatus]);
 
-  // Handle voting
+  // Handle voting (toggle upvote)
   const handleVote = async (postId) => {
     try {
       const result = await api.togglePostVote(forumSlug, activeCategory.slug, postId);

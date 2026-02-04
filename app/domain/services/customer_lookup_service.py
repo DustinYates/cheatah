@@ -8,9 +8,11 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.services.jackrabbit_data_transformer import transform_jackrabbit_to_account_data
 from app.domain.services.zapier_integration_service import ZapierIntegrationService
 from app.infrastructure.redis import redis_client
 from app.persistence.models.jackrabbit_customer import JackrabbitCustomer
+from app.persistence.repositories.customer_repository import CustomerRepository
 from app.persistence.repositories.customer_service_config_repository import CustomerServiceConfigRepository
 from app.persistence.repositories.jackrabbit_customer_repository import JackrabbitCustomerRepository
 from app.settings import settings
@@ -37,7 +39,8 @@ class CustomerLookupService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.zapier_service = ZapierIntegrationService(session)
-        self.customer_repo = JackrabbitCustomerRepository(session)
+        self.jackrabbit_repo = JackrabbitCustomerRepository(session)
+        self.customer_repo = CustomerRepository(session)
         self.config_repo = CustomerServiceConfigRepository(session)
 
     async def lookup_by_phone(
@@ -204,7 +207,7 @@ class CustomerLookupService:
 
         if redis_data:
             # Customer ID is in Redis, fetch full record from DB
-            customer = await self.customer_repo.get_by_jackrabbit_id(
+            customer = await self.jackrabbit_repo.get_by_jackrabbit_id(
                 tenant_id, redis_data.get("jackrabbit_id")
             )
             if customer:
@@ -216,7 +219,7 @@ class CustomerLookupService:
                 return customer
 
         # Fall back to database lookup
-        customer = await self.customer_repo.get_by_phone(tenant_id, phone_number)
+        customer = await self.jackrabbit_repo.get_by_phone(tenant_id, phone_number)
         if customer:
             # Check expiration
             if customer.cache_expires_at and customer.cache_expires_at < datetime.utcnow():
@@ -257,8 +260,8 @@ class CustomerLookupService:
         cache_ttl = settings.customer_service_cache_ttl_seconds
         cache_expires_at = datetime.utcnow() + timedelta(seconds=cache_ttl)
 
-        # Upsert in database
-        customer = await self.customer_repo.upsert(
+        # Upsert in jackrabbit_customers cache table
+        jr_customer = await self.jackrabbit_repo.upsert(
             tenant_id=tenant_id,
             jackrabbit_id=jackrabbit_id,
             phone_number=phone_number,
@@ -276,7 +279,19 @@ class CustomerLookupService:
             ttl=cache_ttl,
         )
 
-        return customer
+        # Sync to customers table for UI display
+        account_data = transform_jackrabbit_to_account_data(customer_data)
+        await self.customer_repo.upsert_from_jackrabbit(
+            tenant_id=tenant_id,
+            external_customer_id=jackrabbit_id,
+            phone=phone_number,
+            name=name,
+            email=email,
+            account_data=account_data,
+            jackrabbit_customer_id=jr_customer.id,
+        )
+
+        return jr_customer
 
     async def invalidate_cache(
         self,
@@ -295,17 +310,17 @@ class CustomerLookupService:
             normalized = self._normalize_phone(phone_number)
             cache_key = f"{self.CACHE_KEY_PREFIX}{tenant_id}:{normalized}"
             await redis_client.delete(cache_key)
-            await self.customer_repo.invalidate_by_phone(tenant_id, normalized)
+            await self.jackrabbit_repo.invalidate_by_phone(tenant_id, normalized)
 
         if jackrabbit_id:
             # Get customer to find phone for Redis key
-            customer = await self.customer_repo.get_by_jackrabbit_id(
+            customer = await self.jackrabbit_repo.get_by_jackrabbit_id(
                 tenant_id, jackrabbit_id
             )
             if customer:
                 cache_key = f"{self.CACHE_KEY_PREFIX}{tenant_id}:{customer.phone_number}"
                 await redis_client.delete(cache_key)
-            await self.customer_repo.invalidate_by_jackrabbit_id(tenant_id, jackrabbit_id)
+            await self.jackrabbit_repo.invalidate_by_jackrabbit_id(tenant_id, jackrabbit_id)
 
         logger.info(
             f"Cache invalidated",

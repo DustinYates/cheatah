@@ -1,8 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
-import { LoadingState, ErrorState } from '../components/ui';
+import { LoadingState, ErrorState, EmojiPicker } from '../components/ui';
 import './Forums.css';
 
 export default function NewForumPost() {
@@ -12,6 +12,7 @@ export default function NewForumPost() {
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const contentTextareaRef = useRef(null);
 
   const fetchForum = useCallback(async () => {
     return api.getForum(forumSlug);
@@ -46,6 +47,22 @@ export default function NewForumPost() {
       setError(err.message || 'Failed to create post');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleEmojiSelect = (emoji) => {
+    const textarea = contentTextareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const updated = content.substring(0, start) + emoji + content.substring(end);
+      setContent(updated);
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
+        textarea.focus();
+      }, 0);
+    } else {
+      setContent(content + emoji);
     }
   };
 
@@ -110,13 +127,19 @@ export default function NewForumPost() {
 
         <div className="form-group">
           <label htmlFor="content">Content</label>
-          <textarea
-            id="content"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="Describe your idea, question, or issue in detail..."
-            disabled={isSubmitting}
-          />
+          <div className="composer-wrapper">
+            <textarea
+              ref={contentTextareaRef}
+              id="content"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Describe your idea, question, or issue in detail..."
+              disabled={isSubmitting}
+            />
+            <div className="composer-toolbar">
+              <EmojiPicker onSelect={handleEmojiSelect} position="bottom" />
+            </div>
+          </div>
         </div>
 
         <div className="form-actions">

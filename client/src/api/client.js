@@ -1089,6 +1089,51 @@ class ApiClient {
     });
   }
 
+  // Forum Comment methods
+  async getPostComments(forumSlug, categorySlug, postId) {
+    return this.request(`/forums/${forumSlug}/${categorySlug}/${postId}/comments`);
+  }
+
+  async createComment(forumSlug, categorySlug, postId, data) {
+    return this.request(`/forums/${forumSlug}/${categorySlug}/${postId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async voteOnComment(forumSlug, categorySlug, postId, commentId, voteValue) {
+    return this.request(`/forums/${forumSlug}/${categorySlug}/${postId}/comments/${commentId}/vote`, {
+      method: 'POST',
+      body: JSON.stringify({ vote_value: voteValue }),
+    });
+  }
+
+  async deleteComment(forumSlug, categorySlug, postId, commentId) {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/forums/${forumSlug}/${categorySlug}/${postId}/comments/${commentId}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (response.status === 204) {
+      return true;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Delete failed' }));
+      throw new Error(error.detail || 'Delete failed');
+    }
+
+    return true;
+  }
+
   // ==================== User Groups API (Admin) ====================
 
   async getUserGroups() {

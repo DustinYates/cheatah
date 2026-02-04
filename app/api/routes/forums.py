@@ -127,6 +127,41 @@ class VoteResponse(BaseModel):
     vote_count: int
 
 
+class CommentResponse(BaseModel):
+    """Comment in response."""
+
+    id: int
+    post_id: int
+    parent_comment_id: int | None
+    author_email: str | None
+    author_tenant_name: str | None
+    content: str
+    score: int
+    is_deleted: bool
+    created_at: str | None
+    user_vote: int  # +1, -1, or 0
+
+
+class CommentCreate(BaseModel):
+    """Create comment request."""
+
+    content: str
+    parent_comment_id: int | None = None
+
+
+class CommentVote(BaseModel):
+    """Vote on comment request."""
+
+    vote_value: int  # +1 for upvote, -1 for downvote, 0 to remove
+
+
+class CommentVoteResponse(BaseModel):
+    """Vote on comment response."""
+
+    user_vote: int
+    score: int
+
+
 # --- Helper Functions ---
 
 async def _verify_forum_access(
@@ -465,3 +500,119 @@ async def archive_post(
         category_slug=post.category.slug,
         forum_slug=post.category.forum.slug
     )
+
+
+# --- Comment Endpoints ---
+
+@router.get("/{forum_slug}/{category_slug}/{post_id}/comments", response_model=list[CommentResponse])
+async def get_comments(
+    forum_slug: str,
+    category_slug: str,
+    post_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_no_rls)],
+) -> list[CommentResponse]:
+    """Get all comments for a post."""
+    repo = ForumRepository(db)
+    await _verify_forum_access(forum_slug, current_user, repo)
+
+    # Verify post exists
+    post_data = await repo.get_post_by_id(post_id)
+    if not post_data:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    comments = await repo.get_post_comments(post_id, current_user.id)
+
+    return [CommentResponse(**c) for c in comments]
+
+
+@router.post("/{forum_slug}/{category_slug}/{post_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
+async def create_comment(
+    forum_slug: str,
+    category_slug: str,
+    post_id: int,
+    comment_data: CommentCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_no_rls)],
+) -> CommentResponse:
+    """Create a comment on a post."""
+    repo = ForumRepository(db)
+    await _verify_forum_access(forum_slug, current_user, repo)
+
+    # Verify post exists
+    post_data = await repo.get_post_by_id(post_id)
+    if not post_data:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    # Validate content
+    if not comment_data.content.strip():
+        raise HTTPException(status_code=400, detail="Comment content is required")
+
+    comment = await repo.create_comment(
+        post_id=post_id,
+        author_user_id=current_user.id,
+        author_tenant_id=current_user.tenant_id,
+        content=comment_data.content.strip(),
+        parent_comment_id=comment_data.parent_comment_id
+    )
+
+    return CommentResponse(
+        id=comment.id,
+        post_id=comment.post_id,
+        parent_comment_id=comment.parent_comment_id,
+        author_email=current_user.email,
+        author_tenant_name=None,  # Would need to load tenant
+        content=comment.content,
+        score=comment.score,
+        is_deleted=comment.is_deleted,
+        created_at=_isoformat_utc(comment.created_at),
+        user_vote=0
+    )
+
+
+@router.post("/{forum_slug}/{category_slug}/{post_id}/comments/{comment_id}/vote", response_model=CommentVoteResponse)
+async def vote_on_comment(
+    forum_slug: str,
+    category_slug: str,
+    post_id: int,
+    comment_id: int,
+    vote_data: CommentVote,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_no_rls)],
+) -> CommentVoteResponse:
+    """Vote on a comment (upvote +1, downvote -1, or remove 0)."""
+    repo = ForumRepository(db)
+    await _verify_forum_access(forum_slug, current_user, repo)
+
+    # Validate vote value
+    if vote_data.vote_value not in [-1, 0, 1]:
+        raise HTTPException(status_code=400, detail="Vote value must be -1, 0, or 1")
+
+    try:
+        user_vote, score = await repo.vote_on_comment(
+            comment_id=comment_id,
+            user_id=current_user.id,
+            vote_value=vote_data.vote_value
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return CommentVoteResponse(user_vote=user_vote, score=score)
+
+
+@router.delete("/{forum_slug}/{category_slug}/{post_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_comment(
+    forum_slug: str,
+    category_slug: str,
+    post_id: int,
+    comment_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_no_rls)],
+):
+    """Soft delete a comment (only the author can delete)."""
+    repo = ForumRepository(db)
+    await _verify_forum_access(forum_slug, current_user, repo)
+
+    deleted = await repo.delete_comment(comment_id, current_user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Comment not found or not authorized")

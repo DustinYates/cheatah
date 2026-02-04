@@ -200,3 +200,63 @@ class ForumVote(Base):
     # Relationships
     post = relationship("ForumPost", back_populates="votes")
     user = relationship("User")
+
+
+class ForumComment(Base):
+    """Comment/reply on a forum post (Reddit-style).
+
+    Supports nested replies via parent_comment_id.
+    Score is calculated as upvotes - downvotes.
+    """
+
+    __tablename__ = "forum_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(
+        Integer, ForeignKey("forum_posts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    parent_comment_id = Column(
+        Integer, ForeignKey("forum_comments.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    author_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    author_tenant_id = Column(
+        Integer, ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True
+    )
+    content = Column(Text, nullable=False)
+    score = Column(Integer, default=0, nullable=False)  # upvotes - downvotes
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    post = relationship("ForumPost")
+    parent_comment = relationship("ForumComment", remote_side=[id], backref="replies")
+    author = relationship("User", foreign_keys=[author_user_id])
+    author_tenant = relationship("Tenant", foreign_keys=[author_tenant_id])
+    votes = relationship("ForumCommentVote", back_populates="comment", cascade="all, delete-orphan")
+
+
+class ForumCommentVote(Base):
+    """Vote on a forum comment (upvote +1 or downvote -1).
+
+    Each user can only vote once per comment.
+    """
+
+    __tablename__ = "forum_comment_votes"
+    __table_args__ = (UniqueConstraint("comment_id", "user_id", name="uq_comment_vote"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    comment_id = Column(
+        Integer, ForeignKey("forum_comments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    vote_value = Column(Integer, nullable=False)  # +1 for upvote, -1 for downvote
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    comment = relationship("ForumComment", back_populates="votes")
+    user = relationship("User")

@@ -16,6 +16,8 @@ from sqlalchemy.orm import joinedload, selectinload
 from app.persistence.models.forum import (
     Forum,
     ForumCategory,
+    ForumComment,
+    ForumCommentVote,
     ForumPost,
     ForumVote,
     PostStatus,
@@ -312,3 +314,139 @@ class ForumRepository:
         await self.session.refresh(post)
         logger.info(f"Post {post_id} archived with status={status} by user {archived_by_user_id}")
         return post
+
+    # --- Comment Operations ---
+
+    async def get_post_comments(
+        self, post_id: int, user_id: int | None = None
+    ) -> list[dict]:
+        """Get all comments for a post with author info and vote status.
+
+        Returns flat list; client handles nesting via parent_comment_id.
+        """
+        stmt = select(ForumComment).where(
+            ForumComment.post_id == post_id
+        ).options(
+            joinedload(ForumComment.author),
+            joinedload(ForumComment.author_tenant)
+        ).order_by(ForumComment.created_at.asc())
+
+        result = await self.session.execute(stmt)
+        comments = list(result.unique().scalars().all())
+
+        # Get user's votes for these comments
+        user_votes = {}
+        if user_id and comments:
+            comment_ids = [c.id for c in comments]
+            vote_stmt = select(
+                ForumCommentVote.comment_id, ForumCommentVote.vote_value
+            ).where(
+                ForumCommentVote.comment_id.in_(comment_ids),
+                ForumCommentVote.user_id == user_id
+            )
+            vote_result = await self.session.execute(vote_stmt)
+            user_votes = dict(vote_result.all())
+
+        return [
+            {
+                "id": c.id,
+                "post_id": c.post_id,
+                "parent_comment_id": c.parent_comment_id,
+                "author_email": c.author.email if c.author else None,
+                "author_tenant_name": c.author_tenant.name if c.author_tenant else None,
+                "content": c.content if not c.is_deleted else "[deleted]",
+                "score": c.score,
+                "is_deleted": c.is_deleted,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "user_vote": user_votes.get(c.id, 0),  # +1, -1, or 0
+            }
+            for c in comments
+        ]
+
+    async def create_comment(
+        self,
+        post_id: int,
+        author_user_id: int,
+        author_tenant_id: int | None,
+        content: str,
+        parent_comment_id: int | None = None
+    ) -> ForumComment:
+        """Create a new comment on a post."""
+        comment = ForumComment(
+            post_id=post_id,
+            parent_comment_id=parent_comment_id,
+            author_user_id=author_user_id,
+            author_tenant_id=author_tenant_id,
+            content=content,
+            score=0
+        )
+        self.session.add(comment)
+        await self.session.commit()
+        await self.session.refresh(comment)
+        logger.info(f"Created comment id={comment.id} on post {post_id} by user {author_user_id}")
+        return comment
+
+    async def vote_on_comment(
+        self, comment_id: int, user_id: int, vote_value: int
+    ) -> tuple[int, int]:
+        """Vote on a comment. vote_value: +1 for upvote, -1 for downvote, 0 to remove.
+
+        Returns (new_user_vote, new_score).
+        """
+        # Get existing vote
+        vote_stmt = select(ForumCommentVote).where(
+            ForumCommentVote.comment_id == comment_id,
+            ForumCommentVote.user_id == user_id
+        )
+        vote_result = await self.session.execute(vote_stmt)
+        existing_vote = vote_result.scalar_one_or_none()
+
+        # Get the comment
+        comment_stmt = select(ForumComment).where(ForumComment.id == comment_id)
+        comment_result = await self.session.execute(comment_stmt)
+        comment = comment_result.scalar_one_or_none()
+
+        if not comment:
+            raise ValueError(f"Comment {comment_id} not found")
+
+        old_value = existing_vote.vote_value if existing_vote else 0
+
+        if vote_value == 0:
+            # Remove vote
+            if existing_vote:
+                comment.score -= old_value
+                await self.session.delete(existing_vote)
+        elif existing_vote:
+            # Update existing vote
+            comment.score = comment.score - old_value + vote_value
+            existing_vote.vote_value = vote_value
+        else:
+            # New vote
+            new_vote = ForumCommentVote(
+                comment_id=comment_id,
+                user_id=user_id,
+                vote_value=vote_value
+            )
+            self.session.add(new_vote)
+            comment.score += vote_value
+
+        await self.session.commit()
+        logger.info(f"User {user_id} voted {vote_value} on comment {comment_id}")
+        return (vote_value, comment.score)
+
+    async def delete_comment(self, comment_id: int, user_id: int) -> bool:
+        """Soft delete a comment (only author can delete)."""
+        stmt = select(ForumComment).where(
+            ForumComment.id == comment_id,
+            ForumComment.author_user_id == user_id
+        )
+        result = await self.session.execute(stmt)
+        comment = result.scalar_one_or_none()
+
+        if not comment:
+            return False
+
+        comment.is_deleted = True
+        await self.session.commit()
+        logger.info(f"Comment {comment_id} soft deleted by user {user_id}")
+        return True

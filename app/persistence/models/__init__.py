@@ -37,6 +37,8 @@ from app.persistence.models.tenant_customer_support_config import TenantCustomer
 from app.persistence.models.forum import (
     Forum,
     ForumCategory,
+    ForumComment,
+    ForumCommentVote,
     ForumPost,
     ForumVote,
     GroupRole,
@@ -92,6 +94,8 @@ __all__ = [
     # Forum models
     "Forum",
     "ForumCategory",
+    "ForumComment",
+    "ForumCommentVote",
     "ForumPost",
     "ForumVote",
     "GroupRole",

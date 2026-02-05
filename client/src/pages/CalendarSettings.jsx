@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -29,7 +29,6 @@ export default function CalendarSettings() {
   const [disconnecting, setDisconnecting] = useState(false);
 
   const [formData, setFormData] = useState({
-    booking_link_url: '',
     calendar_id: 'primary',
     scheduling_preferences: {
       meeting_duration_minutes: 30,
@@ -62,7 +61,6 @@ export default function CalendarSettings() {
   useEffect(() => {
     if (settings) {
       setFormData({
-        booking_link_url: settings.booking_link_url || '',
         calendar_id: settings.calendar_id || 'primary',
         scheduling_preferences: settings.scheduling_preferences || formData.scheduling_preferences,
       });
@@ -187,24 +185,6 @@ export default function CalendarSettings() {
         )}
       </section>
 
-      {/* Fallback Booking Link */}
-      <section className="settings-section">
-        <h2>Booking Link (Fallback)</h2>
-        <p className="help-text">
-          If Google Calendar is not connected, the chatbot will share this link instead.
-        </p>
-        <div className="form-group">
-          <label htmlFor="booking-link">Booking URL</label>
-          <input
-            id="booking-link"
-            type="url"
-            value={formData.booking_link_url}
-            onChange={(e) => setFormData(prev => ({ ...prev, booking_link_url: e.target.value }))}
-            placeholder="https://calendly.com/your-link"
-          />
-        </div>
-      </section>
-
       {/* Scheduling Preferences */}
       {settings?.is_connected && (
         <section className="settings-section">
@@ -310,6 +290,45 @@ export default function CalendarSettings() {
             />
             <span className="help-text">Use {'{customer_name}'} as a placeholder for the customer's name.</span>
           </div>
+        </section>
+      )}
+
+      {/* Booking Notifications */}
+      {settings?.is_connected && (
+        <section className="settings-section">
+          <div className="section-header-row">
+            <h2>Booking Notifications</h2>
+            <span className="badge-new">NEW</span>
+          </div>
+          <p className="section-description">
+            Get notified via SMS when a customer books a meeting through the chatbot.
+          </p>
+
+          <div className="toggle-row">
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                className="toggle-input"
+                checked={prefs.booking_notification_enabled || false}
+                onChange={(e) => updatePref('booking_notification_enabled', e.target.checked)}
+              />
+              <span className="toggle-switch" />
+              <span className="toggle-text">Enable Booking Notifications</span>
+            </label>
+            <span className="help-text">
+              Receive an SMS alert each time a customer books a meeting.
+            </span>
+          </div>
+
+          {prefs.booking_notification_enabled && (
+            <div className="notification-info-box">
+              <p>
+                Notifications will be sent to the phone number configured in{' '}
+                <Link to="/settings/sms" className="inline-link">SMS Settings</Link>
+                {' '}(Lead Notifications section). Quiet hours are also respected.
+              </p>
+            </div>
+          )}
         </section>
       )}
 

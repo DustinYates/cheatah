@@ -1711,7 +1711,7 @@ async def telnyx_ai_call_complete(
                 # Only trust ai_sent_registration_url (actual Telnyx message check), not
                 # link_already_sent_sms (summary text match). The AI often says "I sent the link"
                 # in the summary but didn't actually send a URL via SMS.
-                if is_registration_request_sms and normalized_from and not ai_sent_registration_url:
+                if is_registration_request_sms and normalized_from and not ai_sent_registration_url and tenant_id == 3:
                     # IMMEDIATE SMS SEND: Send registration link right away
                     # Use consistent phone normalization for dedup keys (last 10 digits)
                     normalized_for_dedup = normalize_phone_for_dedup(from_number)
@@ -2389,7 +2389,7 @@ async def telnyx_ai_call_complete(
             )
         elif sms_already_sent_for_call:
             pass  # Already logged above
-        elif is_registration_request and from_number:
+        elif is_registration_request and from_number and tenant_id == 3:
             logger.info(
                 f"Registration request detected from Telnyx AI - "
                 f"tenant_id={tenant_id}, phone={from_number}, summary={summary[:100] if summary else 'none'}"
@@ -3288,6 +3288,357 @@ async def send_link_tool(
             content={"status": "error", "message": str(e)}
         )
 
+
+
+async def _resolve_tool_tenant(
+    params: dict, body: dict, request: Request, db: AsyncSession
+) -> int | None:
+    """Resolve tenant ID for Telnyx AI tool webhooks.
+
+    Three-step resolution:
+    1. ?tenant_id query param (set in Telnyx tool URL per-agent)
+    2. x-telnyx-call-control-id header -> Call record lookup
+    3. Telnyx API fallback -> phone number -> tenant lookup
+    """
+    # 1) Explicit tenant_id from query param or body
+    raw_tid = params.get("tenant_id") or body.get("tenant_id")
+    if raw_tid:
+        try:
+            tenant_id = int(raw_tid)
+            logger.info(f"[TOOL] Tenant {tenant_id} from request param")
+            return tenant_id
+        except (ValueError, TypeError):
+            pass
+
+    # 2) call_control_id header -> Call record
+    call_control_id = request.headers.get("x-telnyx-call-control-id", "")
+    if call_control_id:
+        from app.persistence.models.call import Call
+        stmt = select(Call).where(Call.call_sid == call_control_id)
+        result = await db.execute(stmt)
+        call_record = result.scalar_one_or_none()
+        if call_record:
+            logger.info(f"[TOOL] Tenant {call_record.tenant_id} from call record")
+            return call_record.tenant_id
+
+    # 3) Telnyx API fallback
+    if call_control_id and settings.telnyx_api_key:
+        try:
+            import httpx
+            async with httpx.AsyncClient(
+                base_url="https://api.telnyx.com/v2",
+                headers={"Authorization": f"Bearer {settings.telnyx_api_key}"},
+                timeout=10.0,
+            ) as client:
+                resp = await client.get(f"/calls/{call_control_id}")
+                if resp.status_code == 200:
+                    call_data = resp.json().get("data", {})
+                    telnyx_to_number = call_data.get("to")
+                    if telnyx_to_number:
+                        tenant_id = await _get_tenant_from_telnyx_number(telnyx_to_number, db)
+                        if tenant_id:
+                            logger.info(f"[TOOL] Tenant {tenant_id} from Telnyx API fallback")
+                            return tenant_id
+        except Exception as e:
+            logger.warning(f"[TOOL] Tenant resolution Telnyx API error: {e}")
+
+    return None
+
+
+def _parse_date_preference(preference: str) -> "date":
+    """Parse a natural language date preference into a date object."""
+    from datetime import date as date_type
+
+    if not preference:
+        return date_type.today()
+
+    pref = preference.lower().strip()
+    today = date_type.today()
+
+    if pref in ("today", "now"):
+        return today
+    if pref == "tomorrow":
+        return today + timedelta(days=1)
+    if pref == "next week":
+        days_ahead = 7 - today.weekday()
+        return today + timedelta(days=days_ahead)
+
+    # Day name (e.g., "monday", "saturday")
+    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    if pref in day_names:
+        target_weekday = day_names.index(pref)
+        days_ahead = (target_weekday - today.weekday()) % 7
+        if days_ahead == 0:
+            days_ahead = 7  # Next occurrence, not today
+        return today + timedelta(days=days_ahead)
+
+    # Try ISO format
+    try:
+        return date_type.fromisoformat(pref)
+    except ValueError:
+        pass
+
+    return today
+
+
+# =============================================================
+# CALENDAR BOOKING TOOLS (Telnyx AI Voice Agent)
+# =============================================================
+
+@router.api_route("/tools/get-available-slots", methods=["GET", "POST"])
+async def get_available_slots_tool(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Webhook tool for Telnyx AI Assistant to check calendar availability.
+
+    Returns the next 3 available meeting slots for the caller to choose from.
+
+    Body params:
+        date_preference: Optional hint like "tomorrow", "next week", "Monday"
+        num_days: Optional number of days to search (default 5, max 14)
+    """
+    try:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        params = dict(request.query_params)
+
+        # Resolve tenant
+        tenant_id = await _resolve_tool_tenant(params, body, request, db)
+        if not tenant_id:
+            logger.warning("[TOOL] get_available_slots: could not determine tenant")
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "I'm not able to check the schedule right now. "
+                          "I can take your information and have someone call you back to schedule.",
+            })
+
+        logger.info(f"[TOOL] get_available_slots called - tenant_id={tenant_id}")
+
+        # Parse date preference
+        date_preference = body.get("date_preference") or params.get("date_preference", "")
+        num_days = min(int(body.get("num_days") or params.get("num_days", 5)), 14)
+        date_start = _parse_date_preference(date_preference)
+
+        # Get available slots via existing CalendarService
+        from app.domain.services.calendar_service import CalendarService
+        calendar_service = CalendarService(db)
+
+        mode = await calendar_service.get_scheduling_mode(tenant_id)
+        if mode != "calendar_api":
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "I'm not able to check the schedule right now. "
+                          "I can take your information and have someone call you back to schedule.",
+            })
+
+        all_slots = await calendar_service.get_available_slots(tenant_id, date_start, num_days)
+
+        if not all_slots:
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "I don't have any available times in the next few days. "
+                          "Would you like me to check further out?",
+                "slots": [],
+                "more_available": False,
+            })
+
+        # Limit to 3 for voice readability
+        display_slots = all_slots[:3]
+        more_available = len(all_slots) > 3
+
+        # Build voice-friendly result
+        lines = ["Here are the next available times:"]
+        slot_data = []
+        for i, slot in enumerate(display_slots, 1):
+            lines.append(f"{i}. {slot.display_label}")
+            slot_data.append({
+                "index": i,
+                "start": slot.start.isoformat(),
+                "end": slot.end.isoformat(),
+                "display": slot.display_label,
+            })
+
+        if more_available:
+            lines.append("I have more options if none of these work.")
+        lines.append("Which time works best?")
+
+        logger.info(
+            f"[TOOL] get_available_slots: returning {len(slot_data)} slots "
+            f"(total available: {len(all_slots)}) for tenant {tenant_id}"
+        )
+
+        return JSONResponse(content={
+            "status": "ok",
+            "result": "\n".join(lines),
+            "slots": slot_data,
+            "more_available": more_available,
+        })
+
+    except Exception as e:
+        logger.error(f"[TOOL] Error in get_available_slots: {e}", exc_info=True)
+        return JSONResponse(content={
+            "status": "error",
+            "result": "I'm having trouble checking the schedule. "
+                      "Let me take your info and have someone follow up.",
+        })
+
+
+@router.api_route("/tools/book-meeting", methods=["GET", "POST"])
+async def book_meeting_tool(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Webhook tool for Telnyx AI Assistant to book a calendar meeting.
+
+    Books a meeting on Google Calendar and sends SMS confirmation with event link.
+
+    Body params:
+        slot_start: ISO datetime string for the meeting start (from get-available-slots)
+        customer_name: Required - caller's name
+        customer_phone: Required - caller's phone for SMS confirmation
+        customer_email: Optional - caller's email
+        topic: Optional - meeting topic (default "Consultation")
+    """
+    try:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        params = dict(request.query_params)
+
+        # Resolve tenant
+        tenant_id = await _resolve_tool_tenant(params, body, request, db)
+        if not tenant_id:
+            logger.warning("[TOOL] book_meeting: could not determine tenant")
+            return JSONResponse(content={
+                "status": "error",
+                "result": "I wasn't able to complete the booking right now.",
+            })
+
+        # Extract parameters
+        slot_start_str = body.get("slot_start") or params.get("slot_start", "")
+        customer_name = body.get("customer_name") or params.get("customer_name", "")
+        customer_phone = body.get("customer_phone") or body.get("to") or params.get("customer_phone", "")
+        customer_email = body.get("customer_email") or params.get("customer_email")
+        topic = body.get("topic") or params.get("topic", "Consultation")
+
+        logger.info(
+            f"[TOOL] book_meeting called - tenant_id={tenant_id}, name={customer_name}, "
+            f"phone={customer_phone}, slot={slot_start_str}, topic={topic}"
+        )
+
+        if not slot_start_str:
+            return JSONResponse(content={
+                "status": "error",
+                "result": "I need to know which time slot you'd like. Let me check availability again.",
+            })
+
+        if not customer_name:
+            return JSONResponse(content={
+                "status": "error",
+                "result": "I need your name to complete the booking. May I get your name?",
+            })
+
+        # Parse slot_start
+        try:
+            slot_start = datetime.fromisoformat(slot_start_str)
+        except ValueError:
+            return JSONResponse(content={
+                "status": "error",
+                "result": "I had trouble with that time. Let me check availability again.",
+            })
+
+        # Book the meeting via existing CalendarService
+        from app.domain.services.calendar_service import CalendarService
+        calendar_service = CalendarService(db)
+
+        result = await calendar_service.book_meeting(
+            tenant_id=tenant_id,
+            slot_start=slot_start,
+            customer_name=customer_name,
+            customer_email=customer_email,
+            customer_phone=customer_phone,
+            topic=topic,
+        )
+
+        if not result.success:
+            if "no longer available" in (result.error or "").lower() or "unavailable" in (result.error or "").lower():
+                return JSONResponse(content={
+                    "status": "ok",
+                    "result": "I'm sorry, that time was just taken. Let me check what else is available.",
+                })
+            logger.warning(f"[TOOL] book_meeting failed: {result.error}")
+            return JSONResponse(content={
+                "status": "error",
+                "result": "I wasn't able to complete the booking. "
+                          "I can take your info and have someone call you back.",
+            })
+
+        # Format booked time for voice
+        booked_display = slot_start.strftime("%A %B %d at %I:%M %p").replace(" 0", " ")
+
+        # Send SMS confirmation with calendar link
+        sms_sent = False
+        if customer_phone:
+            try:
+                from app.infrastructure.telephony.factory import TelephonyProviderFactory
+                factory = TelephonyProviderFactory(db)
+                sms_provider = await factory.get_sms_provider(tenant_id)
+
+                if sms_provider:
+                    sms_config = await factory.get_config(tenant_id)
+                    from_number = factory.get_sms_phone_number(sms_config) if sms_config else None
+
+                    if from_number:
+                        formatted_to = _normalize_phone(customer_phone)
+
+                        sms_body = (
+                            f"Appointment Confirmed\n\n"
+                            f"{slot_start.strftime('%a %b %d, %I:%M %p')} - {topic}\n"
+                            f"Name: {customer_name}\n"
+                        )
+                        if result.event_link:
+                            sms_body += f"\nView/edit: {result.event_link}\n"
+                        sms_body += "\nQuestions? Call or text us anytime!"
+
+                        await sms_provider.send_sms(
+                            to=formatted_to,
+                            from_=from_number,
+                            body=sms_body,
+                        )
+                        sms_sent = True
+                        logger.info(f"[TOOL] book_meeting: SMS confirmation sent to {formatted_to}")
+            except Exception as sms_err:
+                logger.warning(f"[TOOL] book_meeting: SMS confirmation failed: {sms_err}")
+
+        confirmation_msg = f"Your {topic.lower()} has been booked for {booked_display}."
+        if sms_sent:
+            confirmation_msg += " I'm sending you a text message now with the details and a calendar link."
+
+        logger.info(
+            f"[TOOL] book_meeting success - tenant_id={tenant_id}, name={customer_name}, "
+            f"slot={booked_display}, sms_sent={sms_sent}"
+        )
+
+        return JSONResponse(content={
+            "status": "ok",
+            "result": confirmation_msg,
+            "event_link": result.event_link,
+            "sms_sent": sms_sent,
+        })
+
+    except Exception as e:
+        logger.error(f"[TOOL] Error in book_meeting: {e}", exc_info=True)
+        return JSONResponse(content={
+            "status": "error",
+            "result": "I'm having trouble completing the booking. "
+                      "Let me take your info and have someone follow up.",
+        })
 
 
 def _map_location_to_code(location: str) -> str | None:

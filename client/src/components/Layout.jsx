@@ -152,14 +152,14 @@ export default function Layout() {
               <ul className="nav-submenu">
                 {user?.is_global_admin && (
                   <li>
-                    <NavLink to="/settings/prompts">Prompts Setup</NavLink>
+                    <NavLink to="/settings/prompts">Prompt</NavLink>
                   </li>
                 )}
                 <li>
                   <NavLink to="/settings/widget">Chatbot</NavLink>
                 </li>
                 <li>
-                  <NavLink to="/settings/email">Email Setup</NavLink>
+                  <NavLink to="/settings/email">Email</NavLink>
                 </li>
                 <li>
                   <NavLink to="/settings/calendar">Calendar</NavLink>

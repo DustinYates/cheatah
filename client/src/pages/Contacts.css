@@ -1,6 +1,6 @@
 /* Contacts Page Styles - Professional Enterprise UI */
 .contacts-page {
-  max-width: 1040px;
+  max-width: 1280px;
   margin: 0 auto;
   width: 100%;
 }
@@ -262,7 +262,7 @@
 
 /* Column Widths */
 .col-name {
-  width: 20%;
+  width: 180px;
 }
 
 .col-customer-name {

@@ -258,6 +258,23 @@ class CalendarService:
                 f"event_id={event.get('id')}, customer={customer_name}"
             )
 
+            # Send booking notification SMS if enabled
+            if prefs.get("booking_notification_enabled", False):
+                try:
+                    from app.infrastructure.notifications import NotificationService
+
+                    notification_service = NotificationService(self.session)
+                    await notification_service.notify_booking(
+                        tenant_id=tenant_id,
+                        customer_name=customer_name,
+                        customer_phone=customer_phone,
+                        slot_start=slot_start,
+                        slot_end=slot_end,
+                        topic=topic,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send booking notification: {e}", exc_info=True)
+
             return BookingResult(
                 success=True,
                 event_id=event.get("id"),

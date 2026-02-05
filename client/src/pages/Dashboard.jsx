@@ -614,7 +614,7 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {tenantsOverview.tenants.map((tenant) => (
+              {[...tenantsOverview.tenants].sort((a, b) => a.id - b.id).map((tenant) => (
                 <tr
                   key={tenant.id}
                   className="lead-row"

@@ -518,6 +518,110 @@ class NotificationService:
             "sms_result": result,
         }
 
+    async def notify_booking(
+        self,
+        tenant_id: int,
+        customer_name: str,
+        customer_phone: str | None,
+        slot_start: "datetime",
+        slot_end: "datetime",
+        topic: str = "Meeting",
+    ) -> dict[str, Any]:
+        """Send SMS notification when a customer books a calendar meeting.
+
+        Uses the notification phone and quiet hours settings from SMS Settings
+        (lead notification config). The booking_notification_enabled flag is
+        checked by the caller (calendar_service) before invoking this.
+
+        Args:
+            tenant_id: Tenant ID
+            customer_name: Customer's name
+            customer_phone: Customer's phone (if known)
+            slot_start: Booking start time
+            slot_end: Booking end time
+            topic: Meeting topic
+
+        Returns:
+            Notification result dict
+        """
+        # Reuse lead notification settings for phone + quiet hours
+        lead_settings = await self._get_lead_notification_settings(tenant_id)
+
+        notification_phone = lead_settings.get("phone")
+        if not notification_phone:
+            # Fall back to checking business profile (same as lead notifications)
+            logger.debug(f"No notification phone override for tenant {tenant_id}, will use business profile fallback")
+
+        # Check quiet hours
+        if lead_settings.get("quiet_hours_enabled", True):
+            if await self._is_lead_notification_quiet_hours(tenant_id, lead_settings):
+                logger.info(f"Quiet hours active for tenant {tenant_id}, skipping booking notification")
+                return {"status": "quiet_hours", "reason": "outside_notification_hours"}
+
+        # Format booking time for SMS
+        try:
+            from zoneinfo import ZoneInfo
+            from app.persistence.models.tenant_sms_config import TenantSmsConfig as _SmsConfig
+
+            stmt = select(_SmsConfig).where(_SmsConfig.tenant_id == tenant_id)
+            result = await self.session.execute(stmt)
+            sms_cfg = result.scalar_one_or_none()
+            tz_str = (sms_cfg.timezone if sms_cfg else None) or "America/Chicago"
+            tz = ZoneInfo(tz_str)
+        except Exception:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo("America/Chicago")
+
+        local_start = slot_start.astimezone(tz) if slot_start.tzinfo else slot_start
+        time_str = local_start.strftime("%b %d, %I:%M %p")
+
+        # Build SMS message (max 160 chars)
+        message = f"New Booking! {customer_name} booked {time_str}."
+        if topic and topic != "Meeting":
+            message += f" Topic: {topic}."
+        if customer_phone:
+            message += f"\nPhone: {customer_phone}"
+
+        logger.info(
+            f"Sending booking notification - tenant_id={tenant_id}, "
+            f"customer={customer_name}, time={time_str}"
+        )
+
+        sms_result = await self._send_lead_notification_sms(
+            tenant_id=tenant_id,
+            message=message,
+            lead_notification_settings=lead_settings,
+        )
+
+        # Create in-app notification record
+        try:
+            notification = Notification(
+                tenant_id=tenant_id,
+                user_id=None,
+                notification_type=NotificationType.BOOKING_CONFIRMED,
+                title=f"New Booking: {customer_name}",
+                message=message,
+                extra_data={
+                    "customer_name": customer_name,
+                    "customer_phone": customer_phone,
+                    "slot_start": slot_start.isoformat(),
+                    "slot_end": slot_end.isoformat(),
+                    "topic": topic,
+                },
+                priority=NotificationPriority.HIGH,
+                is_read=False,
+            )
+            self.session.add(notification)
+            await self.session.commit()
+        except Exception as e:
+            logger.error(f"Failed to create booking notification record: {e}", exc_info=True)
+
+        return {
+            "status": sms_result.get("status", "error"),
+            "notification_type": NotificationType.BOOKING_CONFIRMED,
+            "sms_result": sms_result,
+        }
+
     async def _get_lead_notification_settings(self, tenant_id: int) -> dict:
         """Get lead notification settings from tenant SMS config.
 

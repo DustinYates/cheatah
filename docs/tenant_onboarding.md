@@ -338,7 +338,64 @@ Create two tenants (e.g., `1042` and `2048`) and run:
 
 ---
 
-## 8) Security notes (support-friendly)
+## 8) BSS (British Swim School) Tenant Onboarding
+
+BSS franchises have specific requirements due to their Jackrabbit integration and voice agent capabilities.
+
+### BSS-Specific Configuration
+
+| Item | Description |
+|------|-------------|
+| **Jackrabbit Org ID** | `545911` (shared across all BSS locations) |
+| **Registration URL Builder** | Uses `app/utils/registration_url_builder.py` for prefilled links |
+| **Voice Agent Tools** | `send_registration_link`, `get_classes`, `book_meeting`, `get_available_slots` |
+
+### Telnyx AI Assistant Setup for BSS
+
+1. **Create AI Assistant** in Telnyx Portal with BSS-specific prompt
+2. **Assign phone number** to the assistant
+3. **Configure webhook tools** with the following URLs:
+
+| Tool | URL |
+|------|-----|
+| `send_registration_link` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/send-link` |
+| `get_classes` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/get-classes` |
+| `book_meeting` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/book-meeting` |
+| `get_available_slots` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/get-available-slots` |
+
+### IMPORTANT: Tenant ID Resolution
+
+The tool endpoints determine tenant via:
+1. `?tenant_id=X` query parameter in the webhook URL
+2. `call_control_id` header (voice calls only)
+3. **Fallback to tenant 3** (BSS Cypress-Spring) if neither is available
+
+**For new BSS tenants**, you MUST either:
+- Add `?tenant_id=<new_tenant_id>` to each tool URL in Telnyx, OR
+- Update the fallback tenant ID in the code (`app/api/routes/telnyx_webhooks.py`)
+
+### BSS Phone Number Mapping
+
+| Tenant ID | Location | Phone Number | Assistant ID |
+|-----------|----------|--------------|--------------|
+| 3 | BSS Cypress-Spring | +12817679141 | `assistant-109f3350-874f-4770-87d4-737450280441` |
+
+*Add new BSS franchises to this table as they are onboarded.*
+
+### BSS Voice Agent Prompt
+
+The combined BSS voice agent prompt is maintained at:
+- `docs/BSS_VOICE_AGENT_PROMPT_COMBINED.md`
+
+This prompt includes:
+- Bilingual (English/Spanish) support
+- Location/class information
+- Registration link sending via tools
+- Jackrabbit class integration
+
+---
+
+## 9) Security notes (support-friendly)
 
 Safe to share:
 

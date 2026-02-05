@@ -147,9 +147,13 @@ echo -n "YOUR_GENERATED_KEY" | gcloud secrets create field-encryption-key --data
 
 ### Telnyx AI Assistant Configuration
 
+| Tenant | Assistant ID | Phone Number |
+|--------|--------------|--------------|
+| **Tenant 2 (XXX)** | `assistant-9364a1b8-04ba-4cfa-b77d-c24b1fb011af` | +1-281-699-0999 |
+| **Tenant 3 (BSS Cypress-Spring)** | `assistant-109f3350-874f-4770-87d4-737450280441` | +1-281-767-9141 |
+
 | Setting | Value |
 |---------|-------|
-| **Assistant ID (Tenant 2)** | `assistant-109f3350-874f-4770-87d4-737450280441` |
 | **Insight Group** | `0f29632f-e2e6-424a-973f-4d738ea758d8` |
 
 ### Webhooks (MANDATORY)

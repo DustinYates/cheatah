@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Add Spanish phone number to tenant 3 configuration."""
+"""Add Spanish phone number to tenant 3 configuration.
+
+DEPRECATED: This script has outdated phone number references.
+As of 2026-02-05, tenant phone numbers are:
+- Tenant 2 (XXX): +12816990999
+- Tenant 3 (BSS Cypress-Spring): +12817679141
+
+Do not run this script without updating the phone number below.
+"""
 
 import asyncio
 import sys

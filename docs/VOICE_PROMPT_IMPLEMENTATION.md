@@ -13,7 +13,7 @@ This document describes how to automatically convert text/chat prompts into voic
 │                         INBOUND CALL FLOW                           │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  1. Caller dials tenant phone number (e.g., +12816990999)          │
+│  1. Caller dials tenant phone number (e.g., +12817679141)          │
 │                           │                                         │
 │                           ▼                                         │
 │  2. Telnyx AI Assistant receives call                              │
@@ -21,7 +21,7 @@ This document describes how to automatically convert text/chat prompts into voic
 │                           ▼                                         │
 │  3. Telnyx calls Dynamic Variables Webhook:                        │
 │     POST https://chattercheatah-xxx.run.app/api/v1/telnyx/dynamic-variables
-│     Body: { "to": "+12816990999", "from": "+1234567890" }          │
+│     Body: { "to": "+12817679141", "from": "+1234567890" }          │
 │                           │                                         │
 │                           ▼                                         │
 │  4. Our API:                                                        │
@@ -349,7 +349,7 @@ FROM prompt_bundles;
 ```bash
 curl -X POST https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/dynamic-variables \
   -H "Content-Type: application/json" \
-  -d '{"to": "+12816990999", "from": "+1234567890", "direction": "inbound"}'
+  -d '{"to": "+12817679141", "from": "+1234567890", "direction": "inbound"}'
 ```
 
 Expected response:

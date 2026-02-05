@@ -31,7 +31,7 @@ This document outlines the steps required to fully configure a new tenant in Cha
 - **API Key**: Get from https://portal.telnyx.com > API Keys
   - Can reuse the same API key across multiple tenants
 - **Messaging Profile ID**: From Telnyx Mission Control > Messaging > Messaging Profiles
-- **SMS Phone Number**: The Telnyx number assigned to this tenant (e.g., +12816990999)
+- **SMS Phone Number**: The Telnyx number assigned to this tenant (e.g., +12817679141 for BSS)
 
 ### For Twilio:
 - **Account SID**: From Twilio Console

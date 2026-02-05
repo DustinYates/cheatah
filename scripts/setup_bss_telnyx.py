@@ -22,7 +22,7 @@ TELNYX_CONFIG = {
     "tenant_id": 3,  # Adjust if needed - check database for actual tenant ID
     "provider": "telnyx",
     "telnyx_messaging_profile_id": "40019b95-2d35-4479-9483-4080ad07d86a",
-    "telnyx_phone_number": "+12816990999",
+    "telnyx_phone_number": "+12817679141",  # Updated 2026-02-05
     "is_enabled": True,
     "voice_enabled": False,  # Set to True if voice is needed
 }

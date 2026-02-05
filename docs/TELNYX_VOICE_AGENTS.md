@@ -6,7 +6,7 @@ This document describes the Telnyx Voice AI agent configured for British Swim Sc
 
 | Agent | Assistant ID | Phone | Purpose |
 |-------|--------------|-------|---------|
-| **BSS_03** | `assistant-9364a1b8-04ba-4cfa-b77d-c24b1fb011af` | +1-281-699-0999 | Primary voice assistant for BSS Cypress-Spring |
+| **BSS_003** | `assistant-109f3350-874f-4770-87d4-737450280441` | +1-281-767-9141 | Primary voice assistant for BSS Cypress-Spring (Tenant 3) |
 
 ### Performance Metrics
 - **Model**: google/gemini-2.5-flash
@@ -18,9 +18,9 @@ This document describes the Telnyx Voice AI agent configured for British Swim Sc
 
 ### Basic Info
 
-- **Name**: BSS_03
-- **Assistant ID**: `assistant-9364a1b8-04ba-4cfa-b77d-c24b1fb011af`
-- **Phone Number**: +1-281-699-0999
+- **Name**: BSS_003
+- **Assistant ID**: `assistant-109f3350-874f-4770-87d4-737450280441`
+- **Phone Number**: +1-281-767-9141
 - **Tenant**: BSS Cypress-Spring (Tenant 3)
 
 ### Tools Configured
@@ -49,7 +49,7 @@ This document describes the Telnyx Voice AI agent configured for British Swim Sc
 ### Widget Configuration
 
 ```html
-<telnyx-ai-agent agent-id="assistant-9364a1b8-04ba-4cfa-b77d-c24b1fb011af"></telnyx-ai-agent>
+<telnyx-ai-agent agent-id="assistant-109f3350-874f-4770-87d4-737450280441"></telnyx-ai-agent>
 <script async src="https://unpkg.com/@telnyx/ai-agent-widget@next"></script>
 ```
 
@@ -200,6 +200,7 @@ https://chatterchetah-900139201687.us-central1.run.app/api/v1/telnyx
 
 ## Changelog
 
+- **2026-02-05**: Updated to BSS_003 agent (assistant-109f3350-874f-4770-87d4-737450280441) on +1-281-767-9141
 - **2026-01-31**: Replaced EN/SP dual-agent setup with single BSS_03 agent (assistant-9364a1b8-04ba-4cfa-b77d-c24b1fb011af)
 - **2026-01-26**: Added comprehensive integration architecture, pricing, location mappings
 - **2026-01-26**: Added full Spanish agent (ChatterCheetah Voice BSS SP) configuration

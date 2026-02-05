@@ -3134,11 +3134,9 @@ async def send_link_tool(
                 logger.warning(f"[TOOL] send_link: Telnyx API call lookup error: {e}")
 
         if not tenant_id:
-            logger.error("[TOOL] send_link: could not determine tenant")
-            return JSONResponse(content={
-                "status": "error",
-                "message": "Could not determine tenant",
-            })
+            # Fallback: default to tenant 3 (BSS) - same as send_registration_link
+            tenant_id = 3
+            logger.warning(f"[TOOL] send_link: could not determine tenant, defaulting to {tenant_id}")
 
         # Build Jackrabbit registration URL with pre-filled data
         from urllib.parse import urlencode

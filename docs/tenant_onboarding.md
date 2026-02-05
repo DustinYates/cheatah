@@ -354,25 +354,43 @@ BSS franchises have specific requirements due to their Jackrabbit integration an
 
 1. **Create AI Assistant** in Telnyx Portal with BSS-specific prompt
 2. **Assign phone number** to the assistant
-3. **Configure webhook tools** with the following URLs:
+3. **Configure webhook tools** with the following URLs (replace `{TENANT_ID}` with actual tenant ID):
 
-| Tool | URL |
-|------|-----|
-| `send_registration_link` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/send-link` |
-| `get_classes` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/get-classes` |
-| `book_meeting` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/book-meeting` |
-| `get_available_slots` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/get-available-slots` |
+| Tool | URL Template |
+|------|--------------|
+| `send_registration_link` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/send-link?tenant_id={TENANT_ID}` |
+| `get_classes` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/get-classes?tenant_id={TENANT_ID}` |
+| `book_meeting` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/book-meeting?tenant_id={TENANT_ID}` |
+| `get_available_slots` | `https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/get-available-slots?tenant_id={TENANT_ID}` |
 
-### IMPORTANT: Tenant ID Resolution
+> **Note:** For tenant 3 (BSS Cypress-Spring), the `?tenant_id=3` parameter is optional due to the code fallback. For ALL other tenants, it is **REQUIRED**.
+
+### CRITICAL: Tenant ID Resolution for New BSS Franchises
 
 The tool endpoints determine tenant via:
 1. `?tenant_id=X` query parameter in the webhook URL
 2. `call_control_id` header (voice calls only)
 3. **Fallback to tenant 3** (BSS Cypress-Spring) if neither is available
 
-**For new BSS tenants**, you MUST either:
-- Add `?tenant_id=<new_tenant_id>` to each tool URL in Telnyx, OR
-- Update the fallback tenant ID in the code (`app/api/routes/telnyx_webhooks.py`)
+> **⚠️ WARNING: The tenant 3 fallback is ONLY for the first BSS franchise (Cypress-Spring).**
+>
+> **ALL future BSS franchises MUST have their tenant_id explicitly passed in the tool URLs.**
+>
+> The fallback exists as a safety net for tenant 3 only. It will NOT work correctly for tenant 4, 5, etc.
+
+**For EVERY new BSS tenant**, you MUST:
+1. Create the tenant in the system (get assigned tenant_id, e.g., `4`)
+2. Add `?tenant_id=<new_tenant_id>` to **EACH** tool URL in Telnyx Mission Control
+
+Example for a new tenant with ID `4`:
+```
+https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/send-link?tenant_id=4
+https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/get-classes?tenant_id=4
+https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/book-meeting?tenant_id=4
+https://chattercheatah-900139201687.us-central1.run.app/api/v1/telnyx/tools/get-available-slots?tenant_id=4
+```
+
+**DO NOT rely on the fallback for any tenant other than tenant 3.**
 
 ### BSS Phone Number Mapping
 

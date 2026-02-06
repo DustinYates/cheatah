@@ -13,6 +13,10 @@ from app.domain.prompts.base_configs.bss import (
     BSS_EQUIPMENT_KNOWLEDGE,
     BSS_LOCATION_LINK_GUARDRAILS,
 )
+from app.domain.prompts.base_configs.common import (
+    SWIMMER_IDENTIFICATION_RULES,
+    PRONOUN_USAGE_RULES,
+)
 from app.domain.prompts.schemas.v1.bss_schema import BSSTenantConfig
 from app.persistence.models.prompt import PromptBundle, PromptChannel, PromptSection, PromptStatus
 from app.persistence.repositories.prompt_repository import PromptRepository
@@ -760,23 +764,29 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         critical guardrails are always in place, even when using custom prompts.
 
         Returns:
-            String containing critical base rules (location guardrails, equipment knowledge)
+            String containing critical base rules (swimmer identification, pronouns,
+            location guardrails, equipment knowledge)
         """
         return f"""
+{SWIMMER_IDENTIFICATION_RULES}
+
+{PRONOUN_USAGE_RULES}
+
 {BSS_LOCATION_LINK_GUARDRAILS}
 
 {BSS_EQUIPMENT_KNOWLEDGE}
 """
 
     async def _get_critical_base_rules_for_tenant(self, tenant_id: int) -> str:
-        """Get critical base rules, but only for BSS tenants.
+        """Get critical base rules for swim school tenants.
 
-        Non-BSS tenants (business_type != 'bss') get an empty string since
-        the BSS-specific guardrails are irrelevant to their business.
+        Returns swimmer identification rules, pronoun usage, location guardrails,
+        and equipment knowledge for BSS and swim school tenants.
         """
         config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
         business_type = config_record.business_type if config_record else "bss"
-        if business_type == "bss":
+        # Apply swim school rules to BSS tenants and tenant 1 (swim school)
+        if business_type == "bss" or tenant_id == 1:
             return self._get_critical_base_rules()
         return ""
 

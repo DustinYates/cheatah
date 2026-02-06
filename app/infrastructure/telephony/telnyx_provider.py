@@ -369,6 +369,195 @@ class TelnyxAIService:
             "transcript": "\n".join(transcript_lines),
         }
 
+    async def get_recording_for_conversation(
+        self, conversation_id: str
+    ) -> dict[str, Any] | None:
+        """Fetch recording URL for an AI conversation from Telnyx API.
+
+        For AI Agent calls, recordings are accessed through the AI Conversations API
+        rather than the standard Recordings API.
+
+        Args:
+            conversation_id: The Telnyx AI conversation ID
+
+        Returns:
+            Dict with recording URL and metadata, or None if not found
+        """
+        try:
+            async with self._get_client() as client:
+                logger.info(f"[TELNYX-API] Fetching conversation details for: {conversation_id}")
+                response = await client.get(f"/ai/conversations/{conversation_id}")
+                response.raise_for_status()
+                data = response.json()
+
+                conv_data = data.get("data", {})
+                # Log all keys to understand the response structure
+                logger.info(f"[TELNYX-API] Conversation response keys: {list(conv_data.keys())}")
+                logger.info(f"[TELNYX-API] Conversation data sample: {str(conv_data)[:500]}")
+
+                recording_url = conv_data.get("recording_url") or conv_data.get("audio_url")
+
+                if recording_url:
+                    logger.info(f"[TELNYX-API] Found conversation recording: {recording_url[:50]}...")
+                    return {
+                        "recording_id": conversation_id,
+                        "recording_url": recording_url,
+                        "conversation_id": conversation_id,
+                    }
+
+                # Also check for recordings in nested fields
+                recordings = conv_data.get("recordings", [])
+                if recordings:
+                    rec = recordings[0]
+                    url = rec.get("url") or rec.get("download_url") or rec.get("public_url")
+                    if url:
+                        logger.info(f"[TELNYX-API] Found recording in conversation.recordings: {url[:50]}...")
+                        return {
+                            "recording_id": rec.get("id", conversation_id),
+                            "recording_url": url,
+                            "conversation_id": conversation_id,
+                        }
+
+                logger.info(f"[TELNYX-API] No recording found in conversation {conversation_id}")
+                return None
+
+        except httpx.HTTPError as e:
+            logger.warning(f"[TELNYX-API] Failed to fetch conversation recording: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"[TELNYX-API] Unexpected error fetching conversation: {type(e).__name__}: {e}")
+            return None
+
+    async def get_recording_for_call(
+        self, call_control_id: str, conversation_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Fetch recording URL for a call from Telnyx API.
+
+        Telnyx AI Agents don't always send the call.recording.saved webhook,
+        so this method provides a fallback to fetch recordings via the API.
+
+        Args:
+            call_control_id: The Telnyx call control ID
+            conversation_id: Optional Telnyx AI conversation ID (for AI Agent calls)
+
+        Returns:
+            Dict with recording URLs and metadata, or None if not found
+        """
+        # For AI Agent calls, try the AI Conversations API first
+        if conversation_id:
+            result = await self.get_recording_for_conversation(conversation_id)
+            if result:
+                return result
+
+        try:
+            async with self._get_client() as client:
+                # Try filtering by call_control_id
+                logger.info(f"[TELNYX-API] Fetching recording for call_control_id: {call_control_id}")
+                response = await client.get(
+                    "/recordings",
+                    params={"filter[call_control_id]": call_control_id}
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                recordings = data.get("data", [])
+                logger.info(f"[TELNYX-API] Found {len(recordings)} recordings for call_control_id")
+
+                if recordings:
+                    # Return the first (most recent) recording
+                    recording = recordings[0]
+                    # Extract the best available URL
+                    recording_urls = recording.get("download_urls", {})
+                    public_urls = recording.get("public_recording_urls", {})
+
+                    mp3_url = (
+                        public_urls.get("mp3")
+                        or recording_urls.get("mp3")
+                        or recording.get("mp3", {}).get("download_url")
+                    )
+                    wav_url = (
+                        public_urls.get("wav")
+                        or recording_urls.get("wav")
+                        or recording.get("wav", {}).get("download_url")
+                    )
+
+                    result = {
+                        "recording_id": recording.get("id"),
+                        "recording_url": mp3_url or wav_url,
+                        "mp3_url": mp3_url,
+                        "wav_url": wav_url,
+                        "duration_seconds": recording.get("duration_millis", 0) // 1000,
+                        "status": recording.get("status"),
+                    }
+                    logger.info(f"[TELNYX-API] Recording found: id={result['recording_id']}, url={result['recording_url'][:50] if result['recording_url'] else 'None'}...")
+                    return result
+
+                # If no recording found by call_control_id, try call_session_id
+                # (Telnyx sometimes uses different IDs)
+                logger.info(f"[TELNYX-API] No recording by call_control_id, trying call_session_id")
+                response = await client.get(
+                    "/recordings",
+                    params={"filter[call_session_id]": call_control_id}
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                recordings = data.get("data", [])
+                if recordings:
+                    recording = recordings[0]
+                    recording_urls = recording.get("download_urls", {})
+                    public_urls = recording.get("public_recording_urls", {})
+
+                    mp3_url = (
+                        public_urls.get("mp3")
+                        or recording_urls.get("mp3")
+                        or recording.get("mp3", {}).get("download_url")
+                    )
+                    wav_url = (
+                        public_urls.get("wav")
+                        or recording_urls.get("wav")
+                        or recording.get("wav", {}).get("download_url")
+                    )
+
+                    result = {
+                        "recording_id": recording.get("id"),
+                        "recording_url": mp3_url or wav_url,
+                        "mp3_url": mp3_url,
+                        "wav_url": wav_url,
+                        "duration_seconds": recording.get("duration_millis", 0) // 1000,
+                        "status": recording.get("status"),
+                    }
+                    logger.info(f"[TELNYX-API] Recording found via session_id: id={result['recording_id']}")
+                    return result
+
+                logger.info(f"[TELNYX-API] No recording found for call: {call_control_id}")
+
+                # Last resort: list recent recordings and look for matches by phone number/time
+                logger.info(f"[TELNYX-API] Trying to list recent recordings as fallback")
+                response = await client.get(
+                    "/recordings",
+                    params={"page[size]": 50}  # Get last 50 recordings
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                recordings = data.get("data", [])
+                logger.info(f"[TELNYX-API] Found {len(recordings)} total recent recordings")
+
+                # Log recording IDs for debugging
+                if recordings:
+                    for rec in recordings[:5]:  # Log first 5
+                        logger.info(f"[TELNYX-API] Recent recording: id={rec.get('id')}, call_leg={rec.get('call_leg_id')}, call_control={rec.get('call_control_id')}")
+
+                return None
+
+        except httpx.HTTPError as e:
+            logger.warning(f"[TELNYX-API] Failed to fetch recording: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"[TELNYX-API] Unexpected error fetching recording: {type(e).__name__}: {e}")
+            return None
+
     async def extract_insights_with_llm(
         self, messages: list[dict[str, Any]]
     ) -> dict[str, str]:

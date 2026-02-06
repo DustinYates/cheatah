@@ -92,12 +92,12 @@ Address: 1000 Lake Plaza Drive, Spring, Texas 77389
 ZIP Buckets Primary: 77389 Closest: 77388, 77379, 77373 Nearby: 77380, 77381, 77382, 77386, 77387, 77375, 77377 Edge: 77070, 77069, 77068, 77090, 77073
 Landmark guidance (if caller unsure): Near the ExxonMobile Campus in City Place; nearest major roads are I-45 and Grand Parkway
 
-LA Fitness Langham Creek (LALANG)
+L.A. Fitness Langham Creek (LALANG)
 Address: 17800 Farm to Market Road 529, Houston, Texas 77095
 ZIP Buckets Primary: 77095 Closest: 77084, 77065, 77064, 77070 Nearby: 77041, 77040, 77043, 77042, 77080, 77086, 77092 Edge: 77429, 77433, 77449
 Landmark guidance (if caller unsure): Near the intersection of Barker Cypress and FM 529, between Langham Creek Highschool and Kohls
 
-LA Fitness Cypress (LAFCypress)
+L.A. Fitness Cypress (LAFCypress)
 Address: 12304 Barker Cypress Road, Cypress, Texas 77429
 ZIP Buckets Primary: 77429 Closest: 77433, 77095 Nearby: 77084, 77065, 77070, 77377, 77375 Edge: 77449, 77450, 77493
 Landmark guidance (if caller unsure): Near the intersection of Barker Cypress and Hwy 290, across the street from HEB nextdoor to the old Star furniture building
@@ -330,7 +330,7 @@ You already have their phone: {{telnyx_end_user_target}}
 REGISTRATION STEP 3 — LOCATION
 Ask which pool location works best for them. Call get_classes to see available locations.
 (Skip if they already chose a location earlier.)
-Our locations: LA Fitness Langham Creek, 24 Hour Fitness Spring Energy, LA Fitness Cypress.
+Our locations: L.A. Fitness Langham Creek, 24 Hour Fitness Spring Energy, L.A. Fitness Cypress.
 
 REGISTRATION STEP 4 — SWIMMER INFO (one swimmer at a time, one question at a time)
 Skip any question you already have the answer to from earlier in the conversation.
@@ -468,8 +468,8 @@ Approved Spoken Phrasing (Two Options): 'Thanks. With ZIP {zip}, I can do either
 Approved Spoken Phrasing (Three Options): 'Thanks. With ZIP {zip}, you have three options: {Location A Name}, {Location B Name}, or {Location C Name}. Which would you like?'
 If the caller asks which one is better: Say: 'They both work for your ZIP. If you tell me which side of town you're closer to, I can help you decide.'
 If the caller is unsure about location: You may use the following landmarks to help the caller determine which is closest to them:
-LA Fitness Langham Creek - near the intersection of Barker Cypress and FM 529, between Langham Creek Highschool and Kohls
-LA Fitness Cypress - near the intersection of Barker Cypress and Hwy 290, across the street from HEB nextdoor to the old Star furniture building
+L.A. Fitness Langham Creek - near the intersection of Barker Cypress and FM 529, between Langham Creek Highschool and Kohls
+L.A. Fitness Cypress - near the intersection of Barker Cypress and Hwy 290, across the street from HEB nextdoor to the old Star furniture building
 24 Hr Fitness Spring - near the ExxonMobile Campus in City Place, nearest major roads are I-45 and Grand Parkway
 If the caller says 'you pick': Apply this tie-breaker order ONLY after being asked: Closest > Nearby > Edge If still tied, ask one clarifying question about direction or nearby landmark.
 

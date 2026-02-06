@@ -47,6 +47,11 @@
     pageLoadTime: null,
     wasAutoOpened: false,
 
+    // Dual Bot State
+    banterPlayed: false,
+    jokeInProgress: false,
+    secondaryWidget: null,
+
     // GTM dataLayer event helper (ES5 compatible)
     pushDataLayerEvent: function(eventName, additionalData) {
       var eventData = {
@@ -421,6 +426,21 @@
       if (!widget || !settings) return;
       this.settings = settings;
 
+      // Check if widget should show on this page
+      if (settings.behavior && settings.behavior.showOnPages && settings.behavior.showOnPages !== '*') {
+        const allowedPages = settings.behavior.showOnPages.split(',').map(p => p.trim());
+        const currentPath = window.location.pathname;
+        const shouldShow = allowedPages.some(page => {
+          if (page === '/') return currentPath === '/' || currentPath === '';
+          if (page.endsWith('*')) return currentPath.startsWith(page.slice(0, -1));
+          return currentPath === page || currentPath === page + '/';
+        });
+        if (!shouldShow) {
+          widget.style.display = 'none';
+          return; // Don't apply settings or show widget
+        }
+      }
+
       // Apply colors
       if (settings.colors) {
         root.style.setProperty('--cc-primary', settings.colors.primary);
@@ -470,13 +490,22 @@
       // Apply messages
       if (settings.messages) {
         const titleEl = widget.querySelector('.cc-widget-title');
-        if (titleEl) titleEl.textContent = settings.messages.welcomeMessage;
+        if (titleEl) titleEl.textContent = settings.messages.headerTitle || settings.messages.welcomeMessage || 'Chat with us';
 
         const inputEl = widget.querySelector('#cc-message-input');
         if (inputEl) inputEl.placeholder = settings.messages.placeholder;
 
         const sendBtn = widget.querySelector('#cc-send-button');
         if (sendBtn) sendBtn.textContent = settings.messages.sendButtonText;
+      }
+
+      // Apply online status badge from copy settings
+      if (settings.copy && settings.copy.showOnlineStatus) {
+        const badgeEl = widget.querySelector('.cc-online-badge');
+        if (badgeEl) {
+          badgeEl.textContent = settings.copy.onlineStatus || 'Online';
+          badgeEl.style.display = 'inline-flex';
+        }
       }
 
       // Apply behavior
@@ -522,6 +551,9 @@
       this.applyMotionSettings(settings);
       this.applyAttentionSettings(settings);
       this.applySoundSettings(settings);
+
+      // Initialize dual bot if enabled
+      this.initDualBot();
     },
 
     applyIconSettings: function(iconSettings) {
@@ -1050,14 +1082,11 @@
         <div class="cc-widget-container" style="display: none;">
           <div class="cc-widget-header">
             <div class="cc-widget-header-info">
-              <div class="cc-widget-avatar" style="display: none;"></div>
               <div class="cc-widget-header-text">
                 <span class="cc-widget-title">Chat with us</span>
-                <span class="cc-widget-subtitle" style="display: none;"></span>
-                <span class="cc-widget-response-time" style="display: none;"></span>
               </div>
             </div>
-            <button class="cc-widget-new-chat" aria-label="New chat" title="Start new conversation">↻</button>
+            <span class="cc-online-badge" style="display: none;">Online</span>
             <button class="cc-widget-minimize" aria-label="Minimize">−</button>
             <button class="cc-widget-close" aria-label="Close">×</button>
           </div>
@@ -1340,6 +1369,18 @@
           font-size: 11px;
           opacity: 0.8;
         }
+        .cc-online-badge {
+          background: var(--cc-secondary, #5cb85c);
+          color: #ffffff;
+          font-size: 12px;
+          font-weight: 500;
+          padding: 4px 12px;
+          border-radius: 4px;
+          display: inline-flex;
+          align-items: center;
+          margin-left: auto;
+          margin-right: 8px;
+        }
         .cc-widget-minimize, .cc-widget-close, .cc-widget-new-chat {
           background: none;
           border: none;
@@ -1401,6 +1442,16 @@
           background: rgba(15, 23, 42, 0.08);
           color: var(--cc-text);
           border-top-left-radius: 6px;
+        }
+        .cc-quip-message {
+          background: #fef3c7 !important;
+          border-left: 3px solid #f59e0b;
+          font-style: italic;
+          color: #92400e !important;
+        }
+        .cc-quip-name {
+          font-weight: 600;
+          font-style: normal;
         }
         .cc-widget-input-container {
           padding: 12px 14px;
@@ -1708,6 +1759,174 @@
           text-decoration: underline;
           font-size: 13px;
         }
+
+        /* Dual Bot - Secondary Widget */
+        #convopro-secondary-widget {
+          position: fixed;
+          bottom: 20px;
+          z-index: var(--cc-z-index);
+          font-family: var(--cc-font-family);
+        }
+        #convopro-secondary-widget[data-position="bottom-left"] {
+          left: 20px;
+          right: auto;
+        }
+        #convopro-secondary-widget[data-position="bottom-right"] {
+          right: 20px;
+          left: auto;
+        }
+        /* Secondary widget container - same as primary but positioned relative to wrapper */
+        .cc-secondary-container {
+          width: var(--cc-max-width, 350px);
+          height: var(--cc-max-height, 500px);
+          background: var(--cc-background, #ffffff);
+          border-radius: var(--cc-border-radius, 10px);
+          box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+          border: 1px solid #ddd;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          margin-bottom: 10px;
+        }
+        .cc-secondary-container .cc-widget-messages {
+          flex: 1;
+          overflow-y: auto;
+          padding: 16px;
+        }
+        .cc-secondary-container .cc-widget-input-container {
+          display: flex;
+          gap: 8px;
+          padding: 12px;
+          border-top: 1px solid #eee;
+          background: #fafafa;
+        }
+        .cc-secondary-input {
+          flex: 1;
+          padding: 10px 14px;
+          border: 1px solid #ddd;
+          border-radius: 20px;
+          font-size: 14px;
+          outline: none;
+        }
+        .cc-secondary-input:focus {
+          border-color: var(--cc-primary);
+        }
+        .cc-secondary-send {
+          padding: 10px 20px;
+          border: none;
+          border-radius: 20px;
+          color: #fff;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .cc-secondary-send:hover {
+          filter: brightness(1.1);
+        }
+        /* Secondary label positioning */
+        .cc-secondary-label {
+          display: inline-block;
+          background: #fff;
+          color: #333;
+          padding: 6px 12px;
+          border-radius: 16px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+          position: absolute;
+          left: calc(100% + 10px);
+          top: 50%;
+          transform: translateY(-50%);
+          white-space: nowrap;
+          font-size: 14px;
+          font-weight: 500;
+        }
+        /* When on right side, flip the label to the left of the button */
+        #convopro-secondary-widget[data-position="bottom-right"] .cc-secondary-label {
+          left: auto;
+          right: calc(100% + 10px);
+        }
+        .cc-secondary-toggle {
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          color: #ffffff;
+          border: 1px solid rgba(255,255,255,0.25);
+          font-size: 24px;
+          cursor: pointer;
+          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          overflow: visible;
+          transition: transform 0.2s;
+        }
+        .cc-secondary-toggle:hover {
+          transform: scale(1.05);
+        }
+        @media (max-width: 768px) {
+          #convopro-secondary-widget {
+            display: none;
+          }
+        }
+
+        /* Banter & Joke Bubbles */
+        .cc-banter-bubble {
+          position: absolute;
+          bottom: calc(100% + 12px);
+          max-width: 200px;
+          padding: 10px 14px;
+          background: #ffffff;
+          border-radius: 16px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          font-size: 13px;
+          color: #1f2937;
+          z-index: calc(var(--cc-z-index) + 1);
+          opacity: 0;
+          transform: translateY(8px);
+          animation: cc-banter-in 0.3s ease forwards;
+        }
+        .cc-banter-bubble.cc-bubble-left {
+          left: 0;
+        }
+        .cc-banter-bubble.cc-bubble-right {
+          right: 0;
+        }
+        .cc-banter-bubble.cc-fade-out {
+          animation: cc-banter-out 0.3s ease forwards;
+        }
+        .cc-joke-bubble {
+          position: absolute;
+          bottom: calc(100% + 12px);
+          max-width: 180px;
+          padding: 8px 12px;
+          background: #fef3c7;
+          border: 1px solid #f59e0b;
+          border-radius: 12px;
+          font-size: 12px;
+          color: #92400e;
+          z-index: calc(var(--cc-z-index) + 1);
+          opacity: 0;
+          transform: translateY(8px);
+          animation: cc-joke-bounce 0.4s ease forwards;
+        }
+        .cc-joke-bubble.cc-bubble-left {
+          left: 0;
+        }
+        .cc-joke-bubble.cc-fade-out {
+          animation: cc-banter-out 0.3s ease forwards;
+        }
+        @keyframes cc-banter-in {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes cc-banter-out {
+          from { opacity: 1; transform: translateY(0); }
+          to { opacity: 0; transform: translateY(-8px); }
+        }
+        @keyframes cc-joke-bounce {
+          0% { opacity: 0; transform: translateY(8px); }
+          50% { opacity: 1; transform: translateY(-4px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
       `;
       document.head.appendChild(style);
     },
@@ -1728,9 +1947,9 @@
         this.createRipple(event, toggle);
         this.toggleWidget();
       });
-      close.addEventListener('click', () => this.closeWidget());
-      minimize.addEventListener('click', () => this.minimizeWidget());
-      newChat.addEventListener('click', () => this.startNewChat());
+      if (close) close.addEventListener('click', () => this.closeWidget());
+      if (minimize) minimize.addEventListener('click', () => this.minimizeWidget());
+      if (newChat) newChat.addEventListener('click', () => this.startNewChat());
       sendButton.addEventListener('click', (event) => {
         this.markInteracted();
         this.vibrate();
@@ -2181,6 +2400,12 @@
 
       this.addMessage(message, 'user');
       messageInput.value = '';
+
+      // Dispatch event for dual bot to trigger joke response
+      window.dispatchEvent(new CustomEvent('convopro-user-message', {
+        detail: { widget: 'primary', message: message }
+      }));
+
       this.sendMessageToBackend(message, storedName, storedEmail, storedPhone);
     },
 
@@ -2257,6 +2482,311 @@
         loading.style.display = 'none';
         if (messageInput) messageInput.focus();
       }
+    },
+
+    // ========== DUAL BOT FEATURE ==========
+
+    initDualBot: function() {
+      console.log('[DualBot] initDualBot called, settings:', this.settings?.dualBot);
+      if (!this.settings?.dualBot?.enabled) {
+        console.log('[DualBot] Not enabled, skipping');
+        return;
+      }
+      console.log('[DualBot] Creating secondary widget...');
+      this.createSecondaryWidget();
+      this.setupDualBotListeners();
+
+      // Auto-open secondary widget after configured delay
+      const self = this;
+      const autoOpenDelay = (this.settings.dualBot.autoOpenDelay || 5) * 1000;
+      setTimeout(function() {
+        if (!self.secondaryOpen) {
+          self.toggleSecondaryWidget(true);
+        }
+      }, autoOpenDelay);
+
+      // Play initial banter after widgets open
+      setTimeout(function() {
+        self.playBanter();
+      }, autoOpenDelay + 1000);
+    },
+
+    createSecondaryWidget: function() {
+      if (document.getElementById('convopro-secondary-widget')) return;
+
+      const dualBot = this.settings.dualBot;
+      const iconEmoji = dualBot.secondaryIcon?.emoji || '🤖';
+      const bgColor = dualBot.secondaryColor || '#2196F3';
+      const position = dualBot.secondaryPosition || 'bottom-right';
+      const labelText = dualBot.secondaryLabel || 'hey!';
+      const botName = dualBot.secondaryName || 'Buddy Bot';
+      const welcomeMsg = dualBot.secondaryWelcome || 'Hey there! How can I help?';
+
+      const secondary = document.createElement('div');
+      secondary.id = 'convopro-secondary-widget';
+      secondary.setAttribute('data-position', position);
+
+      // Create full chat widget structure (same as primary but blue)
+      secondary.innerHTML = `
+        <div class="cc-widget-container cc-secondary-container" style="display: none; --cc-primary: ${bgColor};">
+          <div class="cc-widget-header" style="background: ${bgColor};">
+            <div class="cc-widget-header-info">
+              <div class="cc-widget-header-text">
+                <span class="cc-widget-title">${botName}</span>
+              </div>
+            </div>
+            <span class="cc-online-badge" style="background: #5cb85c;">Online</span>
+            <button class="cc-widget-minimize" aria-label="Minimize">−</button>
+            <button class="cc-widget-close cc-secondary-close" aria-label="Close">×</button>
+          </div>
+          <div class="cc-widget-messages cc-secondary-messages"></div>
+          <div class="cc-widget-input-container">
+            <input type="text" class="cc-secondary-input" placeholder="Type your message..." aria-label="Message input" />
+            <button class="cc-secondary-send" style="background: ${bgColor};">Send</button>
+          </div>
+        </div>
+        <button class="cc-widget-toggle cc-secondary-toggle" aria-label="${botName}" style="background: ${bgColor};">
+          <span class="cc-icon-wrapper">
+            <span class="cc-secondary-icon">${iconEmoji}</span>
+          </span>
+          <span class="cc-icon-label cc-secondary-label">${labelText}</span>
+        </button>
+      `;
+      document.body.appendChild(secondary);
+      this.secondaryWidget = secondary;
+      this.secondaryOpen = false;
+      this.secondarySessionId = null;
+
+      // Add welcome message
+      const messagesEl = secondary.querySelector('.cc-secondary-messages');
+      if (messagesEl) {
+        messagesEl.innerHTML = `<div class="cc-message cc-message-bot">${welcomeMsg}</div>`;
+      }
+
+      // Bind secondary widget events
+      this.bindSecondaryEvents();
+    },
+
+    bindSecondaryEvents: function() {
+      const self = this;
+      const secondary = this.secondaryWidget;
+      if (!secondary) return;
+
+      const toggle = secondary.querySelector('.cc-secondary-toggle');
+      const closeBtn = secondary.querySelector('.cc-secondary-close');
+      const minimizeBtn = secondary.querySelector('.cc-widget-minimize');
+      const sendBtn = secondary.querySelector('.cc-secondary-send');
+      const input = secondary.querySelector('.cc-secondary-input');
+      const container = secondary.querySelector('.cc-secondary-container');
+
+      // Toggle open/close
+      if (toggle) {
+        toggle.addEventListener('click', function() {
+          self.toggleSecondaryWidget();
+        });
+      }
+
+      // Close button
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function() {
+          self.toggleSecondaryWidget(false);
+        });
+      }
+
+      // Minimize button
+      if (minimizeBtn) {
+        minimizeBtn.addEventListener('click', function() {
+          self.toggleSecondaryWidget(false);
+        });
+      }
+
+      // Send message
+      if (sendBtn && input) {
+        sendBtn.addEventListener('click', function() {
+          self.sendSecondaryMessage();
+        });
+
+        input.addEventListener('keypress', function(e) {
+          if (e.key === 'Enter') {
+            self.sendSecondaryMessage();
+          }
+        });
+      }
+    },
+
+    toggleSecondaryWidget: function(forceState) {
+      const secondary = this.secondaryWidget;
+      if (!secondary) return;
+
+      const container = secondary.querySelector('.cc-secondary-container');
+      const toggle = secondary.querySelector('.cc-secondary-toggle');
+      const label = secondary.querySelector('.cc-secondary-label');
+
+      if (forceState !== undefined) {
+        this.secondaryOpen = forceState;
+      } else {
+        this.secondaryOpen = !this.secondaryOpen;
+      }
+
+      if (container) {
+        container.style.display = this.secondaryOpen ? 'flex' : 'none';
+      }
+      if (toggle) {
+        toggle.style.display = this.secondaryOpen ? 'none' : 'flex';
+      }
+    },
+
+    sendSecondaryMessage: async function() {
+      const secondary = this.secondaryWidget;
+      if (!secondary) return;
+
+      const input = secondary.querySelector('.cc-secondary-input');
+      const messagesEl = secondary.querySelector('.cc-secondary-messages');
+      const message = input?.value?.trim();
+
+      if (!message) return;
+
+      // Add user message
+      const userMsg = document.createElement('div');
+      userMsg.className = 'cc-message cc-message-user';
+      userMsg.textContent = message;
+      messagesEl.appendChild(userMsg);
+
+      input.value = '';
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      // Dispatch event for banter
+      window.dispatchEvent(new CustomEvent('convopro-user-message', {
+        detail: { widget: 'secondary' }
+      }));
+
+      // Send to API
+      try {
+        const response = await fetch(`${this.config.apiUrl}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: message,
+            tenant_id: this.config.tenantId,
+            session_id: this.secondarySessionId || undefined
+          })
+        });
+
+        const data = await response.json();
+        this.secondarySessionId = data.session_id;
+
+        // Add bot response
+        const botMsg = document.createElement('div');
+        botMsg.className = 'cc-message cc-message-bot';
+        botMsg.textContent = data.response || 'Sorry, something went wrong.';
+        messagesEl.appendChild(botMsg);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      } catch (err) {
+        console.error('Secondary chat error:', err);
+        const errMsg = document.createElement('div');
+        errMsg.className = 'cc-message cc-message-bot';
+        errMsg.textContent = 'Oops! Something went wrong. Try again?';
+        messagesEl.appendChild(errMsg);
+      }
+    },
+
+    setupDualBotListeners: function() {
+      const self = this;
+
+      // Listen for user messages to trigger quip from the OTHER bot in the SAME chat
+      window.addEventListener('convopro-user-message', function(e) {
+        if (self.jokeInProgress) return;
+        self.jokeInProgress = true;
+
+        // Get which widget sent the message (where user is chatting)
+        const sourceWidget = e.detail?.widget || 'primary';
+        // The OTHER bot quips, but it appears in the chat user is already in
+        const quipFromBot = sourceWidget === 'primary' ? 'secondary' : 'primary';
+        self.triggerJokeResponse(quipFromBot, sourceWidget);
+      });
+    },
+
+    playBanter: function() {
+      if (this.banterPlayed) return;
+      if (!this.settings?.dualBot?.banterScript?.length) return;
+
+      this.banterPlayed = true;
+      const script = this.settings.dualBot.banterScript;
+      const self = this;
+
+      script.forEach(function(line) {
+        setTimeout(function() {
+          self.showBanterBubble(line.bot, line.text);
+        }, line.delay || 0);
+      });
+    },
+
+    showBanterBubble: function(bot, text) {
+      // Determine which widget to show the bubble on
+      const isPrimary = bot === 'primary';
+      const widget = isPrimary
+        ? document.getElementById('convopro-widget')
+        : document.getElementById('convopro-secondary-widget');
+
+      if (!widget) return;
+
+      const bubble = document.createElement('div');
+      bubble.className = 'cc-banter-bubble ' + (isPrimary ? 'cc-bubble-right' : 'cc-bubble-left');
+      bubble.textContent = text;
+      widget.appendChild(bubble);
+
+      // Auto-hide after 4 seconds
+      setTimeout(function() {
+        bubble.classList.add('cc-fade-out');
+        setTimeout(function() {
+          bubble.remove();
+        }, 300);
+      }, 4000);
+    },
+
+    triggerJokeResponse: function(quipFromBot, inChatWidget) {
+      if (!this.settings?.dualBot?.jokeResponses?.length) {
+        this.jokeInProgress = false;
+        return;
+      }
+
+      const jokes = this.settings.dualBot.jokeResponses;
+      const randomJoke = jokes[Math.floor(Math.random() * jokes.length)];
+      const self = this;
+      const botName = quipFromBot === 'secondary'
+        ? (this.settings.dualBot.secondaryName || 'Blue Bot')
+        : 'Red Bot';
+
+      // Delay quip to feel natural (after the AI response)
+      setTimeout(function() {
+        self.showQuipInChat(randomJoke, botName, inChatWidget);
+        // Reset after showing to allow future quips
+        setTimeout(function() {
+          self.jokeInProgress = false;
+        }, 3000);
+      }, 2000);
+    },
+
+    showQuipInChat: function(text, botName, inChatWidget) {
+      // Add the quip as a message in the chat area the user is already in
+      let messagesEl;
+
+      if (inChatWidget === 'primary') {
+        messagesEl = document.getElementById('cc-messages');
+      } else {
+        const secondary = document.getElementById('convopro-secondary-widget');
+        messagesEl = secondary ? secondary.querySelector('.cc-secondary-messages') : null;
+      }
+
+      if (!messagesEl) return;
+
+      // Create a styled quip message from the other bot
+      const quipMsg = document.createElement('div');
+      quipMsg.className = 'cc-message cc-message-bot cc-quip-message';
+      quipMsg.innerHTML = `<span class="cc-quip-name">${botName}:</span> ${text}`;
+      messagesEl.appendChild(quipMsg);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     },
   };
 

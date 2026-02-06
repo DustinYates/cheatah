@@ -43,6 +43,7 @@ VOICE_EVENT_TYPES = {
     "call.hangup",
     "call.conversation.ended",
     "call.conversation_insights.generated",
+    "call.recording.saved",  # Fired when call recording is ready for download
 }
 
 # SMS/text event types from Telnyx (any message.* event is an SMS interaction)
@@ -836,6 +837,16 @@ async def telnyx_ai_call_complete(
             or ""
         )
         logger.info(f"Telnyx assistant_id: {assistant_id}")
+
+        # Extract conversation_id separately for AI Agent recording access
+        telnyx_conversation_id = (
+            payload.get("conversation_id")
+            or data.get("conversation_id")
+            or body.get("conversation_id")
+            or conversation.get("id")
+            or ""
+        )
+        logger.info(f"Telnyx conversation_id: {telnyx_conversation_id}")
 
         # [SMS-DEBUG] Log all potential phone number sources for transfer debugging
         logger.info(
@@ -1711,7 +1722,8 @@ async def telnyx_ai_call_complete(
                 # Only trust ai_sent_registration_url (actual Telnyx message check), not
                 # link_already_sent_sms (summary text match). The AI often says "I sent the link"
                 # in the summary but didn't actually send a URL via SMS.
-                if is_registration_request_sms and normalized_from and not ai_sent_registration_url and tenant_id == 3:
+                # POST-CALL SMS DISABLED for tenant 3 per user request (2026-02-06)
+                if False and is_registration_request_sms and normalized_from and not ai_sent_registration_url and tenant_id == 3:
                     # IMMEDIATE SMS SEND: Send registration link right away
                     # Use consistent phone normalization for dedup keys (last 10 digits)
                     normalized_for_dedup = normalize_phone_for_dedup(from_number)
@@ -1935,6 +1947,27 @@ async def telnyx_ai_call_complete(
                                         logger.info(f"Calculated duration from message timestamps: {calculated_duration}s")
             except Exception as e:
                 logger.warning(f"Failed to calculate duration from Telnyx API: {e}")
+
+        # Fetch recording URL from Telnyx API if not already set
+        # This is a fallback because AI Agent calls don't always send call.recording.saved webhook
+        if not call.recording_url and call_id and telnyx_api_key_for_duration:
+            try:
+                from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+                telnyx_ai_recording = TelnyxAIService(telnyx_api_key_for_duration)
+                # Pass conversation_id for AI Agent calls - recordings are stored there
+                recording_data = await telnyx_ai_recording.get_recording_for_call(
+                    call_id,
+                    conversation_id=telnyx_conversation_id if telnyx_conversation_id else None
+                )
+                if recording_data and recording_data.get("recording_url"):
+                    call.recording_url = recording_data["recording_url"]
+                    if recording_data.get("recording_id"):
+                        call.recording_sid = recording_data["recording_id"]
+                    logger.info(f"Fetched recording URL from Telnyx API for call {call.id}: {call.recording_url[:80]}...")
+                else:
+                    logger.info(f"No recording available from Telnyx API for call {call.id}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch recording from Telnyx API: {e}")
 
         # Store transcript and summary in call metadata or separate table
         # For now, we'll create a lead with the information
@@ -2389,7 +2422,7 @@ async def telnyx_ai_call_complete(
             )
         elif sms_already_sent_for_call:
             pass  # Already logged above
-        elif is_registration_request and from_number and tenant_id == 3:
+        elif is_registration_request and from_number and tenant_id != 3:
             logger.info(
                 f"Registration request detected from Telnyx AI - "
                 f"tenant_id={tenant_id}, phone={from_number}, summary={summary[:100] if summary else 'none'}"
@@ -2646,6 +2679,54 @@ async def telnyx_call_progress(
 
                     await db.commit()
                     logger.info(f"Updated call {call.id} on hangup: duration={call.duration}s")
+
+        # Handle call.recording.saved event - store recording URL
+        # Telnyx sends this webhook when a call recording is ready for download
+        elif event_type == "call.recording.saved":
+            if call_control_id:
+                stmt = select(Call).where(Call.call_sid == call_control_id)
+                result = await db.execute(stmt)
+                call = result.scalar_one_or_none()
+
+                if call:
+                    # Extract recording URL from payload
+                    # Telnyx provides URLs in multiple formats - prefer public MP3 URL
+                    recording_urls = payload.get("recording_urls", {})
+                    public_urls = payload.get("public_recording_urls", {})
+
+                    # Priority: public MP3 > public WAV > private MP3 > private WAV
+                    recording_url = (
+                        public_urls.get("mp3")
+                        or public_urls.get("wav")
+                        or recording_urls.get("mp3")
+                        or recording_urls.get("wav")
+                        or payload.get("recording_url")
+                        or ""
+                    )
+
+                    recording_id = payload.get("recording_id") or payload.get("id") or ""
+
+                    if recording_url:
+                        call.recording_url = recording_url
+                        call.recording_sid = recording_id
+                        await db.commit()
+                        logger.info(
+                            f"Stored recording for call {call.id}: "
+                            f"recording_id={recording_id}, url={recording_url[:80]}..."
+                        )
+                    else:
+                        logger.warning(
+                            f"call.recording.saved received but no URL found in payload: "
+                            f"call_control_id={call_control_id}"
+                        )
+                else:
+                    # Call record might not exist yet - could be created by conversation.ended
+                    # Log for debugging but don't fail
+                    logger.info(
+                        f"call.recording.saved received but no Call record found: "
+                        f"call_control_id={call_control_id}. Recording URL will be captured "
+                        f"in conversation.ended webhook if available."
+                    )
 
         return JSONResponse(content={"status": "ok", "event_type": event_type})
 

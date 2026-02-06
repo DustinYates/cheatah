@@ -17,12 +17,12 @@
 }
 
 .yearly-day-spacer {
-  width: 28px;
+  width: 32px;
   flex-shrink: 0;
 }
 
 .yearly-month-cell {
-  width: 12px;
+  width: 14px;
   font-size: 0.65rem;
   color: var(--color-text-muted);
   text-align: left;
@@ -35,18 +35,18 @@
 }
 
 .yearly-day-label {
-  width: 28px;
+  width: 32px;
   flex-shrink: 0;
   font-size: 0.65rem;
   color: var(--color-text-muted);
   display: flex;
   align-items: center;
-  height: 12px;
+  height: 14px;
 }
 
 .yearly-cell {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 2px;
   cursor: pointer;
   transition: transform 0.1s;
@@ -54,8 +54,9 @@
 }
 
 .yearly-cell:hover {
-  transform: scale(1.3);
+  transform: scale(1.2);
   z-index: 1;
+  box-shadow: 0 0 4px rgba(0,0,0,0.2);
 }
 
 /* GitHub-style green levels */

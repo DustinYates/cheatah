@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { Mic } from 'lucide-react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -53,20 +54,34 @@ function parseTranscript(transcript, callerName) {
   const messages = [];
 
   for (const line of lines) {
-    // Match patterns like "User: message", "Assistant: message", "user: message", etc.
-    const match = line.match(/^(User|Assistant|user|assistant|Customer|Agent|customer|agent):\s*(.+)/i);
+    // Skip JSON error responses and system messages
+    const trimmed = line.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[') ||
+        trimmed.includes('"status":') || trimmed.includes('"errors":') ||
+        trimmed.includes('no longer active')) {
+      continue;
+    }
+
+    // Match patterns like "User: message", "Caller: message", "Assistant: message", etc.
+    const match = line.match(/^(User|Assistant|user|assistant|Customer|Agent|customer|agent|Caller|caller):\s*(.+)/i);
     if (match) {
       const role = match[1].toLowerCase();
       const content = match[2].trim();
-      const isCustomer = role === 'user' || role === 'customer';
+
+      // Skip empty or error content
+      if (!content || content.startsWith('{') || content.includes('"status":')) {
+        continue;
+      }
+
+      const isCustomer = role === 'user' || role === 'customer' || role === 'caller';
       messages.push({
         role: isCustomer ? 'customer' : 'agent',
-        speaker: isCustomer ? (callerName || 'Customer') : 'Agent',
+        speaker: isCustomer ? (callerName || 'Caller') : 'Agent',
         content,
       });
-    } else if (line.trim() && messages.length > 0) {
-      // Continuation of previous message
-      messages[messages.length - 1].content += ' ' + line.trim();
+    } else if (trimmed && messages.length > 0 && !trimmed.startsWith('{')) {
+      // Continuation of previous message (but not JSON)
+      messages[messages.length - 1].content += ' ' + trimmed;
     }
   }
 
@@ -178,6 +193,7 @@ export default function Calls() {
                   <th>Caller</th>
                   <th>Name</th>
                   <th>Duration</th>
+                  <th className="recording-header"><Mic size={14} /></th>
                 </tr>
               </thead>
               <tbody>
@@ -192,6 +208,11 @@ export default function Calls() {
                       <td className="caller-cell">{formatPhone(call.from_number)}</td>
                       <td className="name-cell">{call.summary?.extracted_fields?.name || '—'}</td>
                       <td className="duration-cell">{formatDuration(call.duration)}</td>
+                      <td className="recording-cell">
+                        {call.recording_url && (
+                          <Mic size={16} className="recording-icon" title="Recording available" />
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -297,9 +318,15 @@ export default function Calls() {
                 </div>
               )}
 
+              {/* Only show extracted info if there's useful data beyond just reason */}
               {selectedCall.summary?.extracted_fields && (
+                selectedCall.summary.extracted_fields.name ||
+                selectedCall.summary.extracted_fields.email ||
+                selectedCall.summary.extracted_fields.urgency ||
+                selectedCall.summary.extracted_fields.preferred_callback_time
+              ) && (
                 <div className="call-extracted-section">
-                  <h3>Extracted Information</h3>
+                  <h3>Caller Information</h3>
                   <div className="extracted-grid">
                     {selectedCall.summary.extracted_fields.name && (
                       <div className="extracted-item">
@@ -311,12 +338,6 @@ export default function Calls() {
                       <div className="extracted-item">
                         <label>Email</label>
                         <span>{selectedCall.summary.extracted_fields.email}</span>
-                      </div>
-                    )}
-                    {selectedCall.summary.extracted_fields.reason && (
-                      <div className="extracted-item full-width">
-                        <label>Reason for Calling</label>
-                        <span>{selectedCall.summary.extracted_fields.reason}</span>
                       </div>
                     )}
                     {selectedCall.summary.extracted_fields.urgency && (
@@ -337,33 +358,48 @@ export default function Calls() {
                 </div>
               )}
 
-              {selectedCall.summary?.transcript && (
-                <div className="call-transcript-section">
-                  <h3>Transcript</h3>
-                  <div className="transcript-messages">
-                    {parseTranscript(
-                      selectedCall.summary.transcript,
-                      selectedCall.summary?.extracted_fields?.name
-                    ).map((msg, idx) => (
-                      <div key={idx} className={`transcript-message transcript-${msg.role}`}>
-                        <span className="transcript-speaker">{msg.speaker}</span>
-                        <p className="transcript-content">{msg.content}</p>
-                      </div>
-                    ))}
+              {selectedCall.summary?.transcript && (() => {
+                const messages = parseTranscript(
+                  selectedCall.summary.transcript,
+                  selectedCall.summary?.extracted_fields?.name
+                );
+                // Only show transcript section if there are valid messages
+                if (messages.length === 0) return null;
+                return (
+                  <div className="call-transcript-section">
+                    <h3>Transcript</h3>
+                    <div className="transcript-messages">
+                      {messages.map((msg, idx) => (
+                        <div key={idx} className={`transcript-message transcript-${msg.role}`}>
+                          <span className="transcript-speaker">{msg.speaker}</span>
+                          <p className="transcript-content">{msg.content}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {selectedCall.recording_url && (
                 <div className="call-recording-section">
                   <h3>Recording</h3>
+                  <audio
+                    controls
+                    preload="metadata"
+                    className="call-audio-player"
+                  >
+                    <source src={selectedCall.recording_url} type="audio/mpeg" />
+                    <source src={selectedCall.recording_url} type="audio/wav" />
+                    Your browser does not support audio playback.
+                  </audio>
                   <a
                     href={selectedCall.recording_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="btn-recording"
+                    className="btn-recording-download"
+                    download
                   >
-                    Listen to Recording
+                    Download Recording
                   </a>
                 </div>
               )}

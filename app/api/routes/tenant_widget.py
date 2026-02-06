@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -159,6 +159,23 @@ DEFAULT_SETTINGS = {
         "maxAnimationSeconds": 3,
         "respectReducedMotion": True,
         "disableOnMobile": False
+    },
+    "dualBot": {
+        "enabled": False,
+        "secondaryPosition": "bottom-left",
+        "secondaryIcon": {"type": "emoji", "emoji": "🤖"},
+        "secondaryName": "Buddy Bot",
+        "banterScript": [
+            {"bot": "secondary", "text": "Hey! Another visitor! I hope they ask about our classes!", "delay": 2000},
+            {"bot": "primary", "text": "Pfft... let them browse in peace.", "delay": 4000}
+        ],
+        "jokeResponses": [
+            "I was just about to say that!",
+            "Hey, I wanted to answer that one!",
+            "Show off...",
+            "Oh sure, steal my thunder.",
+            "Fine, I'll just sit here looking cute."
+        ]
     }
 }
 
@@ -182,6 +199,7 @@ class WidgetSettingsResponse(BaseModel):
     sound: dict
     socialProof: dict
     rules: dict
+    dualBot: dict
 
 
 class UpdateWidgetSettingsRequest(BaseModel):
@@ -201,6 +219,7 @@ class UpdateWidgetSettingsRequest(BaseModel):
     sound: dict | None = None
     socialProof: dict | None = None
     rules: dict | None = None
+    dualBot: dict | None = None
 
 
 # Endpoints
@@ -372,6 +391,7 @@ async def update_widget_settings(
 @router.get("/settings/public", response_model=WidgetSettingsResponse)
 async def get_widget_settings_public(
     request: Request,
+    response: Response,
     tenant_id: int = Query(..., description="Tenant ID"),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit("widget_public")),
@@ -381,6 +401,10 @@ async def get_widget_settings_public(
     This endpoint does NOT require authentication and is called by the widget
     when it loads on a customer's website.
     """
+    # Prevent browser caching so settings updates take effect immediately
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     stmt = select(TenantWidgetConfig).where(TenantWidgetConfig.tenant_id == tenant_id)
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()

@@ -20,8 +20,6 @@ from app.domain.services.chat_sms_handoff_service import ChatSmsHandoffService
 from app.domain.services.promise_fulfillment_service import PromiseFulfillmentService
 from app.domain.services.user_request_detector import UserRequestDetector
 from app.domain.services.prompt_service import PromptService
-from app.domain.services.conversation_context_extractor import extract_context_from_messages
-from app.utils.registration_url_builder import build_registration_url, InvalidLocationCodeError
 from app.infrastructure.jackrabbit_client import fetch_classes, format_classes_for_prompt
 from app.utils.name_validator import validate_name, extract_name_from_explicit_statement
 from app.llm.orchestrator import LLMOrchestrator
@@ -72,11 +70,6 @@ _USER_HANDOFF_REQUEST_PATTERN = re.compile(
 _NAME_REQUEST_PATTERN = re.compile(
     r"(?:who am i (?:chatting|speaking|talking) with|what(?:'s| is) your name|may i (?:have|get) your name|"
     r"(?:and )?your name(?: is)?|who(?:'s| is) this|what should i call you)",
-    re.IGNORECASE
-)
-# Pattern to detect BSS registration URLs (for enhancement with prefilled location/level)
-_BSS_REGISTRATION_URL_PATTERN = re.compile(
-    r'https?://britishswimschool\.com/cypress-spring/register/\??[^\s<>"\']*',
     re.IGNORECASE
 )
 
@@ -313,15 +306,6 @@ class ChatService:
             system_prompt_method=self.prompt_service.compose_prompt_chat,
             prompt_context=prompt_context,
             additional_context=class_schedule_context,
-        )
-
-        # Enhance registration URLs with prefilled location/level (BSS/tenant 3 only)
-        # This ensures the URL includes the correct ?loc= and &type= parameters
-        # based on what was discussed in the conversation
-        llm_response = self._enhance_registration_urls(
-            response=llm_response,
-            tenant_id=tenant_id,
-            messages=messages,
         )
 
         # Add assistant response
@@ -1628,91 +1612,6 @@ Replace null with the actual value if found. Use null if not found or uncertain.
         fixed_text = bss_url_pattern.sub(clean_bss_url, fixed_text)
 
         return fixed_text
-
-    def _enhance_registration_urls(
-        self,
-        response: str,
-        tenant_id: int,
-        messages: list[Message],
-    ) -> str:
-        """Enhance registration URLs in the response with prefilled location and level.
-
-        For BSS (tenant 3), this extracts the location and level from the conversation
-        context and builds a properly prefilled registration URL, replacing any
-        incomplete or incorrect URLs in the LLM response.
-
-        Args:
-            response: The LLM response text
-            tenant_id: The tenant ID
-            messages: The conversation messages for context extraction
-
-        Returns:
-            The response with enhanced registration URLs
-        """
-        # Only enhance for BSS (tenant 3)
-        if tenant_id != 3:
-            return response
-
-        if not response:
-            return response
-
-        # Check if response contains a BSS registration URL
-        url_match = _BSS_REGISTRATION_URL_PATTERN.search(response)
-        if not url_match:
-            return response
-
-        original_url = url_match.group(0)
-        logger.info(f"Found BSS registration URL in response: {original_url}")
-
-        # Extract context from conversation messages
-        try:
-            context = extract_context_from_messages(messages)
-            logger.info(
-                f"Extracted context - location={context.location_code}, "
-                f"level={context.level_name}, existing_url={context.registration_url}"
-            )
-
-            # If we already have a registration URL from context (found in messages),
-            # use that as it's likely more accurate
-            if context.registration_url:
-                enhanced_url = context.registration_url
-                logger.info(f"Using URL from conversation context: {enhanced_url}")
-            elif context.location_code:
-                # Build a new URL with extracted location and level
-                try:
-                    enhanced_url = build_registration_url(
-                        context.location_code,
-                        context.level_name  # May be None, that's OK
-                    )
-                    logger.info(f"Built enhanced URL: {enhanced_url}")
-                except InvalidLocationCodeError as e:
-                    logger.warning(f"Invalid location code, keeping original URL: {e}")
-                    return response
-            else:
-                # No location found in context, check if original URL has location
-                if "?loc=" in original_url:
-                    logger.info("Original URL has location, keeping it")
-                    return response
-                else:
-                    logger.warning("No location in context or URL, keeping original")
-                    return response
-
-            # Replace the original URL with the enhanced one
-            if enhanced_url != original_url:
-                enhanced_response = response.replace(original_url, enhanced_url)
-                logger.info(
-                    f"Enhanced registration URL - original={original_url}, "
-                    f"enhanced={enhanced_url}"
-                )
-                return enhanced_response
-
-        except Exception as e:
-            logger.error(
-                f"Failed to enhance registration URL: {e}",
-                exc_info=True
-            )
-
-        return response
 
     def _response_needs_completion(self, response: str) -> bool:
         """Check if the response appears to be cut off mid-sentence."""

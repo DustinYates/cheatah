@@ -653,6 +653,40 @@ async def _get_tenant_from_telnyx_number(
     return None
 
 
+async def _get_tenant_from_assistant_id(
+    assistant_id: str,
+    db: AsyncSession,
+) -> int | None:
+    """Get tenant ID from Telnyx AI assistant ID.
+
+    Fallback lookup when phone number matching fails.
+
+    Args:
+        assistant_id: Telnyx AI assistant ID (e.g., "assistant-xxx-xxx")
+        db: Database session
+
+    Returns:
+        Tenant ID or None if not found
+    """
+    from app.persistence.models.tenant_voice_config import TenantVoiceConfig
+
+    if not assistant_id:
+        return None
+
+    stmt = select(TenantVoiceConfig).where(
+        TenantVoiceConfig.telnyx_agent_id == assistant_id
+    ).limit(1)
+    result = await db.execute(stmt)
+    config = result.scalar_one_or_none()
+
+    if config:
+        logger.info(f"Found tenant {config.tenant_id} for assistant_id {assistant_id}")
+        return config.tenant_id
+
+    logger.warning(f"No tenant found for assistant_id {assistant_id}")
+    return None
+
+
 async def _handle_telnyx_delivery_status(
     event_type: str,
     payload: dict,
@@ -1296,7 +1330,12 @@ async def telnyx_ai_call_complete(
                 tenant_id = await _get_tenant_from_telnyx_number(from_number, db)
 
         if not tenant_id:
-            logger.warning(f"Could not determine tenant for call: to={to_number}, from={from_number}")
+            # Try assistant_id as final fallback
+            if assistant_id:
+                tenant_id = await _get_tenant_from_assistant_id(assistant_id, db)
+
+        if not tenant_id:
+            logger.warning(f"Could not determine tenant for call: to={to_number}, from={from_number}, assistant_id={assistant_id}")
             return JSONResponse(content={"status": "ok", "message": "tenant_not_found"})
 
         logger.info(f"Found tenant_id={tenant_id} for AI call")
@@ -3042,7 +3081,17 @@ async def send_registration_link_tool(
         if not tenant_id and to_number:
             tenant_id = await _get_tenant_from_telnyx_number(to_number, db)
 
-        # Fallback: default to tenant 3 (BSS)
+        # Fallback: try assistant_id from headers or body
+        if not tenant_id:
+            assistant_id = (
+                request.headers.get("x-telnyx-assistant-id") or
+                body.get("assistant_id") or
+                body.get("metadata", {}).get("assistant_id")
+            )
+            if assistant_id:
+                tenant_id = await _get_tenant_from_assistant_id(assistant_id, db)
+
+        # Final fallback: default to tenant 3 (BSS) - legacy behavior
         if not tenant_id:
             tenant_id = 3
             logger.warning(f"[TOOL] Could not determine tenant, defaulting to {tenant_id}")

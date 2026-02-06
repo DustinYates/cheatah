@@ -142,8 +142,8 @@ Production secrets are in GCP Secret Manager, mounted as env vars in Cloud Run.
 
 | Tenant ID | Name | Phone | Website | Telnyx Agent |
 |-----------|------|-------|---------|--------------|
-| 1 | ConvoPro | +12816260873 | https://thebestchatbot.com | — |
-| 2 | XXX | +12816990999 | https://getconvopro.com/ | `assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d` |
+| 1 | ConvoPro | +12816990999 | https://getconvopro.com | `assistant-ed763aa1-a8af-4776-92aa-c4b0ed8f992d` |
+| 2 | XXX | — | — | — |
 | 3 | BSS Cypress-Spring | +12817679141 | https://britishswimschool.com/cypress-spring | BSS_003 (`assistant-109f3350-874f-4770-87d4-737450280441`) |
 
 ## New Tenant Onboarding

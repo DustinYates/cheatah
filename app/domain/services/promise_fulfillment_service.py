@@ -15,6 +15,11 @@ from app.domain.services.conversation_context_extractor import (
     extract_context_from_messages,
     extract_url_from_ai_response,
 )
+from app.utils.jackrabbit_url_builder import (
+    build_jackrabbit_registration_url,
+    CustomerInfo,
+    extract_customer_info_from_lead,
+)
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.models.tenant_prompt_config import TenantPromptConfig
 from app.persistence.models.lead import Lead
@@ -271,14 +276,54 @@ class PromiseFulfillmentService:
             if dynamic_url:
                 logger.info(f"Built dynamic URL from ai_response text: {dynamic_url}")
 
-        # Use dynamic URL if available, otherwise fall back to static config
-        url_to_send = dynamic_url or asset_config.get("url", "")
-        if dynamic_url:
+        # For BSS (tenant 3) registration links, build Jackrabbit URL with customer info prefilled
+        # This provides a better experience by pre-populating the registration form
+        jackrabbit_url = None
+        if tenant_id == 3 and promise.asset_type == "registration_link":
+            try:
+                # Get lead to extract customer info
+                lead = await self._get_lead_for_conversation(tenant_id, conversation_id, phone)
+                if lead:
+                    customer_info = extract_customer_info_from_lead(lead)
+                    # Also add phone if not in lead
+                    if not customer_info.phone and phone:
+                        customer_info.phone = phone
+                    # Also add name if passed directly
+                    if not customer_info.first_name and name:
+                        name_parts = name.strip().split(maxsplit=1)
+                        customer_info.first_name = name_parts[0] if name_parts else None
+                        customer_info.last_name = name_parts[1] if len(name_parts) > 1 else None
+
+                    jackrabbit_url = build_jackrabbit_registration_url(customer=customer_info)
+                    logger.info(
+                        f"Built Jackrabbit URL with customer prefill for tenant 3 - "
+                        f"name={customer_info.first_name} {customer_info.last_name}, "
+                        f"email={customer_info.email}, phone={customer_info.phone}"
+                    )
+                else:
+                    # No lead found, build URL with just the phone/name we have
+                    customer_info = CustomerInfo(phone=phone)
+                    if name:
+                        name_parts = name.strip().split(maxsplit=1)
+                        customer_info.first_name = name_parts[0] if name_parts else None
+                        customer_info.last_name = name_parts[1] if len(name_parts) > 1 else None
+                    jackrabbit_url = build_jackrabbit_registration_url(customer=customer_info)
+                    logger.info(f"Built Jackrabbit URL with minimal customer info (no lead found)")
+            except Exception as e:
+                logger.warning(f"Failed to build Jackrabbit URL, falling back to dynamic URL: {e}")
+
+        # Use Jackrabbit URL for BSS tenant 3, otherwise use dynamic URL or fallback
+        url_to_send = jackrabbit_url or dynamic_url or asset_config.get("url", "")
+        if jackrabbit_url:
+            logger.info(f"Using Jackrabbit URL with customer prefill: {url_to_send}")
+        elif dynamic_url:
             logger.info(f"Using dynamic URL: {url_to_send}")
         else:
             # Check if fallback URL has location parameter - if not, skip sending
             # to avoid sending incomplete registration links
-            if "?loc=" not in url_to_send and promise.asset_type == "registration_link":
+            # (Jackrabbit URLs use ?id= instead of ?loc=, so check for both)
+            has_required_params = "?loc=" in url_to_send or "?id=" in url_to_send
+            if not has_required_params and promise.asset_type == "registration_link":
                 logger.warning(
                     f"No dynamic URL found and fallback URL missing location parameter. "
                     f"Skipping SMS to avoid incomplete link. fallback={url_to_send}"
@@ -718,6 +763,46 @@ class PromiseFulfillmentService:
                 f"Failed to create SMS conversation record: {e}",
                 exc_info=True
             )
+            return None
+
+    async def _get_lead_for_conversation(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        phone: str | None = None,
+    ) -> Lead | None:
+        """Get lead for a conversation, with phone fallback.
+
+        Args:
+            tenant_id: Tenant ID
+            conversation_id: Conversation ID
+            phone: Phone number for fallback lookup
+
+        Returns:
+            Lead model instance or None if not found
+        """
+        try:
+            # Primary lookup: by conversation ID
+            stmt = select(Lead).where(
+                Lead.tenant_id == tenant_id,
+                Lead.conversation_id == conversation_id,
+            )
+            result = await self.session.execute(stmt)
+            lead = result.scalar_one_or_none()
+
+            # Fallback: Find lead by phone if conversation lookup fails
+            if not lead and phone:
+                phone_normalized = "".join(c for c in phone if c.isdigit())[-10:]
+                stmt = select(Lead).where(
+                    Lead.tenant_id == tenant_id,
+                    Lead.phone.like(f"%{phone_normalized}"),
+                ).order_by(Lead.created_at.desc()).limit(1)
+                result = await self.session.execute(stmt)
+                lead = result.scalar_one_or_none()
+
+            return lead
+        except Exception as e:
+            logger.warning(f"Failed to get lead for conversation {conversation_id}: {e}")
             return None
 
     async def _track_fulfillment(

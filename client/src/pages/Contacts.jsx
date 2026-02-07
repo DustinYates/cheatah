@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MessageSquare, Pencil, Trash2, Users, Search } from 'lucide-react';
+import { MessageSquare, Pencil, Trash2, Users, Search, Clock } from 'lucide-react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
-import ChatModal from '../components/ChatModal';
+import ContactHistoryModal from '../components/ContactHistoryModal';
 import EditContactModal from '../components/EditContactModal';
 import MergeContactsModal from '../components/MergeContactsModal';
 import { formatDateTimeParts } from '../utils/dateFormat';
@@ -453,12 +453,12 @@ export default function Contacts() {
                     <td className="col-actions">
                       <div className="action-buttons">
                         <button
-                          className="btn-action btn-chat"
+                          className="btn-action btn-history"
                           onClick={(e) => handleViewChat(e, contact)}
-                          title="View conversation history"
-                          aria-label="View conversation history"
+                          title="View all communications"
+                          aria-label="View communication history"
                         >
-                          <MessageSquare size={14} />
+                          <Clock size={14} />
                         </button>
                         <button
                           className="btn-action btn-edit"
@@ -497,8 +497,8 @@ export default function Contacts() {
                               e.currentTarget.closest('details')?.removeAttribute('open');
                             }}
                           >
-                            <MessageSquare size={14} />
-                            <span>Message</span>
+                            <Clock size={14} />
+                            <span>History</span>
                           </button>
                           <button
                             type="button"
@@ -541,11 +541,11 @@ export default function Contacts() {
         </div>
       )}
 
-      {/* Chat Modal */}
+      {/* History Modal */}
       {selectedContact && (
-        <ChatModal 
-          contact={selectedContact} 
-          onClose={() => setSelectedContact(null)} 
+        <ContactHistoryModal
+          contact={selectedContact}
+          onClose={() => setSelectedContact(null)}
         />
       )}
 

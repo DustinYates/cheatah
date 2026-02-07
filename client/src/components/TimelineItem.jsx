@@ -15,9 +15,50 @@ function getIconComponent(iconName) {
 }
 
 /**
+ * Parse and format transcript string into structured conversation
+ * - Reverses order to show chronological (oldest first)
+ * - Filters out JSON tool outputs
+ * - Returns array of {role, content} objects
+ */
+function parseTranscript(transcript) {
+  if (!transcript) return [];
+
+  // Split by newlines and filter empty lines
+  const lines = transcript.split('\n').filter(line => line.trim());
+
+  const parsed = [];
+  for (const line of lines) {
+    // Match lines with role prefix (Assistant:, Caller:, User:, Bot:)
+    const match = line.match(/^(Assistant|Caller|User|Bot):\s*(.*)$/i);
+    if (match) {
+      const [, role, content] = match;
+      const trimmedContent = content.trim();
+
+      // Skip lines that are JSON tool outputs (start with { or [)
+      if (trimmedContent.startsWith('{') || trimmedContent.startsWith('[')) {
+        continue;
+      }
+
+      // Skip empty content
+      if (!trimmedContent) continue;
+
+      parsed.push({
+        role: role.toLowerCase() === 'assistant' || role.toLowerCase() === 'bot' ? 'assistant' : 'user',
+        content: trimmedContent
+      });
+    }
+  }
+
+  // Reverse to get chronological order (oldest first)
+  return parsed.reverse();
+}
+
+/**
  * Render type-specific detail view for voice calls
  */
 function VoiceCallDetails({ details }) {
+  const parsedTranscript = parseTranscript(details.transcript);
+
   return (
     <div className="timeline-details-content">
       {details.full_summary && (
@@ -27,10 +68,21 @@ function VoiceCallDetails({ details }) {
         </div>
       )}
 
-      {details.transcript && (
+      {parsedTranscript.length > 0 && (
         <div className="detail-section">
           <span className="detail-label">Transcript</span>
-          <p className="detail-value detail-transcript">{details.transcript}</p>
+          <div className="conversation-messages">
+            {parsedTranscript.map((msg, idx) => (
+              <div key={idx} className={`conversation-message ${msg.role}`}>
+                <div className="conversation-message-header">
+                  <span className="conversation-message-role">
+                    {msg.role === 'user' ? 'CALLER' : 'ASSISTANT'}
+                  </span>
+                </div>
+                <div className="conversation-message-content">{msg.content}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

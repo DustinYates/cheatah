@@ -176,6 +176,123 @@
   color: var(--color-text-muted) !important;
 }
 
+/* Secondary card style (for web chat - excluded from totals) */
+.savings-analytics-card-secondary {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.excluded-note {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-warning);
+  font-style: italic;
+}
+
+/* Methodology section */
+.savings-methodology-section {
+  margin-top: var(--spacing-lg);
+  background: var(--color-bg-white);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-light);
+}
+
+.savings-methodology-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  text-align: left;
+  transition: background-color 0.15s;
+}
+
+.savings-methodology-toggle:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.methodology-icon {
+  font-size: 0.7em;
+  color: var(--color-text-muted);
+}
+
+.savings-methodology-content {
+  padding: 0 var(--spacing-md) var(--spacing-md);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.savings-methodology-content h3 {
+  margin: var(--spacing-md) 0 var(--spacing-sm);
+  font-size: 1rem;
+}
+
+.methodology-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.methodology-card {
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
+}
+
+.methodology-card h4 {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.methodology-card p {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-xs);
+  line-height: 1.5;
+}
+
+.methodology-formula {
+  font-family: var(--font-mono);
+  background: var(--color-bg-white);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-light);
+}
+
+.methodology-rates {
+  margin: var(--spacing-xs) 0;
+  padding-left: var(--spacing-md);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.methodology-rates li {
+  margin-bottom: 4px;
+}
+
+.methodology-note {
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.methodology-disclaimer {
+  background: #fef9c3;
+  border: 1px solid #facc15;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-xs);
+  color: #854d0e;
+  line-height: 1.5;
+}
+
 /* Responsive adjustments */
 @media (max-width: 900px) {
   .savings-analytics-grid {

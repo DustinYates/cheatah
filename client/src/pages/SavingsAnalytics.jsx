@@ -19,6 +19,7 @@ import {
 import './SavingsAnalytics.css';
 
 const STORAGE_KEY = 'savingsAnalyticsDateRange';
+const METHODOLOGY_STORAGE_KEY = 'savingsMethodologyExpanded';
 const PRESET_VALUES = new Set(DATE_RANGE_PRESETS.map((preset) => preset.value));
 
 const formatCurrency = (amount) => {
@@ -95,6 +96,106 @@ const persistRange = (range, timeZone, setSearchParams, replace = false) => {
   setSearchParams(params, { replace });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(params));
 };
+
+function MethodologySection({ assumptions }) {
+  const [expanded, setExpanded] = useState(() => {
+    const stored = localStorage.getItem(METHODOLOGY_STORAGE_KEY);
+    return stored === 'true';
+  });
+
+  const toggleExpanded = () => {
+    const next = !expanded;
+    setExpanded(next);
+    localStorage.setItem(METHODOLOGY_STORAGE_KEY, String(next));
+  };
+
+  if (!assumptions) return null;
+
+  return (
+    <section className="savings-methodology-section">
+      <button
+        className="savings-methodology-toggle"
+        onClick={toggleExpanded}
+        aria-expanded={expanded}
+      >
+        <span className="methodology-icon">{expanded ? '▼' : '▶'}</span>
+        <span>How are these savings calculated?</span>
+      </button>
+
+      {expanded && (
+        <div className="savings-methodology-content">
+          <h3>Methodology & Assumptions</h3>
+
+          <div className="methodology-grid">
+            <div className="methodology-card">
+              <h4>Voice Calls</h4>
+              <p>
+                Hours saved equals the <strong>actual call duration</strong>. If the AI was on calls
+                for 60 minutes, that's 60 minutes a human would have spent on the phone.
+              </p>
+              <p className="methodology-formula">
+                Hours Saved = Total Call Minutes ÷ 60
+              </p>
+            </div>
+
+            <div className="methodology-card">
+              <h4>SMS Messages</h4>
+              <p>
+                Each AI response is estimated to take a human{' '}
+                <strong>{assumptions.sms_minutes_per_message} minute{assumptions.sms_minutes_per_message !== 1 ? 's' : ''}</strong>{' '}
+                to read the incoming message, think about an appropriate response, and send a reply.
+              </p>
+              <p className="methodology-formula">
+                Hours Saved = (Messages × {assumptions.sms_minutes_per_message} min) ÷ 60
+              </p>
+            </div>
+
+            <div className="methodology-card">
+              <h4>Web Chat</h4>
+              <p>
+                Each AI response is estimated to take a human{' '}
+                <strong>{assumptions.web_chat_minutes_per_message} minute{assumptions.web_chat_minutes_per_message !== 1 ? 's' : ''}</strong>{' '}
+                per message. Web chat is shown separately and{' '}
+                <strong>{assumptions.include_web_chat_in_total ? 'included in' : 'excluded from'}</strong> the
+                total savings calculation.
+              </p>
+              <p className="methodology-formula">
+                Hours Saved = (Messages × {assumptions.web_chat_minutes_per_message} min) ÷ 60
+              </p>
+            </div>
+
+            <div className="methodology-card">
+              <h4>Cost Savings</h4>
+              <p>
+                Dollar savings are calculated by multiplying hours saved by hourly labor rates:
+              </p>
+              <ul className="methodology-rates">
+                <li>
+                  <strong>Offshore:</strong> ${assumptions.offshore_rate_per_hour}/hour
+                </li>
+                <li>
+                  <strong>Onshore:</strong> ${assumptions.onshore_rate_per_hour}/hour
+                </li>
+              </ul>
+              <p className="methodology-note">
+                These represent typical customer service labor costs. Actual savings depend on your
+                specific staffing costs.
+              </p>
+            </div>
+          </div>
+
+          <div className="methodology-disclaimer">
+            <strong>Note:</strong> These estimates assume a worker clocks in only to handle each
+            interaction and clocks out immediately after—pure task time with no idle time, breaks,
+            or overhead between tasks. Actual employee cost including benefits, training, and
+            management overhead is not factored in. Real-world ROI may be higher when accounting
+            for these additional labor costs.
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 export default function SavingsAnalytics() {
   const { user, selectedTenantId } = useAuth();
@@ -218,24 +319,24 @@ export default function SavingsAnalytics() {
           <MetricCard
             label="Hours Saved"
             value={formatHours(data.total_hours_saved)}
-            tooltip="Computed using: voice call minutes + estimated SMS handling time (2 min/msg) + estimated web chat time (1.5 min/msg)."
+            tooltip={`Voice call minutes + SMS handling time (${data.assumptions?.sms_minutes_per_message || 1} min/msg).${data.assumptions?.include_web_chat_in_total ? ` Includes web chat (${data.assumptions?.web_chat_minutes_per_message || 1} min/msg).` : ' Web chat excluded from total.'}`}
           />
           <MetricCard
-            label="Offshore Savings ($7/hr)"
+            label={`Offshore Savings ($${data.assumptions?.offshore_rate_per_hour || 7}/hr)`}
             value={formatCurrency(data.total_offshore_savings)}
-            tooltip="Computed using: total hours saved × $7/hr offshore rate."
+            tooltip={`Total hours saved × $${data.assumptions?.offshore_rate_per_hour || 7}/hr offshore rate.`}
             className="savings-highlight-card"
           />
           <MetricCard
-            label="Onshore Savings ($14/hr)"
+            label={`Onshore Savings ($${data.assumptions?.onshore_rate_per_hour || 14}/hr)`}
             value={formatCurrency(data.total_onshore_savings)}
-            tooltip="Computed using: total hours saved × $14/hr onshore rate."
+            tooltip={`Total hours saved × $${data.assumptions?.onshore_rate_per_hour || 14}/hr onshore rate.`}
             className="savings-highlight-card"
           />
           <MetricCard
             label="Registration Links Sent"
             value={formatNumber(data.conversions?.total_links_sent)}
-            tooltip="Computed using: count of registration links sent by the AI assistant via sent_assets."
+            tooltip="Count of registration links sent by the AI assistant."
           />
         </div>
       )}
@@ -279,7 +380,7 @@ export default function SavingsAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Total Call Time
-                <span className="info-icon" data-tooltip="Total minutes the AI spent on phone calls. A human would need the same time, so this maps directly to hours saved.">i</span>
+                <span className="info-icon" data-tooltip="Actual minutes the AI spent on phone calls. This maps directly to hours saved.">i</span>
               </span>
               <span className="metric-value">{formatMinutes(data.voice.total_minutes)}</span>
             </div>
@@ -288,11 +389,11 @@ export default function SavingsAnalytics() {
               <span className="metric-value">{formatHours(data.voice.hours_saved)}</span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Offshore Savings ($7/hr)</span>
+              <span className="metric-label">Offshore Savings (${data.assumptions?.offshore_rate_per_hour || 7}/hr)</span>
               <span className="metric-value savings-highlight">{formatCurrency(data.voice.offshore_savings)}</span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Onshore Savings ($14/hr)</span>
+              <span className="metric-label">Onshore Savings (${data.assumptions?.onshore_rate_per_hour || 14}/hr)</span>
               <span className="metric-value savings-highlight">{formatCurrency(data.voice.onshore_savings)}</span>
             </div>
           </div>
@@ -317,7 +418,7 @@ export default function SavingsAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Est. Human Time
-                <span className="info-icon" data-tooltip="Each SMS response is estimated to take a human ~2 minutes to read, think about, and reply.">i</span>
+                <span className="info-icon" data-tooltip={`Each SMS response is estimated to take a human ~${data.assumptions?.sms_minutes_per_message || 1} minute(s) to read, think about, and reply.`}>i</span>
               </span>
               <span className="metric-value">{formatMinutes(data.sms.total_minutes)}</span>
             </div>
@@ -326,22 +427,25 @@ export default function SavingsAnalytics() {
               <span className="metric-value">{formatHours(data.sms.hours_saved)}</span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Offshore Savings ($7/hr)</span>
+              <span className="metric-label">Offshore Savings (${data.assumptions?.offshore_rate_per_hour || 7}/hr)</span>
               <span className="metric-value savings-highlight">{formatCurrency(data.sms.offshore_savings)}</span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Onshore Savings ($14/hr)</span>
+              <span className="metric-label">Onshore Savings (${data.assumptions?.onshore_rate_per_hour || 14}/hr)</span>
               <span className="metric-value savings-highlight">{formatCurrency(data.sms.onshore_savings)}</span>
             </div>
           </div>
         </section>
 
         {/* Web Chat Savings */}
-        <section className="savings-analytics-card">
+        <section className="savings-analytics-card savings-analytics-card-secondary">
           <div className="savings-analytics-card-header">
             <div>
               <h2>Web Chat Savings</h2>
               <p>Time saved from AI handling web chat conversations.</p>
+              {!data.assumptions?.include_web_chat_in_total && (
+                <p className="excluded-note">Not included in totals above</p>
+              )}
             </div>
           </div>
           <div className="metric-rows">
@@ -355,7 +459,7 @@ export default function SavingsAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Est. Human Time
-                <span className="info-icon" data-tooltip="Each web chat response is estimated to take a human ~1.5 minutes to read, think about, and reply.">i</span>
+                <span className="info-icon" data-tooltip={`Each web chat response is estimated to take a human ~${data.assumptions?.web_chat_minutes_per_message || 1} minute(s) to read, think about, and reply.`}>i</span>
               </span>
               <span className="metric-value">{formatMinutes(data.web_chat.total_minutes)}</span>
             </div>
@@ -364,11 +468,11 @@ export default function SavingsAnalytics() {
               <span className="metric-value">{formatHours(data.web_chat.hours_saved)}</span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Offshore Savings ($7/hr)</span>
+              <span className="metric-label">Offshore Savings (${data.assumptions?.offshore_rate_per_hour || 7}/hr)</span>
               <span className="metric-value savings-highlight">{formatCurrency(data.web_chat.offshore_savings)}</span>
             </div>
             <div className="metric-row">
-              <span className="metric-label">Onshore Savings ($14/hr)</span>
+              <span className="metric-label">Onshore Savings (${data.assumptions?.onshore_rate_per_hour || 14}/hr)</span>
               <span className="metric-value savings-highlight">{formatCurrency(data.web_chat.onshore_savings)}</span>
             </div>
           </div>
@@ -426,6 +530,8 @@ export default function SavingsAnalytics() {
           </div>
         </section>
       </div>
+
+      <MethodologySection assumptions={data.assumptions} />
     </div>
   );
 }

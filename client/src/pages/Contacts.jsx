@@ -21,6 +21,11 @@ export default function Contacts() {
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [typeFilter, setTypeFilter] = useState(''); // '', 'lead', 'customer'
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const fetchContacts = useCallback(async () => {
     try {
@@ -54,12 +59,39 @@ export default function Contacts() {
 
   const needsTenant = user?.is_global_admin && !selectedTenantId;
 
-  const filteredContacts = contacts.filter(contact =>
-    (contact.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (contact.customer_name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (contact.phone || '').includes(search) ||
-    (contact.email || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredContacts = contacts
+    .filter(contact => {
+      // Search filter
+      const matchesSearch = !search ||
+        (contact.name || '').toLowerCase().includes(search.toLowerCase()) ||
+        (contact.phone || '').includes(search) ||
+        (contact.email || '').toLowerCase().includes(search.toLowerCase());
+
+      // Type filter
+      const isCustomer = !!contact.customer_name;
+      const matchesType = !typeFilter ||
+        (typeFilter === 'customer' && isCustomer) ||
+        (typeFilter === 'lead' && !isCustomer);
+
+      return matchesSearch && matchesType;
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case 'name':
+          comparison = (a.name || '').localeCompare(b.name || '');
+          break;
+        case 'last_contacted':
+          comparison = new Date(a.last_contacted || 0) - new Date(b.last_contacted || 0);
+          break;
+        case 'type':
+          comparison = (!!a.customer_name ? 1 : 0) - (!!b.customer_name ? 1 : 0);
+          break;
+        default: // created_at
+          comparison = new Date(a.created_at || 0) - new Date(b.created_at || 0);
+      }
+      return sortDir === 'desc' ? -comparison : comparison;
+    });
 
   const handleViewChat = (e, contact) => {
     e.stopPropagation();
@@ -107,6 +139,45 @@ export default function Contacts() {
 
   const cancelMergeSelection = () => {
     setSelectedForMerge([]);
+  };
+
+  const handleSort = (column) => {
+    if (sortBy === column) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortDir('desc');
+    }
+  };
+
+  const clearFilters = () => {
+    setTypeFilter('');
+    setSearch('');
+  };
+
+  const handleSelectAll = () => {
+    if (selectedForMerge.length === filteredContacts.length) {
+      setSelectedForMerge([]);
+    } else {
+      setSelectedForMerge([...filteredContacts]);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true);
+    try {
+      // Delete contacts sequentially using existing API
+      for (const contact of selectedForMerge) {
+        await api.deleteContact(contact.id);
+      }
+      setShowBulkDeleteConfirm(false);
+      setSelectedForMerge([]);
+      refetch();
+    } catch (err) {
+      alert(err.message || 'Failed to delete some contacts');
+    } finally {
+      setBulkDeleting(false);
+    }
   };
 
   if (needsTenant) {
@@ -187,25 +258,79 @@ export default function Contacts() {
         </div>
       </div>
 
-      {/* Merge Selection Bar */}
+      {/* Filter Bar */}
+      <div className="contacts-filters">
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="filter-select"
+          aria-label="Filter by type"
+        >
+          <option value="">All Types</option>
+          <option value="lead">Leads</option>
+          <option value="customer">Customers</option>
+        </select>
+
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="filter-select"
+          aria-label="Sort by"
+        >
+          <option value="created_at">Sort: Added</option>
+          <option value="name">Sort: Name</option>
+          <option value="last_contacted">Sort: Last Contacted</option>
+          <option value="type">Sort: Type</option>
+        </select>
+
+        <button
+          className={`sort-direction-btn ${sortDir}`}
+          onClick={() => setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')}
+          title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+          aria-label={sortDir === 'asc' ? 'Sort ascending' : 'Sort descending'}
+        >
+          {sortDir === 'asc' ? '↑' : '↓'}
+        </button>
+
+        {(typeFilter || search) && (
+          <button className="btn-clear-filters" onClick={clearFilters}>
+            Clear
+          </button>
+        )}
+
+        <span className="filter-count">
+          {filteredContacts.length} of {contacts.length}
+        </span>
+      </div>
+
+      {/* Bulk Actions Bar */}
       {selectedForMerge.length > 0 && (
-        <div className="merge-selection-bar">
-          <span className="merge-count">
+        <div className="bulk-action-bar">
+          <span className="bulk-count">
             {selectedForMerge.length} contact{selectedForMerge.length > 1 ? 's' : ''} selected
           </span>
-          <div className="merge-actions">
-            <button 
-              className="btn-cancel-merge"
+          <div className="bulk-actions">
+            <button
+              className="btn-bulk-action"
               onClick={cancelMergeSelection}
             >
-              Cancel
+              Clear Selection
             </button>
-            <button 
-              className="btn-merge"
+            <button
+              className="btn-bulk-action btn-merge"
               onClick={() => setShowMergeModal(true)}
               disabled={selectedForMerge.length < 2}
+              title={selectedForMerge.length < 2 ? 'Select at least 2 contacts to merge' : ''}
             >
-              Merge Selected
+              <Users size={14} />
+              Merge
+            </button>
+            <button
+              className="btn-bulk-action btn-delete"
+              onClick={() => setShowBulkDeleteConfirm(true)}
+            >
+              <Trash2 size={14} />
+              Delete
             </button>
           </div>
         </div>
@@ -223,17 +348,41 @@ export default function Contacts() {
             <thead>
               <tr>
                 <th className="th-checkbox">
-                  <span className="merge-hint" title="Select contacts to merge">
-                    Merge
-                  </span>
+                  <input
+                    type="checkbox"
+                    checked={filteredContacts.length > 0 && selectedForMerge.length === filteredContacts.length}
+                    onChange={handleSelectAll}
+                    title="Select all contacts"
+                    aria-label="Select all contacts"
+                  />
                 </th>
-                <th className="col-name">Name</th>
-                <th className="col-customer-name">Customer Name</th>
+                <th
+                  className={`col-name sortable ${sortBy === 'name' ? 'sorted' : ''}`}
+                  onClick={() => handleSort('name')}
+                >
+                  Name {sortBy === 'name' && (sortDir === 'asc' ? '↑' : '↓')}
+                </th>
+                <th
+                  className={`col-type sortable ${sortBy === 'type' ? 'sorted' : ''}`}
+                  onClick={() => handleSort('type')}
+                >
+                  Type {sortBy === 'type' && (sortDir === 'asc' ? '↑' : '↓')}
+                </th>
                 <th className="col-phone">Phone</th>
                 <th className="col-email">Email</th>
-                <th className="col-added">Added</th>
+                <th
+                  className={`col-added sortable ${sortBy === 'created_at' ? 'sorted' : ''}`}
+                  onClick={() => handleSort('created_at')}
+                >
+                  Added {sortBy === 'created_at' && (sortDir === 'asc' ? '↑' : '↓')}
+                </th>
                 <th className="col-first-contacted">First Contacted</th>
-                <th className="col-last-contacted">Last Contacted</th>
+                <th
+                  className={`col-last-contacted sortable ${sortBy === 'last_contacted' ? 'sorted' : ''}`}
+                  onClick={() => handleSort('last_contacted')}
+                >
+                  Last Contacted {sortBy === 'last_contacted' && (sortDir === 'asc' ? '↑' : '↓')}
+                </th>
                 <th className="col-actions">Actions</th>
               </tr>
             </thead>
@@ -260,9 +409,12 @@ export default function Contacts() {
                         </span>
                       </div>
                     </td>
-                    <td className="col-customer-name">
-                      <span className="contact-text" title={contact.customer_name || '-'}>
-                        {contact.customer_name || '-'}
+                    <td className="col-type">
+                      <span
+                        className={`type-badge ${contact.customer_name ? 'type-customer' : 'type-lead'}`}
+                        title={contact.customer_name ? `Matched: ${contact.customer_name}` : 'No Jackrabbit match'}
+                      >
+                        {contact.customer_name ? 'Customer' : 'Lead'}
                       </span>
                     </td>
                     <td className="col-phone">
@@ -453,6 +605,58 @@ export default function Contacts() {
                 disabled={deleting}
               >
                 {deleting ? 'Deleting...' : 'Delete Contact'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteConfirm && (
+        <div className="modal-overlay" onClick={() => !bulkDeleting && setShowBulkDeleteConfirm(false)}>
+          <div className="modal delete-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Delete {selectedForMerge.length} Contacts</h2>
+              <button
+                className="close-btn"
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                disabled={bulkDeleting}
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to permanently delete {selectedForMerge.length} contact{selectedForMerge.length > 1 ? 's' : ''}?</p>
+              <div className="bulk-delete-list">
+                {selectedForMerge.slice(0, 5).map(contact => (
+                  <div key={contact.id} className="bulk-delete-item">
+                    {contact.name || 'Unknown'} — {contact.email || contact.phone || 'No contact info'}
+                  </div>
+                ))}
+                {selectedForMerge.length > 5 && (
+                  <div className="bulk-delete-more">
+                    ...and {selectedForMerge.length - 5} more
+                  </div>
+                )}
+              </div>
+              <p className="warning-text">
+                This action cannot be undone. All associated data will be permanently removed.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn-cancel"
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                disabled={bulkDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-delete-confirm"
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+              >
+                {bulkDeleting ? 'Deleting...' : `Delete ${selectedForMerge.length} Contacts`}
               </button>
             </div>
           </div>

@@ -62,8 +62,75 @@
   color: #9ca3af;
 }
 
-/* Merge Selection Bar */
-.merge-selection-bar {
+/* Filter Bar */
+.contacts-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-select {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--color-bg-white);
+  cursor: pointer;
+  color: #374151;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #6b7280;
+  box-shadow: 0 0 0 2px rgba(107, 114, 128, 0.1);
+}
+
+.sort-direction-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 14px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sort-direction-btn:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.btn-clear-filters {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-clear-filters:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.filter-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* Bulk Action Bar */
+.bulk-action-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -74,18 +141,18 @@
   margin-bottom: 12px;
 }
 
-.merge-count {
+.bulk-count {
   font-weight: 500;
   font-size: 12px;
   color: #0369a1;
 }
 
-.merge-actions {
+.bulk-actions {
   display: flex;
   gap: 8px;
 }
 
-.btn-cancel-merge {
+.btn-bulk-action {
   padding: 5px 10px;
   background: white;
   border: 1px solid #d1d5db;
@@ -94,31 +161,40 @@
   color: #374151;
   cursor: pointer;
   transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.btn-cancel-merge:hover {
+.btn-bulk-action:hover {
   background: #f9fafb;
 }
 
-.btn-merge {
-  padding: 5px 10px;
+.btn-bulk-action.btn-merge {
   background: #0284c7;
-  border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
+  border-color: #0284c7;
   color: white;
-  cursor: pointer;
-  transition: all 0.15s;
+  font-weight: 500;
 }
 
-.btn-merge:hover:not(:disabled) {
+.btn-bulk-action.btn-merge:hover:not(:disabled) {
   background: #0369a1;
 }
 
-.btn-merge:disabled {
+.btn-bulk-action.btn-merge:disabled {
   background: #7dd3fc;
+  border-color: #7dd3fc;
   cursor: not-allowed;
+}
+
+.btn-bulk-action.btn-delete {
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.btn-bulk-action.btn-delete:hover {
+  background: #fef2f2;
+  border-color: #fca5a5;
 }
 
 /* Table Container */
@@ -160,6 +236,21 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+.contacts-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.contacts-table th.sortable:hover {
+  background: #f1f5f9;
+}
+
+.contacts-table th.sorted {
+  color: #374151;
+  background: #f1f5f9;
+}
+
 .contacts-table td {
   color: #374151;
   font-size: 13px;
@@ -171,6 +262,11 @@
 
 .contacts-table tbody tr {
   transition: background 0.1s;
+}
+
+/* Zebra striping for better readability */
+.contacts-table tbody tr:nth-child(even) td {
+  background: #fafbfc;
 }
 
 .contacts-table tbody tr:hover td {
@@ -197,6 +293,7 @@
   letter-spacing: 0.3px;
 }
 
+.th-checkbox input[type="checkbox"],
 .td-checkbox input[type="checkbox"] {
   width: 14px;
   height: 14px;
@@ -265,8 +362,28 @@
   width: 180px;
 }
 
-.col-customer-name {
-  width: 160px;
+.col-type {
+  width: 90px;
+}
+
+/* Type Badge - Lead vs Customer */
+.type-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.type-badge.type-customer {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.type-badge.type-lead {
+  background: #dbeafe;
+  color: #1e40af;
 }
 
 .col-phone {
@@ -477,6 +594,34 @@
   margin: 0;
 }
 
+/* Bulk Delete List */
+.bulk-delete-list {
+  background: #f9fafb;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.bulk-delete-item {
+  padding: 4px 0;
+  font-size: 13px;
+  color: #374151;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.bulk-delete-item:last-child {
+  border-bottom: none;
+}
+
+.bulk-delete-more {
+  padding: 4px 0;
+  font-size: 12px;
+  color: #6b7280;
+  font-style: italic;
+}
+
 .delete-modal .modal-footer {
   display: flex;
   justify-content: flex-end;
@@ -531,8 +676,8 @@
 }
 
 @media (max-width: 900px) {
-  .contacts-table th.col-customer-name,
-  .contacts-table td.col-customer-name {
+  .contacts-table th.col-type,
+  .contacts-table td.col-type {
     display: none;
   }
 }
@@ -554,10 +699,15 @@
     display: none;
   }
 
-  .merge-selection-bar {
+  .bulk-action-bar {
     flex-direction: column;
     gap: 8px;
     text-align: center;
+  }
+
+  .bulk-actions {
+    flex-wrap: wrap;
+    justify-content: center;
   }
 }
 

@@ -672,9 +672,10 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         if direct_prompt:
             logger.info(f"[PROMPT] Using direct web_prompt for tenant {tenant_id}")
             critical_rules = await self._get_critical_base_rules_for_tenant(tenant_id)
-            # Add contact collection context if available
+            # Add contact collection context and chat instructions
             contact_context = self._build_chat_contact_context(context)
-            return critical_rules + direct_prompt + contact_context
+            chat_instructions = self._chat_instructions()
+            return critical_rules + direct_prompt + contact_context + chat_instructions
 
         # Fall back to assembled prompt
         base_prompt = await self.compose_prompt_v2(tenant_id, channel="chat", context=context)

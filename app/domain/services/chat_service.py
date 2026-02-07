@@ -260,23 +260,21 @@ class ChatService:
         )
         
         # Build context about collected contact info for prompt
-        collected_name = False
-        collected_email = False
-        collected_phone = False
-        
+        # Pass actual values so the LLM knows what was collected (not just booleans)
+        collected_name = None
+        collected_email = None
+        collected_phone = None
+
         if existing_lead:
-            collected_name = bool(existing_lead.name)
-            collected_email = bool(existing_lead.email)
-            collected_phone = bool(existing_lead.phone)
+            collected_name = existing_lead.name or None
+            collected_email = existing_lead.email or None
+            collected_phone = existing_lead.phone or None
         elif lead_captured:
             # Just captured in this turn
-            if user_name:
-                collected_name = True
-            if user_email:
-                collected_email = True
-            if user_phone:
-                collected_phone = True
-        
+            collected_name = user_name or None
+            collected_email = user_email or None
+            collected_phone = user_phone or None
+
         # Determine if we should suggest collecting contact info
         # (but let the prompt handle it naturally, not with hardcoded messages)
         # DISABLED: Contact form popup feature disabled per user request
@@ -285,8 +283,8 @@ class ChatService:
         # Legacy logic (disabled):
         # if not (collected_email or collected_phone) and turn_count >= self.FOLLOW_UP_NUDGE_TURN:
         #     requires_contact_info = True
-        
-        # Build prompt context with contact info status
+
+        # Build prompt context with contact info status (pass actual values, not just booleans)
         prompt_context = {
             "collected_name": collected_name,
             "collected_email": collected_email,

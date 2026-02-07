@@ -391,23 +391,27 @@ Call Ending:
         if not context:
             return ""
 
-        collected_name = context.get("collected_name", False)
-        collected_email = context.get("collected_email", False)
-        collected_phone = context.get("collected_phone", False)
+        # Context now contains actual values (strings) or None, not just booleans
+        collected_name = context.get("collected_name")
+        collected_email = context.get("collected_email")
+        collected_phone = context.get("collected_phone")
         turn_count = context.get("turn_count", 0)
 
-        contact_status = []
+        contact_details = []
         if collected_name:
-            contact_status.append("name")
+            contact_details.append(f"Name: {collected_name}")
         if collected_email:
-            contact_status.append("email")
+            contact_details.append(f"Email: {collected_email}")
         if collected_phone:
-            contact_status.append("phone")
+            contact_details.append(f"Phone: {collected_phone}")
 
-        if contact_status:
-            contact_context = f"\n\nCURRENT CONVERSATION STATUS:\n"
-            contact_context += f"- Contact information collected: {', '.join(contact_status)}\n"
-            contact_context += f"- Do not ask for information you already have\n"
+        if contact_details:
+            contact_context = f"\n\nCUSTOMER INFORMATION ALREADY COLLECTED:\n"
+            for detail in contact_details:
+                contact_context += f"- {detail}\n"
+            contact_context += f"\nIMPORTANT: Do NOT ask for any information listed above - you already have it!\n"
+            contact_context += f"- If sending a registration link or form, use the info you already have\n"
+            contact_context += f"- Never ask 'What is your name?' or similar if you already collected it\n"
 
             if not collected_email and not collected_phone:
                 contact_context += f"- Consider naturally asking for email OR phone when contextually appropriate\n"

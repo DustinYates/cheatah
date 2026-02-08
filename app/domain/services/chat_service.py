@@ -39,13 +39,29 @@ _EXPLICIT_NAME_PATTERN = re.compile(r"\b(?:I'?m|I am|my name is|this is|im|name'
 # Pattern for name stated first followed by comma and context, like "scott, im 68" or "john, I need help"
 _NAME_FIRST_PATTERN = re.compile(r"^([A-Za-z]{2,15})(?:\s+[A-Za-z]{2,15})?,\s*(?:im|i'm|i am|i)\s", re.IGNORECASE)
 _CAPITALIZED_NAME_PATTERN = re.compile(r"([A-Z][a-z]+\s+[A-Z][a-z]+)")
+# Pattern to detect when assistant asked for the user's name
+_NAME_QUESTION_PATTERN = re.compile(
+    r"(?:who (?:am i|do i have the pleasure of) (?:chatting|speaking|talking) with|"
+    r"what(?:'s| is) your name|"
+    r"may i (?:have|get|ask) your name|"
+    r"can i (?:have|get|ask) your name|"
+    r"could i (?:have|get) your name|"
+    r"who(?:'s| is) this|"
+    r"your name\??)",
+    re.IGNORECASE
+)
+# Pattern for standalone name response (First or First Last, with optional punctuation)
+# Handles: "John", "John Smith", "John Smith.", "Regina Edwards-Thicklin"
+# Case-insensitive to handle lowercase input like "dustin" - we title-case during validation
+_STANDALONE_NAME_PATTERN = re.compile(r"^([A-Za-z][A-Za-z]+(?:\s+[A-Za-z][A-Za-z-]+)?)[.!]?$", re.IGNORECASE)
 _DRAFT_PREFIX_PATTERN = re.compile(r'^draft\s+\d+:\s*', re.IGNORECASE)
 _TRAILING_WORD_PATTERN = re.compile(r"([A-Za-z]+)$")
 _LOWERCASE_ENDING_PATTERN = re.compile(r"[a-z]$")
-# Pattern to extract name from bot's greeting response (e.g., "Nice to meet you, Dustin")
+# Pattern to extract name from bot's greeting response (e.g., "Hi Dustin!", "Nice to meet you, Dustin")
 # This is a reliable fallback since the bot only greets by name when it recognized the name
+# Includes common greeting patterns: "Hi X", "Hello X", "Hey X", "Nice to meet you, X"
 _BOT_GREETING_NAME_PATTERN = re.compile(
-    r"(?:nice to meet you|great to meet you|hello|hi there|hey there|thanks|thank you),?\s+([A-Z][a-z]+)",
+    r"(?:nice to meet you|great to meet you|hello|hey|hi)[,!]?\s+([A-Z][a-z]+)",
     re.IGNORECASE
 )
 # Patterns for chat-to-SMS handoff detection
@@ -68,7 +84,7 @@ _USER_HANDOFF_REQUEST_PATTERN = re.compile(
 )
 # Pattern to detect when assistant asked for user's name
 _NAME_REQUEST_PATTERN = re.compile(
-    r"(?:who am i (?:chatting|speaking|talking) with|what(?:'s| is) your name|may i (?:have|get) your name|"
+    r"(?:who (?:am i|do i have the pleasure of) (?:chatting|speaking|talking) with|what(?:'s| is) your name|may i (?:have|get) your name|"
     r"(?:and )?your name(?: is)?|who(?:'s| is) this|what should i call you)",
     re.IGNORECASE
 )
@@ -1402,6 +1418,10 @@ Replace null with the actual value if found. Use null if not found or uncertain.
             # Parse JSON response
             response = response.strip()
 
+            # Log if response is empty (common Gemini issue)
+            if not response:
+                logger.warning("LLM returned empty response for name extraction - falling back to regex")
+
             # Strip markdown code blocks if present
             if response.startswith("`"):
                 response = response.lstrip("`")
@@ -1454,10 +1474,49 @@ Replace null with the actual value if found. Use null if not found or uncertain.
 
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse LLM response: {e}")
-            return result
+            # Fall through to regex fallback below
         except Exception as e:
             logger.error(f"LLM extraction failed: {e}", exc_info=True)
-            return result
+            # Fall through to regex fallback below
+
+        # CONTEXT-AWARE FALLBACK: If assistant just asked for name, user's response IS their name
+        # This is the most reliable pattern - "who am I chatting with?" -> "Terrell Pipkin."
+        if not result["name"] and messages:
+            # Find the last assistant message
+            last_assistant_msg = None
+            for msg in reversed(messages):
+                if msg.role == "assistant":
+                    last_assistant_msg = msg.content
+                    break
+
+            # Check if assistant asked for name
+            if last_assistant_msg and _NAME_QUESTION_PATTERN.search(last_assistant_msg):
+                # User's current message is likely their name - check if it looks like a name
+                standalone_match = _STANDALONE_NAME_PATTERN.match(current_user_message.strip())
+                if standalone_match:
+                    potential_name = standalone_match.group(1)
+                    validated = validate_name(potential_name, require_explicit=True)
+                    if validated:
+                        result["name"] = validated
+                        result["name_is_explicit"] = True
+                        logger.info(f"Context-aware name extraction: assistant asked for name, user replied '{validated}'")
+
+        # REGEX FALLBACK: If still no name, try regex patterns on all user text
+        # This handles cases where LLM returns empty/invalid JSON
+        if not result["name"]:
+            all_user_text = current_user_message
+            for msg in messages:
+                if msg.role == "user":
+                    all_user_text += " | " + msg.content
+            regex_name, is_explicit = self._extract_name_regex(all_user_text)
+            if regex_name:
+                validated = validate_name(regex_name, require_explicit=is_explicit)
+                if validated:
+                    result["name"] = validated
+                    result["name_is_explicit"] = is_explicit
+                    logger.info(f"Using regex-extracted name (LLM fallback): '{validated}'")
+
+        return result
 
     async def _process_chat_core(
         self,

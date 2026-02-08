@@ -1,0 +1,31 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//ConvoPro//Content Calendar//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:ConvoPro Content Calendar
+X-WR-TIMEZONE:America/Chicago
+
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20260215
+DTEND;VALUE=DATE:20260216
+RRULE:FREQ=MONTHLY;BYMONTHDAY=1,15
+DTSTAMP:20260207T120000Z
+UID:convopro-blog-post-1@getconvopro.com
+SUMMARY:Publish Blog Post
+DESCRIPTION:Write and publish a blog post for ConvoPro SEO.\n\nIdeas:\n- Industry pain points\n- AI vs traditional solutions\n- Customer success angles\n\nTarget: 800-1200 words, one focus keyword
+STATUS:CONFIRMED
+END:VEVENT
+
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20260401
+DTEND;VALUE=DATE:20260402
+RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1
+DTSTAMP:20260207T120000Z
+UID:convopro-landing-page-review@getconvopro.com
+SUMMARY:Review/Add Landing Page (Quarterly)
+DESCRIPTION:Quarterly check-in:\n\n1. Review existing landing pages for updates\n2. Identify new vertical opportunities\n3. Add testimonials or metrics if available\n4. Consider new industry-specific page
+STATUS:CONFIRMED
+END:VEVENT
+
+END:VCALENDAR

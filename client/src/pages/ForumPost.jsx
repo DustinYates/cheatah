@@ -137,7 +137,7 @@ function VoteButtons({ score, userVote, onVote, disabled, vertical = false }) {
   );
 }
 
-function Comment({ comment, onVote, onReply, onDelete, currentUserId, depth = 0, allComments, isArchived }) {
+function Comment({ comment, onVote, onReply, onDelete, currentUserId, depth = 0, allComments, isArchived, votingComments }) {
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [replyContent, setReplyContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -188,7 +188,7 @@ function Comment({ comment, onVote, onReply, onDelete, currentUserId, depth = 0,
           score={comment.score}
           userVote={comment.user_vote}
           onVote={(value) => onVote(comment.id, value)}
-          disabled={isArchived || comment.is_deleted}
+          disabled={isArchived || comment.is_deleted || votingComments?.has(comment.id)}
           vertical
         />
         {depth < maxDepth && replies.length > 0 && (
@@ -253,6 +253,7 @@ function Comment({ comment, onVote, onReply, onDelete, currentUserId, depth = 0,
             depth={depth + 1}
             allComments={allComments}
             isArchived={isArchived}
+            votingComments={votingComments}
           />
         ))}
       </div>
@@ -266,6 +267,7 @@ function CommentsSection({ forumSlug, categorySlug, postId, isArchived }) {
   const [error, setError] = useState(null);
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [votingComments, setVotingComments] = useState(new Set()); // Track comments with pending votes
   const commentTextareaRef = useRef(null);
   const { user } = useAuth();
 
@@ -286,6 +288,12 @@ function CommentsSection({ forumSlug, categorySlug, postId, isArchived }) {
   }, [fetchComments]);
 
   const handleVote = async (commentId, voteValue) => {
+    // Prevent double voting - ignore if already voting on this comment
+    if (votingComments.has(commentId)) return;
+
+    // Mark comment as voting in progress
+    setVotingComments(prev => new Set(prev).add(commentId));
+
     try {
       const result = await api.voteOnComment(forumSlug, categorySlug, postId, commentId, voteValue);
       setComments(prev => prev.map(c =>
@@ -295,6 +303,13 @@ function CommentsSection({ forumSlug, categorySlug, postId, isArchived }) {
       ));
     } catch (err) {
       console.error('Failed to vote:', err);
+    } finally {
+      // Remove from voting set
+      setVotingComments(prev => {
+        const next = new Set(prev);
+        next.delete(commentId);
+        return next;
+      });
     }
   };
 
@@ -407,6 +422,7 @@ function CommentsSection({ forumSlug, categorySlug, postId, isArchived }) {
               depth={0}
               allComments={comments}
               isArchived={isArchived}
+              votingComments={votingComments}
             />
           ))
         )}

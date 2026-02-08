@@ -274,15 +274,28 @@ export default function EscalationSettings() {
         <div className="section">
           <div className="section-title">SMS Alert Phone Number</div>
 
+          {/* Active number indicator */}
+          <div className="active-phone-indicator">
+            <span className="active-label">SMS alerts will be sent to:</span>
+            <span className="active-number">
+              {settings.alert_phone_override?.trim() || businessPhone || 'Not configured'}
+            </span>
+            {settings.alert_phone_override?.trim() && (
+              <span className="active-source">(override)</span>
+            )}
+            {!settings.alert_phone_override?.trim() && businessPhone && (
+              <span className="active-source">(from business profile)</span>
+            )}
+          </div>
+
           {businessPhone ? (
             <div className="phone-info">
               <span className="phone-label">Business Profile Phone:</span>
               <span className="phone-number">{businessPhone}</span>
-              <span className="phone-note">(used by default)</span>
             </div>
           ) : (
             <div className="phone-warning">
-              No phone number configured in your Business Profile. Add one to receive SMS alerts.
+              No phone number configured in your Business Profile. Add one or set an override below.
             </div>
           )}
 
@@ -298,6 +311,16 @@ export default function EscalationSettings() {
                 onChange={(e) => setSettings({ ...settings, alert_phone_override: e.target.value })}
                 placeholder="+1 (555) 123-4567"
               />
+              {settings.alert_phone_override?.trim() && (
+                <button
+                  type="button"
+                  className="btn btn-text"
+                  onClick={() => setSettings({ ...settings, alert_phone_override: '' })}
+                  title="Clear override"
+                >
+                  Clear
+                </button>
+              )}
             </div>
           </div>
           <div className="help-text">
@@ -507,6 +530,37 @@ export default function EscalationSettings() {
           height: 14px;
         }
 
+        .active-phone-indicator {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+          background: #e6f4ea;
+          border: 1px solid #34a853;
+          border-radius: 6px;
+          padding: 0.5rem 0.75rem;
+          margin-bottom: 0.75rem;
+        }
+
+        .active-label {
+          font-size: 0.8rem;
+          color: #1e7e34;
+          font-weight: 500;
+        }
+
+        .active-number {
+          font-size: 0.95rem;
+          font-weight: 600;
+          font-family: monospace;
+          color: #1e7e34;
+        }
+
+        .active-source {
+          font-size: 0.75rem;
+          color: #666;
+          font-style: italic;
+        }
+
         .phone-info {
           display: flex;
           align-items: center;
@@ -525,17 +579,23 @@ export default function EscalationSettings() {
           font-family: monospace;
         }
 
-        .phone-note {
-          font-size: 0.8rem;
-          color: #888;
-        }
-
         .phone-warning {
           font-size: 0.85rem;
           color: #b45309;
           background: #fef7e0;
           padding: 0.5rem 0.75rem;
           border-radius: 6px;
+        }
+
+        .btn-text {
+          background: none;
+          color: #c5221f;
+          padding: 0.25rem 0.5rem;
+          font-size: 0.8rem;
+        }
+
+        .btn-text:hover:not(:disabled) {
+          background: #fce8e6;
         }
 
         .keywords-section {

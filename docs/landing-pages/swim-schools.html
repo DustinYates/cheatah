@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Answering Service for Swim Schools | ConvoPro</title>
+  <meta name="description" content="Never miss another enrollment call. ConvoPro answers parent inquiries 24/7 via phone, text, and chat—in English and Spanish.">
+
+  <!-- Open Graph / Social -->
+  <meta property="og:title" content="AI Answering Service for Swim Schools | ConvoPro">
+  <meta property="og:description" content="Stop losing enrollments to voicemail. ConvoPro answers every parent inquiry instantly.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://getconvopro.com/swim-schools">
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      line-height: 1.6;
+      color: #1a1a2e;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Hero Section */
+    .hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+      color: white;
+      padding: 80px 24px;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-block;
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 700;
+      margin-bottom: 20px;
+      line-height: 1.2;
+    }
+
+    .hero-subhead {
+      font-size: clamp(1.1rem, 2.5vw, 1.35rem);
+      color: #cbd5e1;
+      max-width: 700px;
+      margin: 0 auto 32px;
+    }
+
+    .cta-button {
+      display: inline-block;
+      background: #3b82f6;
+      color: white;
+      padding: 16px 32px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 1.1rem;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    .cta-button:hover {
+      background: #2563eb;
+      transform: translateY(-2px);
+    }
+
+    /* Pain Points Section */
+    .pain-points {
+      padding: 80px 24px;
+      background: #f8fafc;
+    }
+
+    .pain-points h2 {
+      text-align: center;
+      font-size: clamp(1.5rem, 4vw, 2.25rem);
+      margin-bottom: 48px;
+      color: #0f172a;
+    }
+
+    .pain-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .pain-card {
+      background: white;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      border-left: 4px solid #ef4444;
+    }
+
+    .pain-card .icon {
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+    }
+
+    .pain-card h3 {
+      font-size: 1rem;
+      color: #374151;
+      font-weight: 500;
+    }
+
+    /* Solution Section */
+    .solution {
+      padding: 80px 24px;
+    }
+
+    .solution h2 {
+      text-align: center;
+      font-size: clamp(1.5rem, 4vw, 2.25rem);
+      margin-bottom: 16px;
+    }
+
+    .solution-subhead {
+      text-align: center;
+      color: #64748b;
+      margin-bottom: 48px;
+      font-size: 1.1rem;
+    }
+
+    .solution-table {
+      max-width: 800px;
+      margin: 0 auto;
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .solution-table th {
+      background: #0f172a;
+      color: white;
+      padding: 16px 20px;
+      text-align: left;
+      font-weight: 600;
+    }
+
+    .solution-table th:first-child {
+      border-radius: 8px 0 0 0;
+    }
+
+    .solution-table th:last-child {
+      border-radius: 0 8px 0 0;
+    }
+
+    .solution-table td {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .solution-table tr:nth-child(even) {
+      background: #f8fafc;
+    }
+
+    .solution-table td:last-child {
+      color: #059669;
+      font-weight: 500;
+    }
+
+    /* How It Works */
+    .how-it-works {
+      padding: 80px 24px;
+      background: #0f172a;
+      color: white;
+    }
+
+    .how-it-works h2 {
+      text-align: center;
+      font-size: clamp(1.5rem, 4vw, 2.25rem);
+      margin-bottom: 48px;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 32px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .step {
+      text-align: center;
+      padding: 24px;
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      height: 48px;
+      background: #3b82f6;
+      border-radius: 50%;
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .step h3 {
+      font-size: 1.1rem;
+      margin-bottom: 8px;
+    }
+
+    .step p {
+      color: #94a3b8;
+      font-size: 0.95rem;
+    }
+
+    /* Features List */
+    .features {
+      padding: 80px 24px;
+      background: #f8fafc;
+    }
+
+    .features h2 {
+      text-align: center;
+      font-size: clamp(1.5rem, 4vw, 2.25rem);
+      margin-bottom: 48px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .feature {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .feature-icon {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      background: #dbeafe;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+
+    .feature h3 {
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+
+    .feature p {
+      color: #64748b;
+      font-size: 0.9rem;
+    }
+
+    /* CTA Section */
+    .cta-section {
+      padding: 80px 24px;
+      text-align: center;
+      background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+      color: white;
+    }
+
+    .cta-section h2 {
+      font-size: clamp(1.5rem, 4vw, 2.25rem);
+      margin-bottom: 16px;
+    }
+
+    .cta-section p {
+      color: #cbd5e1;
+      margin-bottom: 32px;
+      font-size: 1.1rem;
+    }
+
+    .cta-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+    }
+
+    .cta-secondary {
+      display: inline-block;
+      background: transparent;
+      color: white;
+      padding: 16px 32px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 1.1rem;
+      border: 2px solid rgba(255,255,255,0.3);
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .cta-secondary:hover {
+      border-color: white;
+      background: rgba(255,255,255,0.1);
+    }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .hero {
+        padding: 60px 20px;
+      }
+
+      .solution-table {
+        font-size: 0.9rem;
+      }
+
+      .solution-table th,
+      .solution-table td {
+        padding: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <span class="hero-badge">🏊 Built for Swim Schools</span>
+      <h1>Stop Losing Enrollments to Voicemail</h1>
+      <p class="hero-subhead">
+        Parents don't leave messages—they call the next swim school.
+        ConvoPro answers every inquiry instantly, even at 9pm on a Saturday.
+      </p>
+      <a href="#demo" class="cta-button">See How It Works →</a>
+    </div>
+  </section>
+
+  <!-- Pain Points -->
+  <section class="pain-points">
+    <div class="container">
+      <h2>When You're Teaching, Who's Answering?</h2>
+      <div class="pain-grid">
+        <div class="pain-card">
+          <div class="icon">📞</div>
+          <h3>Missed calls during lessons = lost enrollments</h3>
+        </div>
+        <div class="pain-card">
+          <div class="icon">⏰</div>
+          <h3>After-hours inquiries go unanswered—they've moved on by morning</h3>
+        </div>
+        <div class="pain-card">
+          <div class="icon">🌐</div>
+          <h3>Spanish-speaking families get frustrated and hang up</h3>
+        </div>
+        <div class="pain-card">
+          <div class="icon">📋</div>
+          <h3>Staff answers "what classes are available?" 50 times a week</h3>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Solution Table -->
+  <section class="solution">
+    <div class="container">
+      <h2>Your AI Front Desk That Never Takes a Break</h2>
+      <p class="solution-subhead">Real questions from parents. Real-time answers from ConvoPro.</p>
+      <table class="solution-table">
+        <thead>
+          <tr>
+            <th>What Parents Ask</th>
+            <th>What ConvoPro Does</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>"What classes are open for my 4-year-old?"</td>
+            <td>✓ Checks your live schedule and answers instantly</td>
+          </tr>
+          <tr>
+            <td>"Can I get a link to register?"</td>
+            <td>✓ Sends SMS registration link during the call</td>
+          </tr>
+          <tr>
+            <td>"Do you have Saturday availability?"</td>
+            <td>✓ Provides real-time openings from your system</td>
+          </tr>
+          <tr>
+            <td>"¿Hablan español?"</td>
+            <td>✓ Responds fluently in Spanish (and 20+ languages)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="how-it-works">
+    <div class="container">
+      <h2>How It Works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <h3>Parent Calls or Texts</h3>
+          <p>ConvoPro answers in under 1 second—no hold music, no "please leave a message"</p>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <h3>AI Handles the Conversation</h3>
+          <p>Answers FAQs, checks class availability, and speaks their language</p>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <h3>Warm Leads Get Registration Links</h3>
+          <p>Sends a text with your signup link—right during the call</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="features">
+    <div class="container">
+      <h2>Built for How Swim Schools Actually Work</h2>
+      <div class="features-grid">
+        <div class="feature">
+          <div class="feature-icon">📅</div>
+          <div>
+            <h3>Live Schedule Integration</h3>
+            <p>Connects to Jackrabbit, iClassPro, or your booking system</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">💬</div>
+          <div>
+            <h3>Voice + Text + Chat</h3>
+            <p>Same AI handles phone calls, SMS, and website chat</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🌎</div>
+          <div>
+            <h3>Multilingual Support</h3>
+            <p>English, Spanish, and 20+ languages with natural accents</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">📱</div>
+          <div>
+            <h3>Instant SMS Links</h3>
+            <p>Sends registration links via text during the conversation</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🔔</div>
+          <div>
+            <h3>Smart Escalation</h3>
+            <p>Hot leads or urgent issues get routed to your team instantly</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">📊</div>
+          <div>
+            <h3>Full Transcripts</h3>
+            <p>Every call and text logged so you never lose context</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section" id="demo">
+    <div class="container">
+      <h2>Ready to Stop Missing Calls?</h2>
+      <p>See ConvoPro handle your enrollment questions live—call or text right now.</p>
+      <div class="cta-buttons">
+        <a href="tel:+12816990999" class="cta-button">Call (281) 699-0999</a>
+        <a href="sms:+12816990999?body=Hi,%20I%20run%20a%20swim%20school%20and%20want%20to%20learn%20more" class="cta-secondary">Text Us</a>
+      </div>
+    </div>
+  </section>
+
+</body>
+</html>

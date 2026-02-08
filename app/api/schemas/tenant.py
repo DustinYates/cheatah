@@ -116,6 +116,22 @@ class TenantOverviewStats(BaseModel):
     chatbot_leads_count: int = 0
     # Services overview
     services: TenantServicesOverview | None = None
+    # Alerts
+    active_alerts_count: int = 0
+    alert_severity: str | None = None  # "critical", "warning", "info"
+
+
+class TenantConfigDetailResponse(BaseModel):
+    """Detailed configuration for a tenant's services."""
+
+    tenant_id: int
+    tenant_name: str
+    sms: dict | None = None
+    voice: dict | None = None
+    email: dict | None = None
+    widget: dict | None = None
+    customer_service: dict | None = None
+    prompt: dict | None = None
 
 
 class TenantsOverviewResponse(BaseModel):

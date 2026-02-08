@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import LeadDetailsModal from '../components/LeadDetailsModal';
+import SideDrawer from '../components/SideDrawer';
 import './Dashboard.css';
 
 // Robot icon SVG component
@@ -207,11 +208,16 @@ const ServiceBadge = ({ enabled, configured, icon, title }) => {
 };
 
 // Services cell component for the tenant table
-const ServicesCell = ({ services }) => {
+const ServicesCell = ({ services, onClick }) => {
   if (!services) return <span className="text-muted">-</span>;
 
   return (
-    <div className="services-badges">
+    <div
+      className={`services-badges ${onClick ? 'services-badges--clickable' : ''}`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+    >
       <ServiceBadge
         enabled={services.sms?.enabled}
         configured={services.sms?.configured}
@@ -249,6 +255,23 @@ const ServicesCell = ({ services }) => {
         title="AI Prompt"
       />
     </div>
+  );
+};
+
+// Alerts badge component for tenant table
+const AlertsBadge = ({ count, severity }) => {
+  if (!count) return <span className="text-muted">-</span>;
+
+  const severityClass = {
+    critical: 'alerts-badge--critical',
+    warning: 'alerts-badge--warning',
+    info: 'alerts-badge--info',
+  }[severity] || '';
+
+  return (
+    <span className={`alerts-badge ${severityClass}`} title={`${count} active alert(s)`}>
+      {count} {count === 1 ? 'issue' : 'issues'}
+    </span>
   );
 };
 
@@ -303,6 +326,14 @@ export default function Dashboard() {
     const saved = localStorage.getItem('dashboard_leads_limit');
     return saved ? parseInt(saved, 10) : 50;
   });
+  // Master admin state
+  const [period, setPeriod] = useState(7);
+  const [openTenantMenuId, setOpenTenantMenuId] = useState(null);
+  const [tenantActionLoading, setTenantActionLoading] = useState(null);
+  const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
+  const [configDrawerTenant, setConfigDrawerTenant] = useState(null);
+  const [configData, setConfigData] = useState(null);
+  const [configLoading, setConfigLoading] = useState(false);
 
   // Check if master admin with no tenant selected
   const isMasterAdminView = user?.is_global_admin && !selectedTenantId;
@@ -313,13 +344,13 @@ export default function Dashboard() {
     } else {
       fetchData();
     }
-  }, [leadsLimit, isMasterAdminView, selectedTenantId]);
+  }, [leadsLimit, isMasterAdminView, selectedTenantId, period]);
 
   const fetchTenantsOverview = async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await api.getTenantsOverview();
+      const data = await api.getTenantsOverview(period);
       setTenantsOverview(data);
     } catch (err) {
       console.error('Failed to fetch tenants overview:', err);
@@ -341,6 +372,61 @@ export default function Dashboard() {
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
   }, [openActionMenuId]);
+
+  // Click-outside handler for tenant action menu
+  useEffect(() => {
+    if (openTenantMenuId === null) return;
+
+    const handleClick = (event) => {
+      if (!event.target.closest('.tenant-action-menu')) {
+        setOpenTenantMenuId(null);
+      }
+    };
+
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [openTenantMenuId]);
+
+  // Tenant action handlers
+  const handleImpersonate = (tenantId) => {
+    selectTenant(tenantId);
+    setOpenTenantMenuId(null);
+  };
+
+  const handleOpenTenantTab = (tenantId) => {
+    window.open(`${window.location.origin}/?tenant=${tenantId}`, '_blank');
+    setOpenTenantMenuId(null);
+  };
+
+  const handleToggleSuspend = async (tenant) => {
+    setTenantActionLoading(tenant.id);
+    try {
+      await api.updateTenant(tenant.id, { is_active: !tenant.is_active });
+      await fetchTenantsOverview();
+    } catch (err) {
+      console.error('Failed to update tenant status:', err);
+    } finally {
+      setTenantActionLoading(null);
+      setOpenTenantMenuId(null);
+    }
+  };
+
+  // Config drawer handler
+  const handleServiceClick = async (e, tenantId, tenantName) => {
+    e.stopPropagation();
+    setConfigDrawerTenant({ id: tenantId, name: tenantName });
+    setConfigDrawerOpen(true);
+    setConfigLoading(true);
+    try {
+      const data = await api.getTenantConfig(tenantId);
+      setConfigData(data);
+    } catch (err) {
+      console.error('Failed to load tenant config:', err);
+      setConfigData(null);
+    } finally {
+      setConfigLoading(false);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -563,6 +649,111 @@ export default function Dashboard() {
     return date.toLocaleDateString();
   };
 
+  // Config drawer content component
+  const TenantConfigDrawer = ({ config, loading }) => {
+    if (loading) return <div className="config-loading">Loading...</div>;
+    if (!config) return <div className="config-empty">No configuration data.</div>;
+
+    const ConfigSection = ({ title, icon, data, fields }) => {
+      if (!data) return (
+        <div className="config-section config-section--empty">
+          <div className="config-section-header">
+            <span className="config-icon">{icon}</span>
+            <h4>{title}</h4>
+          </div>
+          <p className="config-not-configured">Not configured</p>
+        </div>
+      );
+
+      return (
+        <div className="config-section">
+          <div className="config-section-header">
+            <span className="config-icon">{icon}</span>
+            <h4>{title}</h4>
+            <span className={`config-status ${data.enabled ? 'config-status--active' : 'config-status--inactive'}`}>
+              {data.enabled ? 'Active' : 'Inactive'}
+            </span>
+          </div>
+          <div className="config-fields">
+            {fields.map(({ key, label }) => (
+              <div key={key} className="config-field">
+                <span className="config-field-label">{label}</span>
+                <span className="config-field-value">
+                  {typeof data[key] === 'boolean'
+                    ? (data[key] ? 'Yes' : 'No')
+                    : (data[key] || '-')}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="tenant-config-drawer">
+        <ConfigSection
+          title="SMS"
+          icon={<SmsServiceIcon />}
+          data={config.sms}
+          fields={[
+            { key: 'phone', label: 'Phone Number' },
+            { key: 'api_key_configured', label: 'API Key' },
+            { key: 'messaging_profile_id', label: 'Messaging Profile' },
+          ]}
+        />
+        <ConfigSection
+          title="Voice"
+          icon={<VoiceServiceIcon />}
+          data={config.voice}
+          fields={[
+            { key: 'agent_id', label: 'Agent ID' },
+            { key: 'handoff_mode', label: 'Handoff Mode' },
+            { key: 'transfer_number', label: 'Transfer Number' },
+          ]}
+        />
+        <ConfigSection
+          title="Email"
+          icon={<EmailServiceIcon />}
+          data={config.email}
+          fields={[
+            { key: 'gmail_email', label: 'Gmail' },
+            { key: 'gmail_connected', label: 'Connected' },
+            { key: 'watch_active', label: 'Watch Active' },
+            { key: 'sendgrid_configured', label: 'SendGrid' },
+          ]}
+        />
+        <ConfigSection
+          title="Widget"
+          icon={<WidgetServiceIcon />}
+          data={config.widget}
+          fields={[
+            { key: 'settings_count', label: 'Settings Count' },
+          ]}
+        />
+        <ConfigSection
+          title="Customer Service"
+          icon={<CustomerServiceIcon />}
+          data={config.customer_service}
+          fields={[
+            { key: 'zapier_configured', label: 'Zapier' },
+            { key: 'jackrabbit_key1_configured', label: 'Jackrabbit Key 1' },
+            { key: 'jackrabbit_key2_configured', label: 'Jackrabbit Key 2' },
+          ]}
+        />
+        <ConfigSection
+          title="AI Prompt"
+          icon={<PromptServiceIcon />}
+          data={config.prompt}
+          fields={[
+            { key: 'active', label: 'Active' },
+            { key: 'validated_at', label: 'Last Validated' },
+          ]}
+        />
+      </div>
+    );
+  };
+
   // Master Admin Tenant Overview
   if (isMasterAdminView && tenantsOverview) {
     return (
@@ -571,6 +762,17 @@ export default function Dashboard() {
           <div className="dashboard-header__title">
             <h1>Master Admin Dashboard</h1>
             <span className="dashboard-header__subtitle">All tenants overview</span>
+          </div>
+          <div className="period-toggle">
+            {[1, 7, 30].map((d) => (
+              <button
+                key={d}
+                className={`period-pill ${period === d ? 'period-pill--active' : ''}`}
+                onClick={() => setPeriod(d)}
+              >
+                {d === 1 ? '24h' : `${d}d`}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -602,6 +804,7 @@ export default function Dashboard() {
                 <th>Name</th>
                 <th>Status</th>
                 <th>Services</th>
+                <th>Alerts</th>
                 <th>Email</th>
                 <th>Phones</th>
                 <th>In</th>
@@ -611,6 +814,7 @@ export default function Dashboard() {
                 <th>Bot Leads</th>
                 <th>Leads</th>
                 <th>Activity</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -618,8 +822,6 @@ export default function Dashboard() {
                 <tr
                   key={tenant.id}
                   className="lead-row"
-                  onClick={() => selectTenant(tenant.id)}
-                  style={{ cursor: 'pointer' }}
                 >
                   <td>{tenant.tenant_number || tenant.id}</td>
                   <td>
@@ -634,7 +836,13 @@ export default function Dashboard() {
                     </span>
                   </td>
                   <td>
-                    <ServicesCell services={tenant.services} />
+                    <ServicesCell
+                      services={tenant.services}
+                      onClick={(e) => handleServiceClick(e, tenant.id, tenant.name)}
+                    />
+                  </td>
+                  <td>
+                    <AlertsBadge count={tenant.active_alerts_count} severity={tenant.alert_severity} />
                   </td>
                   <td>
                     {tenant.gmail_email ? (
@@ -663,11 +871,54 @@ export default function Dashboard() {
                   <td>{tenant.chatbot_leads_count || 0}</td>
                   <td>{tenant.total_leads}</td>
                   <td>{formatLastActivity(tenant.last_activity)}</td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <div className="tenant-action-menu">
+                      <button
+                        className="icon-button icon-button--ghost"
+                        onClick={() => setOpenTenantMenuId(openTenantMenuId === tenant.id ? null : tenant.id)}
+                        disabled={tenantActionLoading === tenant.id}
+                      >
+                        &#8942;
+                      </button>
+                      {openTenantMenuId === tenant.id && (
+                        <div className="action-menu__popover" role="menu">
+                          <button
+                            className="action-menu__item"
+                            onClick={() => handleImpersonate(tenant.id)}
+                          >
+                            Switch to Tenant
+                          </button>
+                          <button
+                            className="action-menu__item"
+                            onClick={() => handleOpenTenantTab(tenant.id)}
+                          >
+                            Open in New Tab
+                          </button>
+                          <button
+                            className={`action-menu__item ${tenant.is_active ? 'action-menu__item--danger' : ''}`}
+                            onClick={() => handleToggleSuspend(tenant)}
+                            disabled={tenantActionLoading === tenant.id}
+                          >
+                            {tenant.is_active ? 'Suspend Tenant' : 'Activate Tenant'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </CompactTable>
         </div>
+
+        {/* Config Drawer */}
+        <SideDrawer
+          title={configDrawerTenant ? `${configDrawerTenant.name} - Configuration` : 'Configuration'}
+          open={configDrawerOpen}
+          onClose={() => setConfigDrawerOpen(false)}
+        >
+          <TenantConfigDrawer config={configData} loading={configLoading} />
+        </SideDrawer>
       </div>
     );
   }

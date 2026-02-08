@@ -2,15 +2,16 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_global_admin
 from app.api.schemas.tenant import (
     AdminTenantResponse,
     AdminTenantUpdate,
+    TenantConfigDetailResponse,
     TenantCreate,
     TenantOverviewStats,
     TenantServiceStatus,
@@ -102,10 +103,18 @@ async def list_tenants(
 async def get_tenants_overview(
     current_user: Annotated[User, Depends(require_global_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    days: int = Query(7, ge=1, le=30, description="Number of days for usage stats"),
 ) -> TenantsOverviewResponse:
     """Get high-level overview stats for all tenants (master admin only)."""
-    from datetime import datetime
+    from datetime import datetime, timedelta
     from app.persistence.models.tenant_email_config import TenantEmailConfig
+    from app.persistence.models.anomaly_alert import AnomalyAlert
+    from app.persistence.models.service_health_incident import ServiceHealthIncident
+    from app.persistence.models.sms_burst_incident import SmsBurstIncident
+
+    # Calculate date range for filtered queries
+    now = datetime.utcnow()
+    start_date = now - timedelta(days=days)
 
     tenant_repo = TenantRepository(db)
     tenants = await tenant_repo.list_all(skip=0, limit=1000)
@@ -199,7 +208,7 @@ async def get_tenants_overview(
             "configured": len(phone_numbers) > 0,
         }
 
-    # Query SMS message counts (incoming/outgoing) per tenant
+    # Query SMS message counts (incoming/outgoing) per tenant - filtered by date
     # Incoming = user messages in SMS conversations
     sms_incoming_query = (
         select(Conversation.tenant_id, func.count(Message.id))
@@ -208,6 +217,7 @@ async def get_tenants_overview(
         .where(Conversation.tenant_id.in_(tenant_ids))
         .where(Conversation.channel == "sms")
         .where(Message.role == "user")
+        .where(Message.created_at >= start_date)
         .group_by(Conversation.tenant_id)
     )
     sms_incoming_result = await db.execute(sms_incoming_query)
@@ -221,12 +231,13 @@ async def get_tenants_overview(
         .where(Conversation.tenant_id.in_(tenant_ids))
         .where(Conversation.channel == "sms")
         .where(Message.role == "assistant")
+        .where(Message.created_at >= start_date)
         .group_by(Conversation.tenant_id)
     )
     sms_outgoing_result = await db.execute(sms_outgoing_query)
     sms_outgoing_counts = {row[0]: row[1] for row in sms_outgoing_result}
 
-    # Query call stats (count and total duration) per tenant
+    # Query call stats (count and total duration) per tenant - filtered by date
     call_stats_query = (
         select(
             Call.tenant_id,
@@ -234,6 +245,7 @@ async def get_tenants_overview(
             func.coalesce(func.sum(Call.duration), 0),
         )
         .where(Call.tenant_id.in_(tenant_ids))
+        .where(func.coalesce(Call.started_at, Call.created_at) >= start_date)
         .group_by(Call.tenant_id)
     )
     call_stats_result = await db.execute(call_stats_query)
@@ -325,6 +337,78 @@ async def get_tenants_overview(
         for row in prompt_result
     }
 
+    # Query active alerts across all alert types
+    # AnomalyAlert counts
+    anomaly_query = (
+        select(
+            AnomalyAlert.tenant_id,
+            func.count(AnomalyAlert.id).label("count"),
+            func.max(
+                case(
+                    (AnomalyAlert.severity == "critical", 3),
+                    (AnomalyAlert.severity == "warning", 2),
+                    else_=1
+                )
+            ).label("max_severity")
+        )
+        .where(AnomalyAlert.tenant_id.in_(tenant_ids))
+        .where(AnomalyAlert.status == "active")
+        .group_by(AnomalyAlert.tenant_id)
+    )
+    anomaly_result = await db.execute(anomaly_query)
+    anomaly_counts = {row[0]: {"count": row[1], "severity": row[2]} for row in anomaly_result}
+
+    # ServiceHealthIncident counts (tenant-specific only)
+    health_query = (
+        select(
+            ServiceHealthIncident.tenant_id,
+            func.count(ServiceHealthIncident.id).label("count"),
+            func.max(
+                case(
+                    (ServiceHealthIncident.severity == "critical", 3),
+                    (ServiceHealthIncident.severity == "warning", 2),
+                    else_=1
+                )
+            ).label("max_severity")
+        )
+        .where(ServiceHealthIncident.tenant_id.in_(tenant_ids))
+        .where(ServiceHealthIncident.status == "active")
+        .group_by(ServiceHealthIncident.tenant_id)
+    )
+    health_result = await db.execute(health_query)
+    health_counts = {row[0]: {"count": row[1], "severity": row[2]} for row in health_result}
+
+    # SmsBurstIncident counts
+    burst_query = (
+        select(
+            SmsBurstIncident.tenant_id,
+            func.count(SmsBurstIncident.id).label("count"),
+            func.max(
+                case(
+                    (SmsBurstIncident.severity == "critical", 3),
+                    (SmsBurstIncident.severity == "warning", 2),
+                    else_=1
+                )
+            ).label("max_severity")
+        )
+        .where(SmsBurstIncident.tenant_id.in_(tenant_ids))
+        .where(SmsBurstIncident.status == "active")
+        .group_by(SmsBurstIncident.tenant_id)
+    )
+    burst_result = await db.execute(burst_query)
+    burst_counts = {row[0]: {"count": row[1], "severity": row[2]} for row in burst_result}
+
+    # Helper to combine alert counts
+    def get_tenant_alerts(tid: int) -> tuple[int, str | None]:
+        total = 0
+        max_sev = 0
+        for counts_dict in [anomaly_counts, health_counts, burst_counts]:
+            if tid in counts_dict:
+                total += counts_dict[tid]["count"]
+                max_sev = max(max_sev, counts_dict[tid]["severity"])
+        severity_map = {3: "critical", 2: "warning", 1: "info"}
+        return total, severity_map.get(max_sev)
+
     # Build response
     tenant_stats = []
     active_count = 0
@@ -367,6 +451,9 @@ async def get_tenants_overview(
             ),
         )
 
+        # Get alert data for this tenant
+        alert_count, alert_severity = get_tenant_alerts(tenant.id)
+
         tenant_stats.append(
             TenantOverviewStats(
                 id=tenant.id,
@@ -389,6 +476,8 @@ async def get_tenants_overview(
                 call_minutes=round(call_info["duration_seconds"] / 60, 1),
                 chatbot_leads_count=chatbot_leads_counts.get(tenant.id, 0),
                 services=services_overview,
+                active_alerts_count=alert_count,
+                alert_severity=alert_severity,
             )
         )
 
@@ -451,6 +540,116 @@ async def update_tenant(
             detail="Tenant not found",
         )
     return _tenant_to_response(tenant)
+
+
+@router.get("/tenants/{tenant_id}/config", response_model=TenantConfigDetailResponse)
+async def get_tenant_config_detail(
+    tenant_id: int,
+    current_user: Annotated[User, Depends(require_global_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TenantConfigDetailResponse:
+    """Get detailed configuration for a tenant's services."""
+    from datetime import datetime
+    from app.persistence.models.tenant_email_config import TenantEmailConfig
+
+    tenant_repo = TenantRepository(db)
+    tenant = await tenant_repo.get_by_id(None, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    now = datetime.utcnow()
+
+    # SMS config
+    sms_result = await db.execute(
+        select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
+    )
+    sms_cfg = sms_result.scalar_one_or_none()
+    sms_data = None
+    if sms_cfg:
+        sms_data = {
+            "phone": sms_cfg.telnyx_phone_number,
+            "voice_phone": sms_cfg.voice_phone_number,
+            "api_key_configured": bool(sms_cfg.telnyx_api_key),
+            "messaging_profile_id": sms_cfg.telnyx_messaging_profile_id,
+            "enabled": sms_cfg.is_enabled or False,
+        }
+
+    # Voice config
+    voice_result = await db.execute(
+        select(TenantVoiceConfig).where(TenantVoiceConfig.tenant_id == tenant_id)
+    )
+    voice_cfg = voice_result.scalar_one_or_none()
+    voice_data = None
+    if voice_cfg:
+        voice_data = {
+            "agent_id": voice_cfg.telnyx_agent_id,
+            "handoff_mode": voice_cfg.handoff_mode,
+            "transfer_number": voice_cfg.live_transfer_number,
+            "enabled": voice_cfg.is_enabled or False,
+        }
+
+    # Email config
+    email_result = await db.execute(
+        select(TenantEmailConfig).where(TenantEmailConfig.tenant_id == tenant_id)
+    )
+    email_cfg = email_result.scalar_one_or_none()
+    email_data = None
+    if email_cfg:
+        email_data = {
+            "gmail_email": email_cfg.gmail_email,
+            "gmail_connected": bool(email_cfg.gmail_refresh_token),
+            "watch_active": bool(email_cfg.watch_expiration and email_cfg.watch_expiration > now),
+            "sendgrid_configured": bool(email_cfg.sendgrid_api_key),
+        }
+
+    # Widget config
+    widget_result = await db.execute(
+        select(TenantWidgetConfig).where(TenantWidgetConfig.tenant_id == tenant_id)
+    )
+    widget_cfg = widget_result.scalar_one_or_none()
+    widget_data = None
+    if widget_cfg:
+        widget_data = {
+            "enabled": widget_cfg.settings is not None and len(widget_cfg.settings) > 0,
+            "settings_count": len(widget_cfg.settings) if widget_cfg.settings else 0,
+        }
+
+    # Customer service config
+    cs_result = await db.execute(
+        select(TenantCustomerServiceConfig).where(TenantCustomerServiceConfig.tenant_id == tenant_id)
+    )
+    cs_cfg = cs_result.scalar_one_or_none()
+    cs_data = None
+    if cs_cfg:
+        cs_data = {
+            "enabled": cs_cfg.is_enabled or False,
+            "zapier_configured": bool(cs_cfg.zapier_webhook_url),
+            "jackrabbit_key1_configured": bool(cs_cfg.jackrabbit_api_key_1),
+            "jackrabbit_key2_configured": bool(cs_cfg.jackrabbit_api_key_2),
+        }
+
+    # Prompt config
+    prompt_result = await db.execute(
+        select(TenantPromptConfig).where(TenantPromptConfig.tenant_id == tenant_id)
+    )
+    prompt_cfg = prompt_result.scalar_one_or_none()
+    prompt_data = None
+    if prompt_cfg:
+        prompt_data = {
+            "active": prompt_cfg.is_active or False,
+            "validated_at": prompt_cfg.validated_at.isoformat() if prompt_cfg.validated_at else None,
+        }
+
+    return TenantConfigDetailResponse(
+        tenant_id=tenant_id,
+        tenant_name=tenant.name,
+        sms=sms_data,
+        voice=voice_data,
+        email=email_data,
+        widget=widget_data,
+        customer_service=cs_data,
+        prompt=prompt_data,
+    )
 
 
 def _mask_key(key: str | None) -> str | None:

@@ -131,12 +131,16 @@ export default function Layout() {
                 <li>
                   <NavLink to="/analytics/health">Health</NavLink>
                 </li>
-                <li>
-                  <NavLink to="/analytics/topics">Topics</NavLink>
-                </li>
-                <li>
-                  <NavLink to="/analytics/happiness">Happiness (CHI)</NavLink>
-                </li>
+{user?.is_global_admin && (
+                  <li>
+                    <NavLink to="/analytics/topics">Topics</NavLink>
+                  </li>
+                )}
+                {user?.is_global_admin && (
+                  <li>
+                    <NavLink to="/analytics/happiness">Happiness (CHI)</NavLink>
+                  </li>
+                )}
               </ul>
             )}
           </li>

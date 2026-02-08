@@ -139,8 +139,12 @@ class ApiClient {
     return this.request('/admin/tenants');
   }
 
-  async getTenantsOverview() {
-    return this.request('/admin/tenants/overview');
+  async getTenantsOverview(days = 7) {
+    return this.request(`/admin/tenants/overview?days=${days}`);
+  }
+
+  async getTenantConfig(tenantId) {
+    return this.request(`/admin/tenants/${tenantId}/config`);
   }
 
   async createTenant(tenantData) {

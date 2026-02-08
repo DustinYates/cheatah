@@ -1675,6 +1675,16 @@ class ConversionMetrics(BaseModel):
     verified_phones: int = 0
 
 
+class SavingsAssumptions(BaseModel):
+    """Assumptions used in savings calculations."""
+
+    sms_minutes_per_message: float
+    web_chat_minutes_per_message: float
+    offshore_rate_per_hour: float
+    onshore_rate_per_hour: float
+    include_web_chat_in_total: bool
+
+
 class SavingsAnalyticsResponse(BaseModel):
     """Savings analytics response."""
 
@@ -1688,20 +1698,36 @@ class SavingsAnalyticsResponse(BaseModel):
     sms: ChannelSavingsDetail
     web_chat: ChannelSavingsDetail
     conversions: ConversionMetrics
+    assumptions: SavingsAssumptions
 
 
-OFFSHORE_RATE = 7.0
-ONSHORE_RATE = 14.0
-SMS_MINUTES_PER_MESSAGE = 2.0
-WEB_MINUTES_PER_MESSAGE = 1.5
+# Default values - can be overridden via query params
+DEFAULT_OFFSHORE_RATE = 7.0
+DEFAULT_ONSHORE_RATE = 14.0
+DEFAULT_SMS_MINUTES_PER_MESSAGE = 1.0
+DEFAULT_WEB_MINUTES_PER_MESSAGE = 1.0
+DEFAULT_INCLUDE_WEB_CHAT_IN_TOTAL = False
 
 
 @router.get("/savings", response_model=SavingsAnalyticsResponse)
 async def get_savings_analytics(
     db: Annotated[AsyncSession, Depends(get_db)],
     ctx: AnalyticsContext30d,
+    sms_minutes_per_msg: Annotated[float, Query(ge=0.1, le=10.0)] = DEFAULT_SMS_MINUTES_PER_MESSAGE,
+    web_minutes_per_msg: Annotated[float, Query(ge=0.1, le=10.0)] = DEFAULT_WEB_MINUTES_PER_MESSAGE,
+    offshore_rate: Annotated[float, Query(ge=1.0, le=100.0)] = DEFAULT_OFFSHORE_RATE,
+    onshore_rate: Annotated[float, Query(ge=1.0, le=100.0)] = DEFAULT_ONSHORE_RATE,
+    include_web_chat: Annotated[bool, Query()] = DEFAULT_INCLUDE_WEB_CHAT_IN_TOTAL,
 ) -> SavingsAnalyticsResponse:
-    """Get savings analytics showing cost savings from AI handling calls and messages."""
+    """Get savings analytics showing cost savings from AI handling calls and messages.
+
+    Query parameters allow customizing the assumptions used in calculations:
+    - sms_minutes_per_msg: Estimated minutes a human takes per SMS response (default: 1.0)
+    - web_minutes_per_msg: Estimated minutes a human takes per web chat response (default: 1.0)
+    - offshore_rate: Hourly rate for offshore staff (default: $7/hr)
+    - onshore_rate: Hourly rate for onshore staff (default: $14/hr)
+    - include_web_chat: Whether to include web chat savings in totals (default: false)
+    """
     # Query 1: Voice call duration
     call_timestamp = func.coalesce(Call.started_at, Call.created_at)
     duration_seconds = func.coalesce(
@@ -1742,7 +1768,7 @@ async def get_savings_analytics(
     )
     sms_result = await db.execute(sms_msg_stmt)
     sms_msg_count = sms_result.scalar() or 0
-    sms_human_minutes = sms_msg_count * SMS_MINUTES_PER_MESSAGE
+    sms_human_minutes = sms_msg_count * sms_minutes_per_msg
     sms_hours = sms_human_minutes / 60
 
     # Query 3: Web chat assistant message count
@@ -1760,13 +1786,16 @@ async def get_savings_analytics(
     )
     web_result = await db.execute(web_msg_stmt)
     web_msg_count = web_result.scalar() or 0
-    web_human_minutes = web_msg_count * WEB_MINUTES_PER_MESSAGE
+    web_human_minutes = web_msg_count * web_minutes_per_msg
     web_hours = web_human_minutes / 60
 
-    # Calculate totals
-    total_hours = voice_hours + sms_hours + web_hours
-    total_offshore = round(total_hours * OFFSHORE_RATE, 2)
-    total_onshore = round(total_hours * ONSHORE_RATE, 2)
+    # Calculate totals (web chat optionally excluded)
+    if include_web_chat:
+        total_hours = voice_hours + sms_hours + web_hours
+    else:
+        total_hours = voice_hours + sms_hours
+    total_offshore = round(total_hours * offshore_rate, 2)
+    total_onshore = round(total_hours * onshore_rate, 2)
 
     # Query 4: Sent assets / conversion tracking
     conversions_stmt = (
@@ -1850,6 +1879,15 @@ async def get_savings_analytics(
     verified_enrollments = int(enrollment_row.verified_count or 0)
     verified_phones = int(enrollment_row.verified_phones or 0)
 
+    # Build assumptions object to return with response
+    assumptions = SavingsAssumptions(
+        sms_minutes_per_message=sms_minutes_per_msg,
+        web_chat_minutes_per_message=web_minutes_per_msg,
+        offshore_rate_per_hour=offshore_rate,
+        onshore_rate_per_hour=onshore_rate,
+        include_web_chat_in_total=include_web_chat,
+    )
+
     return SavingsAnalyticsResponse(
         start_date=ctx.start_date.isoformat(),
         end_date=ctx.end_date.isoformat(),
@@ -1861,22 +1899,22 @@ async def get_savings_analytics(
             count=voice_call_count,
             total_minutes=round(voice_total_minutes, 2),
             hours_saved=round(voice_hours, 2),
-            offshore_savings=round(voice_hours * OFFSHORE_RATE, 2),
-            onshore_savings=round(voice_hours * ONSHORE_RATE, 2),
+            offshore_savings=round(voice_hours * offshore_rate, 2),
+            onshore_savings=round(voice_hours * onshore_rate, 2),
         ),
         sms=ChannelSavingsDetail(
             count=sms_msg_count,
             total_minutes=round(sms_human_minutes, 2),
             hours_saved=round(sms_hours, 2),
-            offshore_savings=round(sms_hours * OFFSHORE_RATE, 2),
-            onshore_savings=round(sms_hours * ONSHORE_RATE, 2),
+            offshore_savings=round(sms_hours * offshore_rate, 2),
+            onshore_savings=round(sms_hours * onshore_rate, 2),
         ),
         web_chat=ChannelSavingsDetail(
             count=web_msg_count,
             total_minutes=round(web_human_minutes, 2),
             hours_saved=round(web_hours, 2),
-            offshore_savings=round(web_hours * OFFSHORE_RATE, 2),
-            onshore_savings=round(web_hours * ONSHORE_RATE, 2),
+            offshore_savings=round(web_hours * offshore_rate, 2),
+            onshore_savings=round(web_hours * onshore_rate, 2),
         ),
         conversions=ConversionMetrics(
             total_links_sent=total_links_sent,
@@ -1885,6 +1923,7 @@ async def get_savings_analytics(
             verified_enrollments=verified_enrollments,
             verified_phones=verified_phones,
         ),
+        assumptions=assumptions,
     )
 
 

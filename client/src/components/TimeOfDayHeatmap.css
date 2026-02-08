@@ -4,8 +4,8 @@
 }
 .heatmap-grid {
   display: grid;
-  grid-template-columns: 32px repeat(24, 14px);
-  grid-auto-rows: 14px;
+  grid-template-columns: 32px repeat(24, 20px);
+  grid-auto-rows: 20px;
   gap: 3px;
 }
 .heatmap-corner {
@@ -15,7 +15,7 @@
   font-size: 0.65rem;
   color: var(--color-text-muted);
   text-align: center;
-  line-height: 14px;
+  line-height: 20px;
 }
 .heatmap-day-label {
   font-size: 0.65rem;
@@ -23,11 +23,11 @@
   display: flex;
   align-items: center;
   font-weight: 500;
-  height: 14px;
+  height: 20px;
 }
 .heatmap-cell {
-  width: 14px;
-  height: 14px;
+  width: 20px;
+  height: 20px;
   border-radius: 2px;
   cursor: pointer;
   transition: transform 0.1s;

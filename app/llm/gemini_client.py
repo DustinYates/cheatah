@@ -78,7 +78,20 @@ class GeminiClient(LLMClient):
                 contents=prompt,
                 config=types.GenerateContentConfig(**generation_config),
             )
-            
+
+            # Check for empty response and log the reason
+            if not response.text:
+                # Log why response might be empty (safety filtering, recitation block, etc.)
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    finish_reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
+                    logger.warning(f"Gemini returned empty text - finish_reason: {finish_reason}")
+                    if hasattr(candidate, 'safety_ratings') and candidate.safety_ratings:
+                        ratings = [(r.category, r.probability) for r in candidate.safety_ratings]
+                        logger.warning(f"Safety ratings: {ratings}")
+                if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+                    logger.warning(f"Prompt feedback: {response.prompt_feedback}")
+
             return response.text or ""
         except Exception as e:
             raise Exception(f"Gemini generation failed: {str(e)}") from e

@@ -1464,3 +1464,180 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* ==============================================
+   Master Admin Dashboard Enhancements
+   ============================================== */
+
+/* Period Toggle */
+.period-toggle {
+  display: flex;
+  gap: 4px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.period-pill {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.period-pill:hover {
+  color: #334155;
+}
+
+.period-pill--active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* Alerts Badge */
+.alerts-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.alerts-badge--critical {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.alerts-badge--warning {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.alerts-badge--info {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+/* Clickable Services */
+.services-badges--clickable {
+  cursor: pointer;
+  padding: 4px;
+  margin: -4px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.services-badges--clickable:hover {
+  background: #f1f5f9;
+}
+
+/* Tenant Action Menu */
+.tenant-action-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.tenant-action-menu .action-menu__popover {
+  right: 0;
+  left: auto;
+  min-width: 160px;
+}
+
+/* Config Drawer */
+.tenant-config-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.config-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.config-section--empty {
+  opacity: 0.6;
+}
+
+.config-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.config-section-header h4 {
+  margin: 0;
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.config-icon {
+  color: #64748b;
+  display: flex;
+  align-items: center;
+}
+
+.config-status {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.config-status--active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.config-status--inactive {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.config-not-configured {
+  color: #94a3b8;
+  font-size: 13px;
+  font-style: italic;
+  margin: 0;
+}
+
+.config-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.config-field {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.config-field-label {
+  color: #64748b;
+}
+
+.config-field-value {
+  color: #0f172a;
+  font-weight: 500;
+}
+
+.config-loading,
+.config-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: #64748b;
+}

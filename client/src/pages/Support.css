@@ -1,0 +1,146 @@
+.support-page {
+  max-width: 700px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.support-page .page-header {
+  margin-bottom: 24px;
+}
+
+.support-page h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.support-page .subtitle {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.support-page .settings-section {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.support-page .form-group {
+  margin-bottom: 18px;
+}
+
+.support-page .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.support-page .form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.support-page .form-group input[type="text"],
+.support-page .form-group select,
+.support-page .form-group textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--color-bg-white);
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
+
+.support-page .form-group input:focus,
+.support-page .form-group select:focus,
+.support-page .form-group textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.support-page .form-group textarea {
+  resize: vertical;
+  min-height: 150px;
+}
+
+.support-page .form-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.support-page .btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-primary);
+  color: #111827;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.support-page .btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.support-page .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.support-page .toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 1000;
+  animation: supportSlideIn 0.3s ease;
+}
+
+.support-page .toast-success {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.support-page .toast-error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+@keyframes supportSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .support-page .form-actions {
+    justify-content: stretch;
+  }
+
+  .support-page .btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
+}

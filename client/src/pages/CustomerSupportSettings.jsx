@@ -173,7 +173,8 @@ export default function CustomerSupportSettings() {
           </p>
         </div>
 
-        {/* Telnyx Configuration */}
+        {/* Telnyx Configuration - Global Admin Only */}
+        {user?.is_global_admin && (
         <div className="settings-section">
           <h2>Telnyx Configuration</h2>
           <p className="section-description">
@@ -212,6 +213,7 @@ export default function CustomerSupportSettings() {
             />
           </div>
         </div>
+        )}
 
         {/* Channel Configuration */}
         <div className="settings-section">

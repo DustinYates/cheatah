@@ -36,6 +36,7 @@ import Forums from './pages/Forums';
 import ForumDetail from './pages/ForumDetail';
 import ForumPost from './pages/ForumPost';
 import NewForumPost from './pages/NewForumPost';
+import Support from './pages/Support';
 import './App.css';
 
 function App() {
@@ -104,6 +105,7 @@ function App() {
             <Route path="forums/:forumSlug/:categorySlug/new" element={<NewForumPost />} />
             <Route path="forums/:forumSlug/:categorySlug/:postId" element={<ForumPost />} />
 
+            <Route path="support" element={<Support />} />
             <Route path="admin/tenants" element={<ManageTenants />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

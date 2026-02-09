@@ -87,9 +87,11 @@ export default function Layout() {
           <li>
             <NavLink to="/" end>Leads</NavLink>
           </li>
+          {user?.is_global_admin && (
           <li>
             <NavLink to="/customers">Customers</NavLink>
           </li>
+          )}
           <li>
             <NavLink to="/contacts">Contacts</NavLink>
           </li>
@@ -147,6 +149,9 @@ export default function Layout() {
               </ul>
             )}
           </li>
+          <li>
+            <NavLink to="/support">Support</NavLink>
+          </li>
           <li className="nav-section">
             <button
               className={`nav-section-toggle ${settingsOpen ? 'open' : ''}`}
@@ -180,9 +185,11 @@ export default function Layout() {
                 <li>
                   <NavLink to="/settings/dnc">Do Not Contact</NavLink>
                 </li>
+                {user?.is_global_admin && (
                 <li>
                   <NavLink to="/settings/customer-support">Customer Support</NavLink>
                 </li>
+                )}
                 {user?.is_global_admin && (
                   <li>
                     <NavLink to="/settings/telephony">Telephony</NavLink>

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, customers, customer_support, dashboard_analytics, dnc, email_webhooks, escalation_settings, forums, inbox, leads, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, sms_webhooks, telnyx_webhooks, tenant_calendar, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, user_groups, voice_webhooks, zapier_webhooks
+from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, customers, customer_support, dashboard_analytics, dnc, email_webhooks, escalation_settings, forums, inbox, leads, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, sms_webhooks, support, telnyx_webhooks, tenant_calendar, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, user_groups, voice_webhooks, zapier_webhooks
 from app.api import sendgrid_email
 
 api_router = APIRouter()
@@ -71,6 +71,9 @@ api_router.include_router(sendable_assets.router, prefix="/sendable-assets", tag
 
 # Escalation Settings (human handoff alerts)
 api_router.include_router(escalation_settings.router, prefix="/escalation", tags=["escalation"])
+
+# Tenant support requests
+api_router.include_router(support.router, prefix="/support", tags=["support"])
 
 # Do Not Contact (DNC) list management
 api_router.include_router(dnc.router, prefix="/dnc", tags=["dnc"])

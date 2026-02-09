@@ -1202,6 +1202,14 @@ class ApiClient {
       body: JSON.stringify(data),
     });
   }
+
+  // Support requests
+  async submitSupportRequest(data) {
+    return this.request('/support/request', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const api = new ApiClient();

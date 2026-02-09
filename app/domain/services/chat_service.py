@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 # These are compiled once at module load instead of on each function call
 _EMAIL_PATTERN = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', re.IGNORECASE)
 _PHONE_PATTERN = re.compile(r'(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})')
-# Pattern for explicit introductions like "I'm John", "my name is Sarah", "im ralph"
-_EXPLICIT_NAME_PATTERN = re.compile(r"\b(?:I'?m|I am|my name is|this is|im|name's|call me|it's|its)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)", re.IGNORECASE)
+# Pattern for explicit introductions like "I'm John", "my name is Sarah", "im ralph", "am shelly" (typo for "I'm shelly")
+_EXPLICIT_NAME_PATTERN = re.compile(r"\b(?:I'?m|I am|my name is|this is|im|am|name's|call me|it's|its)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)", re.IGNORECASE)
 # Pattern for name stated first followed by comma and context, like "scott, im 68" or "john, I need help"
 _NAME_FIRST_PATTERN = re.compile(r"^([A-Za-z]{2,15})(?:\s+[A-Za-z]{2,15})?,\s*(?:im|i'm|i am|i)\s", re.IGNORECASE)
 _CAPITALIZED_NAME_PATTERN = re.compile(r"([A-Z][a-z]+\s+[A-Z][a-z]+)")
@@ -321,6 +321,18 @@ class ChatService:
             prompt_context=prompt_context,
             additional_context=class_schedule_context,
         )
+
+        # For tenant 3 (BSS), replace basic BSS URLs with Jackrabbit pre-filled URLs
+        # This ensures chat responses contain the same pre-filled URLs that would be sent via SMS
+        if tenant_id == 3:
+            # Get phone/name from existing lead if available
+            temp_lead = await self.lead_service.get_lead_by_conversation(tenant_id, conversation.id)
+            temp_phone = user_phone or (temp_lead.phone if temp_lead else None)
+            temp_name = user_name or (temp_lead.name if temp_lead else None)
+
+            llm_response = await self._replace_bss_urls_with_jackrabbit(
+                tenant_id, conversation.id, llm_response, temp_phone, temp_name
+            )
 
         # Add assistant response
         await self.conversation_service.add_message(
@@ -1386,18 +1398,24 @@ TRANSCRIPT:
 YOUR TASK: Extract the user's name, email, and phone number based on the conversation context.
 
 NAME EXTRACTION - Read the conversation carefully:
-1. Look for when the assistant asks for the user's name (e.g., "who am I chatting with?", "what's your name?", "may I have your name?")
-2. The user's response to that question IS their name
-3. Also look for confirmations like "Nice to meet you, Regina!" - the assistant confirmed the name
-4. Look for explicit introductions: "I'm John", "my name is Sarah", "this is Mike"
-5. If the user gives first name then last name separately, combine them (e.g., "Regina" then "Edwards-Thicklin" = "Regina Edwards-Thicklin")
-6. Email addresses can hint at names (e.g., "thicklin.regina@yahoo.com" suggests "Regina")
+1. ONLY extract the user's PERSONAL name when the assistant asks for it directly:
+   - "who am I chatting with?" or "what's your name?" or "may I have your name?"
+   - The user's response to THAT specific question IS their name
+2. Also look for confirmations like "Nice to meet you, Regina!" - the assistant confirmed the name
+3. Look for explicit introductions: "I'm John", "my name is Sarah", "this is Mike", "Am Sarah" (typo for "I'm Sarah")
+4. If the user gives first name then last name separately, combine them (e.g., "Regina" then "Edwards-Thicklin" = "Regina Edwards-Thicklin")
+5. Email addresses can hint at names (e.g., "thicklin.regina@yahoo.com" suggests "Regina")
 
-IMPORTANT - These are NOT names:
+CRITICAL - DO NOT extract these as names (these are NOT the user's personal name):
+- Answers to "who is swimming?" or "who is this for?" or "who will be taking lessons?":
+  - "my child", "my kid", "my son", "my daughter", "my kids", "my children"
+  - "my husband", "my wife", "my spouse", "my parent", "my mom", "my dad"
+  - "my friend", "my partner", "my family"
 - Common words: for, the, and, with, looking, pricing, interested, etc.
 - Verbs: need, want, help, calling, texting, checking
 - Responses: yes, no, ok, sure, thanks
 - Business terms: hvac, plumbing, dental, swim, lessons
+- Skill levels: beginner, intermediate, advanced
 
 EMAIL/PHONE: Extract any email address or phone number the user provided.
 
@@ -1754,3 +1772,107 @@ Replace null with the actual value if found. Use null if not found or uncertain.
             return response
 
         return f"{response.rstrip()} {continuation.lstrip()}".strip()
+
+    async def _replace_bss_urls_with_jackrabbit(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        response: str,
+        phone: str | None,
+        name: str | None,
+    ) -> str:
+        """Replace basic BSS registration URLs with Jackrabbit pre-filled URLs.
+
+        For BSS (tenant 3), the bot is instructed to use basic britishswimschool.com URLs
+        in its prompts, but we want to send Jackrabbit pre-filled URLs to users for a
+        better experience when we have customer info. If we don't have any customer info,
+        we keep the basic BSS URL.
+
+        Args:
+            tenant_id: Tenant ID (should be 3 for BSS)
+            conversation_id: Conversation ID
+            response: Bot's response text
+            phone: User's phone number (if available)
+            name: User's name (if available)
+
+        Returns:
+            Response with BSS URLs replaced by Jackrabbit URLs (if we have customer info)
+        """
+        # Only process for tenant 3 (BSS)
+        if tenant_id != 3:
+            return response
+
+        # Pattern to match BSS registration URLs
+        bss_url_pattern = re.compile(
+            r'https?://britishswimschool\.com/cypress-spring/register/\?[^\s<>"\']+',
+            re.IGNORECASE
+        )
+
+        # Check if response contains a BSS registration URL
+        if not bss_url_pattern.search(response):
+            return response
+
+        try:
+            # Get lead to extract customer info
+            lead = await self.lead_service.get_lead_by_conversation(tenant_id, conversation_id)
+
+            # Build customer info from lead or provided data
+            from app.utils.jackrabbit_url_builder import CustomerInfo, build_jackrabbit_registration_url
+
+            customer_info = CustomerInfo()
+            has_customer_info = False
+
+            if lead:
+                if lead.name:
+                    name_parts = lead.name.strip().split(maxsplit=1)
+                    customer_info.first_name = name_parts[0] if name_parts else None
+                    customer_info.last_name = name_parts[1] if len(name_parts) > 1 else None
+                    has_customer_info = True
+                if lead.email:
+                    customer_info.email = lead.email
+                    has_customer_info = True
+                if lead.phone or phone:
+                    customer_info.phone = lead.phone or phone
+                    has_customer_info = True
+            elif name or phone:
+                # No lead yet, use provided data
+                if name:
+                    name_parts = name.strip().split(maxsplit=1)
+                    customer_info.first_name = name_parts[0] if name_parts else None
+                    customer_info.last_name = name_parts[1] if len(name_parts) > 1 else None
+                    has_customer_info = True
+                if phone:
+                    customer_info.phone = phone
+                    has_customer_info = True
+
+            # Only replace with Jackrabbit URL if we have at least some customer info
+            # Otherwise keep the basic BSS URL so they can fill it out themselves
+            if not has_customer_info:
+                logger.info(
+                    f"No customer info available, keeping basic BSS URL - "
+                    f"tenant_id={tenant_id}, conversation_id={conversation_id}"
+                )
+                return response
+
+            # Build Jackrabbit URL with customer prefill
+            jackrabbit_url = build_jackrabbit_registration_url(customer=customer_info)
+
+            # Replace all BSS URLs with the Jackrabbit URL
+            updated_response = bss_url_pattern.sub(jackrabbit_url, response)
+
+            logger.info(
+                f"Replaced BSS URL with Jackrabbit URL in chat response - "
+                f"tenant_id={tenant_id}, conversation_id={conversation_id}, "
+                f"has_name={bool(customer_info.first_name)}, has_email={bool(customer_info.email)}, "
+                f"has_phone={bool(customer_info.phone)}"
+            )
+
+            return updated_response
+
+        except Exception as e:
+            logger.error(
+                f"Failed to replace BSS URL with Jackrabbit URL: {e}",
+                exc_info=True
+            )
+            # Return original response if replacement fails
+            return response

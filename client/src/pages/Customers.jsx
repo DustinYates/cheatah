@@ -6,6 +6,7 @@ import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatDateTimeParts } from '../utils/dateFormat';
+import { formatPhone } from '../utils/formatPhone';
 import './Customers.css';
 
 export default function Customers() {
@@ -203,7 +204,7 @@ export default function Customers() {
                           <span className="external-id">#{customer.external_customer_id}</span>
                         )}
                       </td>
-                      <td>{customer.phone}</td>
+                      <td>{formatPhone(customer.phone)}</td>
                       <td>{customer.email || '-'}</td>
                       <td>
                         <span className={getStatusBadgeClass(customer.status)}>

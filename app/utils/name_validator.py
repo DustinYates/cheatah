@@ -50,6 +50,12 @@ ACKNOWLEDGEMENT_WORDS = {
     "pest", "moving", "painting", "painter", "flooring",
     "insurance", "accounting", "legal", "fitness", "gym",
     "daycare", "tutoring", "photography", "catering",
+    # Family relationships (NOT person names - answers to "who is this for?")
+    "my child", "my kid", "my son", "my daughter", "my kids", "my children",
+    "my baby", "my toddler", "my infant", "my nephew", "my niece",
+    "my husband", "my wife", "my spouse", "my partner", "my boyfriend", "my girlfriend",
+    "my mom", "my dad", "my mother", "my father", "my parent", "my parents",
+    "my friend", "my sister", "my brother", "my family", "my grandchild", "my grandson", "my granddaughter",
     # Single letters/very short
     "a", "b", "c", "i", "u", "r", "y", "n",
 }

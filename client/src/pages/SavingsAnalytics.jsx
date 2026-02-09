@@ -13,6 +13,7 @@ import {
   formatRangeLabel,
   getBucketBounds,
   getPresetRange,
+  getRangeLengthDays,
   parseDateInTimeZone,
   resolveTimeZone,
 } from '../utils/dateRange';
@@ -264,6 +265,20 @@ export default function SavingsAnalytics() {
 
   const hasData = data && data.total_hours_saved > 0;
 
+  const rangeDays = useMemo(
+    () => getRangeLengthDays(range.startDate, range.endDate, timeZone),
+    [range.startDate, range.endDate, timeZone]
+  );
+
+  const projectedAnnual = useMemo(() => {
+    if (!hasData || !rangeDays || rangeDays <= 0) return null;
+    const factor = 365 / rangeDays;
+    return {
+      offshore: (data.total_offshore_savings || 0) * factor,
+      onshore: (data.total_onshore_savings || 0) * factor,
+    };
+  }, [hasData, rangeDays, data?.total_offshore_savings, data?.total_onshore_savings]);
+
   if (needsTenant) {
     return (
       <div className="savings-analytics-page">
@@ -338,6 +353,22 @@ export default function SavingsAnalytics() {
             value={formatNumber(data.conversions?.total_links_sent)}
             tooltip="Count of registration links sent by the AI assistant."
           />
+          {projectedAnnual && (
+            <>
+              <MetricCard
+                label="Projected Annual (Offshore)"
+                value={formatCurrency(projectedAnnual.offshore)}
+                tooltip={`Annualized projection based on ${rangeDays} day${rangeDays !== 1 ? 's' : ''} of data.`}
+                className="savings-projected-card"
+              />
+              <MetricCard
+                label="Projected Annual (Onshore)"
+                value={formatCurrency(projectedAnnual.onshore)}
+                tooltip={`Annualized projection based on ${rangeDays} day${rangeDays !== 1 ? 's' : ''} of data.`}
+                className="savings-projected-card"
+              />
+            </>
+          )}
         </div>
       )}
     </div>

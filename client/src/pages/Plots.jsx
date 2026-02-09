@@ -393,9 +393,11 @@ export default function Plots() {
                   index === interactionDisplaySeries.length - 1;
                 const tooltip = `${formatBucketLabel(day, granularity, timeZone)} - Texts: ${day.text} (in ${day.smsIn}, out ${day.smsOut}), Phone: ${day.phone}, Chatbot: ${day.chat}`;
                 const labelFormat = granularity === 'month' ? 'MMM yyyy' : 'MMM d';
+                const total = day.text + day.phone + day.chat;
                 return (
                   <div className="usage-bar-column" key={day.key}>
                     <div className="usage-bar-track" title={tooltip}>
+                      {total > 0 && <span className="usage-bar-total">{total}</span>}
                       {day.text > 0 && (
                         <div className="usage-bar text" style={{ height: `${textHeight}%` }} />
                       )}

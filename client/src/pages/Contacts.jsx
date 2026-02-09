@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MessageSquare, Pencil, Trash2, Users, Search, Clock } from 'lucide-react';
+import { Pencil, Trash2, Users, Search, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -9,7 +9,22 @@ import ContactHistoryModal from '../components/ContactHistoryModal';
 import EditContactModal from '../components/EditContactModal';
 import MergeContactsModal from '../components/MergeContactsModal';
 import { formatDateTimeParts } from '../utils/dateFormat';
+import { formatPhone } from '../utils/formatPhone';
 import './Contacts.css';
+
+// Format name - detect phone numbers masquerading as names
+function formatName(name) {
+  if (!name) return null;
+  const trimmed = name.trim();
+
+  // Detect "Caller +1832..." pattern
+  if (/^caller\s/i.test(trimmed)) return null;
+
+  // Detect raw phone numbers as names (+18327920114, 8327920114, etc.)
+  if (/^\+?\d{7,}$/.test(trimmed)) return null;
+
+  return trimmed;
+}
 
 export default function Contacts() {
   const { user, selectedTenantId } = useAuth();
@@ -26,6 +41,8 @@ export default function Contacts() {
   const [sortDir, setSortDir] = useState('desc');
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
 
   const fetchContacts = useCallback(async () => {
     try {
@@ -92,6 +109,17 @@ export default function Contacts() {
       }
       return sortDir === 'desc' ? -comparison : comparison;
     });
+
+  // Reset to page 1 when filters/search/sort change
+  useEffect(() => {
+    setPage(1);
+  }, [search, typeFilter, sortBy, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredContacts.length / pageSize));
+  const paginatedContacts = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredContacts.slice(start, start + pageSize);
+  }, [filteredContacts, page, pageSize]);
 
   const handleViewChat = (e, contact) => {
     e.stopPropagation();
@@ -369,25 +397,23 @@ export default function Contacts() {
                   Type {sortBy === 'type' && (sortDir === 'asc' ? '↑' : '↓')}
                 </th>
                 <th className="col-phone">Phone</th>
-                <th className="col-email">Email</th>
                 <th
                   className={`col-added sortable ${sortBy === 'created_at' ? 'sorted' : ''}`}
                   onClick={() => handleSort('created_at')}
                 >
                   Added {sortBy === 'created_at' && (sortDir === 'asc' ? '↑' : '↓')}
                 </th>
-                <th className="col-first-contacted">First Contacted</th>
                 <th
                   className={`col-last-contacted sortable ${sortBy === 'last_contacted' ? 'sorted' : ''}`}
                   onClick={() => handleSort('last_contacted')}
                 >
-                  Last Contacted {sortBy === 'last_contacted' && (sortDir === 'asc' ? '↑' : '↓')}
+                  Last Contact {sortBy === 'last_contacted' && (sortDir === 'asc' ? '↑' : '↓')}
                 </th>
                 <th className="col-actions">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredContacts.map((contact) => {
+              {paginatedContacts.map((contact) => {
                 const isSelectedForMerge = selectedForMerge.some(c => c.id === contact.id);
                 return (
                   <tr key={contact.id} className={isSelectedForMerge ? 'selected-for-merge' : ''}>
@@ -400,12 +426,12 @@ export default function Contacts() {
                       />
                     </td>
                     <td className="col-name">
-                      <div className="contact-name">
-                        <div className="avatar">
-                          {(contact.name || 'U')[0].toUpperCase()}
-                        </div>
-                        <span className="contact-name-text">
-                          {contact.name || 'Unknown'}
+                      <div className="contact-person">
+                        <span className="contact-person__name">
+                          {formatName(contact.name) || 'Unknown'}
+                        </span>
+                        <span className="contact-person__email">
+                          {contact.email || '-'}
                         </span>
                       </div>
                     </td>
@@ -418,28 +444,14 @@ export default function Contacts() {
                       </span>
                     </td>
                     <td className="col-phone">
-                      <span className="contact-text contact-phone" title={contact.phone || '-'}>
-                        {contact.phone || '-'}
-                      </span>
-                    </td>
-                    <td className="col-email">
-                      <span className="contact-text contact-email" title={contact.email || '-'}>
-                        {contact.email || '-'}
+                      <span className="contact-phone" title={contact.phone || '-'}>
+                        {formatPhone(contact.phone)}
                       </span>
                     </td>
                     <td className="col-added">
                       <span className="contact-date">
                         {formatDateTimeParts(contact.created_at).date}
                       </span>
-                    </td>
-                    <td className="col-first-contacted">
-                      {contact.first_contacted ? (
-                        <span className="contact-date" title={formatDateTimeParts(contact.first_contacted).time}>
-                          {formatDateTimeParts(contact.first_contacted).date}
-                        </span>
-                      ) : (
-                        <span className="contact-text-muted">-</span>
-                      )}
                     </td>
                     <td className="col-last-contacted">
                       {contact.last_contacted ? (
@@ -455,7 +467,7 @@ export default function Contacts() {
                         <button
                           className="btn-action btn-history"
                           onClick={(e) => handleViewChat(e, contact)}
-                          title="View all communications"
+                          data-tooltip="History"
                           aria-label="View communication history"
                         >
                           <Clock size={14} />
@@ -463,7 +475,7 @@ export default function Contacts() {
                         <button
                           className="btn-action btn-edit"
                           onClick={(e) => handleEdit(e, contact)}
-                          title="Edit contact"
+                          data-tooltip="Edit"
                           aria-label="Edit contact"
                         >
                           <Pencil size={14} />
@@ -474,7 +486,7 @@ export default function Contacts() {
                             e.stopPropagation();
                             setDeleteConfirm(contact);
                           }}
-                          title="Delete contact"
+                          data-tooltip="Delete"
                           aria-label="Delete contact"
                         >
                           <Trash2 size={14} />
@@ -531,12 +543,58 @@ export default function Contacts() {
             </tbody>
           </table>
           
-          {filteredContacts.length === 0 && search && (
+          {paginatedContacts.length === 0 && search && (
             <EmptyState
               icon={<Search size={32} strokeWidth={1.5} />}
               title="No matches found"
               description={`No contacts match "${search}". Try a different search term.`}
             />
+          )}
+
+          {/* Pagination Controls */}
+          {filteredContacts.length > pageSize && (
+            <div className="pagination-bar">
+              <span className="pagination-info">
+                {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredContacts.length)} of {filteredContacts.length}
+              </span>
+              <div className="pagination-buttons">
+                <button
+                  className="pagination-btn"
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                  aria-label="First page"
+                >
+                  First
+                </button>
+                <button
+                  className="pagination-btn"
+                  onClick={() => setPage(p => p - 1)}
+                  disabled={page === 1}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="pagination-current">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  className="pagination-btn"
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={page === totalPages}
+                  aria-label="Next page"
+                >
+                  <ChevronRight size={14} />
+                </button>
+                <button
+                  className="pagination-btn"
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages}
+                  aria-label="Last page"
+                >
+                  Last
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}

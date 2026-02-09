@@ -153,7 +153,14 @@ export default function TopicAnalytics() {
         <h2>Topic Distribution</h2>
         <p>What customers ask about most across {channelFilter ? CHANNEL_LABELS[channelFilter] || channelFilter : 'all channels'}.</p>
         {chartData.length === 0 ? (
-          <p className="topics-empty">No classified conversations in this period. Topics are classified by a background worker.</p>
+          <div className="topics-empty-state">
+            <p className="topics-empty-title">No topics classified yet</p>
+            <p className="topics-empty-desc">
+              Topics are automatically classified by a background worker.
+              If conversations exist but aren't classified, the worker may not have run yet for this period.
+            </p>
+            <button className="topics-refresh-btn" onClick={fetchData}>Refresh</button>
+          </div>
         ) : (
           <div className="topics-chart-container">
             <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 45)}>

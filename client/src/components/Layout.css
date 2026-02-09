@@ -38,8 +38,8 @@
 }
 
 .logo-mark {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
 }
 
@@ -108,9 +108,15 @@
   color: var(--color-primary);
 }
 
-.toggle-icon {
-  font-size: var(--font-size-md);
-  font-weight: 300;
+.toggle-chevron {
+  font-size: 16px;
+  font-weight: 600;
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.toggle-chevron.open {
+  transform: rotate(90deg);
 }
 
 .nav-submenu {
@@ -210,24 +216,22 @@
 /* Footer */
 .app-footer {
   margin-top: auto;
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--color-border);
-  text-align: center;
-  color: var(--color-text-secondary);
+  padding: var(--spacing-md) 0 var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  color: var(--color-text-light);
   font-size: var(--font-size-xs);
 }
 
-.footer-links {
-  margin-bottom: var(--spacing-xs);
-}
-
-.footer-links a {
-  color: var(--color-text-secondary);
+.app-footer a {
+  color: var(--color-text-light);
   text-decoration: none;
   transition: color var(--transition-fast);
 }
 
-.footer-links a:hover {
+.app-footer a:hover {
   color: var(--color-primary);
 }
 
@@ -246,29 +250,29 @@
   top: 0;
   left: var(--sidebar-width);
   right: 0;
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-  padding: var(--spacing-sm) var(--spacing-md);
+  background: #eef2ff;
+  color: #4338ca;
+  padding: var(--spacing-xs) var(--spacing-md);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
   font-size: var(--font-size-xs);
   z-index: 99;
-  border-bottom: 1px solid var(--color-warning-border);
+  border-bottom: 1px solid #c7d2fe;
 }
 
 .impersonation-banner strong {
-  color: var(--color-text-primary);
+  color: #312e81;
 }
 
 .impersonation-banner .exit-btn {
-  padding: var(--spacing-xs) var(--spacing-sm);
+  padding: 2px var(--spacing-sm);
   background: var(--color-bg-dark);
   color: var(--color-text-white);
   border: none;
   border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
   transition: background var(--transition-fast);

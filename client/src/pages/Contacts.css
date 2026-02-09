@@ -1,4 +1,4 @@
-/* Contacts Page Styles - Professional Enterprise UI */
+/* Contacts Page Styles - Compact density matching Leads table */
 .contacts-page {
   max-width: 1280px;
   margin: 0 auto;
@@ -209,31 +209,29 @@
 
 .contacts-table {
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  table-layout: fixed;
+  border-collapse: collapse;
 }
 
 .contacts-table th,
 .contacts-table td {
-  padding: 8px 10px;
+  padding: 6px 12px;
   text-align: left;
-  border-bottom: 1px solid #f1f5f9;
-  line-height: 1.25;
+  border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
+  line-height: 1.2;
 }
 
 .contacts-table th {
   background: #fafafa;
   font-weight: 500;
-  color: #64748b;
-  font-size: 11px;
+  color: #94a3b8;
+  font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
   position: sticky;
   top: 0;
   z-index: 2;
-  border-bottom: 1px solid var(--color-border);
 }
 
 .contacts-table th.sortable {
@@ -252,21 +250,17 @@
 }
 
 .contacts-table td {
-  color: #374151;
+  color: #1f2937;
   font-size: 13px;
 }
 
-.contacts-table tr:last-child td {
-  border-bottom: none;
-}
-
 .contacts-table tbody tr {
+  height: 44px;
   transition: background 0.1s;
 }
 
-/* Zebra striping for better readability */
-.contacts-table tbody tr:nth-child(even) td {
-  background: #fafbfc;
+.contacts-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .contacts-table tbody tr:hover td {
@@ -280,74 +274,53 @@
 /* Checkbox Column */
 .th-checkbox,
 .td-checkbox {
-  width: 40px;
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
   text-align: center !important;
   padding-left: 12px !important;
   padding-right: 4px !important;
 }
 
-.merge-hint {
-  font-size: 9px;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
 .th-checkbox input[type="checkbox"],
 .td-checkbox input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   cursor: pointer;
   accent-color: #0284c7;
 }
 
-/* Contact Name Cell */
-.contact-name {
+/* Stacked Name + Email (matches leads table pattern) */
+.contact-person {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
 }
 
-.contact-name-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-  color: #111827;
-}
-
-.avatar {
-  width: 26px;
-  height: 26px;
-  background: #e5e7eb;
-  color: #4b5563;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.contact-person__name {
   font-weight: 600;
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.contact-text {
-  display: block;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.contact-person__email {
+  font-size: 12px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .contact-phone {
   font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
   font-size: 12px;
-  color: #6b7280;
-}
-
-.contact-email {
-  font-size: 12px;
-  color: #6b7280;
+  color: #64748b;
+  white-space: nowrap;
 }
 
 .contact-date {
@@ -355,15 +328,17 @@
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   color: #9ca3af;
+  white-space: nowrap;
 }
 
 /* Column Widths */
-.col-name {
-  width: 180px;
+.contacts-table .col-name {
+  width: 26%;
+  min-width: 180px;
 }
 
-.col-type {
-  width: 90px;
+.contacts-table .col-type {
+  width: 80px;
 }
 
 /* Type Badge - Lead vs Customer */
@@ -386,27 +361,20 @@
   color: #1e40af;
 }
 
-.col-phone {
-  width: 130px;
+.contacts-table .col-phone {
+  width: 16%;
+  min-width: 130px;
 }
 
-.col-email {
-  width: 180px;
-}
-
-.col-added {
+.contacts-table .col-added {
   width: 90px;
 }
 
-.col-first-contacted {
+.contacts-table .col-last-contacted {
   width: 100px;
 }
 
-.col-last-contacted {
-  width: 100px;
-}
-
-.col-actions {
+.contacts-table .col-actions {
   width: 100px;
   text-align: center;
 }
@@ -534,6 +502,90 @@
 
 .action-menu-list .destructive:hover {
   background: #fef2f2;
+}
+
+/* Custom Tooltips for Action Buttons */
+.btn-action[data-tooltip] {
+  position: relative;
+}
+
+.btn-action[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: #1f2937;
+  color: white;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+
+.btn-action[data-tooltip]:hover::after {
+  opacity: 1;
+}
+
+/* Pagination Bar */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border);
+  background: #fafafa;
+}
+
+.pagination-info {
+  font-size: 12px;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.pagination-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pagination-btn {
+  padding: 4px 10px;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 12px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.pagination-btn:disabled {
+  color: #d1d5db;
+  cursor: not-allowed;
+  background: #fafafa;
+}
+
+.pagination-current {
+  font-size: 12px;
+  color: #374151;
+  font-weight: 500;
+  padding: 0 8px;
+  font-variant-numeric: tabular-nums;
 }
 
 .contacts-page .empty-state {
@@ -668,13 +720,6 @@
 }
 
 /* Responsive */
-@media (max-width: 1024px) {
-  .contacts-table th.col-first-contacted,
-  .contacts-table td.col-first-contacted {
-    display: none;
-  }
-}
-
 @media (max-width: 900px) {
   .contacts-table th.col-type,
   .contacts-table td.col-type {
@@ -712,11 +757,6 @@
 }
 
 @media (max-width: 720px) {
-  .contacts-table th.col-email,
-  .contacts-table td.col-email {
-    display: none;
-  }
-
   .action-buttons {
     display: none;
   }

@@ -465,6 +465,12 @@
   background: linear-gradient(90deg, var(--color-primary, #4f6fd9) 0%, #3f5fc9 100%);
 }
 
+.funnel-bar-empty {
+  background: none;
+  border: 2px dashed var(--color-border, #e4e4e7);
+  height: 28px;
+}
+
 .funnel-label {
   display: flex;
   align-items: baseline;

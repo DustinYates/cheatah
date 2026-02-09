@@ -70,7 +70,7 @@ export default function CustomerHappiness() {
       {/* Summary row */}
       <section className="chi-summary-row">
         <div className="chi-summary-gauge">
-          <CHIGauge score={summary?.avg_chi_today} size={80} label="Today" />
+          <CHIGauge score={summary?.avg_chi_today} size={80} label="Today" noDataMessage="No data today" />
         </div>
         <div className="chi-summary-gauge">
           <CHIGauge score={summary?.avg_chi_7d} size={80} label={`${days}d Avg`} />

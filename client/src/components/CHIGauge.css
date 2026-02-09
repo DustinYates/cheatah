@@ -47,3 +47,10 @@
 .chi-signal.positive .chi-signal-weight {
   color: #86efac;
 }
+.chi-gauge-no-data {
+  font-size: 0.65rem;
+  color: var(--color-text-muted, #a1a1aa);
+  margin-top: 2px;
+  text-align: center;
+  font-style: italic;
+}

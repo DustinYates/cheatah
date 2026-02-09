@@ -97,6 +97,26 @@
   line-height: 1.5;
 }
 
+.forum-card-stats {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.forum-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.forum-stat svg {
+  flex-shrink: 0;
+}
+
 .forum-card-arrow {
   color: var(--text-muted);
   margin-left: 16px;

@@ -5,6 +5,7 @@ import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatDateTimeParts } from '../utils/dateFormat';
+import { formatPhone } from '../utils/formatPhone';
 import './Calls.css';
 
 // Format duration rounded up to nearest minute
@@ -12,16 +13,6 @@ function formatDuration(seconds) {
   if (!seconds) return '-';
   const mins = Math.ceil(seconds / 60);
   return `${mins} min`;
-}
-
-// Format phone number for display
-function formatPhone(phone) {
-  if (!phone) return '-';
-  // Simple US format
-  if (phone.length === 12 && phone.startsWith('+1')) {
-    return `(${phone.slice(2, 5)}) ${phone.slice(5, 8)}-${phone.slice(8)}`;
-  }
-  return phone;
 }
 
 // Intent display labels

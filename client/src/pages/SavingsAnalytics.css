@@ -45,6 +45,14 @@
   color: #16a34a;
 }
 
+.savings-analytics-summary > .savings-projected-card {
+  border: 1px dashed var(--color-primary, #4f6fd9);
+  background: #f0f4ff;
+}
+.savings-analytics-summary > .savings-projected-card .metric-card-value {
+  color: var(--color-primary, #4f6fd9);
+}
+
 .savings-analytics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));

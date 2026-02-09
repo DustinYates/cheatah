@@ -79,7 +79,7 @@ function App() {
             <Route path="settings" element={<Navigate to="/settings/prompts" replace />} />
             <Route path="settings/prompts" element={<Prompts />} />
             <Route path="settings/prompts/wizard" element={<PromptWizard />} />
-            <Route path="settings/widget" element={<WidgetSettings />} />
+            <Route path="settings/chatbot" element={<WidgetSettings />} />
             <Route path="settings/email" element={<EmailSettings />} />
             <Route path="settings/sms" element={<SmsSettings />} />
             <Route path="settings/telephony" element={<TelephonySettings />} />
@@ -87,11 +87,12 @@ function App() {
             <Route path="settings/calendar" element={<CalendarSettings />} />
             <Route path="settings/dnc" element={<DncList />} />
             <Route path="settings/customer-support" element={<CustomerSupportSettings />} />
-            <Route path="telephony-settings" element={<Navigate to="/settings/telephony" replace />} />
-            <Route path="sms" element={<Navigate to="/settings/sms" replace />} />
             <Route path="settings/profile" element={<BusinessProfile />} />
 
             {/* Redirects for backward compatibility */}
+            <Route path="settings/widget" element={<Navigate to="/settings/chatbot" replace />} />
+            <Route path="telephony-settings" element={<Navigate to="/settings/telephony" replace />} />
+            <Route path="sms" element={<Navigate to="/settings/sms" replace />} />
             <Route path="prompts" element={<Navigate to="/settings/prompts" replace />} />
             <Route path="prompts/wizard" element={<Navigate to="/settings/prompts/wizard" replace />} />
             <Route path="email" element={<Navigate to="/settings/email" replace />} />

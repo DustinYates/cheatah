@@ -2,28 +2,11 @@ import { useState, useEffect } from 'react';
 import { Phone, MessageSquare, Bot, Mail, Calendar, X } from 'lucide-react';
 import { api } from '../api/client';
 import { formatSmartDateTime } from '../utils/dateFormat';
+import { formatPhone } from '../utils/formatPhone';
 import { buildUnifiedTimeline, getTimelineSources } from '../utils/timelineTransform';
 import TimelineItem from './TimelineItem';
 import LoadingState from './ui/LoadingState';
 import './LeadDetailsModal.css';
-
-/**
- * Format phone number for display
- */
-function formatPhone(phone) {
-  if (!phone) return '—';
-
-  // Convert E.164 format (+15551234567) to readable format
-  const cleaned = phone.replace(/\D/g, '');
-  if (cleaned.length === 11 && cleaned.startsWith('1')) {
-    const areaCode = cleaned.slice(1, 4);
-    const prefix = cleaned.slice(4, 7);
-    const line = cleaned.slice(7);
-    return `(${areaCode}) ${prefix}-${line}`;
-  }
-
-  return phone;
-}
 
 /**
  * LeadDetailsModal Component

@@ -680,11 +680,13 @@ export default function WidgetAnalytics() {
             </div>
             <div className="funnel-step">
               <div
-                className="funnel-bar"
+                className={`funnel-bar${data.attention.hover_count === 0 ? ' funnel-bar-empty' : ''}`}
                 style={{
-                  width: data.visibility.impressions > 0
-                    ? `${Math.max(5, (data.attention.hover_count / data.visibility.impressions) * 100)}%`
-                    : '5%'
+                  width: data.attention.hover_count === 0
+                    ? '100%'
+                    : data.visibility.impressions > 0
+                      ? `${Math.max(5, (data.attention.hover_count / data.visibility.impressions) * 100)}%`
+                      : '5%'
                 }}
               />
               <div className="funnel-label">
@@ -694,11 +696,13 @@ export default function WidgetAnalytics() {
             </div>
             <div className="funnel-step">
               <div
-                className="funnel-bar funnel-bar-primary"
+                className={`funnel-bar funnel-bar-primary${data.attention.widget_opens === 0 ? ' funnel-bar-empty' : ''}`}
                 style={{
-                  width: data.visibility.impressions > 0
-                    ? `${Math.max(5, (data.attention.widget_opens / data.visibility.impressions) * 100)}%`
-                    : '5%'
+                  width: data.attention.widget_opens === 0
+                    ? '100%'
+                    : data.visibility.impressions > 0
+                      ? `${Math.max(5, (data.attention.widget_opens / data.visibility.impressions) * 100)}%`
+                      : '5%'
                 }}
               />
               <div className="funnel-label">

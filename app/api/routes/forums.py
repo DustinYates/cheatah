@@ -70,6 +70,9 @@ class ForumListItem(BaseModel):
     slug: str
     description: str | None
     group_name: str
+    total_post_count: int = 0
+    member_count: int = 0
+    last_activity: str | None = None
 
 
 class PostListItem(BaseModel):
@@ -206,13 +209,20 @@ async def list_my_forums(
 
     forums = await repo.get_forums_for_user(current_user.id)
 
+    # Fetch aggregate stats for all forums in one batch
+    forum_ids = [f.id for f in forums]
+    stats = await repo.get_forum_stats(forum_ids) if forum_ids else {}
+
     return [
         ForumListItem(
             id=forum.id,
             name=forum.name,
             slug=forum.slug,
             description=forum.description,
-            group_name=forum.group.name if forum.group else ""
+            group_name=forum.group.name if forum.group else "",
+            total_post_count=stats.get(forum.id, {}).get("total_post_count", 0),
+            member_count=stats.get(forum.id, {}).get("member_count", 0),
+            last_activity=_isoformat_utc(stats.get(forum.id, {}).get("last_activity")),
         )
         for forum in forums
     ]

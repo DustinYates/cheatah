@@ -6,7 +6,7 @@ import './CHIGauge.css';
  * Red (0-40), Yellow (40-70), Green (70-100).
  * Hover shows signal breakdown.
  */
-export default function CHIGauge({ score, size = 64, signals, label }) {
+export default function CHIGauge({ score, size = 64, signals, label, noDataMessage }) {
   const [showDetail, setShowDetail] = useState(false);
 
   const displayScore = score != null ? Math.round(score) : '--';
@@ -56,6 +56,9 @@ export default function CHIGauge({ score, size = 64, signals, label }) {
         </text>
       </svg>
       {label && <span className="chi-gauge-label">{label}</span>}
+      {score == null && noDataMessage && (
+        <span className="chi-gauge-no-data">{noDataMessage}</span>
+      )}
 
       {showDetail && signals && signals.length > 0 && (
         <div className="chi-gauge-detail">

@@ -183,11 +183,13 @@ export default function CommunicationsHealth() {
         <TimeOfDayHeatmap cells={heatmap?.cells || []} metric="calls" />
       </section>
 
-      {/* Yearly Activity */}
-      <section className="comms-health-card">
-        <h2>Activity Over the Past Year</h2>
-        <YearlyActivityGraph data={yearly?.cells || []} metric="total" />
-      </section>
+      {/* Yearly Activity — hidden when no meaningful data */}
+      {yearly?.cells?.some(c => (c.calls || 0) + (c.sms || 0) + (c.emails || 0) > 0) && (
+        <section className="comms-health-card">
+          <h2>Activity Over the Past Year</h2>
+          <YearlyActivityGraph data={yearly.cells} metric="total" />
+        </section>
+      )}
 
       {/* Anomaly alerts */}
       {anomalies?.alerts?.length > 0 && (

@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatSmartDateTime } from '../utils/dateFormat';
+import { formatPhone } from '../utils/formatPhone';
 import LeadDetailsModal from '../components/LeadDetailsModal';
 import SideDrawer from '../components/SideDrawer';
 import './Dashboard.css';
@@ -326,6 +327,8 @@ export default function Dashboard() {
     const saved = localStorage.getItem('dashboard_leads_limit');
     return saved ? parseInt(saved, 10) : 50;
   });
+  const [leadsSearch, setLeadsSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('all');
   // Master admin state
   const [period, setPeriod] = useState(7);
   const [openTenantMenuId, setOpenTenantMenuId] = useState(null);
@@ -941,20 +944,20 @@ export default function Dashboard() {
     const getIcon = (sourceType) => {
       switch (sourceType) {
         case 'email':
-          return { icon: <EnvelopeIcon />, title: 'Email', key: 'email' };
+          return { icon: <EnvelopeIcon />, title: 'Email', shortLabel: 'Email', key: 'email' };
         case 'chatbot':
         case 'web_chat':
         case 'web_chat_lead':
-          return { icon: <RobotIcon />, title: 'Chatbot', key: 'chatbot' };
+          return { icon: <RobotIcon />, title: 'Chatbot', shortLabel: 'Chat', key: 'chatbot' };
         case 'voice_call':
         case 'phone':
         case 'call':
-          return { icon: '📞', title: 'Phone Call', key: 'call' };
+          return { icon: '📞', title: 'Phone Call', shortLabel: 'Call', key: 'call' };
         case 'sms':
         case 'text':
         case 'sms_ai_assistant':
         case 'sms_ai':
-          return { icon: <TextBubbleIcon />, title: 'Text Message', key: 'sms' };
+          return { icon: <TextBubbleIcon />, title: 'Text Message', shortLabel: 'SMS', key: 'sms' };
         default:
           return null;
       }
@@ -977,7 +980,7 @@ export default function Dashboard() {
 
     // Check for voice calls (inbound)
     if (lead.extra_data?.voice_calls?.length > 0 && !seenInbound.has('call')) {
-      inbound.push({ icon: '📞', title: 'Phone Call', key: 'call' });
+      inbound.push({ icon: '📞', title: 'Phone Call', shortLabel: 'Call', key: 'call' });
       seenInbound.add('call');
     }
 
@@ -995,12 +998,12 @@ export default function Dashboard() {
 
     // Default inbound to chatbot if none found
     if (inbound.length === 0) {
-      inbound.push({ icon: <RobotIcon />, title: 'Chatbot', key: 'chatbot' });
+      inbound.push({ icon: <RobotIcon />, title: 'Chatbot', shortLabel: 'Chat', key: 'chatbot' });
     }
 
     // Check for AI SMS follow-up (outbound)
     if (lead.extra_data?.followup_sent_at && !seenOutbound.has('sms_followup')) {
-      outbound.push({ icon: <SmsFollowUpIcon />, title: 'AI SMS Follow-up Sent', key: 'sms_followup' });
+      outbound.push({ icon: <SmsFollowUpIcon />, title: 'AI SMS Follow-up Sent', shortLabel: 'Follow-up', key: 'sms_followup' });
       seenOutbound.add('sms_followup');
     }
 
@@ -1069,23 +1072,22 @@ export default function Dashboard() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const formatPhone = (phone) => {
-    if (!phone) return '-';
-    if (phone.length === 12 && phone.startsWith('+1')) {
-      return `(${phone.slice(2, 5)}) ${phone.slice(5, 8)}-${phone.slice(8)}`;
-    }
-    return phone;
-  };
-
   const formatLeadDate = (dateString) => {
     const formatted = formatSmartDateTime(dateString);
     return formatted.replace(/\s[A-Z]{2,4}$/, '');
   };
 
-  // Format name - handle invalid names, null, common acknowledgements, etc.
+  // Format name - handle invalid names, null, common acknowledgements, phone numbers as names
   const formatName = (name) => {
     if (!name) return 'Unknown';
-    const lower = name.toLowerCase().trim();
+    const trimmed = name.trim();
+    const lower = trimmed.toLowerCase();
+
+    // Detect "Caller +1832..." pattern (phone number masquerading as name)
+    if (/^caller\s/i.test(trimmed)) return 'Unknown';
+
+    // Detect raw phone numbers as names (+18327920114, 8327920114, etc.)
+    if (/^\+?\d{7,}$/.test(trimmed)) return 'Unknown';
 
     // Common invalid name values
     const invalidNames = [
@@ -1101,12 +1103,29 @@ export default function Dashboard() {
     }
 
     // Reject single character or very short names (except known short names)
-    if (name.trim().length < 2) {
+    if (trimmed.length < 2) {
       return 'Unknown';
     }
 
-    return name;
+    return trimmed;
   };
+
+  const filteredLeads = leads.filter((lead) => {
+    if (leadsSearch) {
+      const q = leadsSearch.toLowerCase();
+      const match =
+        (lead.name || '').toLowerCase().includes(q) ||
+        (lead.phone || '').includes(q) ||
+        (lead.email || '').toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    if (sourceFilter !== 'all') {
+      const flow = getSourceFlow(lead);
+      const sources = flow.inbound.map((s) => s.key);
+      if (!sources.includes(sourceFilter)) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="dashboard">
@@ -1164,7 +1183,7 @@ export default function Dashboard() {
                       </div>
                       <div className="calendar-day-events">
                         {dayEvents.length === 0 ? (
-                          <span className="calendar-no-events">—</span>
+                          <span className="calendar-no-events">No events</span>
                         ) : (
                           dayEvents.map((evt) => {
                             const startTime = evt.all_day
@@ -1201,6 +1220,24 @@ export default function Dashboard() {
           <div className="card-header">
             <h2>Recent Leads</h2>
             <div className="card-header__actions">
+              <input
+                type="text"
+                className="leads-search-input"
+                placeholder="Search name, phone, email..."
+                value={leadsSearch}
+                onChange={(e) => setLeadsSearch(e.target.value)}
+              />
+              <select
+                className="leads-source-filter"
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+              >
+                <option value="all">All Sources</option>
+                <option value="chatbot">Chat</option>
+                <option value="call">Phone</option>
+                <option value="sms">SMS</option>
+                <option value="email">Email</option>
+              </select>
               <div className="leads-limit-selector">
                 <span className="leads-limit-label">Show:</span>
                 <select
@@ -1222,6 +1259,9 @@ export default function Dashboard() {
                   {bulkDeleteLoading ? 'Deleting...' : `Delete Selected (${selectedLeadIds.size})`}
                 </button>
               )}
+              {(leadsSearch || sourceFilter !== 'all') && (
+                <span className="leads-filter-count">{filteredLeads.length} of {leads.length}</span>
+              )}
               <a className="card-link" href="/contacts">View all</a>
             </div>
           </div>
@@ -1240,7 +1280,7 @@ export default function Dashboard() {
                   <th className="col-select">
                     <input
                       type="checkbox"
-                      checked={leads.length > 0 && selectedLeadIds.size === leads.length}
+                      checked={filteredLeads.length > 0 && selectedLeadIds.size === filteredLeads.length}
                       onChange={handleSelectAll}
                       title="Select all"
                       aria-label="Select all leads"
@@ -1255,7 +1295,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {leads.map((lead) => (
+                {filteredLeads.map((lead) => (
                   <tr key={lead.id} className={getRowClassName(lead)}>
                     <td className="col-select">
                       <input
@@ -1284,6 +1324,7 @@ export default function Dashboard() {
                               {flow.inbound.map((src) => (
                                 <span key={src.key} className="source-badge" title={src.title}>
                                   <span className="source-icon">{src.icon}</span>
+                                  <span className="source-label">{src.shortLabel}</span>
                                 </span>
                               ))}
                               {/* Arrow if there's outbound */}
@@ -1294,6 +1335,7 @@ export default function Dashboard() {
                               {flow.outbound.map((src) => (
                                 <span key={src.key} className="source-badge" title={src.title}>
                                   <span className="source-icon">{src.icon}</span>
+                                  <span className="source-label">{src.shortLabel}</span>
                                 </span>
                               ))}
                             </>

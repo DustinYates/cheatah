@@ -53,11 +53,14 @@ export default function Layout() {
       )}
       <nav className="sidebar">
         <div className="logo">
-          <svg className="logo-mark" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="url(#sidebar-gradient)"/>
-            <path d="M8 12l2.5 2.5L16 9" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <svg className="logo-mark" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1" y="1" width="26" height="26" rx="7" fill="url(#sidebar-gradient)"/>
+            <path d="M8 10.5C8 9.67 8.67 9 9.5 9h9c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5H13l-2.5 2.5V17H9.5c-.83 0-1.5-.67-1.5-1.5v-5z" fill="rgba(255,255,255,0.95)"/>
+            <circle cx="11.5" cy="13" r="1" fill="#6366f1"/>
+            <circle cx="14" cy="13" r="1" fill="#6366f1"/>
+            <circle cx="16.5" cy="13" r="1" fill="#6366f1"/>
             <defs>
-              <linearGradient id="sidebar-gradient" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+              <linearGradient id="sidebar-gradient" x1="1" y1="1" x2="27" y2="27" gradientUnits="userSpaceOnUse">
                 <stop stopColor="#6366f1"/>
                 <stop offset="1" stopColor="#8b5cf6"/>
               </linearGradient>
@@ -96,7 +99,7 @@ export default function Layout() {
               onClick={() => setCommunicationsOpen(!communicationsOpen)}
             >
               Communications
-              <span className="toggle-icon">{communicationsOpen ? '−' : '+'}</span>
+              <span className={`toggle-chevron ${communicationsOpen ? 'open' : ''}`}>&#x203A;</span>
             </button>
             {communicationsOpen && (
               <ul className="nav-submenu">
@@ -112,7 +115,7 @@ export default function Layout() {
               onClick={() => setAnalyticsOpen(!analyticsOpen)}
             >
               Analytics
-              <span className="toggle-icon">{analyticsOpen ? '−' : '+'}</span>
+              <span className={`toggle-chevron ${analyticsOpen ? 'open' : ''}`}>&#x203A;</span>
             </button>
             {analyticsOpen && (
               <ul className="nav-submenu">
@@ -150,7 +153,7 @@ export default function Layout() {
               onClick={() => setSettingsOpen(!settingsOpen)}
             >
               Settings
-              <span className="toggle-icon">{settingsOpen ? '−' : '+'}</span>
+              <span className={`toggle-chevron ${settingsOpen ? 'open' : ''}`}>&#x203A;</span>
             </button>
             {settingsOpen && (
               <ul className="nav-submenu">
@@ -160,7 +163,7 @@ export default function Layout() {
                   </li>
                 )}
                 <li>
-                  <NavLink to="/settings/widget">Chatbot</NavLink>
+                  <NavLink to="/settings/chatbot">Chatbot</NavLink>
                 </li>
                 <li>
                   <NavLink to="/settings/email">Email</NavLink>
@@ -198,7 +201,7 @@ export default function Layout() {
                 onClick={() => setForumsOpen(!forumsOpen)}
               >
                 Forums
-                <span className="toggle-icon">{forumsOpen ? '−' : '+'}</span>
+                <span className={`toggle-chevron ${forumsOpen ? 'open' : ''}`}>&#x203A;</span>
               </button>
               {forumsOpen && (
                 <ul className="nav-submenu">
@@ -226,14 +229,11 @@ export default function Layout() {
       <main className="content">
         <Outlet />
         <footer className="app-footer">
-          <div className="footer-links">
-            <Link to="/privacy">Privacy Policy</Link>
-            <span className="footer-divider">|</span>
-            <Link to="/terms">Terms of Service</Link>
-          </div>
-          <div className="footer-copyright">
-            &copy; {new Date().getFullYear()} ConvoPro
-          </div>
+          <span className="footer-copyright">&copy; {new Date().getFullYear()} ConvoPro</span>
+          <span className="footer-divider">&middot;</span>
+          <Link to="/privacy">Privacy Policy</Link>
+          <span className="footer-divider">&middot;</span>
+          <Link to="/terms">Terms of Service</Link>
         </footer>
       </main>
     </div>

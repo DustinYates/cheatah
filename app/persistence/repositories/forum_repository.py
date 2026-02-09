@@ -98,6 +98,62 @@ class ForumRepository:
         result = await self.session.execute(stmt)
         return result.unique().scalar_one_or_none()
 
+    async def get_forum_stats(self, forum_ids: list[int]) -> dict[int, dict]:
+        """Get aggregate stats for forums: total post count, member count, last activity."""
+        if not forum_ids:
+            return {}
+
+        # Total active posts per forum
+        post_stmt = select(
+            Forum.id,
+            func.count(ForumPost.id)
+        ).join(
+            ForumCategory, ForumCategory.forum_id == Forum.id
+        ).outerjoin(
+            ForumPost,
+            (ForumPost.category_id == ForumCategory.id)
+            & (ForumPost.status == PostStatus.ACTIVE.value)
+        ).where(
+            Forum.id.in_(forum_ids)
+        ).group_by(Forum.id)
+        post_result = await self.session.execute(post_stmt)
+        post_counts = dict(post_result.all())
+
+        # Member count per forum (via group membership)
+        member_stmt = select(
+            Forum.id,
+            func.count(UserGroupMembership.id)
+        ).join(
+            UserGroupMembership, UserGroupMembership.group_id == Forum.group_id
+        ).where(
+            Forum.id.in_(forum_ids)
+        ).group_by(Forum.id)
+        member_result = await self.session.execute(member_stmt)
+        member_counts = dict(member_result.all())
+
+        # Last activity (most recent post created_at) per forum
+        last_activity_stmt = select(
+            Forum.id,
+            func.max(ForumPost.created_at)
+        ).join(
+            ForumCategory, ForumCategory.forum_id == Forum.id
+        ).outerjoin(
+            ForumPost, ForumPost.category_id == ForumCategory.id
+        ).where(
+            Forum.id.in_(forum_ids)
+        ).group_by(Forum.id)
+        activity_result = await self.session.execute(last_activity_stmt)
+        last_activities = dict(activity_result.all())
+
+        return {
+            fid: {
+                "total_post_count": post_counts.get(fid, 0),
+                "member_count": member_counts.get(fid, 0),
+                "last_activity": last_activities.get(fid),
+            }
+            for fid in forum_ids
+        }
+
     # --- Category Queries ---
 
     async def get_category_by_slugs(

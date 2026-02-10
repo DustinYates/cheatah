@@ -517,8 +517,8 @@ class ChatService:
         extracted_class_id = None
         if tenant_id == 3 and messages:
             try:
-                extracted_students, extracted_class_id = await self._extract_student_info_from_conversation(
-                    messages, llm_response
+                extracted_students, extracted_class_id = self._extract_student_info_from_conversation(
+                    messages
                 )
             except Exception as e:
                 logger.warning(f"Student extraction for fulfill_promise failed: {e}")
@@ -1554,15 +1554,15 @@ Replace null with the actual value if found. Use null if not found or uncertain.
 
         return result
 
-    async def _extract_student_info_from_conversation(
+    def _extract_student_info_from_conversation(
         self,
         messages: list[Message],
-        current_response: str,
     ) -> tuple[list, str | None]:
         """Extract student/swimmer info and class_id from BSS chat conversation.
 
-        Uses LLM to read the conversation and identify swimmers being enrolled,
-        plus regex fallback for class_id extraction.
+        Uses pattern matching on conversation Q&A pairs — the bot follows a
+        predictable script asking about swimmers, ages, gender, and class preference.
+        No LLM call needed; this is fast and reliable.
 
         Returns:
             Tuple of (list of StudentInfo, class_id or None)
@@ -1570,107 +1570,126 @@ Replace null with the actual value if found. Use null if not found or uncertain.
         from datetime import date
         from app.utils.jackrabbit_url_builder import StudentInfo
 
-        # Regex fallback for class_id (reliable since format is fixed)
+        student_name = None
+        student_age = None
+        student_gender = None
         class_id = None
+
+        # Patterns for bot questions (assistant messages)
+        swimmer_q = re.compile(
+            r'who.{0,20}(?:swim|lesson|taking|enroll|sign.?up)|'
+            r'(?:swimmer|student|child).{0,10}name',
+            re.IGNORECASE,
+        )
+        age_q = re.compile(
+            r'how old|(?:what|their).{0,10}age|date of birth|birthday',
+            re.IGNORECASE,
+        )
+        gender_q = re.compile(
+            r'boy or.{0,5}girl|gender|son or.{0,5}daughter',
+            re.IGNORECASE,
+        )
+
+        # Patterns for user answers
+        age_answer = re.compile(r'\b(\d{1,2})\b')
+        gender_male = re.compile(r'\b(?:boy|son|male|he|him)\b', re.IGNORECASE)
+        gender_female = re.compile(r'\b(?:girl|daughter|female|she|her)\b', re.IGNORECASE)
         class_id_pattern = re.compile(r'class_id=(\d+)')
-        for msg in reversed(messages):
+
+        # Scan Q&A pairs: bot asks question, user answers in next message
+        for i, msg in enumerate(messages):
             content = msg.content or ""
-            matches = class_id_pattern.findall(content)
-            if matches:
-                class_id = matches[-1]
-                break
 
-        # Build transcript for LLM extraction
-        transcript_lines = []
-        for msg in messages:
-            role = "User" if msg.role == "user" else "Assistant"
-            transcript_lines.append(f"{role}: {msg.content}")
-        transcript_lines.append(f"Assistant: {current_response}")
-        transcript = "\n".join(transcript_lines)
+            # Extract class_id from any message (bot includes it in schedule)
+            cid_matches = class_id_pattern.findall(content)
+            if cid_matches:
+                class_id = cid_matches[-1]
 
-        extraction_prompt = f"""Read this conversation transcript and extract student/swimmer information.
+            # Detect gender from user messages (even without a direct question)
+            if msg.role == "user":
+                if not student_gender:
+                    if gender_female.search(content):
+                        student_gender = "F"
+                    elif gender_male.search(content):
+                        student_gender = "M"
 
-TRANSCRIPT:
-{transcript}
+            # Look for bot question → user answer pairs
+            if msg.role != "assistant":
+                continue
 
-YOUR TASK: Extract information about the students/swimmers being enrolled for swim lessons.
+            # Find the next user message after this bot message
+            next_user = None
+            for j in range(i + 1, len(messages)):
+                if messages[j].role == "user":
+                    next_user = messages[j].content or ""
+                    break
 
-STUDENT EXTRACTION RULES:
-1. Look for swimmer names — these are the people who will be TAKING lessons (not the parent chatting)
-2. Look for swimmer ages (e.g., "she's 5 years old", "he is 8", "my 3 year old")
-3. Determine swimmer gender from context: "my son"/"he"/"boy" = "M", "my daughter"/"she"/"girl" = "F"
-4. There may be multiple swimmers — extract ALL of them
-5. Do NOT include the parent/guardian as a student
+            if not next_user:
+                continue
 
-CLASS SELECTION:
-1. If the user confirmed or selected a specific class from the schedule, extract that class_id
-2. Look for class_id=XXXXX values in the conversation
+            # Bot asked about swimmer → user's answer is the swimmer's name
+            if swimmer_q.search(content) and not student_name:
+                # Clean up: skip common non-name responses
+                answer = next_user.strip()
+                skip_words = {
+                    "my child", "my kid", "my son", "my daughter",
+                    "my kids", "my children", "myself", "me",
+                    "yes", "no", "ok", "sure",
+                }
+                if answer.lower() not in skip_words and len(answer) < 50:
+                    # If they say "my daughter Emily" or "my son Jake"
+                    name_after_relation = re.search(
+                        r'(?:my\s+(?:daughter|son|child|kid)\s+)(\w+)',
+                        answer, re.IGNORECASE,
+                    )
+                    if name_after_relation:
+                        student_name = name_after_relation.group(1).title()
+                    elif not re.search(r'^my\s+', answer, re.IGNORECASE):
+                        # Just a name like "Emily"
+                        words = answer.split()
+                        if 1 <= len(words) <= 3:
+                            student_name = words[0].title()
+                    logger.debug(f"Student name extracted: {student_name} from '{answer}'")
 
-Respond with ONLY this JSON (no other text):
-{{"students": [{{"name": "first name", "age": 5, "gender": "M"}}], "class_id": "12345"}}
+            # Bot asked about age → extract number from user's answer
+            if age_q.search(content) and not student_age:
+                age_match = age_answer.search(next_user)
+                if age_match:
+                    age_val = int(age_match.group(1))
+                    if 0 < age_val < 100:
+                        student_age = age_val
+                        logger.debug(f"Student age extracted: {student_age}")
 
-- name: Student's first name (string or null)
-- age: Student's age in years (number or null)
-- gender: "M" or "F" or null
-- class_id: Jackrabbit class ID number as string, or null
-If no students found, use empty list: "students": []
-If no class selected, use null for class_id."""
+            # Bot asked about gender → extract from user's answer
+            if gender_q.search(content) and not student_gender:
+                if gender_female.search(next_user):
+                    student_gender = "F"
+                elif gender_male.search(next_user):
+                    student_gender = "M"
 
-        try:
-            response = await self.llm_orchestrator.generate(
-                extraction_prompt,
-                context={"temperature": 0.0, "max_tokens": 200},
-            )
+        # Build StudentInfo if we found a student
+        students = []
+        if student_name:
+            birth_date = None
+            if student_age:
+                try:
+                    today = date.today()
+                    approx_birth = today.replace(year=today.year - student_age)
+                    birth_date = approx_birth.strftime("%m/%d/%Y")
+                except (ValueError, OverflowError):
+                    pass
+            students.append(StudentInfo(
+                first_name=student_name,
+                gender=student_gender,
+                birth_date=birth_date,
+            ))
 
-            # Strip markdown code blocks if present
-            cleaned = (response or "").strip()
-            if cleaned.startswith("```"):
-                cleaned = re.sub(r'^```\w*\n?', '', cleaned)
-                cleaned = re.sub(r'\n?```$', '', cleaned)
-                cleaned = cleaned.strip()
-
-            # Find JSON object in response
-            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-            if not json_match:
-                logger.warning("Student extraction: no JSON found in LLM response")
-                return ([], class_id)
-
-            extracted = json.loads(json_match.group())
-
-            # Build StudentInfo list
-            students = []
-            for s in extracted.get("students", []):
-                if not isinstance(s, dict) or not s.get("name"):
-                    continue
-                birth_date = None
-                if s.get("age") and isinstance(s["age"], (int, float)):
-                    try:
-                        age = int(s["age"])
-                        today = date.today()
-                        approx_birth = today.replace(year=today.year - age)
-                        birth_date = approx_birth.strftime("%m/%d/%Y")
-                    except (ValueError, OverflowError):
-                        pass
-                students.append(StudentInfo(
-                    first_name=s.get("name"),
-                    gender=s.get("gender") if s.get("gender") in ("M", "F") else None,
-                    birth_date=birth_date,
-                ))
-
-            # Use LLM class_id if regex didn't find one
-            llm_class_id = extracted.get("class_id")
-            if not class_id and llm_class_id and str(llm_class_id).isdigit():
-                class_id = str(llm_class_id)
-
-            logger.info(
-                f"Student extraction: {len(students)} student(s), "
-                f"names={[s.first_name for s in students]}, class_id={class_id}"
-            )
-            return (students, class_id)
-
-        except Exception as e:
-            logger.warning(f"Student info extraction failed: {e}")
-            return ([], class_id)
+        logger.info(
+            f"Student extraction (pattern): {len(students)} student(s), "
+            f"names={[s.first_name for s in students]}, "
+            f"age={student_age}, gender={student_gender}, class_id={class_id}"
+        )
+        return (students, class_id)
 
     async def _process_chat_core(
         self,
@@ -1983,10 +2002,10 @@ If no class selected, use null for class_id."""
                     customer_info.phone = phone
                     has_customer_info = True
 
-            # Regex fallback: scan conversation messages for phone/email that
+            # Regex fallback: scan ALL user messages for phone/email/name that
             # may not be in the lead yet (extraction runs AFTER URL replacement,
             # so data provided this turn won't be in the lead)
-            if messages and (not customer_info.phone or not customer_info.email):
+            if messages:
                 all_user_text = " ".join(
                     msg.content for msg in messages if msg.role == "user" and msg.content
                 )
@@ -1995,13 +2014,35 @@ If no class selected, use null for class_id."""
                     if regex_phone:
                         customer_info.phone = regex_phone
                         has_customer_info = True
-                        logger.info(f"Phone from conversation regex fallback: {regex_phone}")
+                        logger.info(f"Phone from message scan: {regex_phone}")
                 if not customer_info.email:
                     regex_email = self._extract_email_regex(all_user_text)
                     if regex_email:
                         customer_info.email = regex_email
                         has_customer_info = True
-                        logger.info(f"Email from conversation regex fallback: {regex_email}")
+                        logger.info(f"Email from message scan: {regex_email}")
+
+                # Name augmentation: if we only have first name, look for last
+                # name in conversation (user may provide it in a separate turn)
+                if customer_info.first_name and not customer_info.last_name:
+                    # Check if any user message is a single word that could be a last name
+                    # (bot asked "what's your last name?" and user replied "Yates")
+                    for idx, msg in enumerate(messages):
+                        if msg.role != "assistant" or not msg.content:
+                            continue
+                        asks_last_name = re.search(
+                            r'last name|family name|surname',
+                            msg.content, re.IGNORECASE,
+                        )
+                        if asks_last_name:
+                            # Next user message is the last name
+                            for j in range(idx + 1, len(messages)):
+                                if messages[j].role == "user" and messages[j].content:
+                                    candidate = messages[j].content.strip()
+                                    if 1 <= len(candidate.split()) <= 2 and len(candidate) < 30:
+                                        customer_info.last_name = candidate.title()
+                                        logger.info(f"Last name from message scan: {customer_info.last_name}")
+                                    break
 
             # Only replace with Jackrabbit URL if we have at least some customer info
             # Otherwise keep the basic BSS URL so they can fill it out themselves
@@ -2017,8 +2058,8 @@ If no class selected, use null for class_id."""
             class_id = None
             if messages:
                 try:
-                    students, class_id = await self._extract_student_info_from_conversation(
-                        messages, response
+                    students, class_id = self._extract_student_info_from_conversation(
+                        messages
                     )
                 except Exception as e:
                     logger.warning(f"Student info extraction failed, continuing without: {e}")

@@ -1578,7 +1578,8 @@ Replace null with the actual value if found. Use null if not found or uncertain.
         # Patterns for bot questions (assistant messages)
         swimmer_q = re.compile(
             r'who.{0,20}(?:swim|lesson|taking|enroll|sign.?up)|'
-            r'(?:swimmer|student|child).{0,10}name',
+            r'(?:swimmer|student|child).{0,10}name|'
+            r'what.{0,15}(?:their|her|his)\s+name',
             re.IGNORECASE,
         )
         age_q = re.compile(
@@ -1639,7 +1640,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                 if answer.lower() not in skip_words and len(answer) < 50:
                     # If they say "my daughter Emily" or "my son Jake"
                     name_after_relation = re.search(
-                        r'(?:my\s+(?:daughter|son|child|kid)\s+)(\w+)',
+                        r'(?:my\s+(?:daughter|son|child|kid)[,\s]+)(\w+)',
                         answer, re.IGNORECASE,
                     )
                     if name_after_relation:
@@ -1968,8 +1969,17 @@ Replace null with the actual value if found. Use null if not found or uncertain.
         )
 
         # Check if response contains a BSS registration URL
-        if not bss_url_pattern.search(response):
+        bss_match = bss_url_pattern.search(response)
+        if not bss_match:
             return response
+
+        # Extract class_id from the BSS URL if the bot included it
+        # (the LLM has class schedule data with class_id=XXXXX in its context)
+        url_class_id = None
+        cid_match = re.search(r'class_id=(\d+)', bss_match.group(0))
+        if cid_match:
+            url_class_id = cid_match.group(1)
+            logger.info(f"Extracted class_id from BSS URL: {url_class_id}")
 
         try:
             # Get lead to extract customer info
@@ -2078,10 +2088,12 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                     logger.warning(f"Student info extraction failed, continuing without: {e}")
 
             # Build Jackrabbit URL with customer + student prefill
+            # Prefer class_id from the BSS URL (bot's current response) over message scan
+            final_class_id = url_class_id or class_id
             jackrabbit_url = build_jackrabbit_registration_url(
                 customer=customer_info,
                 students=students or None,
-                class_id=class_id,
+                class_id=final_class_id,
             )
 
             # Replace all BSS URLs with the Jackrabbit URL
@@ -2092,7 +2104,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                 f"tenant_id={tenant_id}, conversation_id={conversation_id}, "
                 f"has_name={bool(customer_info.first_name)}, has_email={bool(customer_info.email)}, "
                 f"has_phone={bool(customer_info.phone)}, "
-                f"students={len(students)}, class_id={class_id}"
+                f"students={len(students)}, class_id={final_class_id} (url={url_class_id}, scan={class_id})"
             )
 
             return updated_response

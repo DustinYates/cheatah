@@ -91,6 +91,12 @@ https://britishswimschool.com/cypress-spring/register/?loc={LOCATION_CODE}
 With location and type:
 https://britishswimschool.com/cypress-spring/register/?loc={LOCATION_CODE}&type={TYPE_CODE}
 
+With location, type, and specific class:
+https://britishswimschool.com/cypress-spring/register/?loc={LOCATION_CODE}&type={TYPE_CODE}&class_id={CLASS_ID}
+
+When the customer has selected a specific class day/time from the schedule, include the class_id from the schedule data.
+If no specific class time has been selected, omit class_id.
+
 **CRITICAL URL RULES:**
 - URLs MUST be a SINGLE UNINTERRUPTED STRING with NO line breaks, spaces, or formatting
 - Use the PRE-ENCODED type codes exactly as listed above (they already have %20)
@@ -112,6 +118,7 @@ CORRECT URL EXAMPLES:
 ✓ https://britishswimschool.com/cypress-spring/register/?loc=LALANG&type=Adult%20Level%203
 ✓ https://britishswimschool.com/cypress-spring/register/?loc=LAFCypress&type=Young%20Adult%201
 ✓ https://britishswimschool.com/cypress-spring/register/?loc=24Spring&type=Turtle%201
+✓ https://britishswimschool.com/cypress-spring/register/?loc=LAFCypress&type=Starfish&class_id=12345
 
 VIOLATIONS TO AVOID:
 ❌ "Here's the link: britishswimschool.com/register" (missing location parameter)
@@ -134,6 +141,15 @@ When a user in WEB CHAT explicitly asks for the registration link (e.g., "send m
 7. NEVER send a base/generic link without a location parameter
 
 This rule applies ONLY to web chat. SMS/voice may have different contact collection requirements.
+
+## REGISTRATION LINK MESSAGING (WHAT TO TELL THE CUSTOMER)
+
+When sending a pre-filled registration link, let the customer know what they still need to complete:
+- "I've started filling out the form for you! You'll just need to add your address and payment details to finish up."
+
+Do NOT say:
+❌ "Your info is ready—just add payment!" (misleading — address fields are also empty)
+❌ "Everything is filled out for you!" (false — address and payment are not pre-filled)
 """
 
 # BSS level placement approach

@@ -1983,6 +1983,26 @@ If no class selected, use null for class_id."""
                     customer_info.phone = phone
                     has_customer_info = True
 
+            # Regex fallback: scan conversation messages for phone/email that
+            # may not be in the lead yet (extraction runs AFTER URL replacement,
+            # so data provided this turn won't be in the lead)
+            if messages and (not customer_info.phone or not customer_info.email):
+                all_user_text = " ".join(
+                    msg.content for msg in messages if msg.role == "user" and msg.content
+                )
+                if not customer_info.phone:
+                    regex_phone = self._extract_phone_regex(all_user_text)
+                    if regex_phone:
+                        customer_info.phone = regex_phone
+                        has_customer_info = True
+                        logger.info(f"Phone from conversation regex fallback: {regex_phone}")
+                if not customer_info.email:
+                    regex_email = self._extract_email_regex(all_user_text)
+                    if regex_email:
+                        customer_info.email = regex_email
+                        has_customer_info = True
+                        logger.info(f"Email from conversation regex fallback: {regex_email}")
+
             # Only replace with Jackrabbit URL if we have at least some customer info
             # Otherwise keep the basic BSS URL so they can fill it out themselves
             if not has_customer_info:

@@ -3808,22 +3808,22 @@ async def send_booking_link_tool(
             or ""
         )
 
-        # Try Telnyx headers as fallback for caller phone
+        # Try Telnyx API as fallback for caller phone
         if not to_phone:
             call_control_id = request.headers.get("x-telnyx-call-control-id", "")
-            if call_control_id:
+            if call_control_id and settings.telnyx_api_key:
                 try:
                     import httpx
-                    from app.settings import settings
-                    async with httpx.AsyncClient() as client:
-                        resp = await client.get(
-                            f"https://api.telnyx.com/v2/calls/{call_control_id}",
-                            headers={"Authorization": f"Bearer {settings.TELNYX_API_KEY}"},
-                            timeout=5.0,
-                        )
+                    async with httpx.AsyncClient(
+                        base_url="https://api.telnyx.com/v2",
+                        headers={"Authorization": f"Bearer {settings.telnyx_api_key}"},
+                        timeout=10.0,
+                    ) as client:
+                        resp = await client.get(f"/calls/{call_control_id}")
                         if resp.status_code == 200:
                             call_data = resp.json().get("data", {})
                             to_phone = call_data.get("from", "")
+                            logger.info(f"[TOOL] send_booking_link: got caller phone from Telnyx API: {to_phone}")
                 except Exception as e:
                     logger.warning(f"[TOOL] send_booking_link: Telnyx API phone lookup failed: {e}")
 

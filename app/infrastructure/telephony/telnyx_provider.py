@@ -558,6 +558,49 @@ class TelnyxAIService:
             logger.warning(f"[TELNYX-API] Unexpected error fetching recording: {type(e).__name__}: {e}")
             return None
 
+    async def get_fresh_recording_url(
+        self, recording_id: str
+    ) -> str | None:
+        """Fetch a fresh pre-signed URL for a recording by its ID.
+
+        Telnyx recording URLs are pre-signed S3 URLs that expire after ~10 minutes.
+        This method fetches a fresh URL from the Telnyx API.
+
+        Args:
+            recording_id: The Telnyx recording ID
+
+        Returns:
+            Fresh MP3 or WAV URL, or None if not found
+        """
+        try:
+            async with self._get_client() as client:
+                logger.info(f"[TELNYX-API] Fetching fresh URL for recording: {recording_id}")
+                response = await client.get(f"/recordings/{recording_id}")
+                response.raise_for_status()
+                data = response.json()
+
+                recording = data.get("data", {})
+                public_urls = recording.get("public_recording_urls", {})
+                download_urls = recording.get("download_urls", {})
+
+                url = (
+                    public_urls.get("mp3")
+                    or download_urls.get("mp3")
+                    or public_urls.get("wav")
+                    or download_urls.get("wav")
+                )
+
+                if url:
+                    logger.info(f"[TELNYX-API] Fresh recording URL obtained: {url[:80]}...")
+                return url
+
+        except httpx.HTTPError as e:
+            logger.warning(f"[TELNYX-API] Failed to fetch fresh recording URL: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"[TELNYX-API] Unexpected error fetching recording URL: {type(e).__name__}: {e}")
+            return None
+
     async def extract_insights_with_llm(
         self, messages: list[dict[str, Any]]
     ) -> dict[str, str]:

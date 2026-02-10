@@ -61,7 +61,7 @@ _LOWERCASE_ENDING_PATTERN = re.compile(r"[a-z]$")
 # This is a reliable fallback since the bot only greets by name when it recognized the name
 # Includes common greeting patterns: "Hi X", "Hello X", "Hey X", "Nice to meet you, X"
 _BOT_GREETING_NAME_PATTERN = re.compile(
-    r"(?:nice to meet you|great to meet you|hello|hey|hi)[,!]?\s+([A-Z][a-z]+)",
+    r"(?:nice to meet you|great to (?:meet you|have you (?:here|with us))|(?:good |great |so glad )to have you here|hello|hey|hi)[,!]?\s+([A-Z][a-z]+)",
     re.IGNORECASE
 )
 # Patterns for chat-to-SMS handoff detection
@@ -1548,20 +1548,10 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                         result["name_is_explicit"] = True
                         logger.info(f"Context-aware name extraction: assistant asked for name, user replied '{validated}'")
 
-        # REGEX FALLBACK: If still no name, try regex patterns on all user text
-        # This handles cases where LLM returns empty/invalid JSON
-        if not result["name"]:
-            all_user_text = current_user_message
-            for msg in messages:
-                if msg.role == "user":
-                    all_user_text += " | " + msg.content
-            regex_name, is_explicit = self._extract_name_regex(all_user_text)
-            if regex_name:
-                validated = validate_name(regex_name, require_explicit=is_explicit)
-                if validated:
-                    result["name"] = validated
-                    result["name_is_explicit"] = is_explicit
-                    logger.info(f"Using regex-extracted name (LLM fallback): '{validated}'")
+        # NOTE: Regex fallback for name extraction was removed.
+        # It ran on ALL user text and caused persistent false positives
+        # ("My Child", "More About", etc.). LLM + context-aware fallback
+        # + bot greeting extraction (line ~354) are sufficient and more reliable.
 
         return result
 

@@ -15,6 +15,7 @@ from app.persistence.database import get_db
 from app.persistence.models.call import Call
 from app.persistence.models.call_summary import CallSummary
 from app.persistence.models.tenant import User
+from app.persistence.models.tenant_sms_config import TenantSmsConfig
 from app.persistence.repositories.call_repository import CallRepository
 from app.persistence.repositories.call_summary_repository import CallSummaryRepository
 
@@ -264,6 +265,58 @@ async def get_call(
         created_at=call.created_at,
         summary=summary_response,
     )
+
+
+@router.get("/{call_id}/recording")
+async def get_call_recording(
+    call_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get a fresh recording URL for a call and redirect to it.
+
+    Telnyx recording URLs are pre-signed S3 URLs that expire after ~10 minutes.
+    This endpoint fetches a fresh URL from Telnyx and redirects the client to it.
+    """
+    query = select(Call).where(Call.id == call_id, Call.tenant_id == tenant_id)
+    result = await db.execute(query)
+    call = result.scalar_one_or_none()
+
+    if not call:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Call not found")
+
+    if not call.recording_sid and not call.call_sid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No recording available")
+
+    # Get tenant's Telnyx API key
+    sms_config_result = await db.execute(
+        select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
+    )
+    sms_config = sms_config_result.scalar_one_or_none()
+
+    if not sms_config or not sms_config.telnyx_api_key:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Telnyx not configured")
+
+    api_key = sms_config.telnyx_api_key  # EncryptedString auto-decrypts
+
+    from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+    telnyx_ai = TelnyxAIService(api_key)
+
+    # Try by recording_sid first (direct lookup), then fall back to call_sid search
+    fresh_url = None
+    if call.recording_sid:
+        fresh_url = await telnyx_ai.get_fresh_recording_url(call.recording_sid)
+
+    if not fresh_url and call.call_sid:
+        recording_data = await telnyx_ai.get_recording_for_call(call.call_sid)
+        if recording_data:
+            fresh_url = recording_data.get("recording_url")
+
+    if not fresh_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording no longer available")
+
+    return {"url": fresh_url}
 
 
 @router.get("/by-contact/{contact_id}", response_model=list[ContactCallResponse])

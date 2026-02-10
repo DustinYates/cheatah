@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Mic } from 'lucide-react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
@@ -88,6 +88,20 @@ export default function Calls() {
     outcome: '',
     status: '',
   });
+
+  const [recordingUrl, setRecordingUrl] = useState(null);
+
+  // Fetch fresh recording URL when a call with a recording is selected
+  useEffect(() => {
+    setRecordingUrl(null);
+    if (!selectedCall?.recording_url) return;
+
+    let cancelled = false;
+    api.getCallRecordingUrl(selectedCall.id)
+      .then(data => { if (!cancelled) setRecordingUrl(data.url); })
+      .catch(() => {}); // Silently fail — recording section just won't show
+    return () => { cancelled = true; };
+  }, [selectedCall?.id, selectedCall?.recording_url]);
 
   const fetchCalls = useCallback(async () => {
     try {
@@ -374,24 +388,31 @@ export default function Calls() {
               {selectedCall.recording_url && (
                 <div className="call-recording-section">
                   <h3>Recording</h3>
-                  <audio
-                    controls
-                    preload="metadata"
-                    className="call-audio-player"
-                  >
-                    <source src={selectedCall.recording_url} type="audio/mpeg" />
-                    <source src={selectedCall.recording_url} type="audio/wav" />
-                    Your browser does not support audio playback.
-                  </audio>
-                  <a
-                    href={selectedCall.recording_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-recording-download"
-                    download
-                  >
-                    Download Recording
-                  </a>
+                  {recordingUrl ? (
+                    <>
+                      <audio
+                        key={recordingUrl}
+                        controls
+                        preload="metadata"
+                        className="call-audio-player"
+                      >
+                        <source src={recordingUrl} type="audio/mpeg" />
+                        <source src={recordingUrl} type="audio/wav" />
+                        Your browser does not support audio playback.
+                      </audio>
+                      <a
+                        href={recordingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-recording-download"
+                        download
+                      >
+                        Download Recording
+                      </a>
+                    </>
+                  ) : (
+                    <p className="recording-loading">Loading recording...</p>
+                  )}
                 </div>
               )}
             </div>

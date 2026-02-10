@@ -741,6 +741,10 @@ class ApiClient {
     return this.request(`/calls/${callId}`);
   }
 
+  async getCallRecordingUrl(callId) {
+    return this.request(`/calls/${callId}/recording`);
+  }
+
   async getCallsForContact(contactId, params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/calls/by-contact/${contactId}${query ? `?${query}` : ''}`);

@@ -1158,8 +1158,8 @@ async def telnyx_ai_call_complete(
         )
 
         # WORKAROUND: Telnyx Insights webhooks not firing for voice calls
-        # If we have no insights data, try to fetch transcript from Telnyx API directly
-        if not caller_name and not caller_email and call_id and settings.telnyx_api_key:
+        # If we have no insights data OR no transcript, try to fetch from Telnyx API directly
+        if ((not caller_name and not caller_email) or not transcript) and call_id and settings.telnyx_api_key:
             try:
                 from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
                 telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
@@ -1242,7 +1242,7 @@ async def telnyx_ai_call_complete(
 
         # FALLBACK: Try to get transcript from our own database
         # The voice_webhooks.py stores messages in the Conversation table during the call
-        if not caller_name and not caller_email and from_number:
+        if ((not caller_name and not caller_email) or not transcript) and from_number:
             try:
                 # Get tenant_id first (we need it for the query)
                 temp_tenant_id = await _get_tenant_from_telnyx_number(to_number, db) if to_number else None

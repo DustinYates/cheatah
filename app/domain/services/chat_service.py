@@ -331,7 +331,8 @@ class ChatService:
             temp_name = user_name or (temp_lead.name if temp_lead else None)
 
             llm_response = await self._replace_bss_urls_with_jackrabbit(
-                tenant_id, conversation.id, llm_response, temp_phone, temp_name
+                tenant_id, conversation.id, llm_response, temp_phone, temp_name,
+                messages=messages,
             )
 
         # Add assistant response
@@ -511,6 +512,17 @@ class ChatService:
         )
         qualification_validator = RegistrationQualificationValidator(self.session)
 
+        # Extract student info for BSS registration link prefill (once, reused across all fulfill calls)
+        extracted_students = None
+        extracted_class_id = None
+        if tenant_id == 3 and messages:
+            try:
+                extracted_students, extracted_class_id = await self._extract_student_info_from_conversation(
+                    messages, llm_response
+                )
+            except Exception as e:
+                logger.warning(f"Student extraction for fulfill_promise failed: {e}")
+
         # Track SMS confirmation to append to response
         sms_confirmation = None
 
@@ -554,6 +566,8 @@ class ChatService:
                                 name=customer_name,
                                 messages=messages,
                                 ai_response=llm_response,
+                                students=extracted_students,
+                                class_id=extracted_class_id,
                             )
                             await self.pending_promise_service.mark_promise_fulfilled(
                                 existing_lead, pending.asset_type, fulfillment_result
@@ -615,6 +629,8 @@ class ChatService:
                             name=customer_name,
                             messages=messages,
                             ai_response=llm_response,
+                            students=extracted_students,
+                            class_id=extracted_class_id,
                         )
                         logger.info(
                             f"User request fulfillment result - tenant_id={tenant_id}, "
@@ -706,6 +722,8 @@ class ChatService:
                             name=customer_name,
                             messages=messages,
                             ai_response=llm_response,
+                            students=extracted_students,
+                            class_id=extracted_class_id,
                         )
                         logger.info(
                             f"Promise fulfillment result - tenant_id={tenant_id}, "
@@ -1536,6 +1554,124 @@ Replace null with the actual value if found. Use null if not found or uncertain.
 
         return result
 
+    async def _extract_student_info_from_conversation(
+        self,
+        messages: list[Message],
+        current_response: str,
+    ) -> tuple[list, str | None]:
+        """Extract student/swimmer info and class_id from BSS chat conversation.
+
+        Uses LLM to read the conversation and identify swimmers being enrolled,
+        plus regex fallback for class_id extraction.
+
+        Returns:
+            Tuple of (list of StudentInfo, class_id or None)
+        """
+        from datetime import date
+        from app.utils.jackrabbit_url_builder import StudentInfo
+
+        # Regex fallback for class_id (reliable since format is fixed)
+        class_id = None
+        class_id_pattern = re.compile(r'class_id=(\d+)')
+        for msg in reversed(messages):
+            content = msg.content or ""
+            matches = class_id_pattern.findall(content)
+            if matches:
+                class_id = matches[-1]
+                break
+
+        # Build transcript for LLM extraction
+        transcript_lines = []
+        for msg in messages:
+            role = "User" if msg.role == "user" else "Assistant"
+            transcript_lines.append(f"{role}: {msg.content}")
+        transcript_lines.append(f"Assistant: {current_response}")
+        transcript = "\n".join(transcript_lines)
+
+        extraction_prompt = f"""Read this conversation transcript and extract student/swimmer information.
+
+TRANSCRIPT:
+{transcript}
+
+YOUR TASK: Extract information about the students/swimmers being enrolled for swim lessons.
+
+STUDENT EXTRACTION RULES:
+1. Look for swimmer names — these are the people who will be TAKING lessons (not the parent chatting)
+2. Look for swimmer ages (e.g., "she's 5 years old", "he is 8", "my 3 year old")
+3. Determine swimmer gender from context: "my son"/"he"/"boy" = "M", "my daughter"/"she"/"girl" = "F"
+4. There may be multiple swimmers — extract ALL of them
+5. Do NOT include the parent/guardian as a student
+
+CLASS SELECTION:
+1. If the user confirmed or selected a specific class from the schedule, extract that class_id
+2. Look for class_id=XXXXX values in the conversation
+
+Respond with ONLY this JSON (no other text):
+{{"students": [{{"name": "first name", "age": 5, "gender": "M"}}], "class_id": "12345"}}
+
+- name: Student's first name (string or null)
+- age: Student's age in years (number or null)
+- gender: "M" or "F" or null
+- class_id: Jackrabbit class ID number as string, or null
+If no students found, use empty list: "students": []
+If no class selected, use null for class_id."""
+
+        try:
+            response = await self.llm_orchestrator.generate(
+                extraction_prompt,
+                context={"temperature": 0.0, "max_tokens": 200},
+            )
+
+            # Strip markdown code blocks if present
+            cleaned = (response or "").strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r'^```\w*\n?', '', cleaned)
+                cleaned = re.sub(r'\n?```$', '', cleaned)
+                cleaned = cleaned.strip()
+
+            # Find JSON object in response
+            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+            if not json_match:
+                logger.warning("Student extraction: no JSON found in LLM response")
+                return ([], class_id)
+
+            extracted = json.loads(json_match.group())
+
+            # Build StudentInfo list
+            students = []
+            for s in extracted.get("students", []):
+                if not isinstance(s, dict) or not s.get("name"):
+                    continue
+                birth_date = None
+                if s.get("age") and isinstance(s["age"], (int, float)):
+                    try:
+                        age = int(s["age"])
+                        today = date.today()
+                        approx_birth = today.replace(year=today.year - age)
+                        birth_date = approx_birth.strftime("%m/%d/%Y")
+                    except (ValueError, OverflowError):
+                        pass
+                students.append(StudentInfo(
+                    first_name=s.get("name"),
+                    gender=s.get("gender") if s.get("gender") in ("M", "F") else None,
+                    birth_date=birth_date,
+                ))
+
+            # Use LLM class_id if regex didn't find one
+            llm_class_id = extracted.get("class_id")
+            if not class_id and llm_class_id and str(llm_class_id).isdigit():
+                class_id = str(llm_class_id)
+
+            logger.info(
+                f"Student extraction: {len(students)} student(s), "
+                f"names={[s.first_name for s in students]}, class_id={class_id}"
+            )
+            return (students, class_id)
+
+        except Exception as e:
+            logger.warning(f"Student info extraction failed: {e}")
+            return ([], class_id)
+
     async def _process_chat_core(
         self,
         tenant_id: int,
@@ -1780,6 +1916,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
         response: str,
         phone: str | None,
         name: str | None,
+        messages: list[Message] | None = None,
     ) -> str:
         """Replace basic BSS registration URLs with Jackrabbit pre-filled URLs.
 
@@ -1794,6 +1931,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
             response: Bot's response text
             phone: User's phone number (if available)
             name: User's name (if available)
+            messages: Conversation messages for student info extraction
 
         Returns:
             Response with BSS URLs replaced by Jackrabbit URLs (if we have customer info)
@@ -1854,8 +1992,23 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                 )
                 return response
 
-            # Build Jackrabbit URL with customer prefill
-            jackrabbit_url = build_jackrabbit_registration_url(customer=customer_info)
+            # Extract student/swimmer info and class selection from conversation
+            students = []
+            class_id = None
+            if messages:
+                try:
+                    students, class_id = await self._extract_student_info_from_conversation(
+                        messages, response
+                    )
+                except Exception as e:
+                    logger.warning(f"Student info extraction failed, continuing without: {e}")
+
+            # Build Jackrabbit URL with customer + student prefill
+            jackrabbit_url = build_jackrabbit_registration_url(
+                customer=customer_info,
+                students=students or None,
+                class_id=class_id,
+            )
 
             # Replace all BSS URLs with the Jackrabbit URL
             updated_response = bss_url_pattern.sub(jackrabbit_url, response)
@@ -1864,7 +2017,8 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                 f"Replaced BSS URL with Jackrabbit URL in chat response - "
                 f"tenant_id={tenant_id}, conversation_id={conversation_id}, "
                 f"has_name={bool(customer_info.first_name)}, has_email={bool(customer_info.email)}, "
-                f"has_phone={bool(customer_info.phone)}"
+                f"has_phone={bool(customer_info.phone)}, "
+                f"students={len(students)}, class_id={class_id}"
             )
 
             return updated_response

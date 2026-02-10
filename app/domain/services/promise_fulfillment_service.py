@@ -57,6 +57,8 @@ class PromiseFulfillmentService:
         name: str | None = None,
         messages: list[Message] | None = None,
         ai_response: str | None = None,
+        students: list | None = None,
+        class_id: str | None = None,
     ) -> dict[str, Any]:
         """Fulfill a detected promise by sending SMS with the promised content.
 
@@ -68,6 +70,8 @@ class PromiseFulfillmentService:
             name: Customer's name (optional, for personalization)
             messages: Conversation messages (for extracting dynamic URL context)
             ai_response: The AI response that contained the promise (for URL extraction)
+            students: List of StudentInfo for Jackrabbit registration prefill
+            class_id: Jackrabbit class ID for registration prefill
 
         Returns:
             Result dictionary with status and details
@@ -294,11 +298,16 @@ class PromiseFulfillmentService:
                         customer_info.first_name = name_parts[0] if name_parts else None
                         customer_info.last_name = name_parts[1] if len(name_parts) > 1 else None
 
-                    jackrabbit_url = build_jackrabbit_registration_url(customer=customer_info)
+                    jackrabbit_url = build_jackrabbit_registration_url(
+                        customer=customer_info,
+                        students=students or None,
+                        class_id=class_id,
+                    )
                     logger.info(
                         f"Built Jackrabbit URL with customer prefill for tenant 3 - "
                         f"name={customer_info.first_name} {customer_info.last_name}, "
-                        f"email={customer_info.email}, phone={customer_info.phone}"
+                        f"email={customer_info.email}, phone={customer_info.phone}, "
+                        f"students={len(students) if students else 0}, class_id={class_id}"
                     )
                 else:
                     # No lead found, build URL with just the phone/name we have
@@ -307,8 +316,15 @@ class PromiseFulfillmentService:
                         name_parts = name.strip().split(maxsplit=1)
                         customer_info.first_name = name_parts[0] if name_parts else None
                         customer_info.last_name = name_parts[1] if len(name_parts) > 1 else None
-                    jackrabbit_url = build_jackrabbit_registration_url(customer=customer_info)
-                    logger.info(f"Built Jackrabbit URL with minimal customer info (no lead found)")
+                    jackrabbit_url = build_jackrabbit_registration_url(
+                        customer=customer_info,
+                        students=students or None,
+                        class_id=class_id,
+                    )
+                    logger.info(
+                        f"Built Jackrabbit URL with minimal customer info (no lead found), "
+                        f"students={len(students) if students else 0}, class_id={class_id}"
+                    )
             except Exception as e:
                 logger.warning(f"Failed to build Jackrabbit URL, falling back to dynamic URL: {e}")
 

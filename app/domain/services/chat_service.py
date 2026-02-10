@@ -324,15 +324,22 @@ class ChatService:
 
         # For tenant 3 (BSS), replace basic BSS URLs with Jackrabbit pre-filled URLs
         # This ensures chat responses contain the same pre-filled URLs that would be sent via SMS
+        # Enriched data (name, students, class_id) is returned so promise fulfillment
+        # can build SMS links with the same info the chat link has.
+        bss_enriched_name = None
+        bss_enriched_students = None
+        bss_enriched_class_id = None
         if tenant_id == 3:
             # Get phone/name from existing lead if available
             temp_lead = await self.lead_service.get_lead_by_conversation(tenant_id, conversation.id)
             temp_phone = user_phone or (temp_lead.phone if temp_lead else None)
             temp_name = user_name or (temp_lead.name if temp_lead else None)
 
-            llm_response = await self._replace_bss_urls_with_jackrabbit(
-                tenant_id, conversation.id, llm_response, temp_phone, temp_name,
-                messages=messages, current_user_message=user_message,
+            llm_response, bss_enriched_name, bss_enriched_students, bss_enriched_class_id = (
+                await self._replace_bss_urls_with_jackrabbit(
+                    tenant_id, conversation.id, llm_response, temp_phone, temp_name,
+                    messages=messages, current_user_message=user_message,
+                )
             )
 
         # Add assistant response
@@ -501,7 +508,8 @@ class ChatService:
             or (existing_lead.phone if existing_lead else None)
         )
         customer_name = (
-            user_name
+            bss_enriched_name  # Includes last name from message scanning (if BSS)
+            or user_name
             or extracted_name
             or (existing_lead.name if existing_lead else None)
         )
@@ -513,13 +521,16 @@ class ChatService:
         qualification_validator = RegistrationQualificationValidator(self.session)
 
         # Extract student info for BSS registration link prefill (once, reused across all fulfill calls)
-        extracted_students = None
-        extracted_class_id = None
-        if tenant_id == 3 and messages:
+        # Use enriched data from URL replacement (which already scanned the BSS URL + messages)
+        # so the SMS link matches the chat link.
+        extracted_students = bss_enriched_students
+        extracted_class_id = bss_enriched_class_id
+        if tenant_id == 3 and messages and not extracted_students:
             try:
-                extracted_students, extracted_class_id = self._extract_student_info_from_conversation(
+                extracted_students, scan_class_id = self._extract_student_info_from_conversation(
                     messages
                 )
+                extracted_class_id = extracted_class_id or scan_class_id
             except Exception as e:
                 logger.warning(f"Student extraction for fulfill_promise failed: {e}")
 
@@ -1938,7 +1949,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
         name: str | None,
         messages: list[Message] | None = None,
         current_user_message: str | None = None,
-    ) -> str:
+    ) -> tuple[str, str | None, list | None, str | None]:
         """Replace basic BSS registration URLs with Jackrabbit pre-filled URLs.
 
         For BSS (tenant 3), the bot is instructed to use basic britishswimschool.com URLs
@@ -1956,11 +1967,14 @@ Replace null with the actual value if found. Use null if not found or uncertain.
             current_user_message: The current turn's user message (not yet in messages list)
 
         Returns:
-            Response with BSS URLs replaced by Jackrabbit URLs (if we have customer info)
+            Tuple of (response, enriched_name, students, class_id) — enriched data
+            is also returned so promise fulfillment can use the same data.
         """
+        _empty = (response, None, None, None)
+
         # Only process for tenant 3 (BSS)
         if tenant_id != 3:
-            return response
+            return _empty
 
         # Pattern to match BSS registration URLs
         bss_url_pattern = re.compile(
@@ -1971,7 +1985,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
         # Check if response contains a BSS registration URL
         bss_match = bss_url_pattern.search(response)
         if not bss_match:
-            return response
+            return _empty
 
         # Extract class_id from the BSS URL if the bot included it
         # (the LLM has class schedule data with class_id=XXXXX in its context)
@@ -2074,7 +2088,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                     f"No customer info available, keeping basic BSS URL - "
                     f"tenant_id={tenant_id}, conversation_id={conversation_id}"
                 )
-                return response
+                return _empty
 
             # Extract student/swimmer info and class selection from conversation
             students = []
@@ -2099,6 +2113,14 @@ Replace null with the actual value if found. Use null if not found or uncertain.
             # Replace all BSS URLs with the Jackrabbit URL
             updated_response = bss_url_pattern.sub(jackrabbit_url, response)
 
+            # Build enriched name string for downstream (promise fulfillment)
+            enriched_name = None
+            if customer_info.first_name:
+                parts = [customer_info.first_name]
+                if customer_info.last_name:
+                    parts.append(customer_info.last_name)
+                enriched_name = " ".join(parts)
+
             logger.info(
                 f"Replaced BSS URL with Jackrabbit URL in chat response - "
                 f"tenant_id={tenant_id}, conversation_id={conversation_id}, "
@@ -2107,7 +2129,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                 f"students={len(students)}, class_id={final_class_id} (url={url_class_id}, scan={class_id})"
             )
 
-            return updated_response
+            return (updated_response, enriched_name, students, final_class_id)
 
         except Exception as e:
             logger.error(
@@ -2115,4 +2137,4 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                 exc_info=True
             )
             # Return original response if replacement fails
-            return response
+            return _empty

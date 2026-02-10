@@ -3769,6 +3769,168 @@ async def book_meeting_tool(
         })
 
 
+@router.api_route("/tools/send-booking-link", methods=["GET", "POST"])
+async def send_booking_link_tool(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Webhook tool for Telnyx AI Assistant to send a calendar booking link via SMS.
+
+    Sends the tenant's booking_link_url from tenant_calendar_configs as an SMS
+    to the caller so they can self-schedule a callback.
+
+    Body params:
+        to: Caller's phone number (required)
+    """
+    try:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        params = dict(request.query_params)
+
+        # Resolve tenant
+        tenant_id = await _resolve_tool_tenant(params, body, request, db)
+        if not tenant_id:
+            logger.warning("[TOOL] send_booking_link: could not determine tenant")
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "I'm sorry, I wasn't able to send the link right now. "
+                          "Please visit our website or call back to schedule.",
+            })
+
+        # Get caller phone
+        to_phone = (
+            body.get("to")
+            or body.get("customer_phone")
+            or params.get("to")
+            or ""
+        )
+
+        # Try Telnyx headers as fallback for caller phone
+        if not to_phone:
+            call_control_id = request.headers.get("x-telnyx-call-control-id", "")
+            if call_control_id:
+                try:
+                    import httpx
+                    from app.settings import settings
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.get(
+                            f"https://api.telnyx.com/v2/calls/{call_control_id}",
+                            headers={"Authorization": f"Bearer {settings.TELNYX_API_KEY}"},
+                            timeout=5.0,
+                        )
+                        if resp.status_code == 200:
+                            call_data = resp.json().get("data", {})
+                            to_phone = call_data.get("from", "")
+                except Exception as e:
+                    logger.warning(f"[TOOL] send_booking_link: Telnyx API phone lookup failed: {e}")
+
+        if not to_phone:
+            logger.warning(f"[TOOL] send_booking_link: no caller phone for tenant {tenant_id}")
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "I wasn't able to send a text right now. "
+                          "You can visit our website to schedule a time with our team.",
+            })
+
+        logger.info(f"[TOOL] send_booking_link called - tenant_id={tenant_id}, to={to_phone}")
+
+        # Get booking link from calendar config
+        from app.domain.services.calendar_service import CalendarService
+        calendar_service = CalendarService(db)
+        booking_url = await calendar_service.get_booking_link(tenant_id)
+
+        if not booking_url:
+            logger.warning(f"[TOOL] send_booking_link: no booking_link_url for tenant {tenant_id}")
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "I'm sorry, I'm not able to send a scheduling link right now. "
+                          "Please visit our website or call back to schedule.",
+            })
+
+        # Send SMS via tenant's configured provider
+        from app.infrastructure.telephony.factory import TelephonyProviderFactory
+
+        factory = TelephonyProviderFactory(db)
+        sms_provider = await factory.get_sms_provider(tenant_id)
+
+        if not sms_provider:
+            logger.error(f"[TOOL] send_booking_link: no SMS provider for tenant {tenant_id}")
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "I wasn't able to send a text right now. "
+                          "You can visit our website to schedule a time with our team.",
+            })
+
+        sms_config = await factory.get_config(tenant_id)
+        from_number = factory.get_sms_phone_number(sms_config)
+
+        if not from_number:
+            logger.error(f"[TOOL] send_booking_link: no from number for tenant {tenant_id}")
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "I wasn't able to send a text right now. "
+                          "You can visit our website to schedule a time with our team.",
+            })
+
+        formatted_to = _normalize_phone(to_phone)
+
+        sms_body = (
+            "Schedule a time with our team:\n\n"
+            f"{booking_url}\n\n"
+            "Pick a time that works for you and we'll be ready!"
+        )
+
+        sms_result = await sms_provider.send_sms(
+            to=formatted_to,
+            from_=from_number,
+            body=sms_body,
+        )
+
+        logger.info(
+            f"[TOOL] send_booking_link SMS sent - to={formatted_to}, from={from_number}, "
+            f"message_id={sms_result.message_id}"
+        )
+
+        # Create SentAsset dedup record
+        try:
+            from app.persistence.models.sent_asset import SentAsset
+            from datetime import timezone
+
+            phone_normalized = normalize_phone_for_dedup(formatted_to)
+            sent_asset = SentAsset(
+                tenant_id=tenant_id,
+                phone_normalized=phone_normalized,
+                asset_type="booking_link",
+                conversation_id=None,
+                sent_at=datetime.now(timezone.utc),
+                message_id=sms_result.message_id,
+            )
+            db.add(sent_asset)
+            await db.commit()
+            logger.info(f"[TOOL] Created SentAsset dedup record: phone={phone_normalized}, tenant={tenant_id}, type=booking_link")
+        except Exception as dedup_err:
+            logger.warning(f"[TOOL] Failed to create SentAsset dedup record (SMS still sent): {dedup_err}")
+
+        return JSONResponse(content={
+            "status": "ok",
+            "result": "I just sent you a text message with a link to schedule a time with our team. "
+                      "You can pick a time that works best for you.",
+            "message_id": sms_result.message_id,
+            "sms_sent": True,
+        })
+
+    except Exception as e:
+        logger.error(f"[TOOL] Error in send_booking_link: {e}", exc_info=True)
+        return JSONResponse(content={
+            "status": "ok",
+            "result": "I'm sorry, I wasn't able to send the scheduling link right now. "
+                      "Please visit our website or call back to schedule.",
+        })
+
+
 def _map_location_to_code(location: str) -> str | None:
     """Map a location name from conversation to a location code.
 

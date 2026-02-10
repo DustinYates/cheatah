@@ -332,7 +332,7 @@ class ChatService:
 
             llm_response = await self._replace_bss_urls_with_jackrabbit(
                 tenant_id, conversation.id, llm_response, temp_phone, temp_name,
-                messages=messages,
+                messages=messages, current_user_message=user_message,
             )
 
         # Add assistant response
@@ -1936,6 +1936,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
         phone: str | None,
         name: str | None,
         messages: list[Message] | None = None,
+        current_user_message: str | None = None,
     ) -> str:
         """Replace basic BSS registration URLs with Jackrabbit pre-filled URLs.
 
@@ -1951,6 +1952,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
             phone: User's phone number (if available)
             name: User's name (if available)
             messages: Conversation messages for student info extraction
+            current_user_message: The current turn's user message (not yet in messages list)
 
         Returns:
             Response with BSS URLs replaced by Jackrabbit URLs (if we have customer info)
@@ -2002,13 +2004,17 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                     customer_info.phone = phone
                     has_customer_info = True
 
-            # Regex fallback: scan ALL user messages for phone/email/name that
-            # may not be in the lead yet (extraction runs AFTER URL replacement,
-            # so data provided this turn won't be in the lead)
-            if messages:
-                all_user_text = " ".join(
-                    msg.content for msg in messages if msg.role == "user" and msg.content
-                )
+            # Scan ALL user messages (including current turn) for phone/email/name
+            # that may not be in the lead yet. The `messages` list was fetched before
+            # the current user message was added, so we include it explicitly.
+            if messages or current_user_message:
+                parts = [
+                    msg.content for msg in (messages or [])
+                    if msg.role == "user" and msg.content
+                ]
+                if current_user_message:
+                    parts.append(current_user_message)
+                all_user_text = " ".join(parts)
                 if not customer_info.phone:
                     regex_phone = self._extract_phone_regex(all_user_text)
                     if regex_phone:
@@ -2024,9 +2030,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
 
                 # Name augmentation: if we only have first name, look for last
                 # name in conversation (user may provide it in a separate turn)
-                if customer_info.first_name and not customer_info.last_name:
-                    # Check if any user message is a single word that could be a last name
-                    # (bot asked "what's your last name?" and user replied "Yates")
+                if customer_info.first_name and not customer_info.last_name and messages:
                     for idx, msg in enumerate(messages):
                         if msg.role != "assistant" or not msg.content:
                             continue
@@ -2035,14 +2039,23 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                             msg.content, re.IGNORECASE,
                         )
                         if asks_last_name:
-                            # Next user message is the last name
+                            # Next user message is the last name — check messages first
+                            found = False
                             for j in range(idx + 1, len(messages)):
                                 if messages[j].role == "user" and messages[j].content:
                                     candidate = messages[j].content.strip()
                                     if 1 <= len(candidate.split()) <= 2 and len(candidate) < 30:
                                         customer_info.last_name = candidate.title()
+                                        found = True
                                         logger.info(f"Last name from message scan: {customer_info.last_name}")
                                     break
+                            # If bot asked last name in the LAST message and user
+                            # just replied, the answer is in current_user_message
+                            if not found and idx == len(messages) - 1 and current_user_message:
+                                candidate = current_user_message.strip()
+                                if 1 <= len(candidate.split()) <= 2 and len(candidate) < 30:
+                                    customer_info.last_name = candidate.title()
+                                    logger.info(f"Last name from current message: {customer_info.last_name}")
 
             # Only replace with Jackrabbit URL if we have at least some customer info
             # Otherwise keep the basic BSS URL so they can fill it out themselves

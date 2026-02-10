@@ -144,12 +144,15 @@ This rule applies ONLY to web chat. SMS/voice may have different contact collect
 
 ## REGISTRATION LINK MESSAGING (WHAT TO TELL THE CUSTOMER)
 
-When sending a pre-filled registration link, let the customer know what they still need to complete:
-- "I've started filling out the form for you! You'll just need to add your email, phone number, address, student's first name, gender, date of birth, and payment details to finish up."
+When sending a pre-filled registration link, let the customer know what they still need to complete AND offer to help in ONE message:
+- "I've started filling out the form for you! You'll still need to add your email, phone number, address, student's first name, gender, date of birth, and payment details. If you'd like me to help fill in more, just share your email, phone number, and student info and I can update the link!"
+
+IMPORTANT: Ask for ALL remaining info at once in a single message. Do NOT ask piece by piece (e.g., "What is your email?" then later "What is your phone?"). Collect everything together.
 
 Do NOT say:
 ❌ "Your info is ready—just add payment!" (misleading — many fields are still empty)
 ❌ "Everything is filled out for you!" (false — email, phone, address, student info, and payment are not pre-filled)
+❌ "What is your email address?" followed by "What is your phone number?" (don't ask one at a time)
 """
 
 # BSS level placement approach

@@ -235,9 +235,47 @@ class ChatService:
                 f"reason={escalation.reason}"
             )
 
-        # Check if user is responding to a scheduling prompt (selecting a time slot)
+        # Check if user is responding to a scheduling prompt
         scheduling_state = self._get_scheduling_state(messages)
-        if scheduling_state and scheduling_state.get("awaiting_selection"):
+
+        # STATE: pending_name_collection — user should be providing their name
+        if scheduling_state and scheduling_state.get("pending_name_collection"):
+            name_result = await self._handle_pending_name_for_booking(
+                tenant_id=tenant_id,
+                conversation_id=conversation.id,
+                user_message=user_message,
+                scheduling_state=scheduling_state,
+                user_name=user_name,
+                user_email=user_email,
+                user_phone=user_phone,
+            )
+            if name_result:
+                return name_result
+            # Not a name — clear scheduling state and fall through to LLM
+            await self._set_scheduling_state(
+                tenant_id, conversation.id, {"awaiting_selection": False}
+            )
+
+        # STATE: pending_confirmation — user should be confirming yes/no
+        elif scheduling_state and scheduling_state.get("pending_confirmation"):
+            confirm_result = await self._handle_booking_confirmation(
+                tenant_id=tenant_id,
+                conversation_id=conversation.id,
+                user_message=user_message,
+                scheduling_state=scheduling_state,
+                customer_name=user_name,
+                customer_email=user_email,
+                customer_phone=user_phone,
+            )
+            if confirm_result:
+                return confirm_result
+            # User declined or changed topic — clear state and fall through to LLM
+            await self._set_scheduling_state(
+                tenant_id, conversation.id, {"awaiting_selection": False}
+            )
+
+        # STATE: awaiting_selection — user should be picking a slot number
+        elif scheduling_state and scheduling_state.get("awaiting_selection"):
             booking_result = await self._handle_slot_selection(
                 tenant_id=tenant_id,
                 conversation_id=conversation.id,
@@ -1021,23 +1059,227 @@ class ChatService:
             # User message doesn't match a slot - let it go through normal LLM flow
             return None
 
-        # Book the meeting
-        from datetime import datetime as dt
-        slot_start = dt.fromisoformat(selected_slot["start"])
+        # Instead of booking immediately, ask for confirmation
+        selected_slot_data = {
+            "start": selected_slot["start"],
+            "end": selected_slot.get("end"),
+            "display_label": selected_slot["display_label"],
+        }
 
-        # Get customer name from existing lead if not provided
-        name = customer_name or "Customer"
-        if not customer_name:
+        await self._set_scheduling_state(
+            tenant_id, conversation_id,
+            {
+                "pending_confirmation": True,
+                "selected_slot": selected_slot_data,
+                "offered_slots": offered_slots,
+            },
+        )
+
+        confirmation_prompt = (
+            f"Would you like me to book {selected_slot['display_label']} for you? "
+            "Just reply yes to confirm, or let me know if you'd prefer a different time."
+        )
+
+        await self.conversation_service.add_message(
+            tenant_id, conversation_id, "assistant", confirmation_prompt,
+        )
+
+        session_id = str(conversation_id)
+        messages = await self.conversation_service.get_conversation_history(
+            tenant_id, conversation_id
+        )
+        turn_count = len([m for m in messages if m.role == "user"])
+
+        return ChatResult(
+            session_id=session_id,
+            response=confirmation_prompt,
+            requires_contact_info=False,
+            conversation_complete=False,
+            lead_captured=False,
+            turn_count=turn_count,
+            llm_latency_ms=0.0,
+            escalation_requested=False,
+            escalation_id=None,
+            scheduling={"mode": "calendar_api", "awaiting_confirmation": True},
+        )
+
+    async def _handle_booking_confirmation(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        user_message: str,
+        scheduling_state: dict,
+        customer_name: str | None = None,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
+    ) -> ChatResult | None:
+        """Handle user's yes/no response to booking confirmation.
+
+        Returns ChatResult if user confirmed (proceeds to book or collect name).
+        Returns None if user declined or message doesn't match (caller clears state).
+        """
+        msg_lower = user_message.strip().lower()
+
+        affirmative_words = {
+            "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "confirm",
+            "book it", "book that", "sounds good", "perfect", "please",
+            "go ahead", "let's do it", "lets do it", "do it", "absolutely",
+            "that works", "works for me", "i'll take it", "ill take it",
+            "y", "si", "yes please",
+        }
+
+        is_confirmed = any(word in msg_lower for word in affirmative_words)
+
+        if not is_confirmed:
+            return None
+
+        selected_slot = scheduling_state.get("selected_slot")
+        if not selected_slot:
+            return None
+
+        # Check if we have a customer name
+        name = customer_name
+        if not name:
             existing_lead = await self.lead_service.get_lead_by_conversation(
                 tenant_id, conversation_id
             )
             if existing_lead and existing_lead.name:
                 name = existing_lead.name
 
+        if not name:
+            # No name available — collect before booking
+            await self._set_scheduling_state(
+                tenant_id, conversation_id,
+                {"pending_name_collection": True, "selected_slot": selected_slot},
+            )
+
+            name_prompt = "Before I finalize the booking, may I have your name?"
+
+            await self.conversation_service.add_message(
+                tenant_id, conversation_id, "assistant", name_prompt,
+            )
+
+            session_id = str(conversation_id)
+            messages = await self.conversation_service.get_conversation_history(
+                tenant_id, conversation_id
+            )
+            turn_count = len([m for m in messages if m.role == "user"])
+
+            return ChatResult(
+                session_id=session_id,
+                response=name_prompt,
+                requires_contact_info=False,
+                conversation_complete=False,
+                lead_captured=False,
+                turn_count=turn_count,
+                llm_latency_ms=0.0,
+                escalation_requested=False,
+                escalation_id=None,
+                scheduling={"mode": "calendar_api", "awaiting_name": True},
+            )
+
+        # We have a name — book immediately
+        return await self._execute_booking(
+            tenant_id=tenant_id,
+            conversation_id=conversation_id,
+            selected_slot=selected_slot,
+            customer_name=name,
+            customer_email=customer_email,
+            customer_phone=customer_phone,
+        )
+
+    async def _handle_pending_name_for_booking(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        user_message: str,
+        scheduling_state: dict,
+        user_name: str | None = None,
+        user_email: str | None = None,
+        user_phone: str | None = None,
+    ) -> ChatResult | None:
+        """Handle name collection for a pending booking.
+
+        Tries to extract a name from the user message. If found, saves the lead
+        and books the meeting. Returns None if the message doesn't look like a
+        name (user changed topic — caller clears state).
+        """
+        from app.utils.name_validator import validate_name
+
+        selected_slot = scheduling_state.get("selected_slot")
+        if not selected_slot:
+            return None
+
+        # Try to get name from widget form field first
+        name = user_name
+
+        if not name:
+            # Try regex extraction (handles "I'm Sarah", "my name is John", etc.)
+            extracted_name, _ = self._extract_name_regex(user_message)
+            if extracted_name:
+                name = extracted_name
+
+        if not name:
+            # Try standalone name pattern (just "Sarah" or "Sarah Jones")
+            standalone_match = _STANDALONE_NAME_PATTERN.match(user_message.strip())
+            if standalone_match:
+                potential = standalone_match.group(1)
+                validated = validate_name(potential)
+                if validated:
+                    name = validated
+
+        if not name:
+            # Message doesn't look like a name — user probably changed topic
+            return None
+
+        # Save name to lead
+        existing_lead = await self.lead_service.get_lead_by_conversation(
+            tenant_id, conversation_id
+        )
+        if existing_lead:
+            await self.lead_service.update_lead_info(
+                tenant_id=tenant_id,
+                lead_id=existing_lead.id,
+                name=name,
+                force_name_update=True,
+            )
+        else:
+            await self.lead_service.capture_lead(
+                tenant_id=tenant_id,
+                conversation_id=conversation_id,
+                name=name,
+            )
+
+        # Now book the meeting
+        return await self._execute_booking(
+            tenant_id=tenant_id,
+            conversation_id=conversation_id,
+            selected_slot=selected_slot,
+            customer_name=name,
+            customer_email=user_email,
+            customer_phone=user_phone,
+        )
+
+    async def _execute_booking(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        selected_slot: dict,
+        customer_name: str,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
+    ) -> ChatResult:
+        """Execute the actual calendar booking and return ChatResult.
+
+        This is the final step — only called after confirmation and name collection.
+        """
+        from datetime import datetime as dt
+        slot_start = dt.fromisoformat(selected_slot["start"])
+
         result = await self.calendar_service.book_meeting(
             tenant_id=tenant_id,
             slot_start=slot_start,
-            customer_name=name,
+            customer_name=customer_name,
             customer_email=customer_email,
             customer_phone=customer_phone,
             topic="Meeting requested via chatbot",
@@ -1067,7 +1309,6 @@ class ChatService:
             )
             scheduling_data = None
 
-        # Add messages to conversation
         await self.conversation_service.add_message(
             tenant_id, conversation_id, "assistant", confirmation_text,
         )

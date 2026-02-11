@@ -576,7 +576,8 @@ class NotificationService:
         time_str = local_start.strftime("%b %d, %I:%M %p")
 
         # Build SMS message (max 160 chars)
-        message = f"New Booking! {customer_name} booked {time_str}."
+        display_name = customer_name if customer_name and customer_name != "Customer" else "A new customer"
+        message = f"New Booking! {display_name} booked {time_str}."
         if topic and topic != "Meeting":
             message += f" Topic: {topic}."
         if customer_phone:

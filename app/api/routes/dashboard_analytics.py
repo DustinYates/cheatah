@@ -361,7 +361,7 @@ async def get_communications_heatmap(
             cells.append(HeatmapCell(day=day, hour=hour, calls=vals["calls"], sms=vals["sms"]))
         return HeatmapResponse(cells=cells)
 
-    # Real-time fallback: query calls and messages by hour
+    # Real-time fallback: query calls, SMS, and web chats by hour
     call_stmt = (
         select(
             func.extract("dow", Call.started_at).label("dow"),
@@ -391,13 +391,31 @@ async def get_communications_heatmap(
     sms_res = await db.execute(sms_stmt)
     sms_data = {(int(r.dow), int(r.hour)): r.cnt for r in sms_res.all()}
 
+    chat_stmt = (
+        select(
+            func.extract("dow", Message.created_at).label("dow"),
+            func.extract("hour", Message.created_at).label("hour"),
+            func.count().label("cnt"),
+        )
+        .join(Conversation)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.channel == "web",
+            Message.created_at >= start,
+        )
+        .group_by("dow", "hour")
+    )
+    chat_res = await db.execute(chat_stmt)
+    chat_data = {(int(r.dow), int(r.hour)): r.cnt for r in chat_res.all()}
+
     cells = []
     for day in range(7):
         for hour in range(24):
             c = call_data.get((day, hour), 0)
             s = sms_data.get((day, hour), 0)
-            if c or s:
-                cells.append(HeatmapCell(day=day, hour=hour, calls=c, sms=s))
+            w = chat_data.get((day, hour), 0)
+            if c or s or w:
+                cells.append(HeatmapCell(day=day, hour=hour, calls=c, sms=s, chats=w))
 
     return HeatmapResponse(cells=cells)
 

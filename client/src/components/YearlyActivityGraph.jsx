@@ -2,7 +2,13 @@ import { useState, useMemo } from 'react';
 import './YearlyActivityGraph.css';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// getISOWeek returns the ISO 8601 week number (1-53)
+const getISOWeek = (date) => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+};
 
 /**
  * GitHub-style yearly contribution graph.
@@ -12,7 +18,7 @@ export default function YearlyActivityGraph({ data = [], metric = 'total' }) {
   const [hovered, setHovered] = useState(null);
 
   // Build a map of date -> value and calculate weeks
-  const { weeks, maxVal, monthLabels } = useMemo(() => {
+  const { weeks, maxVal, weekLabels } = useMemo(() => {
     const dataMap = {};
     let max = 1;
 
@@ -33,8 +39,6 @@ export default function YearlyActivityGraph({ data = [], metric = 'total' }) {
     const start = new Date(today);
     start.setDate(start.getDate() - 364 - start.getDay());
 
-    let currentMonth = -1;
-
     for (let w = 0; w < 53; w++) {
       const week = [];
       for (let d = 0; d < 7; d++) {
@@ -43,10 +47,13 @@ export default function YearlyActivityGraph({ data = [], metric = 'total' }) {
         const dateStr = date.toISOString().split('T')[0];
         const cell = dataMap[dateStr];
 
-        // Track month changes for labels
-        if (d === 0 && date.getMonth() !== currentMonth) {
-          currentMonth = date.getMonth();
-          labels.push({ week: w, month: MONTHS[currentMonth] });
+        // Track week number labels (use Monday of each week)
+        if (d === 1) {
+          const wn = getISOWeek(date);
+          // Show every 4th week to avoid crowding
+          if (wn % 4 === 1) {
+            labels.push({ week: w, label: `W${wn}` });
+          }
         }
 
         week.push({
@@ -62,7 +69,7 @@ export default function YearlyActivityGraph({ data = [], metric = 'total' }) {
       weeks.push(week);
     }
 
-    return { weeks, maxVal: max, monthLabels: labels };
+    return { weeks, maxVal: max, weekLabels: labels };
   }, [data, metric]);
 
   const getLevel = (val) => {
@@ -87,14 +94,14 @@ export default function YearlyActivityGraph({ data = [], metric = 'total' }) {
   return (
     <div className="yearly-graph-container">
       <div className="yearly-graph">
-        {/* Month labels */}
+        {/* Week number labels */}
         <div className="yearly-month-row">
           <div className="yearly-day-spacer" />
           {weeks.map((_, weekIdx) => {
-            const label = monthLabels.find(l => l.week === weekIdx);
+            const label = weekLabels.find(l => l.week === weekIdx);
             return (
               <div key={weekIdx} className="yearly-month-cell">
-                {label?.month || ''}
+                {label?.label || ''}
               </div>
             );
           })}

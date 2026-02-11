@@ -180,7 +180,7 @@ export default function CommunicationsHealth() {
       {/* Heatmap */}
       <section className="comms-health-card">
         <h2>Volume by Time of Day</h2>
-        <TimeOfDayHeatmap cells={heatmap?.cells || []} metric="calls" />
+        <TimeOfDayHeatmap cells={heatmap?.cells || []} metric="total" />
       </section>
 
       {/* Yearly Activity — hidden when no meaningful data */}

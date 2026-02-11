@@ -5,10 +5,10 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
 /**
- * 7x24 heatmap grid for call/SMS volume by day and hour.
+ * 7x24 heatmap grid for call/SMS/chat volume by day and hour.
  * Color intensity based on volume. Tooltip on hover.
  */
-export default function TimeOfDayHeatmap({ cells = [], metric = 'calls' }) {
+export default function TimeOfDayHeatmap({ cells = [], metric = 'total' }) {
   const [hovered, setHovered] = useState(null);
 
   // Build lookup map
@@ -16,7 +16,10 @@ export default function TimeOfDayHeatmap({ cells = [], metric = 'calls' }) {
   let maxVal = 1;
   for (const c of cells) {
     const key = `${c.day}-${c.hour}`;
-    const val = metric === 'sms' ? (c.sms || 0) : (c.calls || 0);
+    const val = metric === 'calls' ? (c.calls || 0)
+      : metric === 'sms' ? (c.sms || 0)
+      : metric === 'chats' ? (c.chats || 0)
+      : (c.calls || 0) + (c.sms || 0) + (c.chats || 0);
     cellMap[key] = { ...c, val };
     if (val > maxVal) maxVal = val;
   }
@@ -66,9 +69,13 @@ export default function TimeOfDayHeatmap({ cells = [], metric = 'calls' }) {
 
       {hovered && (
         <div className="heatmap-tooltip-fixed">
-          {hovered.day} {hovered.hour}:00 — {hovered.val} {metric}
-          {hovered.cell && metric === 'calls' && hovered.cell.sms > 0 && (
-            <span> | {hovered.cell.sms} SMS</span>
+          {hovered.day} {hovered.hour}:00 — {hovered.val} {metric === 'total' ? 'interactions' : metric}
+          {hovered.cell && metric === 'total' && (
+            <>
+              {hovered.cell.calls > 0 && <span> | {hovered.cell.calls} calls</span>}
+              {hovered.cell.sms > 0 && <span> | {hovered.cell.sms} SMS</span>}
+              {hovered.cell.chats > 0 && <span> | {hovered.cell.chats} chats</span>}
+            </>
           )}
         </div>
       )}

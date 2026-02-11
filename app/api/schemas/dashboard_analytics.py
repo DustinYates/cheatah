@@ -61,6 +61,7 @@ class HeatmapCell(BaseModel):
     hour: int  # 0-23
     calls: int = 0
     sms: int = 0
+    chats: int = 0
 
 
 class HeatmapResponse(BaseModel):

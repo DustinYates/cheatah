@@ -250,13 +250,14 @@ export default function EscalationSettings() {
           </p>
 
           <div className="checkbox-grid">
-            <label className="checkbox-label">
+            <label className="checkbox-label" style={{ opacity: 0.5, cursor: 'not-allowed' }} title="Email notifications coming soon">
               <input
                 type="checkbox"
                 checked={settings.notification_methods?.includes('email')}
-                onChange={() => toggleMethod('email')}
+                disabled
               />
               Email
+              <span style={{ fontSize: '0.75rem', color: '#999', marginLeft: '0.25rem' }}>(coming soon)</span>
             </label>
             <label className="checkbox-label">
               <input

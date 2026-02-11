@@ -61,7 +61,7 @@
 
 /* GitHub-style green levels */
 .yearly-cell.level-0 {
-  background-color: var(--color-bg-tertiary, #ebedf0);
+  background-color: var(--color-bg-tertiary, #3a3a4a);
 }
 
 .yearly-cell.level-1 {
@@ -88,7 +88,7 @@
 /* Dark mode overrides */
 @media (prefers-color-scheme: dark) {
   .yearly-cell.level-0 {
-    background-color: #161b22;
+    background-color: #3a3a4a;
   }
 }
 

@@ -395,12 +395,34 @@ class ChatService:
         extracted_email = extracted_info.get("email")
         extracted_phone = extracted_info.get("phone")
         name_is_explicit = extracted_info.get("name_is_explicit", False)
+        name_confidence = extracted_info.get("name_confidence", "none")
 
-        # Use immediate name extraction as highest priority (most reliable)
-        if immediate_name and not extracted_name:
-            extracted_name = immediate_name
-            name_is_explicit = True
-            logger.info(f"Using immediate name extraction: '{immediate_name}'")
+        # Use immediate name extraction (bot greeting) as highest priority — most reliable
+        if immediate_name:
+            if not extracted_name:
+                extracted_name = immediate_name
+                name_is_explicit = True
+                logger.info(f"Using immediate name extraction: '{immediate_name}'")
+            elif immediate_name.lower() not in (extracted_name or "").lower():
+                # Bot greeted a different name than LLM extracted — trust the bot
+                logger.warning(
+                    f"Name mismatch: bot greeted '{immediate_name}' but LLM extracted '{extracted_name}'. Using bot greeting."
+                )
+                extracted_name = immediate_name
+                name_is_explicit = True
+
+        # Name-downgrade protection: don't overwrite a multi-word name (first+last)
+        # with a shorter name unless we have high confidence
+        if extracted_name and existing_lead and existing_lead.name:
+            existing_parts = existing_lead.name.strip().split()
+            new_parts = extracted_name.strip().split()
+            if len(existing_parts) >= 2 and len(new_parts) < len(existing_parts) and name_confidence != "high":
+                logger.info(
+                    f"Name protection: keeping '{existing_lead.name}' over '{extracted_name}' "
+                    f"(existing={len(existing_parts)} words, new={len(new_parts)} words, confidence={name_confidence})"
+                )
+                extracted_name = None
+                name_is_explicit = False
 
         # If any contact info was extracted, create or update lead
         if extracted_name or extracted_email or extracted_phone:
@@ -1404,7 +1426,9 @@ class ChatService:
                 conversation_text.append(f"User: {msg.content}")
             elif msg.role == "assistant":
                 conversation_text.append(f"Assistant: {msg.content}")
-        conversation_text.append(f"User: {current_user_message}")
+        # NOTE: Do NOT append current_user_message here — `messages` (refreshed
+        # on line 363) already includes it.  Appending again would duplicate
+        # the last user message in the transcript and confuse the LLM.
 
         # Use last 20 messages for context (covers most conversations fully)
         recent_messages = conversation_text[-20:]
@@ -1440,16 +1464,22 @@ CRITICAL - DO NOT extract these as names (these are NOT the user's personal name
   - "my child", "my kid", "my son", "my daughter", "my kids", "my children"
   - "my husband", "my wife", "my spouse", "my parent", "my mom", "my dad"
   - "my friend", "my partner", "my family"
-- Common words: for, the, and, with, looking, pricing, interested, etc.
-- Verbs: need, want, help, calling, texting, checking
+- Common English words are NEVER names: feel, feeling, spring, pool, water, class, warm, cold, hot, deep, start, stop, begin, end, love, like, enjoy, wish, hope, open, free, busy, ready, able
+- Verbs: need, want, help, calling, texting, checking, enrolling, signing
 - Responses: yes, no, ok, sure, thanks
 - Business terms: hvac, plumbing, dental, swim, lessons
 - Skill levels: beginner, intermediate, advanced
+- If you are NOT CERTAIN the extracted value is a human personal name, return null
+
+NAME CONFIDENCE - How certain are you that this is the user's name?
+- "high": User explicitly stated their name ("I'm X", "my name is X", responded directly to "what's your name?") OR assistant greeted them by name ("Hi Lesbia", "Nice to meet you, John")
+- "medium": Name is inferred indirectly (from email address, mentioned in passing, uncertain context)
+- "none": No name found (return null for name)
 
 EMAIL/PHONE: Extract any email address or phone number the user provided.
 
 Respond with ONLY this JSON (no other text):
-{{"name": null, "email": null, "phone": null}}
+{{"name": null, "email": null, "phone": null, "name_confidence": "none"}}
 
 Replace null with the actual value if found. Use null if not found or uncertain."""
 
@@ -1498,16 +1528,19 @@ Replace null with the actual value if found. Use null if not found or uncertain.
             llm_name = extracted.get("name")
             llm_email = extracted.get("email")
             llm_phone = extracted.get("phone")
+            llm_confidence = extracted.get("name_confidence", "none")
 
-            logger.info(f"LLM extraction: name={llm_name}, email={llm_email}, phone={llm_phone}")
+            logger.info(f"LLM extraction: name={llm_name}, email={llm_email}, phone={llm_phone}, confidence={llm_confidence}")
 
             # Validate and use LLM name
             if llm_name and llm_name != "null" and isinstance(llm_name, str):
                 validated_name = validate_name(llm_name, require_explicit=True)
                 if validated_name:
                     result["name"] = validated_name
-                    result["name_is_explicit"] = True
-                    logger.info(f"Using LLM-extracted name: '{validated_name}'")
+                    # Only mark as explicit (allowing overwrite of existing name) for high confidence
+                    result["name_is_explicit"] = (llm_confidence == "high")
+                    result["name_confidence"] = llm_confidence
+                    logger.info(f"Using LLM-extracted name: '{validated_name}' (confidence={llm_confidence}, explicit={result['name_is_explicit']})")
                 else:
                     logger.info(f"LLM name '{llm_name}' rejected by validation")
 

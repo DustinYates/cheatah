@@ -56,6 +56,24 @@ ACKNOWLEDGEMENT_WORDS = {
     "my husband", "my wife", "my spouse", "my partner", "my boyfriend", "my girlfriend",
     "my mom", "my dad", "my mother", "my father", "my parent", "my parents",
     "my friend", "my sister", "my brother", "my family", "my grandchild", "my grandson", "my granddaughter",
+    # Common English verbs/adjectives/nouns that are NOT person names
+    # (catches LLM hallucinations from conversation context words)
+    "feel", "feeling", "felt", "think", "thought", "know", "knew",
+    "come", "came", "going", "went", "gone", "take", "took",
+    "make", "made", "give", "gave", "tell", "told", "find", "found",
+    "say", "said", "keep", "kept", "put", "run", "ran",
+    "warm", "cold", "hot", "wet", "dry", "deep", "shallow",
+    "water", "pool", "lake", "ocean", "beach",
+    "spring", "summer", "fall", "winter",
+    "morning", "afternoon", "evening", "night", "today", "tomorrow",
+    "class", "lesson", "session", "practice", "training",
+    "love", "enjoy", "prefer", "wish", "hope",
+    "afraid", "scared", "worried", "concerned", "confident",
+    "ready", "able", "free", "busy", "open",
+    "start", "stop", "begin", "end", "done", "finished",
+    "first", "next", "only", "other", "another",
+    "both", "each", "every", "still", "already", "very", "really",
+    "enrolling", "enroll", "enrolled", "signing", "signed",
     # Single letters/very short
     "a", "b", "c", "i", "u", "r", "y", "n",
 }
@@ -105,6 +123,11 @@ NON_SURNAME_SUFFIXES = {
     "comfortable", "interested", "able", "available", "ready", "happy", "excited",
     "nervous", "afraid", "good", "great", "fine", "doing", "feeling", "trying",
     "learning", "starting", "new", "beginner", "intermediate", "advanced", "experienced",
+    # Verbs/adjectives/nouns from conversation context
+    "feel", "think", "know", "love", "like", "want", "need",
+    "warm", "cold", "hot", "deep", "shallow",
+    "water", "pool", "spring", "summer", "fall", "winter",
+    "morning", "afternoon", "today", "tomorrow",
 }
 
 # Patterns that indicate non-name content

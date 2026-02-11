@@ -1364,7 +1364,7 @@ export default function Dashboard() {
                       </div>
                     </td>
                     <td className="col-date">
-                      <span className="lead-date">{formatLeadDate(lead.updated_at || lead.created_at)}</span>
+                      <span className="lead-date">{formatLeadDate(lead.created_at)}</span>
                     </td>
                     <td className="col-details">
                       <div className="details-cell">

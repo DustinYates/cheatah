@@ -176,11 +176,9 @@ export default function Layout() {
                 <li>
                   <NavLink to="/settings/email">Email</NavLink>
                 </li>
-                {selectedTenantId !== 2 && (
-                  <li>
-                    <NavLink to="/settings/calendar">Calendar</NavLink>
-                  </li>
-                )}
+                <li>
+                  <NavLink to="/settings/calendar">Calendar</NavLink>
+                </li>
                 <li>
                   <NavLink to="/settings/sms">SMS Settings</NavLink>
                 </li>

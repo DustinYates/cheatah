@@ -8,7 +8,7 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from sentry_sdk.integrations.httpx import HttpxIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -301,13 +301,42 @@ async def telnyx_diagnostics():
 
 
 @app.api_route("/api/v1/telnyx/tools/get-classes", methods=["GET", "POST"])
-async def get_classes_proxy():
+async def get_classes_proxy(request: Request):
     """Proxy endpoint for Telnyx AI Assistant to fetch Jackrabbit class openings."""
     from fastapi.responses import JSONResponse as JR
+    from sqlalchemy import select, text
     from app.infrastructure.jackrabbit_client import fetch_classes
+    from app.persistence.database import AsyncSessionLocal
+    from app.persistence.models.tenant_customer_service_config import TenantCustomerServiceConfig
 
     try:
-        trimmed = await fetch_classes("545911")
+        body = {}
+        try:
+            body = await request.json()
+        except Exception:
+            pass
+
+        # 1. Explicit org_id takes priority
+        org_id = body.get("org_id") or request.query_params.get("org_id")
+
+        # 2. If no org_id, resolve from tenant_id via DB
+        if not org_id:
+            tenant_id = body.get("tenant_id") or request.query_params.get("tenant_id")
+            if tenant_id:
+                async with AsyncSessionLocal() as session:
+                    await session.execute(text("SET app.current_tenant_id = ''"))
+                    result = await session.execute(
+                        select(TenantCustomerServiceConfig.jackrabbit_org_id)
+                        .where(TenantCustomerServiceConfig.tenant_id == int(tenant_id))
+                    )
+                    row = result.scalar_one_or_none()
+                    if row:
+                        org_id = row
+
+        if not org_id:
+            return JR(status_code=400, content={"error": "org_id or tenant_id required"})
+
+        trimmed = await fetch_classes(str(org_id))
         return JR(content={"classes": trimmed})
     except Exception as e:
         return JR(status_code=500, content={"error": str(e)})

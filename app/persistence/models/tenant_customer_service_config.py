@@ -28,7 +28,8 @@ class TenantCustomerServiceConfig(Base):
     zapier_webhook_url = Column(Text, nullable=True)  # Outbound webhook to Zapier
     zapier_callback_secret = Column(EncryptedString(255), nullable=True)  # Encrypted
 
-    # Jackrabbit API Keys (encrypted at rest)
+    # Jackrabbit Configuration
+    jackrabbit_org_id = Column(String(50), nullable=True)  # Jackrabbit OrgID for class openings API
     jackrabbit_api_key_1 = Column(EncryptedString(255), nullable=True)
     jackrabbit_api_key_2 = Column(EncryptedString(255), nullable=True)
 

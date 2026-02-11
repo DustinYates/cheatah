@@ -66,6 +66,8 @@ def _tenant_to_response(tenant: Tenant) -> AdminTenantResponse:
         created_at=tenant.created_at.isoformat(),
         end_date=tenant.end_date.isoformat() if tenant.end_date else None,
         tier=tenant.tier,
+        call_minutes_limit=tenant.call_minutes_limit,
+        sms_limit=tenant.sms_limit,
     )
 
 
@@ -532,6 +534,10 @@ async def update_tenant(
         update_data["name"] = tenant_update.name
     if "is_active" in fields_set:
         update_data["is_active"] = tenant_update.is_active
+    if "call_minutes_limit" in fields_set:
+        update_data["call_minutes_limit"] = tenant_update.call_minutes_limit
+    if "sms_limit" in fields_set:
+        update_data["sms_limit"] = tenant_update.sms_limit
 
     tenant = await tenant_repo.update(None, tenant_id, **update_data)
     if tenant is None:

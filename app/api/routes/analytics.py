@@ -2067,3 +2067,189 @@ async def get_topic_analytics(
         topics=topics,
         by_channel=by_channel,
     )
+
+
+# ---------------------------------------------------------------------------
+# Billing / Usage Summary
+# ---------------------------------------------------------------------------
+
+
+class BillingUsageDay(BaseModel):
+    """Daily usage breakdown for the billing period."""
+
+    date: str
+    call_minutes: float
+    call_count: int
+    sms_sent: int
+    sms_received: int
+
+
+class BillingUsageResponse(BaseModel):
+    """Billing usage summary for a calendar month."""
+
+    period_start: str
+    period_end: str
+    timezone: str
+    call_minutes_used: float
+    call_minutes_limit: int | None  # null = unlimited
+    call_count: int
+    sms_sent: int
+    sms_received: int
+    sms_total: int
+    sms_limit: int | None  # null = unlimited
+    daily_breakdown: list[BillingUsageDay]
+
+
+@router.get("/billing", response_model=BillingUsageResponse)
+async def get_billing_usage(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    year: Annotated[int | None, Query(ge=2020, le=2099)] = None,
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
+    timezone: Annotated[str | None, Query()] = None,
+) -> BillingUsageResponse:
+    """Get billing usage summary for a calendar month.
+
+    Defaults to the current month if year/month not provided.
+    Returns call minutes and SMS counts vs. plan limits.
+    """
+    import calendar
+    from app.api.analytics_deps import get_tenant_timezone, resolve_timezone
+
+    # Resolve timezone
+    tenant_tz = await get_tenant_timezone(db, tenant_id)
+    effective_tz = resolve_timezone(timezone or tenant_tz)
+
+    # Determine billing period (calendar month)
+    now = datetime.utcnow()
+    bill_year = year or now.year
+    bill_month = month or now.month
+    _, last_day = calendar.monthrange(bill_year, bill_month)
+
+    period_start = date(bill_year, bill_month, 1)
+    period_end = date(bill_year, bill_month, last_day)
+
+    # Convert to UTC datetimes for DB queries
+    import pytz
+    tz = pytz.timezone(effective_tz)
+    start_local = tz.localize(datetime.combine(period_start, time.min))
+    end_local = tz.localize(datetime.combine(period_end, time.max))
+    start_utc = start_local.astimezone(pytz.UTC).replace(tzinfo=None)
+    end_utc = end_local.astimezone(pytz.UTC).replace(tzinfo=None)
+
+    # Get tenant plan limits
+    tenant_result = await db.execute(
+        select(Tenant.call_minutes_limit, Tenant.sms_limit).where(Tenant.id == tenant_id)
+    )
+    tenant_row = tenant_result.one_or_none()
+    call_minutes_limit = tenant_row.call_minutes_limit if tenant_row else None
+    sms_limit = tenant_row.sms_limit if tenant_row else None
+
+    use_timezone = _supports_timezone(db)
+
+    # Query 1: Call minutes and count by day
+    call_timestamp = func.coalesce(Call.started_at, Call.created_at)
+    calls_day = _day_bucket(call_timestamp, effective_tz, use_timezone)
+    duration_seconds = func.coalesce(
+        func.nullif(Call.duration, 0),
+        func.extract("epoch", Call.ended_at - Call.started_at),
+        0,
+    )
+    calls_stmt = (
+        select(
+            calls_day,
+            func.sum(duration_seconds).label("duration_seconds"),
+            func.count(Call.id).label("call_count"),
+        )
+        .where(
+            Call.tenant_id == tenant_id,
+            call_timestamp >= start_utc,
+            call_timestamp <= end_utc,
+        )
+        .group_by(calls_day)
+    )
+    calls_result = await db.execute(calls_stmt)
+
+    call_minutes_by_day: dict[date, float] = {}
+    call_counts_by_day: dict[date, int] = {}
+    total_call_minutes = 0.0
+    total_call_count = 0
+
+    for row in calls_result:
+        day = normalize_date(row.day)
+        if not day:
+            continue
+        minutes = round(float(row.duration_seconds or 0) / 60, 2)
+        count = int(row.call_count or 0)
+        call_minutes_by_day[day] = minutes
+        call_counts_by_day[day] = count
+        total_call_minutes += minutes
+        total_call_count += count
+
+    # Query 2: SMS counts by day and role
+    sms_day = _day_bucket(Message.created_at, effective_tz, use_timezone)
+    sms_stmt = (
+        select(
+            sms_day,
+            Message.role.label("role"),
+            func.count(Message.id).label("count"),
+        )
+        .select_from(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Conversation.tenant_id == tenant_id,
+            Conversation.channel == "sms",
+            Message.role.in_(["user", "assistant"]),
+            Message.created_at >= start_utc,
+            Message.created_at <= end_utc,
+        )
+        .group_by(sms_day, Message.role)
+    )
+    sms_result = await db.execute(sms_stmt)
+
+    sms_sent_by_day: dict[date, int] = {}
+    sms_received_by_day: dict[date, int] = {}
+    total_sms_sent = 0
+    total_sms_received = 0
+
+    for row in sms_result:
+        day = normalize_date(row.day)
+        if not day:
+            continue
+        count = int(row.count or 0)
+        if row.role == "assistant":
+            sms_sent_by_day[day] = count
+            total_sms_sent += count
+        elif row.role == "user":
+            sms_received_by_day[day] = count
+            total_sms_received += count
+
+    # Build daily breakdown
+    daily_breakdown = []
+    current = period_start
+    today = datetime.utcnow().date()
+    while current <= period_end and current <= today:
+        daily_breakdown.append(
+            BillingUsageDay(
+                date=current.isoformat(),
+                call_minutes=call_minutes_by_day.get(current, 0.0),
+                call_count=call_counts_by_day.get(current, 0),
+                sms_sent=sms_sent_by_day.get(current, 0),
+                sms_received=sms_received_by_day.get(current, 0),
+            )
+        )
+        current += timedelta(days=1)
+
+    return BillingUsageResponse(
+        period_start=period_start.isoformat(),
+        period_end=period_end.isoformat(),
+        timezone=effective_tz,
+        call_minutes_used=round(total_call_minutes, 2),
+        call_minutes_limit=call_minutes_limit,
+        call_count=total_call_count,
+        sms_sent=total_sms_sent,
+        sms_received=total_sms_received,
+        sms_total=total_sms_sent + total_sms_received,
+        sms_limit=sms_limit,
+        daily_breakdown=daily_breakdown,
+    )

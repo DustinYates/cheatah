@@ -32,6 +32,8 @@ class Tenant(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     end_date = Column(Date, nullable=True)
     tier = Column(String(50), nullable=True)
+    call_minutes_limit = Column(Integer, nullable=True)  # Monthly call minutes quota (null = unlimited)
+    sms_limit = Column(Integer, nullable=True)  # Monthly outbound SMS quota (null = unlimited)
 
     # Soft delete support
     deleted_at = Column(DateTime, nullable=True)

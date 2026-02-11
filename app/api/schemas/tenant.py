@@ -41,6 +41,8 @@ class AdminTenantUpdate(BaseModel):
     tier: str | None = None
     name: str | None = None
     is_active: bool | None = None
+    call_minutes_limit: int | None = None
+    sms_limit: int | None = None
 
 
 class AdminTenantResponse(BaseModel):
@@ -54,6 +56,8 @@ class AdminTenantResponse(BaseModel):
     created_at: str
     end_date: str | None
     tier: str | None
+    call_minutes_limit: int | None = None
+    sms_limit: int | None = None
 
     class Config:
         from_attributes = True

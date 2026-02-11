@@ -229,6 +229,11 @@ class ApiClient {
     return this.request(`/analytics/topics${query ? `?${query}` : ''}`);
   }
 
+  async getBillingUsage(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/analytics/billing${query ? `?${query}` : ''}`);
+  }
+
   async revealTelephonyCredential(field) {
     return this.request('/admin/telephony/credentials/reveal', {
       method: 'POST',

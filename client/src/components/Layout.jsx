@@ -150,6 +150,9 @@ export default function Layout() {
             )}
           </li>
           <li>
+            <NavLink to="/billing">Billing</NavLink>
+          </li>
+          <li>
             <NavLink to="/support">Support</NavLink>
           </li>
           <li className="nav-section">

@@ -872,6 +872,37 @@ async def telnyx_ai_call_complete(
         )
         logger.info(f"Telnyx assistant_id: {assistant_id}")
 
+        # Extract voice model from webhook payload (for A/B testing with Traffic Distribution)
+        voice_model = (
+            body.get("voice")
+            or body.get("voice_model")
+            or payload.get("voice")
+            or payload.get("voice_model")
+            or payload.get("tts_voice")
+            or metadata.get("voice")
+            or metadata.get("voice_model")
+            or metadata.get("tts_voice")
+            or data.get("voice")
+            or data.get("voice_model")
+            or conversation.get("voice")
+            or conversation.get("voice_model")
+            or ""
+        )
+        # Also check nested voice_settings if present
+        if not voice_model:
+            voice_settings = (
+                payload.get("voice_settings", {})
+                or data.get("voice_settings", {})
+                or conversation.get("voice_settings", {})
+                or {}
+            )
+            if isinstance(voice_settings, dict):
+                voice_model = voice_settings.get("voice") or voice_settings.get("name") or ""
+        if voice_model:
+            logger.info(f"Telnyx voice_model from webhook: {voice_model}")
+        else:
+            logger.info("No voice_model in webhook payload, will try Telnyx API later")
+
         # Extract conversation_id separately for AI Agent recording access
         telnyx_conversation_id = (
             payload.get("conversation_id")
@@ -1178,6 +1209,23 @@ async def telnyx_ai_call_complete(
                 if conversation:
                     conv_id = conversation.get("id")
                     logger.info(f"Found conversation {conv_id}, fetching messages")
+
+                    # Extract voice model from conversation data if not already found
+                    if not voice_model and conv_id:
+                        # Try from conversation object returned by list endpoint
+                        voice_model = (
+                            conversation.get("voice")
+                            or (conversation.get("voice_settings", {}) or {}).get("voice")
+                            or ""
+                        )
+                        if not voice_model:
+                            # Try dedicated API call to get full conversation details
+                            try:
+                                voice_model = await telnyx_ai.get_conversation_voice_model(conv_id) or ""
+                            except Exception as ve:
+                                logger.warning(f"Failed to get voice model from API: {ve}")
+                        if voice_model:
+                            logger.info(f"Extracted voice_model from Telnyx API: {voice_model}")
 
                     # Retry logic for race condition - Telnyx may not have messages ready yet
                     # Increased retries and delay based on production observation
@@ -1872,6 +1920,18 @@ async def telnyx_ai_call_complete(
             if call:
                 logger.info(f"Found existing Call by phone number match: id={call.id}, call_sid={call.call_sid}")
 
+        # If we still don't have voice_model, try Telnyx Conversations API
+        # This is the fallback for Traffic Distribution where voice model isn't in webhook payload
+        if not voice_model and telnyx_conversation_id and settings.telnyx_api_key:
+            try:
+                from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+                telnyx_ai_voice = TelnyxAIService(settings.telnyx_api_key)
+                voice_model = await telnyx_ai_voice.get_conversation_voice_model(telnyx_conversation_id) or ""
+                if voice_model:
+                    logger.info(f"Got voice_model from Telnyx Conversations API: {voice_model}")
+            except Exception as e:
+                logger.warning(f"Failed to get voice_model from Telnyx API: {e}")
+
         if call:
             # Update existing call with any new data
             logger.info(f"Found existing Call record: id={call.id}, updating with insights data")
@@ -1894,6 +1954,11 @@ async def telnyx_ai_call_complete(
             # Detect and set language if not already set
             if not call.language and to_number:
                 call.language = await _detect_language_from_phone(to_number, db)
+            # Set voice variant tracking fields
+            if assistant_id and not call.assistant_id:
+                call.assistant_id = assistant_id
+            if voice_model and not call.voice_model:
+                call.voice_model = voice_model
         else:
             # Detect language from phone number routing
             detected_language = await _detect_language_from_phone(to_number, db) if to_number else None
@@ -1913,6 +1978,8 @@ async def telnyx_ai_call_complete(
                 started_at=actual_start,
                 ended_at=actual_end if actual_end != actual_start else now,
                 language=detected_language,
+                assistant_id=assistant_id or None,
+                voice_model=voice_model or None,
             )
             db.add(call)
             await db.flush()  # Get the call ID

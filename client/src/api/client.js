@@ -248,6 +248,45 @@ class ApiClient {
     return this.request(`/analytics/billing${query ? `?${query}` : ''}`);
   }
 
+  // Voice A/B Test endpoints
+  async getVoiceABTestAnalytics(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/analytics/voice-ab-test${query ? `?${query}` : ''}`);
+  }
+
+  async getVoiceABTests() {
+    return this.request('/voice-ab-tests');
+  }
+
+  async createVoiceABTest(data) {
+    return this.request('/voice-ab-tests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateVoiceABTest(testId, data) {
+    return this.request(`/voice-ab-tests/${testId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteVoiceABTest(testId) {
+    return this.request(`/voice-ab-tests/${testId}`, { method: 'DELETE' });
+  }
+
+  async addVoiceABTestVariant(testId, data) {
+    return this.request(`/voice-ab-tests/${testId}/variants`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteVoiceABTestVariant(testId, variantId) {
+    return this.request(`/voice-ab-tests/${testId}/variants/${variantId}`, { method: 'DELETE' });
+  }
+
   async revealTelephonyCredential(field) {
     return this.request('/admin/telephony/credentials/reveal', {
       method: 'POST',

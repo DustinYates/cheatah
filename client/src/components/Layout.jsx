@@ -146,6 +146,11 @@ export default function Layout() {
                     <NavLink to="/analytics/happiness">Happiness (CHI)</NavLink>
                   </li>
                 )}
+                {user?.is_global_admin && (
+                  <li>
+                    <NavLink to="/analytics/voice-ab">Voice Agent A/B</NavLink>
+                  </li>
+                )}
               </ul>
             )}
           </li>

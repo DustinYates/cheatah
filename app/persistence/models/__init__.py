@@ -27,6 +27,7 @@ from app.persistence.models.zapier_request import ZapierRequest
 from app.persistence.models.jackrabbit_customer import JackrabbitCustomer
 from app.persistence.models.config_snapshot import ConfigSnapshot
 from app.persistence.models.sent_asset import SentAsset
+from app.persistence.models.voice_ab_test import VoiceABTest, VoiceABTestVariant
 from app.persistence.models.sms_burst_incident import SmsBurstIncident
 from app.persistence.models.sms_burst_config import SmsBurstConfig
 from app.persistence.models.communications_health_snapshot import CommunicationsHealthSnapshot
@@ -102,5 +103,8 @@ __all__ = [
     "PostStatus",
     "UserGroup",
     "UserGroupMembership",
+    # Voice A/B testing
+    "VoiceABTest",
+    "VoiceABTestVariant",
 ]
 

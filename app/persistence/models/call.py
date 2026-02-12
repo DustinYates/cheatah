@@ -34,6 +34,10 @@ class Call(Base):
     # Language tracking (detected from phone number routing)
     language = Column(String(20), nullable=True)  # 'english', 'spanish', or None if unknown
 
+    # Voice agent variant tracking (for A/B testing)
+    assistant_id = Column(String(255), nullable=True, index=True)  # Telnyx AI assistant ID
+    voice_model = Column(String(255), nullable=True, index=True)  # Voice model used (e.g., "ElevenLabsJessica")
+
     # Handoff tracking (Phase 2)
     handoff_attempted = Column(Boolean, default=False, nullable=False)
     handoff_number = Column(String(50), nullable=True)  # Number transferred to

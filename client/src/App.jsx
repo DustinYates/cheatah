@@ -21,6 +21,7 @@ import SavingsAnalytics from './pages/SavingsAnalytics';
 import CommunicationsHealth from './pages/CommunicationsHealth';
 import CustomerHappiness from './pages/CustomerHappiness';
 import TopicAnalytics from './pages/TopicAnalytics';
+import VoiceABTestAnalytics from './pages/VoiceABTestAnalytics';
 import Onboarding from './pages/Onboarding';
 import BusinessProfile from './pages/BusinessProfile';
 import WidgetSettings from './pages/WidgetSettings';
@@ -79,6 +80,7 @@ function App() {
             <Route path="analytics/health" element={<CommunicationsHealth />} />
             <Route path="analytics/happiness" element={<CustomerHappiness />} />
             <Route path="analytics/topics" element={<TopicAnalytics />} />
+            <Route path="analytics/voice-ab" element={<VoiceABTestAnalytics />} />
             <Route path="analytics/plots" element={<Navigate to="/analytics/usage" replace />} />
 
             {/* Settings routes */}

@@ -247,6 +247,74 @@ class TelnyxAIService:
             logger.warning(f"Failed to find conversation by call_control_id: {e}")
             return None
 
+    async def get_conversation_voice_model(
+        self, conversation_id: str
+    ) -> str | None:
+        """Extract the voice model used for a conversation from Telnyx API.
+
+        Args:
+            conversation_id: The Telnyx AI conversation ID
+
+        Returns:
+            Voice model name string or None if not found
+        """
+        try:
+            async with self._get_client() as client:
+                logger.info(f"[TELNYX-API] Fetching voice model for conversation: {conversation_id}")
+                response = await client.get(f"/ai/conversations/{conversation_id}")
+                response.raise_for_status()
+                data = response.json()
+                conv_data = data.get("data", {})
+
+                # Log all keys for discovery (will help identify where voice info lives)
+                logger.info(f"[TELNYX-API] Conversation keys for voice model discovery: {list(conv_data.keys())}")
+
+                # Try multiple possible locations for voice model info
+                # 1. Direct voice field
+                voice = conv_data.get("voice")
+                if voice:
+                    logger.info(f"[TELNYX-API] Found voice from conv.voice: {voice}")
+                    return str(voice)
+
+                # 2. Voice settings object
+                voice_settings = conv_data.get("voice_settings", {})
+                if voice_settings:
+                    logger.info(f"[TELNYX-API] voice_settings: {voice_settings}")
+                    voice_name = voice_settings.get("voice") or voice_settings.get("name") or voice_settings.get("model")
+                    if voice_name:
+                        return str(voice_name)
+
+                # 3. Config/settings nested objects
+                config = conv_data.get("config", conv_data.get("settings", {}))
+                if config:
+                    voice_name = config.get("voice") or config.get("voice_model") or config.get("tts_voice")
+                    if voice_name:
+                        logger.info(f"[TELNYX-API] Found voice from config: {voice_name}")
+                        return str(voice_name)
+
+                # 4. Metadata
+                metadata = conv_data.get("metadata", {}) or {}
+                voice_name = metadata.get("voice") or metadata.get("voice_model") or metadata.get("tts_voice")
+                if voice_name:
+                    logger.info(f"[TELNYX-API] Found voice from metadata: {voice_name}")
+                    return str(voice_name)
+
+                # 5. Model field (might contain voice info for voice conversations)
+                model = conv_data.get("model")
+                if model and "tts" in str(model).lower():
+                    logger.info(f"[TELNYX-API] Found voice from model: {model}")
+                    return str(model)
+
+                logger.info(f"[TELNYX-API] No voice model found in conversation data. Full data sample: {str(conv_data)[:500]}")
+                return None
+
+        except httpx.HTTPError as e:
+            logger.warning(f"[TELNYX-API] Failed to fetch conversation voice model: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"[TELNYX-API] Unexpected error getting voice model: {type(e).__name__}: {e}")
+            return None
+
     async def get_conversation_messages(
         self, conversation_id: str
     ) -> list[dict[str, Any]]:

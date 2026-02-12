@@ -1256,7 +1256,7 @@ export default function Dashboard() {
                   onClick={handleBulkDelete}
                   disabled={bulkDeleteLoading}
                 >
-                  {bulkDeleteLoading ? 'Deleting...' : `Delete Selected (${selectedLeadIds.size})`}
+                  {bulkDeleteLoading ? 'Deleting...' : 'DELETE ALL'}
                 </button>
               )}
               {(leadsSearch || sourceFilter !== 'all') && (

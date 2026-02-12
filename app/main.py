@@ -320,14 +320,26 @@ async def get_classes_proxy(request: Request):
         org_id = body.get("org_id") or request.query_params.get("org_id")
 
         # 2. If no org_id, resolve from tenant_id via DB
+        #    NOTE: ?tenant_id=X is the tenant_number (admin-assigned), which may
+        #    differ from tenants.id (DB PK). Resolve via tenants table first.
         if not org_id:
-            tenant_id = body.get("tenant_id") or request.query_params.get("tenant_id")
-            if tenant_id:
+            raw_tid = body.get("tenant_id") or request.query_params.get("tenant_id")
+            if raw_tid:
                 async with AsyncSessionLocal() as session:
                     await session.execute(text("SET app.current_tenant_id = ''"))
+                    # Resolve tenant_number -> actual tenants.id
+                    from app.persistence.models.tenant import Tenant
+                    tid_int = int(raw_tid)
+                    t_result = await session.execute(
+                        select(Tenant.id).where(Tenant.tenant_number == str(tid_int))
+                    )
+                    resolved_id = t_result.scalar_one_or_none()
+                    actual_tid = resolved_id if resolved_id is not None else tid_int
+                    if resolved_id and resolved_id != tid_int:
+                        logger.info(f"[get-classes] Resolved tenant_number={tid_int} -> tenants.id={resolved_id}")
                     result = await session.execute(
                         select(TenantCustomerServiceConfig.jackrabbit_org_id)
-                        .where(TenantCustomerServiceConfig.tenant_id == int(tenant_id))
+                        .where(TenantCustomerServiceConfig.tenant_id == actual_tid)
                     )
                     row = result.scalar_one_or_none()
                     if row:

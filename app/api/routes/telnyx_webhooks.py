@@ -3014,8 +3014,19 @@ async def send_registration_link_tool(
         # Look up the caller's phone from our Call table using call_control_id
         # This is more reliable than expecting the AI to pass the phone number
         caller_phone = None
-        tenant_id = None
         to_number = None
+
+        # Step 0: Try tenant_id from query param (set in Telnyx tool URL)
+        #    NOTE: ?tenant_id=X is the tenant_number, which may differ from tenants.id
+        tenant_id = None
+        raw_tid = request.query_params.get("tenant_id") or body.get("tenant_id")
+        if raw_tid:
+            try:
+                param_value = int(raw_tid)
+                tenant_id = await _resolve_tenant_param_to_db_id(param_value, db)
+                print(f"[TOOL DEBUG] tenant_id from param: raw={param_value}, resolved={tenant_id}")
+            except (ValueError, TypeError):
+                pass
 
         if call_control_id:
             from app.persistence.models.call import Call
@@ -3025,7 +3036,8 @@ async def send_registration_link_tool(
 
             if call_record:
                 caller_phone = call_record.from_number
-                tenant_id = call_record.tenant_id
+                if not tenant_id:
+                    tenant_id = call_record.tenant_id
                 to_number = call_record.to_number
                 print(f"[TOOL DEBUG] Found call record - from={caller_phone}, tenant={tenant_id}")
             else:
@@ -3096,15 +3108,16 @@ async def send_registration_link_tool(
             tenant_id = 3
             logger.warning(f"[TOOL] Could not determine tenant, defaulting to {tenant_id}")
 
-        # Extract location and level from body
+        # Extract location, level, and class_id from body
         location = body.get("location", "")
         level = body.get("level", "")
+        class_id = body.get("class_id")
 
         # Map location name to location code
         location_code = _map_location_to_code(location)
 
         if not location_code:
-            logger.warning(f"[TOOL] Could not map location '{location}' to code")
+            logger.warning(f"[TOOL] Could not map location '{location}' to code for tenant {tenant_id}")
             return JSONResponse(content={
                 "status": "error",
                 "message": f"Unknown location: {location}"
@@ -3117,7 +3130,12 @@ async def send_registration_link_tool(
         level_name = _normalize_level_name(level) if level else None
 
         try:
-            registration_url = build_registration_url(location_code, level_name)
+            registration_url = build_registration_url(
+                location_code,
+                level_name,
+                tenant_id=tenant_id,
+                class_id=str(class_id) if class_id else None,
+            )
             logger.info(f"[TOOL] Built registration URL: {registration_url}")
         except Exception as e:
             logger.error(f"[TOOL] Failed to build URL: {e}")
@@ -3220,11 +3238,13 @@ async def send_link_tool(
         tenant_id = None
 
         # 1) Explicit tenant_id from query param or body (set in Telnyx tool URL)
+        #    NOTE: ?tenant_id=X is the tenant_number, which may differ from tenants.id
         raw_tid = params.get("tenant_id") or body.get("tenant_id")
         if raw_tid:
             try:
-                tenant_id = int(raw_tid)
-                logger.info(f"[TOOL] send_link: tenant {tenant_id} from request param")
+                param_value = int(raw_tid)
+                tenant_id = await _resolve_tenant_param_to_db_id(param_value, db)
+                logger.info(f"[TOOL] send_link: tenant {tenant_id} from request param (raw={param_value})")
             except (ValueError, TypeError):
                 pass
 
@@ -3418,6 +3438,31 @@ async def send_link_tool(
 
 
 
+async def _resolve_tenant_param_to_db_id(param_value: int, db: AsyncSession) -> int:
+    """Resolve a ?tenant_id URL param to the actual tenants.id (DB primary key).
+
+    Telnyx tool URLs use ?tenant_id=X where X is the tenant_number (admin-assigned).
+    For legacy tenants 1-3, tenant_number matches tenants.id.
+    For newer tenants (e.g. tenant 4 has tenants.id=237), they differ.
+
+    Returns the resolved tenants.id, or the original param_value as fallback.
+    """
+    from app.persistence.models.tenant import Tenant
+
+    result = await db.execute(
+        select(Tenant.id).where(Tenant.tenant_number == str(param_value))
+    )
+    row = result.scalar_one_or_none()
+    if row is not None:
+        if row != param_value:
+            logger.info(
+                f"[TOOL] Resolved tenant_number={param_value} -> tenants.id={row}"
+            )
+        return row
+    # Fallback: param might already be the actual tenants.id
+    return param_value
+
+
 async def _resolve_tool_tenant(
     params: dict, body: dict, request: Request, db: AsyncSession
 ) -> int | None:
@@ -3429,11 +3474,13 @@ async def _resolve_tool_tenant(
     3. Telnyx API fallback -> phone number -> tenant lookup
     """
     # 1) Explicit tenant_id from query param or body
+    #    NOTE: ?tenant_id=X is the tenant_number, which may differ from tenants.id
     raw_tid = params.get("tenant_id") or body.get("tenant_id")
     if raw_tid:
         try:
-            tenant_id = int(raw_tid)
-            logger.info(f"[TOOL] Tenant {tenant_id} from request param")
+            param_value = int(raw_tid)
+            tenant_id = await _resolve_tenant_param_to_db_id(param_value, db)
+            logger.info(f"[TOOL] Tenant {tenant_id} from request param (raw={param_value})")
             return tenant_id
         except (ValueError, TypeError):
             pass
@@ -3947,6 +3994,7 @@ def _map_location_to_code(location: str) -> str | None:
 
     # Direct mappings
     location_map = {
+        # --- Cypress-Spring (Tenant 3) ---
         # Cypress variations
         "cypress": "LAFCypress",
         "la fitness cypress": "LAFCypress",
@@ -3962,6 +4010,33 @@ def _map_location_to_code(location: str) -> str | None:
         "24 hour spring": "24Spring",
         "24spring": "24Spring",
         "24hr spring": "24Spring",
+        # --- Atlanta (Tenant 4) ---
+        # L.A. Fitness Buckhead
+        "buckhead": "LABUCK",
+        "la fitness buckhead": "LABUCK",
+        "l.a. fitness buckhead": "LABUCK",
+        "l. a. fitness buckhead": "LABUCK",
+        "labuck": "LABUCK",
+        "lenox": "LABUCK",
+        # Onelife Fitness Dunwoody / Perimeter
+        "dunwoody": "OLDUN",
+        "onelife fitness dunwoody": "OLDUN",
+        "onelife dunwoody": "OLDUN",
+        "onelife fitness": "OLDUN",
+        "onelife": "OLDUN",
+        "perimeter": "OLDUN",
+        "perimeter sports club": "OLDUN",
+        "oldun": "OLDUN",
+        # Roswell Adult Aquatics Center
+        "roswell": "ROSAAC",
+        "roswell adult aquatics center": "ROSAAC",
+        "roswell aquatics": "ROSAAC",
+        "rosaac": "ROSAAC",
+        # 4565 Ashford Dunwoody Rd
+        "ashford dunwoody": "HISDUN",
+        "ashford": "HISDUN",
+        "4565 ashford dunwoody": "HISDUN",
+        "hisdun": "HISDUN",
     }
 
     return location_map.get(location_lower)

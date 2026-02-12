@@ -27,6 +27,7 @@ class ConversationContext:
 
 # Map location names (as mentioned in conversation) to location codes
 LOCATION_NAME_TO_CODE = {
+    # --- Cypress-Spring (Tenant 3) ---
     # LA Fitness Langham Creek
     "la fitness langham creek": "LALANG",
     "langham creek": "LALANG",
@@ -44,6 +45,33 @@ LOCATION_NAME_TO_CODE = {
     "spring": "24Spring",
     "24 hr fitness in spring": "24Spring",
     "24 hr spring": "24Spring",
+    # --- Atlanta (Tenant 4) ---
+    # L.A. Fitness Buckhead
+    "la fitness buckhead": "LABUCK",
+    "l.a. fitness buckhead": "LABUCK",
+    "l. a. fitness buckhead": "LABUCK",
+    "buckhead": "LABUCK",
+    "labuck": "LABUCK",
+    "lenox": "LABUCK",
+    # Onelife Fitness Dunwoody / Perimeter
+    "onelife fitness dunwoody": "OLDUN",
+    "onelife dunwoody": "OLDUN",
+    "onelife fitness": "OLDUN",
+    "onelife": "OLDUN",
+    "perimeter sports club": "OLDUN",
+    "perimeter": "OLDUN",
+    "dunwoody": "OLDUN",
+    "oldun": "OLDUN",
+    # Roswell Adult Aquatics Center
+    "roswell adult aquatics center": "ROSAAC",
+    "roswell aquatics": "ROSAAC",
+    "roswell": "ROSAAC",
+    "rosaac": "ROSAAC",
+    # 4565 Ashford Dunwoody Rd
+    "4565 ashford dunwoody": "HISDUN",
+    "ashford dunwoody": "HISDUN",
+    "ashford": "HISDUN",
+    "hisdun": "HISDUN",
 }
 
 # Map level names (as mentioned in conversation) to standard level names
@@ -185,8 +213,8 @@ def extract_url_from_ai_response(ai_response: str) -> str | None:
     Returns:
         The extracted URL or None if not found
     """
-    # Pattern to match BSS registration URLs
-    pattern = r'https://britishswimschool\.com/cypress-spring/register/\?[^\s\)\]\"\'<>]+'
+    # Pattern to match BSS registration URLs (any franchise slug)
+    pattern = r'https://britishswimschool\.com/[a-z0-9-]+/register/\?[^\s\)\]\"\'<>]+'
     match = re.search(pattern, ai_response)
     if match:
         url = match.group(0)

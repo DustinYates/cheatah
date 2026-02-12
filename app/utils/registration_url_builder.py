@@ -2,15 +2,39 @@
 
 This module provides a single source of truth for building registration URLs
 with validated location codes and pre-encoded type values.
+Supports multiple BSS franchises (Cypress-Spring, Atlanta, etc.).
 """
 
 from typing import Literal
 
-# Exact base URL - hardcoded, do not modify
-BASE_REGISTRATION_URL = "https://britishswimschool.com/cypress-spring/register/"
+# --- Per-franchise configuration ---
+FRANCHISE_CONFIG: dict[str, dict] = {
+    "cypress-spring": {
+        "base_url": "https://britishswimschool.com/cypress-spring/register/",
+        "location_codes": frozenset({"LALANG", "LAFCypress", "24Spring"}),
+    },
+    "atlanta": {
+        "base_url": "https://britishswimschool.com/atlanta/register/",
+        "location_codes": frozenset({"LABUCK", "OLDUN", "ROSAAC", "HISDUN"}),
+    },
+}
 
-# Allowed location codes - only these three are valid
-ALLOWED_LOCATION_CODES = frozenset({"LALANG", "LAFCypress", "24Spring"})
+# Map tenant_id → franchise slug
+# Includes both tenant_number and tenants.id (DB PK) for robustness.
+# For tenants 1-3, tenant_number == tenants.id. Tenant 4 has tenants.id=237.
+TENANT_TO_FRANCHISE: dict[int, str] = {
+    3: "cypress-spring",
+    4: "atlanta",       # tenant_number
+    237: "atlanta",     # tenants.id (DB PK)
+}
+
+# Legacy constants (kept for backward-compat with imports elsewhere)
+BASE_REGISTRATION_URL = FRANCHISE_CONFIG["cypress-spring"]["base_url"]
+
+# Union of ALL franchise location codes
+ALLOWED_LOCATION_CODES = frozenset().union(
+    *(cfg["location_codes"] for cfg in FRANCHISE_CONFIG.values())
+)
 
 # Valid type codes - PRE-ENCODED (spaces already as %20)
 # These are the FINAL URL tokens - do NOT encode them again
@@ -85,9 +109,20 @@ class InvalidTypeCodeError(ValueError):
     pass
 
 
+def _get_franchise_for_location(location_code: str) -> dict | None:
+    """Find the franchise config that owns a given location code."""
+    for cfg in FRANCHISE_CONFIG.values():
+        if location_code in cfg["location_codes"]:
+            return cfg
+    return None
+
+
 def build_registration_url(
     location_code: str,
     type_code: str | None = None,
+    *,
+    tenant_id: int | None = None,
+    class_id: str | None = None,
 ) -> str:
     """Build a valid registration URL with proper encoding.
 
@@ -95,29 +130,18 @@ def build_registration_url(
     double-encoding issues. The type codes already contain %20 for spaces.
 
     Args:
-        location_code: One of LALANG, LAFCypress, 24Spring
-        type_code: Optional swim level type. Can be either:
-            - A human-readable name like "Adult Level 3"
-            - A pre-encoded value like "Adult%20Level%203"
-            If None, only the location parameter is included.
+        location_code: A valid location code (e.g. LALANG, LABUCK)
+        type_code: Optional swim level type (human-readable or pre-encoded).
+        tenant_id: Optional tenant ID to select the correct franchise base URL.
+            If None, auto-detects from location_code.
+        class_id: Optional Jackrabbit class ID to append to URL.
 
     Returns:
-        A complete, valid registration URL like:
-        https://britishswimschool.com/cypress-spring/register/?loc=24Spring&type=Adult%20Level%203
+        A complete, valid registration URL.
 
     Raises:
-        InvalidLocationCodeError: If location_code is not in ALLOWED_LOCATION_CODES
+        InvalidLocationCodeError: If location_code is not recognized
         InvalidTypeCodeError: If type_code is provided but not recognized
-
-    Examples:
-        >>> build_registration_url("LAFCypress")
-        'https://britishswimschool.com/cypress-spring/register/?loc=LAFCypress'
-
-        >>> build_registration_url("24Spring", "Adult Level 3")
-        'https://britishswimschool.com/cypress-spring/register/?loc=24Spring&type=Adult%20Level%203'
-
-        >>> build_registration_url("LALANG", "Tadpole")
-        'https://britishswimschool.com/cypress-spring/register/?loc=LALANG&type=Tadpole'
     """
     # Validate location code
     if location_code not in ALLOWED_LOCATION_CODES:
@@ -126,8 +150,19 @@ def build_registration_url(
             f"Must be one of: {', '.join(sorted(ALLOWED_LOCATION_CODES))}"
         )
 
+    # Determine base URL from tenant or auto-detect from location code
+    base_url = None
+    if tenant_id is not None:
+        franchise_slug = TENANT_TO_FRANCHISE.get(tenant_id)
+        if franchise_slug:
+            base_url = FRANCHISE_CONFIG[franchise_slug]["base_url"]
+
+    if base_url is None:
+        cfg = _get_franchise_for_location(location_code)
+        base_url = cfg["base_url"] if cfg else BASE_REGISTRATION_URL
+
     # Build URL with location
-    url = f"{BASE_REGISTRATION_URL}?loc={location_code}"
+    url = f"{base_url}?loc={location_code}"
 
     # Add type if provided
     if type_code is not None:
@@ -146,6 +181,10 @@ def build_registration_url(
 
         # Append type parameter - DO NOT encode again, it's already encoded
         url = f"{url}&type={encoded_type}"
+
+    # Add class_id if provided
+    if class_id is not None:
+        url = f"{url}&class_id={class_id}"
 
     return url
 

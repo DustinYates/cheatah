@@ -117,6 +117,20 @@ class ApiClient {
     return this.request('/auth/me');
   }
 
+  async forgotPassword(email) {
+    return this.request('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async resetPassword(token, newPassword) {
+    return this.request('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
+  }
+
   setSelectedTenant(tenantId) {
     if (tenantId) {
       localStorage.setItem('selectedTenantId', tenantId.toString());

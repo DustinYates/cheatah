@@ -290,9 +290,9 @@ async def forgot_password(
 
         try:
             from app.infrastructure.gmail_client import GmailClient
-            from app.persistence.repositories.email_repository import EmailConfigRepository
+            from app.persistence.repositories.email_repository import TenantEmailConfigRepository
 
-            email_repo = EmailConfigRepository(db)
+            email_repo = TenantEmailConfigRepository(db)
             # Use tenant 1 (ConvoPro) Gmail OAuth to send system emails
             email_config = await email_repo.get_by_tenant_id(1)
 

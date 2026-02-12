@@ -21,8 +21,8 @@ engine = create_async_engine(
     async_database_url,
     echo=False,
     future=True,
-    pool_size=1,  # Minimal pool for Supabase session mode limits
-    max_overflow=1,  # Allow 1 extra connection under load (2 total max per instance)
+    pool_size=3,  # Small pool for Supabase session mode limits
+    max_overflow=2,  # Allow 2 extra connections under load (5 total max per instance)
     pool_recycle=180,  # Recycle connections every 3 minutes (faster turnover)
     pool_pre_ping=True,  # Verify connections are alive
     pool_timeout=10,  # Fail fast if no connection available in 10 seconds

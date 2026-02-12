@@ -1,7 +1,7 @@
 """User repository."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.persistence.models.tenant import User
 from app.persistence.repositories.base import BaseRepository
@@ -16,7 +16,7 @@ class UserRepository(BaseRepository[User]):
 
     async def get_by_email(self, email: str) -> User | None:
         """Get user by email."""
-        stmt = select(User).where(User.email == email)
+        stmt = select(User).where(func.lower(User.email) == email.lower())
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

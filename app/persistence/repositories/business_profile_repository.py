@@ -56,8 +56,7 @@ class BusinessProfileRepository(BaseRepository[TenantBusinessProfile]):
         if email is not None:
             profile.email = email
         
-        required_fields = [profile.business_name, profile.website_url, profile.phone_number, profile.email]
-        profile.profile_complete = all(f and len(str(f).strip()) > 0 for f in required_fields)
+        profile.profile_complete = True
 
         await self.session.commit()
         await self.session.refresh(profile)

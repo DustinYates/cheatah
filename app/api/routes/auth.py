@@ -36,13 +36,15 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     """Login response."""
-    
+
     access_token: str
     token_type: str = "bearer"
     tenant_id: int | None = None
     role: str
     email: str
     is_global_admin: bool = False
+    must_change_password: bool = False
+    password_change_token: str | None = None
 
 
 class UserInfoResponse(BaseModel):
@@ -53,6 +55,7 @@ class UserInfoResponse(BaseModel):
     role: str
     tenant_id: int | None = None
     is_global_admin: bool = False
+    must_change_password: bool = False
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -131,6 +134,15 @@ async def login(
     # Create access token (sub must be string for JWT compatibility)
     access_token = create_access_token(data={"sub": str(user.id)})
 
+    # If user must change password, generate a reset token so frontend
+    # can redirect to the existing reset-password page
+    password_change_token = None
+    if user.must_change_password:
+        password_change_token = create_access_token(
+            data={"sub": str(user.id), "type": "password_reset"},
+            expires_delta=timedelta(minutes=30),
+        )
+
     # Log successful login
     await audit.log_login(user=user, request=request, success=True)
 
@@ -140,6 +152,8 @@ async def login(
         role=user.role,
         email=user.email,
         is_global_admin=is_global_admin(user),
+        must_change_password=user.must_change_password,
+        password_change_token=password_change_token,
     )
 
 
@@ -241,6 +255,7 @@ async def get_current_user_info(
         role=current_user.role,
         tenant_id=current_user.tenant_id,
         is_global_admin=is_global_admin(current_user),
+        must_change_password=current_user.must_change_password,
     )
 
 
@@ -360,6 +375,7 @@ async def reset_password(
         )
 
     user.hashed_password = hash_password(data.new_password)
+    user.must_change_password = False
     await db.commit()
 
     return {"message": "Password has been reset successfully. You can now sign in."}

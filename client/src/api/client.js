@@ -101,9 +101,10 @@ class ApiClient {
         role: response.role,
         email: response.email,
         is_global_admin: response.is_global_admin,
+        must_change_password: response.must_change_password,
       }));
     }
-    
+
     return response;
   }
 

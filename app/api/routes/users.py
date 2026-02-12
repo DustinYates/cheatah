@@ -61,6 +61,7 @@ async def create_user(
         email=user_data.email,
         hashed_password=hashed,
         role=user_data.role,
+        must_change_password=True,
     )
     
     return UserResponse(

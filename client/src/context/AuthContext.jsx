@@ -11,6 +11,7 @@ export function AuthProvider({ children }) {
   const [profileComplete, setProfileComplete] = useState(null);
   const [tenants, setTenants] = useState([]);
   const [selectedTenantId, setSelectedTenantId] = useState(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   const loadProfile = async () => {
     try {
@@ -55,7 +56,8 @@ export function AuthProvider({ children }) {
           }));
           
           setUser(userInfo);
-          
+          setMustChangePassword(userData.must_change_password || false);
+
           // Restore selected tenant for global admins
           if (userData.is_global_admin) {
             const savedTenant = api.getSelectedTenant();
@@ -98,7 +100,8 @@ export function AuthProvider({ children }) {
       is_global_admin: data.is_global_admin,
     };
     setUser(userInfo);
-    
+    setMustChangePassword(data.must_change_password || false);
+
     // If global admin, fetch tenants list and skip profile check
     if (data.is_global_admin) {
       setProfileComplete(true);
@@ -112,6 +115,8 @@ export function AuthProvider({ children }) {
       // Load profile for tenant users
       await loadProfile();
     }
+
+    return data;
   };
 
   const logout = () => {
@@ -161,6 +166,7 @@ export function AuthProvider({ children }) {
       selectedTenantId,
       selectTenant,
       effectiveTenantId,
+      mustChangePassword,
     }}>
       {children}
     </AuthContext.Provider>

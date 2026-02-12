@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, JSON, String, Text, text
 from sqlalchemy.orm import relationship
 
 from app.persistence.database import Base
@@ -165,6 +165,7 @@ class User(Base):
     role = Column(String(50), nullable=False, default="user")  # admin, tenant_admin, user
     contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    must_change_password = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     # Relationships
     # Note: foreign_keys specified due to Tenant.deleted_by also referencing users table

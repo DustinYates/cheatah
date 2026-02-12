@@ -18,8 +18,12 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await login(email, password);
-      navigate('/');
+      const data = await login(email, password);
+      if (data.must_change_password && data.password_change_token) {
+        navigate(`/reset-password?token=${data.password_change_token}`);
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {

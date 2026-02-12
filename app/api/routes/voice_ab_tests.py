@@ -109,7 +109,7 @@ async def create_test(
         tenant_id=tenant_id,
         name=body.name,
         status="active",
-        started_at=datetime.fromisoformat(body.started_at),
+        started_at=datetime.fromisoformat(body.started_at).replace(tzinfo=None),
     )
     db.add(test)
     await db.flush()
@@ -206,7 +206,7 @@ async def update_test(
             raise HTTPException(status_code=400, detail="Invalid status")
         test.status = body.status
     if body.ended_at is not None:
-        test.ended_at = datetime.fromisoformat(body.ended_at)
+        test.ended_at = datetime.fromisoformat(body.ended_at).replace(tzinfo=None)
 
     test.updated_at = datetime.utcnow()
     await db.commit()

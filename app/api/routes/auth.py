@@ -289,13 +289,33 @@ async def forgot_password(
         """
 
         try:
-            from app.infrastructure.sendgrid_client import get_sendgrid_client
-            sg = get_sendgrid_client()
-            await sg.send_email(
-                to_email=user.email,
-                subject="Reset your ConvoPro password",
-                html_content=html_content,
-            )
+            from app.infrastructure.gmail_client import GmailClient
+            from app.persistence.repositories.email_repository import EmailConfigRepository
+
+            email_repo = EmailConfigRepository(db)
+            # Use tenant 1 (ConvoPro) Gmail OAuth to send system emails
+            email_config = await email_repo.get_by_tenant_id(1)
+
+            if email_config and email_config.gmail_refresh_token:
+                gmail = GmailClient(
+                    refresh_token=email_config.gmail_refresh_token,
+                    access_token=email_config.gmail_access_token,
+                )
+                plain_text = (
+                    f"Reset your ConvoPro password\n\n"
+                    f"We received a request to reset your password. "
+                    f"Click the link below to set a new one:\n\n"
+                    f"{reset_url}\n\n"
+                    f"This link expires in 15 minutes. "
+                    f"If you didn't request this, you can ignore this email."
+                )
+                gmail.send_message(
+                    to=user.email,
+                    subject="Reset your ConvoPro password",
+                    body=plain_text,
+                )
+            else:
+                logger.error("No Gmail OAuth config found for tenant 1 - cannot send reset email")
         except Exception:
             logger.exception(f"Failed to send password reset email to {user.email}")
 

@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import String, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.persistence.models.notification import Notification, NotificationPriority, NotificationType
@@ -430,7 +430,7 @@ class NotificationService:
                 select(Notification).where(
                     Notification.tenant_id == tenant_id,
                     Notification.notification_type == NotificationType.HIGH_INTENT_LEAD,
-                    Notification.extra_data["conversation_id"].astext == str(conversation_id),
+                    cast(Notification.extra_data["conversation_id"], String) == str(conversation_id),
                 ).limit(1)
             )
             if existing.scalar_one_or_none():

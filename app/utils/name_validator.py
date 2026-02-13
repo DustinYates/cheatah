@@ -74,6 +74,16 @@ ACKNOWLEDGEMENT_WORDS = {
     "first", "next", "only", "other", "another",
     "both", "each", "every", "still", "already", "very", "really",
     "enrolling", "enroll", "enrolled", "signing", "signed",
+    # Days of the week (answers to "which day?" NOT names)
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri", "sat", "sun",
+    # Months (answers to "when?" NOT names)
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+    # Time-related words (scheduling context, not names)
+    "weekly", "daily", "monthly", "weekday", "weekend",
+    "hour", "minute", "noon", "midnight",
     # Single letters/very short
     "a", "b", "c", "i", "u", "r", "y", "n",
 }
@@ -128,6 +138,12 @@ NON_SURNAME_SUFFIXES = {
     "warm", "cold", "hot", "deep", "shallow",
     "water", "pool", "spring", "summer", "fall", "winter",
     "morning", "afternoon", "today", "tomorrow",
+    # Days of the week (scheduling answers, not surnames)
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri", "sat", "sun",
+    # Months
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
 }
 
 # Patterns that indicate non-name content

@@ -61,7 +61,7 @@ _LOWERCASE_ENDING_PATTERN = re.compile(r"[a-z]$")
 # This is a reliable fallback since the bot only greets by name when it recognized the name
 # Includes common greeting patterns: "Hi X", "Hello X", "Hey X", "Nice to meet you, X"
 _BOT_GREETING_NAME_PATTERN = re.compile(
-    r"(?:nice to meet you|great to (?:meet you|have you (?:here|with us))|(?:good |great |so glad )to have you here|hello|hey|hi)[,!]?\s+([A-Z][a-z]+)",
+    r"(?:nice to meet you|great to (?:meet you|have you (?:here|with us))|(?:good |great |so glad )to have you here|hello|hey|hi|I can help with that)[,!]?\s+([A-Z][a-z]+)",
     re.IGNORECASE
 )
 # Patterns for chat-to-SMS handoff detection
@@ -434,6 +434,17 @@ class ChatService:
         extracted_phone = extracted_info.get("phone")
         name_is_explicit = extracted_info.get("name_is_explicit", False)
         name_confidence = extracted_info.get("name_confidence", "none")
+
+        # CONFIDENCE GATE: Only accept names with HIGH confidence from LLM.
+        # If the LLM isn't certain this is the user's personal name (e.g., it might
+        # be a day of week, location, or other conversational word), don't assign it.
+        # This prevents false positives like "Saturday", "Spring", "Cypress" etc.
+        if extracted_name and name_confidence != "high":
+            logger.info(
+                f"Name '{extracted_name}' dropped — confidence '{name_confidence}' is not high enough to assign"
+            )
+            extracted_name = None
+            name_is_explicit = False
 
         # Use immediate name extraction (bot greeting) as highest priority — most reliable
         if immediate_name:
@@ -1705,11 +1716,16 @@ CRITICAL - DO NOT extract these as names (these are NOT the user's personal name
   - "my child", "my kid", "my son", "my daughter", "my kids", "my children"
   - "my husband", "my wife", "my spouse", "my parent", "my mom", "my dad"
   - "my friend", "my partner", "my family"
+- Days of the week are NEVER names: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday
+- Months are NEVER names (even though some look like names): January, February, March, April, May, June, July, August, September, October, November, December
+- Time/schedule words are NEVER names: morning, afternoon, evening, today, tomorrow, weekly, daily, weekend, weekday, noon
+- Location words are NEVER names: answers to "which location?" like "24hr", "cypress", "spring", etc.
 - Common English words are NEVER names: feel, feeling, spring, pool, water, class, warm, cold, hot, deep, start, stop, begin, end, love, like, enjoy, wish, hope, open, free, busy, ready, able
 - Verbs: need, want, help, calling, texting, checking, enrolling, signing
 - Responses: yes, no, ok, sure, thanks
 - Business terms: hvac, plumbing, dental, swim, lessons
 - Skill levels: beginner, intermediate, advanced
+- IMPORTANT: Only extract a name when the user is DIRECTLY answering a name question or explicitly introducing themselves. If the user is answering any other question (about schedule, location, preferences, age, etc.), that answer is NOT a name.
 - If you are NOT CERTAIN the extracted value is a human personal name, return null
 
 NAME CONFIDENCE - How certain are you that this is the user's name?
@@ -1820,6 +1836,7 @@ Replace null with the actual value if found. Use null if not found or uncertain.
                     if validated:
                         result["name"] = validated
                         result["name_is_explicit"] = True
+                        result["name_confidence"] = "high"
                         logger.info(f"Context-aware name extraction: assistant asked for name, user replied '{validated}'")
 
         # NOTE: Regex fallback for name extraction was removed.

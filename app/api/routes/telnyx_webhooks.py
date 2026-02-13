@@ -1428,9 +1428,13 @@ async def telnyx_ai_call_complete(
                 is_voice_call = True
                 is_sms_interaction = False
             else:
-                logger.warning(f"Unknown event type '{event_type}', defaulting to SMS classification")
-                is_voice_call = False
-                is_sms_interaction = True
+                # Default to voice — safer than SMS because voice transcript
+                # messages won't inflate SMS billing counts. The ai-call-complete
+                # endpoint primarily receives voice call webhooks; genuine SMS
+                # events (message.*) are already handled by the is_sms_event branch.
+                logger.warning(f"Unknown event type '{event_type}', defaulting to voice classification (safer for billing)")
+                is_voice_call = True
+                is_sms_interaction = False
 
         logger.info(
             f"Channel classification: is_voice_call={is_voice_call}, is_sms_interaction={is_sms_interaction}, "
@@ -2179,6 +2183,66 @@ async def telnyx_ai_call_complete(
         await db.commit()
 
         # =============================================================
+        # HIGH INTENT LEAD NOTIFICATION for Telnyx voice calls
+        # =============================================================
+        # Detect enrollment intent from call summary/transcript and notify
+        # the business owner via SMS. Mirrors sms_service.py (line 609)
+        # and voice_service.py (line 1238) which handle SMS/Twilio paths.
+        try:
+            from app.domain.services.intent_detector import IntentDetector
+            from app.infrastructure.notifications import NotificationService
+
+            intent_detector = IntentDetector()
+
+            # Build text for intent analysis from summary + transcript
+            intent_message = summary or transcript or ""
+            intent_history = []
+            if summary:
+                intent_history.append(summary)
+            if caller_intent:
+                intent_history.append(caller_intent)
+            if transcript:
+                intent_history.append(transcript[:2000])
+
+            intent_result = intent_detector.detect_enrollment_intent(
+                message=intent_message,
+                conversation_history=intent_history,
+                has_phone=bool(from_number),
+                has_email=bool(caller_email),
+            )
+
+            if intent_result.is_high_intent:
+                logger.info(
+                    f"High enrollment intent detected (voice/Telnyx) - tenant_id={tenant_id}, "
+                    f"confidence={intent_result.confidence:.2f}, keywords={intent_result.keywords}"
+                )
+
+                notification_service = NotificationService(db)
+                notification_result = await notification_service.notify_high_intent_lead(
+                    tenant_id=tenant_id,
+                    customer_name=caller_name,
+                    customer_phone=from_number,
+                    customer_email=caller_email,
+                    channel="voice",
+                    message_preview=(summary or transcript or "Voice call")[:150],
+                    confidence=intent_result.confidence,
+                    keywords=intent_result.keywords,
+                    conversation_id=call.id,
+                    lead_id=lead.id if lead else None,
+                )
+                logger.info(
+                    f"Voice lead notification result - tenant_id={tenant_id}, "
+                    f"call_id={call.id}, status={notification_result.get('status')}"
+                )
+            else:
+                logger.debug(
+                    f"No high intent (voice/Telnyx) - tenant_id={tenant_id}, "
+                    f"confidence={intent_result.confidence:.2f}"
+                )
+        except Exception as e:
+            logger.error(f"Failed to check/send voice lead notification: {e}", exc_info=True)
+
+        # =============================================================
         # Check voice transcript for Do Not Contact (DNC) requests
         # =============================================================
         # If caller said "don't contact me", "stop calling me", etc. in the call,
@@ -2202,6 +2266,113 @@ async def telnyx_ai_call_complete(
                     logger.info(f"DNC block via voice call - tenant_id={tenant_id}, phone={normalized_from}")
                 except Exception as e:
                     logger.warning(f"Failed to add voice caller to DNC list: {e}")
+
+        # =============================================================
+        # Auto-send booking link if caller requested escalation/callback
+        # =============================================================
+        # If the tenant's handoff_mode is "schedule_callback" and the caller
+        # asked to speak to someone, send the booking link as a post-call SMS
+        # (fallback for when the in-call send_booking_link tool couldn't resolve the phone)
+        if from_number and event_type in ("call.conversation.ended", "conversation.ended", "conversation_insight_result"):
+            try:
+                from app.persistence.models.tenant_voice_config import TenantVoiceConfig
+
+                voice_config_result = await db.execute(
+                    select(TenantVoiceConfig).where(TenantVoiceConfig.tenant_id == tenant_id)
+                )
+                voice_config = voice_config_result.scalar_one_or_none()
+
+                if voice_config and voice_config.handoff_mode == "schedule_callback":
+                    # Check if summary/transcript mentions escalation
+                    escalation_text = f"{summary or ''} {caller_intent or ''} {transcript or ''}".lower()
+                    escalation_keywords = [
+                        "speak to someone", "talk to someone", "talk to a person",
+                        "speak to a person", "speak with someone", "talk with someone",
+                        "real person", "human", "representative", "manager",
+                        "transfer", "transferred", "escalat",
+                        "call back", "callback", "call me back",
+                        "schedule a call", "schedule a time",
+                        "scheduling link", "booking link",
+                        # Spanish
+                        "hablar con alguien", "persona real", "representante",
+                        "transferir", "llamar de vuelta", "programar una llamada",
+                    ]
+                    wants_escalation = any(kw in escalation_text for kw in escalation_keywords)
+
+                    if wants_escalation:
+                        # Dedup: Check SentAsset for recent booking_link send
+                        normalized_from_booking = normalize_phone_for_dedup(from_number)
+                        booking_already_sent = False
+
+                        from app.persistence.models.sent_asset import SentAsset as BookingSentAsset
+                        cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+                        existing_booking = await db.execute(
+                            select(BookingSentAsset.id).where(
+                                BookingSentAsset.tenant_id == tenant_id,
+                                BookingSentAsset.phone_normalized == normalized_from_booking,
+                                BookingSentAsset.asset_type == "booking_link",
+                                BookingSentAsset.sent_at >= cutoff,
+                            ).limit(1)
+                        )
+                        if existing_booking.scalar_one_or_none():
+                            booking_already_sent = True
+                            logger.info(
+                                f"[BOOKING-LINK] Skipping post-call booking link - already sent recently: "
+                                f"tenant={tenant_id}, phone={normalized_from_booking}"
+                            )
+
+                        if not booking_already_sent:
+                            # Fetch booking link URL
+                            from app.domain.services.calendar_service import CalendarService
+                            calendar_service = CalendarService(db)
+                            booking_url = await calendar_service.get_booking_link(tenant_id)
+
+                            if booking_url:
+                                # Send via tenant's SMS provider
+                                from app.infrastructure.telephony.factory import TelephonyProviderFactory
+                                factory = TelephonyProviderFactory(db)
+                                sms_provider = await factory.get_sms_provider(tenant_id)
+                                sms_config = await factory.get_config(tenant_id) if sms_provider else None
+                                from_sms_number = factory.get_sms_phone_number(sms_config) if sms_config else None
+
+                                if sms_provider and from_sms_number:
+                                    formatted_to = _normalize_phone(from_number)
+                                    sms_body = (
+                                        "Thanks for calling! Schedule a time with our team:\n\n"
+                                        f"{booking_url}\n\n"
+                                        "Pick a time that works for you and we'll be ready!"
+                                    )
+                                    sms_result = await sms_provider.send_sms(
+                                        to=formatted_to,
+                                        from_=from_sms_number,
+                                        body=sms_body,
+                                    )
+                                    logger.info(
+                                        f"[BOOKING-LINK] Post-call booking link SMS sent: "
+                                        f"tenant={tenant_id}, to={formatted_to}, msg_id={sms_result.message_id}"
+                                    )
+
+                                    # Create SentAsset dedup record
+                                    try:
+                                        booking_sent_asset = BookingSentAsset(
+                                            tenant_id=tenant_id,
+                                            phone_normalized=normalized_from_booking,
+                                            asset_type="booking_link",
+                                            conversation_id=call.id,
+                                            sent_at=datetime.now(timezone.utc),
+                                            message_id=sms_result.message_id,
+                                        )
+                                        db.add(booking_sent_asset)
+                                        await db.commit()
+                                        logger.info(f"[BOOKING-LINK] Created SentAsset dedup record: phone={normalized_from_booking}")
+                                    except Exception as dedup_err:
+                                        logger.warning(f"[BOOKING-LINK] SentAsset dedup record failed: {dedup_err}")
+                                else:
+                                    logger.warning(f"[BOOKING-LINK] No SMS provider/number for tenant {tenant_id}")
+                            else:
+                                logger.info(f"[BOOKING-LINK] No booking_link_url configured for tenant {tenant_id}")
+            except Exception as e:
+                logger.error(f"[BOOKING-LINK] Failed to send post-call booking link: {e}", exc_info=True)
 
         # =============================================================
         # Auto-send registration SMS if user requested registration info
@@ -3914,39 +4085,61 @@ async def send_booking_link_tool(
                           "Please visit our website or call back to schedule.",
             })
 
-        # Get caller phone
-        to_phone = (
-            body.get("to")
-            or body.get("customer_phone")
-            or params.get("to")
-            or ""
-        )
+        # Get caller phone - multi-step resolution matching send_registration_link pattern
+        call_control_id = request.headers.get("x-telnyx-call-control-id", "")
+        to_phone = None
 
-        # Try Telnyx API as fallback for caller phone
-        if not to_phone:
-            call_control_id = request.headers.get("x-telnyx-call-control-id", "")
-            if call_control_id and settings.telnyx_api_key:
-                try:
-                    import httpx
-                    async with httpx.AsyncClient(
-                        base_url="https://api.telnyx.com/v2",
-                        headers={"Authorization": f"Bearer {settings.telnyx_api_key}"},
-                        timeout=10.0,
-                    ) as client:
-                        resp = await client.get(f"/calls/{call_control_id}")
-                        if resp.status_code == 200:
-                            call_data = resp.json().get("data", {})
-                            to_phone = call_data.get("from", "")
-                            logger.info(f"[TOOL] send_booking_link: got caller phone from Telnyx API: {to_phone}")
-                except Exception as e:
-                    logger.warning(f"[TOOL] send_booking_link: Telnyx API phone lookup failed: {e}")
+        # Step 1: Call table lookup via call_control_id (most reliable during live calls)
+        if call_control_id:
+            from app.persistence.models.call import Call as BookingCall
+            stmt = select(BookingCall).where(BookingCall.call_sid == call_control_id)
+            result = await db.execute(stmt)
+            call_record = result.scalar_one_or_none()
+            if call_record:
+                to_phone = call_record.from_number
+                if not tenant_id:
+                    tenant_id = call_record.tenant_id
+                logger.info(f"[TOOL] send_booking_link: phone from call record: {to_phone}")
 
+        # Step 2: Telnyx API fallback
+        if not to_phone and call_control_id and settings.telnyx_api_key:
+            try:
+                import httpx
+                async with httpx.AsyncClient(
+                    base_url="https://api.telnyx.com/v2",
+                    headers={"Authorization": f"Bearer {settings.telnyx_api_key}"},
+                    timeout=10.0,
+                ) as client:
+                    resp = await client.get(f"/calls/{call_control_id}")
+                    if resp.status_code == 200:
+                        call_data = resp.json().get("data", {})
+                        to_phone = call_data.get("from") or call_data.get("from_display_name")
+                        logger.info(f"[TOOL] send_booking_link: phone from Telnyx API: {to_phone}")
+            except Exception as e:
+                logger.warning(f"[TOOL] send_booking_link: Telnyx API phone lookup failed: {e}")
+
+        # Step 3: Body/query params fallback
         if not to_phone:
-            logger.warning(f"[TOOL] send_booking_link: no caller phone for tenant {tenant_id}")
+            to_phone = (
+                body.get("to")
+                or body.get("customer_phone")
+                or params.get("to")
+                or ""
+            )
+            if to_phone and to_phone.startswith("+1555"):
+                logger.info(f"[TOOL] send_booking_link: ignoring test phone: {to_phone}")
+                to_phone = None
+
+        # Step 4: Graceful fallback - post-call handler will send it
+        if not to_phone:
+            logger.info(
+                f"[TOOL] send_booking_link: no phone found - will be sent post-call. "
+                f"tenant_id={tenant_id}, call_control_id={call_control_id}"
+            )
             return JSONResponse(content={
                 "status": "ok",
-                "result": "I wasn't able to send a text right now. "
-                          "You can visit our website to schedule a time with our team.",
+                "result": "The booking link will be sent to your phone via text message momentarily. "
+                          "Let the caller know the text is on its way and ask if there is anything else you can help with."
             })
 
         logger.info(f"[TOOL] send_booking_link called - tenant_id={tenant_id}, to={to_phone}")

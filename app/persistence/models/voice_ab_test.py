@@ -40,11 +40,13 @@ class VoiceABTestVariant(Base):
     __tablename__ = "voice_ab_test_variants"
     __table_args__ = (
         UniqueConstraint("test_id", "voice_model", name="uq_voice_ab_test_variant_model"),
+        UniqueConstraint("test_id", "assistant_id", name="uq_voice_ab_test_variant_assistant"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
     test_id = Column(Integer, ForeignKey("voice_ab_tests.id", ondelete="CASCADE"), nullable=False, index=True)
-    voice_model = Column(String(255), nullable=False)  # Matches calls.voice_model
+    voice_model = Column(String(255), nullable=False)  # Legacy field, kept for compatibility
+    assistant_id = Column(String(255), nullable=True, index=True)  # Telnyx AI Agent ID - primary matching key
     label = Column(String(100), nullable=False)  # Display name (e.g., "Jessica", "DBOT")
     is_control = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

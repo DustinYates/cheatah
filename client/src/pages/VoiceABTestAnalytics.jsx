@@ -843,7 +843,7 @@ export default function VoiceABTestAnalytics() {
             {newVariants.map((v, idx) => (
               <div key={idx} className="voice-ab-variant-form-row">
                 <div className="voice-ab-form-group">
-                  <label>Voice Model</label>
+                  <label>Version Name</label>
                   <input
                     type="text"
                     placeholder="e.g. ElevenLabsJessica"

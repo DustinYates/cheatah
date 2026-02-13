@@ -21,7 +21,8 @@ router = APIRouter()
 # --- Request/Response Schemas ---
 
 class VariantCreate(BaseModel):
-    voice_model: str
+    voice_model: str = ""
+    assistant_id: str | None = None
     label: str
     is_control: bool = False
 
@@ -43,6 +44,7 @@ class VariantResponse(BaseModel):
 
     id: int
     voice_model: str
+    assistant_id: str | None = None
     label: str
     is_control: bool
     created_at: str
@@ -87,6 +89,7 @@ async def list_tests(
                 VariantResponse(
                     id=v.id,
                     voice_model=v.voice_model,
+                    assistant_id=v.assistant_id,
                     label=v.label,
                     is_control=v.is_control,
                     created_at=v.created_at.isoformat(),
@@ -117,7 +120,8 @@ async def create_test(
     for v in body.variants:
         variant = VoiceABTestVariant(
             test_id=test.id,
-            voice_model=v.voice_model,
+            voice_model=v.voice_model or v.assistant_id or "",
+            assistant_id=v.assistant_id,
             label=v.label,
             is_control=v.is_control,
         )
@@ -267,7 +271,8 @@ async def add_variant(
 
     variant = VoiceABTestVariant(
         test_id=test.id,
-        voice_model=body.voice_model,
+        voice_model=body.voice_model or body.assistant_id or "",
+        assistant_id=body.assistant_id,
         label=body.label,
         is_control=body.is_control,
     )
@@ -278,6 +283,7 @@ async def add_variant(
     return VariantResponse(
         id=variant.id,
         voice_model=variant.voice_model,
+        assistant_id=variant.assistant_id,
         label=variant.label,
         is_control=variant.is_control,
         created_at=variant.created_at.isoformat(),

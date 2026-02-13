@@ -13,18 +13,25 @@ _DAY_LABELS = {"mon": "Mon", "tue": "Tue", "wed": "Wed", "thu": "Thu", "fri": "F
 
 
 def _format_time(t: str | None) -> str:
-    """Convert HH:MM 24hr to 12hr like '7:00 PM'."""
+    """Convert HH:MM 24hr to voice-friendly 12hr like '4 30 pm' or '11 am'.
+
+    Drops ':00' for on-the-hour times and replaces ':' with a space for
+    non-zero minutes so TTS reads '4 30 pm' instead of 'four colon thirty'.
+    """
     if not t:
         return ""
     try:
         h, m = t.split(":")[:2]
         hour = int(h)
-        suffix = "AM" if hour < 12 else "PM"
+        minute = int(m)
+        suffix = "am" if hour < 12 else "pm"
         if hour == 0:
             hour = 12
         elif hour > 12:
             hour -= 12
-        return f"{hour}:{m} {suffix}"
+        if minute == 0:
+            return f"{hour} {suffix}"
+        return f"{hour} {m} {suffix}"
     except (ValueError, IndexError):
         return t
 
@@ -71,8 +78,8 @@ async def fetch_classes(org_id: str) -> list[dict]:
                 "name": c.get("name"),
                 "location": c.get("location_name"),
                 "days": _format_days(c.get("meeting_days")),
-                "start_time": c.get("start_time"),
-                "end_time": c.get("end_time"),
+                "start_time": _format_time(c.get("start_time")),
+                "end_time": _format_time(c.get("end_time")),
                 "openings": calc,
                 "fee": (c.get("tuition") or {}).get("fee"),
             })
@@ -87,6 +94,37 @@ async def fetch_classes(org_id: str) -> list[dict]:
         if cached:
             return cached[1]
         return []
+
+
+def format_classes_for_voice(classes: list[dict]) -> str:
+    """Build a plain-text, TTS-ready spoken summary of available classes.
+
+    No markdown, no special characters — just natural speech the agent
+    can read verbatim.
+    """
+    if not classes:
+        return ""
+
+    # Group by location
+    by_location: dict[str, list[dict]] = {}
+    for c in classes:
+        loc = c.get("location") or "Unknown"
+        by_location.setdefault(loc, []).append(c)
+
+    parts: list[str] = []
+    for location, loc_classes in sorted(by_location.items()):
+        for c in sorted(loc_classes, key=lambda x: (x.get("name", ""), x.get("days", ""))):
+            start = c.get("start_time", "")
+            days = c.get("days", "")
+            openings = c.get("openings", 0)
+            spot_word = "opening" if openings == 1 else "openings"
+            parts.append(f"{days} at {start} with {openings} {spot_word}")
+
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f"{parts[0]}, and {parts[1]}"
+    return ", ".join(parts[:-1]) + f", and {parts[-1]}"
 
 
 def format_classes_for_prompt(classes: list[dict]) -> str:
@@ -105,8 +143,8 @@ def format_classes_for_prompt(classes: list[dict]) -> str:
         lines.append(f"\n{location}:")
         for c in sorted(loc_classes, key=lambda x: (x.get("name", ""), x.get("days", ""))):
             fee_str = f", ${c['fee']}/mo" if c.get("fee") else ""
-            start = _format_time(c.get("start_time"))
-            end = _format_time(c.get("end_time"))
+            start = c.get("start_time", "")
+            end = c.get("end_time", "")
             lines.append(
                 f"  - {c['name']} | {c['days']} {start}-{end} "
                 f"| {c['openings']} spot(s){fee_str} | class_id={c['id']}"

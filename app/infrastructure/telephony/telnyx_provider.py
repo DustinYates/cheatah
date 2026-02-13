@@ -315,6 +315,52 @@ class TelnyxAIService:
             logger.warning(f"[TELNYX-API] Unexpected error getting voice model: {type(e).__name__}: {e}")
             return None
 
+    async def get_assistant_version_name(
+        self, assistant_id: str, version_id: str
+    ) -> str | None:
+        """Get the name of a specific assistant version (for A/B test voice identification).
+
+        With Telnyx Traffic Distribution, each voice variant is a version of the
+        same assistant. The version name (e.g., "ElevenLabsJessica") identifies
+        which voice was used for a call.
+
+        Args:
+            assistant_id: The Telnyx AI assistant ID
+            version_id: The assistant version ID from webhook metadata
+
+        Returns:
+            Version name string or None if not found
+        """
+        try:
+            async with self._get_client() as client:
+                logger.info(f"[TELNYX-API] Fetching version name: assistant={assistant_id}, version={version_id}")
+                response = await client.get(f"/ai/assistants/{assistant_id}/versions/{version_id}")
+                response.raise_for_status()
+                data = response.json()
+                version_data = data.get("data", data)
+
+                name = version_data.get("name")
+                if name:
+                    logger.info(f"[TELNYX-API] Version name: {name}")
+                    return str(name)
+
+                # Fallback: try voice_settings.voice
+                voice_settings = version_data.get("voice_settings", {}) or {}
+                voice = voice_settings.get("voice")
+                if voice:
+                    logger.info(f"[TELNYX-API] Version voice: {voice}")
+                    return str(voice)
+
+                logger.info(f"[TELNYX-API] No name found in version data. Keys: {list(version_data.keys())}")
+                return None
+
+        except httpx.HTTPError as e:
+            logger.warning(f"[TELNYX-API] Failed to fetch assistant version: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"[TELNYX-API] Unexpected error getting version name: {type(e).__name__}: {e}")
+            return None
+
     async def get_conversation_messages(
         self, conversation_id: str
     ) -> list[dict[str, Any]]:

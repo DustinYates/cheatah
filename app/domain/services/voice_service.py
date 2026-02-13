@@ -1042,7 +1042,16 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
         
         for pattern, replacement in contraction_map.items():
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-        
+
+        # --- Clean times for TTS: make times sound natural ---
+        # "11:00 AM" -> "11 AM" (drop :00 for on-the-hour times)
+        text = re.sub(r'\b(\d{1,2}):00\s*(AM|PM|am|pm|a\.m\.|p\.m\.)', r'\1 \2', text)
+        # "5:30 PM" -> "5 30 PM" (replace colon with space for half-hour times)
+        text = re.sub(r'\b(\d{1,2}):(\d{2})\s*(AM|PM|am|pm|a\.m\.|p\.m\.)', r'\1 \2 \3', text)
+        # Bare times without AM/PM: "11:00" -> "11", "5:30" -> "5 30"
+        text = re.sub(r'\b(\d{1,2}):00\b', r'\1', text)
+        text = re.sub(r'\b(\d{1,2}):(\d{2})\b', r'\1 \2', text)
+
         # --- Convert numbered lists to natural flow ---
         # "1. First item 2. Second item" -> "First, first item. Then, second item."
         text = re.sub(r'\b1\.\s*', 'First, ', text)

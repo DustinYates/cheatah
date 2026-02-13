@@ -2263,6 +2263,7 @@ class VoiceABVariantMetrics(BaseModel):
     """Metrics for a single A/B test variant."""
     variant_id: int | None
     voice_model: str
+    assistant_id: str | None = None
     label: str
     is_control: bool
     call_count: int
@@ -2330,8 +2331,21 @@ async def get_voice_ab_test_analytics(
         )
 
     # Build variant lookup: voice_model -> variant info
-    variant_map = {v.voice_model: v for v in test.variants}
-    voice_models = list(variant_map.keys())
+    # voice_model is populated from Telnyx Traffic Distribution version names
+    # Falls back to assistant_id for multi-agent setups
+    has_voice_models = any(v.voice_model for v in test.variants)
+    has_assistant_ids = any(v.assistant_id for v in test.variants)
+
+    if has_voice_models:
+        variant_map = {v.voice_model: v for v in test.variants if v.voice_model}
+        match_col = Call.voice_model
+    elif has_assistant_ids:
+        variant_map = {v.assistant_id: v for v in test.variants if v.assistant_id}
+        match_col = Call.assistant_id
+    else:
+        variant_map = {v.voice_model: v for v in test.variants}
+        match_col = Call.voice_model
+    match_ids = list(variant_map.keys())
 
     # Effective time range: intersection of test dates and requested range
     call_timestamp = func.coalesce(Call.started_at, Call.created_at)
@@ -2345,7 +2359,7 @@ async def get_voice_ab_test_analytics(
     )
     agg_stmt = (
         select(
-            Call.voice_model,
+            match_col.label("match_key"),
             func.count(Call.id).label("call_count"),
             func.sum(duration_expr).label("total_seconds"),
             func.avg(duration_expr).label("avg_seconds"),
@@ -2353,39 +2367,39 @@ async def get_voice_ab_test_analytics(
         )
         .where(
             Call.tenant_id == ctx.tenant_id,
-            Call.voice_model.in_(voice_models),
+            match_col.in_(match_ids),
             call_timestamp >= ctx.start_datetime,
             call_timestamp <= ctx.end_datetime,
         )
-        .group_by(Call.voice_model)
+        .group_by(match_col)
     )
     agg_result = await db.execute(agg_stmt)
-    agg_data = {row.voice_model: row for row in agg_result}
+    agg_data = {row.match_key: row for row in agg_result}
 
     # Query 2: Lead counts per variant
     lead_stmt = (
         select(
-            Call.voice_model,
+            match_col.label("match_key"),
             func.count(func.distinct(CallSummary.lead_id)).label("lead_count"),
         )
         .select_from(Call)
         .join(CallSummary, CallSummary.call_id == Call.id)
         .where(
             Call.tenant_id == ctx.tenant_id,
-            Call.voice_model.in_(voice_models),
+            match_col.in_(match_ids),
             CallSummary.lead_id.isnot(None),
             call_timestamp >= ctx.start_datetime,
             call_timestamp <= ctx.end_datetime,
         )
-        .group_by(Call.voice_model)
+        .group_by(match_col)
     )
     lead_result = await db.execute(lead_stmt)
-    lead_data = {row.voice_model: int(row.lead_count) for row in lead_result}
+    lead_data = {row.match_key: int(row.lead_count) for row in lead_result}
 
     # Query 3: Intent distribution per variant
     intent_stmt = (
         select(
-            Call.voice_model,
+            match_col.label("match_key"),
             CallSummary.intent,
             func.count().label("count"),
         )
@@ -2393,22 +2407,22 @@ async def get_voice_ab_test_analytics(
         .join(CallSummary, CallSummary.call_id == Call.id)
         .where(
             Call.tenant_id == ctx.tenant_id,
-            Call.voice_model.in_(voice_models),
+            match_col.in_(match_ids),
             CallSummary.intent.isnot(None),
             call_timestamp >= ctx.start_datetime,
             call_timestamp <= ctx.end_datetime,
         )
-        .group_by(Call.voice_model, CallSummary.intent)
+        .group_by(match_col, CallSummary.intent)
     )
     intent_result = await db.execute(intent_stmt)
     intent_data: dict[str, dict[str, int]] = {}
     for row in intent_result:
-        intent_data.setdefault(row.voice_model, {})[row.intent] = int(row.count)
+        intent_data.setdefault(row.match_key, {})[row.intent] = int(row.count)
 
     # Query 4: Outcome distribution per variant
     outcome_stmt = (
         select(
-            Call.voice_model,
+            match_col.label("match_key"),
             CallSummary.outcome,
             func.count().label("count"),
         )
@@ -2416,23 +2430,23 @@ async def get_voice_ab_test_analytics(
         .join(CallSummary, CallSummary.call_id == Call.id)
         .where(
             Call.tenant_id == ctx.tenant_id,
-            Call.voice_model.in_(voice_models),
+            match_col.in_(match_ids),
             CallSummary.outcome.isnot(None),
             call_timestamp >= ctx.start_datetime,
             call_timestamp <= ctx.end_datetime,
         )
-        .group_by(Call.voice_model, CallSummary.outcome)
+        .group_by(match_col, CallSummary.outcome)
     )
     outcome_result = await db.execute(outcome_stmt)
     outcome_data: dict[str, dict[str, int]] = {}
     for row in outcome_result:
-        outcome_data.setdefault(row.voice_model, {})[row.outcome] = int(row.count)
+        outcome_data.setdefault(row.match_key, {})[row.outcome] = int(row.count)
 
     # Query 5: Daily time series per variant
     day_bucket = _day_bucket(call_timestamp, ctx.timezone, use_timezone)
     daily_stmt = (
         select(
-            Call.voice_model,
+            match_col.label("match_key"),
             day_bucket,
             func.count(Call.id).label("call_count"),
             func.count(func.distinct(CallSummary.lead_id)).filter(CallSummary.lead_id.isnot(None)).label("lead_count"),
@@ -2441,11 +2455,11 @@ async def get_voice_ab_test_analytics(
         .outerjoin(CallSummary, CallSummary.call_id == Call.id)
         .where(
             Call.tenant_id == ctx.tenant_id,
-            Call.voice_model.in_(voice_models),
+            match_col.in_(match_ids),
             call_timestamp >= ctx.start_datetime,
             call_timestamp <= ctx.end_datetime,
         )
-        .group_by(Call.voice_model, day_bucket)
+        .group_by(match_col, day_bucket)
         .order_by(day_bucket)
     )
     daily_result = await db.execute(daily_stmt)
@@ -2454,7 +2468,7 @@ async def get_voice_ab_test_analytics(
         day = normalize_date(row.day)
         if not day:
             continue
-        daily_data.setdefault(row.voice_model, {})[day] = {
+        daily_data.setdefault(row.match_key, {})[day] = {
             "date": day.isoformat(),
             "calls": int(row.call_count or 0),
             "leads": int(row.lead_count or 0),
@@ -2463,18 +2477,18 @@ async def get_voice_ab_test_analytics(
     # Build response
     total_calls = 0
     variants_response = []
-    for voice_model_key in voice_models:
-        v = variant_map[voice_model_key]
-        agg = agg_data.get(voice_model_key)
+    for match_key in match_ids:
+        v = variant_map[match_key]
+        agg = agg_data.get(match_key)
         call_count = int(agg.call_count) if agg else 0
         total_seconds = float(agg.total_seconds or 0) if agg else 0
         avg_seconds = float(agg.avg_seconds or 0) if agg else 0
         handoff_count = int(agg.handoff_count or 0) if agg else 0
-        leads = lead_data.get(voice_model_key, 0)
+        leads = lead_data.get(match_key, 0)
         total_calls += call_count
 
         # Build daily series with all dates in range
-        variant_daily = daily_data.get(voice_model_key, {})
+        variant_daily = daily_data.get(match_key, {})
         daily_series = []
         current_day = ctx.start_date
         while current_day <= ctx.end_date:
@@ -2485,7 +2499,8 @@ async def get_voice_ab_test_analytics(
 
         variants_response.append(VoiceABVariantMetrics(
             variant_id=v.id,
-            voice_model=voice_model_key,
+            voice_model=v.voice_model,
+            assistant_id=v.assistant_id,
             label=v.label,
             is_control=v.is_control,
             call_count=call_count,
@@ -2493,8 +2508,8 @@ async def get_voice_ab_test_analytics(
             avg_duration_seconds=round(avg_seconds, 1),
             lead_count=leads,
             lead_conversion_rate=round(leads / call_count, 3) if call_count > 0 else 0,
-            intent_distribution=intent_data.get(voice_model_key, {}),
-            outcome_distribution=outcome_data.get(voice_model_key, {}),
+            intent_distribution=intent_data.get(match_key, {}),
+            outcome_distribution=outcome_data.get(match_key, {}),
             handoff_rate=round(handoff_count / call_count, 3) if call_count > 0 else 0,
             daily_series=daily_series,
         ))

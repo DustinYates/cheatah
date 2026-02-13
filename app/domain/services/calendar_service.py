@@ -23,7 +23,7 @@ class TimeSlot:
     """A single available time slot."""
     start: datetime
     end: datetime
-    display_label: str  # e.g., "Mon Jan 15, 10:00 AM - 10:30 AM"
+    display_label: str  # e.g., "Mon Jan 15, 10 am - 10 30 am"
 
 
 @dataclass
@@ -134,7 +134,13 @@ class CalendarService:
                     slot_start = slot_end + timedelta(minutes=buffer)
                     continue
 
-                label = slot_start.strftime("%a %b %d, %I:%M %p") + " - " + slot_end.strftime("%I:%M %p")
+                # Voice-friendly: "11 am" instead of "11:00 AM"
+                def _fmt(dt: datetime) -> str:
+                    if dt.minute == 0:
+                        return dt.strftime("%I %p").lstrip("0").lower()
+                    return dt.strftime("%I %M %p").lstrip("0").lower()
+
+                label = slot_start.strftime("%a %b %d, ") + _fmt(slot_start) + " - " + _fmt(slot_end)
                 candidates.append(TimeSlot(start=slot_start, end=slot_end, display_label=label))
                 slot_start = slot_end + timedelta(minutes=buffer)
 

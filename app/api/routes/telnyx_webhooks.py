@@ -913,6 +913,22 @@ async def telnyx_ai_call_complete(
         )
         logger.info(f"Telnyx conversation_id: {telnyx_conversation_id}")
 
+        # Extract assistant_version_id for Traffic Distribution voice identification
+        assistant_version_id = (
+            metadata.get("assistant_version_id")
+            or payload.get("assistant_version_id")
+            or body.get("assistant_version_id")
+            or ""
+        )
+        # [AB-DEBUG] Always log version info to verify Traffic Distribution fields
+        logger.info(
+            f"[AB-DEBUG] assistant_version_id={assistant_version_id!r}, "
+            f"assistant_id={assistant_id!r}, "
+            f"metadata_keys={list(metadata.keys()) if metadata else []}, "
+            f"payload_keys={list(payload.keys()) if isinstance(payload, dict) else []}, "
+            f"body_keys_sample={[k for k in list(body.keys())[:20]]}"
+        )
+
         # [SMS-DEBUG] Log all potential phone number sources for transfer debugging
         logger.info(
             f"[SMS-DEBUG] Phone number sources - "
@@ -1924,17 +1940,31 @@ async def telnyx_ai_call_complete(
             if call:
                 logger.info(f"Found existing Call by phone number match: id={call.id}, call_sid={call.call_sid}")
 
-        # If we still don't have voice_model, try Telnyx Conversations API
-        # This is the fallback for Traffic Distribution where voice model isn't in webhook payload
-        if not voice_model and telnyx_conversation_id and settings.telnyx_api_key:
-            try:
-                from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
-                telnyx_ai_voice = TelnyxAIService(settings.telnyx_api_key)
-                voice_model = await telnyx_ai_voice.get_conversation_voice_model(telnyx_conversation_id) or ""
-                if voice_model:
-                    logger.info(f"Got voice_model from Telnyx Conversations API: {voice_model}")
-            except Exception as e:
-                logger.warning(f"Failed to get voice_model from Telnyx API: {e}")
+        # If we still don't have voice_model, try Telnyx APIs
+        if not voice_model and settings.telnyx_api_key:
+            from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
+            telnyx_ai_voice = TelnyxAIService(settings.telnyx_api_key)
+
+            # Strategy 1: Fetch version name via assistant_version_id (Traffic Distribution)
+            # Each traffic distribution variant is an assistant version with a distinct name
+            if assistant_version_id and assistant_id:
+                try:
+                    voice_model = await telnyx_ai_voice.get_assistant_version_name(
+                        assistant_id, assistant_version_id
+                    ) or ""
+                    if voice_model:
+                        logger.info(f"Got voice_model from Telnyx Versions API: {voice_model}")
+                except Exception as e:
+                    logger.warning(f"Failed to get voice_model from Versions API: {e}")
+
+            # Strategy 2: Fallback to Conversations API
+            if not voice_model and telnyx_conversation_id:
+                try:
+                    voice_model = await telnyx_ai_voice.get_conversation_voice_model(telnyx_conversation_id) or ""
+                    if voice_model:
+                        logger.info(f"Got voice_model from Telnyx Conversations API: {voice_model}")
+                except Exception as e:
+                    logger.warning(f"Failed to get voice_model from Conversations API: {e}")
 
         if call:
             # Update existing call with any new data

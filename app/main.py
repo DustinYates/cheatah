@@ -306,7 +306,7 @@ async def get_classes_proxy(request: Request):
     """Proxy endpoint for Telnyx AI Assistant to fetch Jackrabbit class openings."""
     from fastapi.responses import JSONResponse as JR
     from sqlalchemy import select, text
-    from app.infrastructure.jackrabbit_client import fetch_classes
+    from app.infrastructure.jackrabbit_client import fetch_classes, format_classes_for_voice
     from app.persistence.database import AsyncSessionLocal
     from app.persistence.models.tenant_customer_service_config import TenantCustomerServiceConfig
 
@@ -350,7 +350,17 @@ async def get_classes_proxy(request: Request):
             return JR(status_code=400, content={"error": "org_id or tenant_id required"})
 
         trimmed = await fetch_classes(str(org_id))
-        return JR(content={"classes": trimmed})
+        spoken = format_classes_for_voice(trimmed)
+        return JR(content={
+            "classes": trimmed,
+            "spoken_summary": spoken,
+            "_instruction": (
+                "IMPORTANT: You are speaking aloud on a phone call. "
+                "Use the spoken_summary field to present class times. "
+                "Do NOT use markdown, asterisks, bold, or bullet points. "
+                "Do NOT reformat times. Say them exactly as shown."
+            ),
+        })
     except Exception as e:
         return JR(status_code=500, content={"error": str(e)})
 

@@ -28,6 +28,11 @@ export default function CalendarSettings() {
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
+  const [checkingSlots, setCheckingSlots] = useState(false);
+  const [availableSlots, setAvailableSlots] = useState(null);
+  const [creatingEvent, setCreatingEvent] = useState(false);
+  const [testEventResult, setTestEventResult] = useState(null);
+
   const [formData, setFormData] = useState({
     calendar_id: 'primary',
     scheduling_preferences: {
@@ -129,6 +134,48 @@ export default function CalendarSettings() {
     updatePref('available_days', updated);
   };
 
+  const handleCheckAvailability = async () => {
+    setCheckingSlots(true);
+    setAvailableSlots(null);
+    setFormError('');
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const data = await api.getCalendarSlots(today, 3);
+      setAvailableSlots(data);
+    } catch (err) {
+      setFormError(err.message || 'Failed to check availability');
+    } finally {
+      setCheckingSlots(false);
+    }
+  };
+
+  const handleCreateTestEvent = async () => {
+    setCreatingEvent(true);
+    setTestEventResult(null);
+    setFormError('');
+    try {
+      // Create an event 2 days from now at 10:00 AM
+      const eventDate = new Date();
+      eventDate.setDate(eventDate.getDate() + 2);
+      eventDate.setHours(10, 0, 0, 0);
+
+      const data = await api.bookCalendarMeeting({
+        slot_start: eventDate.toISOString(),
+        customer_name: 'Google OAuth Test',
+        customer_email: 'everesttest101@gmail.com',
+        topic: 'OAuth Verification Test Event',
+      });
+      setTestEventResult(data);
+      if (data.success) {
+        setSuccess('Test event created on Google Calendar!');
+      }
+    } catch (err) {
+      setFormError(err.message || 'Failed to create test event');
+    } finally {
+      setCreatingEvent(false);
+    }
+  };
+
   if (loading) return <LoadingState message="Loading calendar settings..." />;
   if (error) return <ErrorState message={error} onRetry={refetch} />;
 
@@ -184,6 +231,94 @@ export default function CalendarSettings() {
           </div>
         )}
       </section>
+
+      {/* Integration Test — demonstrates calendar.readonly and calendar.events scopes */}
+      {settings?.is_connected && (
+        <section className="settings-section">
+          <h2>Integration Test</h2>
+          <p className="section-description">
+            Test the Google Calendar integration to verify OAuth scopes are working correctly.
+          </p>
+
+          <div className="test-actions">
+            <div className="test-action-card">
+              <h3>Check Calendar Availability</h3>
+              <p className="help-text">
+                Queries Google Calendar free/busy data for the next 3 days.
+                <br />
+                <strong>Scope used:</strong> <code>calendar.readonly</code>
+              </p>
+              <button
+                className="btn btn-secondary"
+                onClick={handleCheckAvailability}
+                disabled={checkingSlots}
+              >
+                {checkingSlots ? 'Checking...' : 'Check Availability'}
+              </button>
+
+              {availableSlots && (
+                <div className="test-results">
+                  <div className="test-result-header">
+                    Scheduling mode: <strong>{availableSlots.scheduling_mode}</strong>
+                    {' | '}Found <strong>{availableSlots.slots?.length || 0}</strong> available slot(s)
+                  </div>
+                  {availableSlots.slots?.length > 0 && (
+                    <ul className="test-slots-list">
+                      {availableSlots.slots.slice(0, 8).map((slot, i) => (
+                        <li key={i}>{slot.display_label || `${slot.start} — ${slot.end}`}</li>
+                      ))}
+                      {availableSlots.slots.length > 8 && (
+                        <li className="help-text">...and {availableSlots.slots.length - 8} more</li>
+                      )}
+                    </ul>
+                  )}
+                  {availableSlots.slots?.length === 0 && (
+                    <p className="help-text">No available slots found. Adjust scheduling preferences above or check your calendar for conflicts.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="test-action-card">
+              <h3>Create Test Calendar Event</h3>
+              <p className="help-text">
+                Creates a test event on your Google Calendar 2 days from now at 10:00 AM.
+                <br />
+                <strong>Scope used:</strong> <code>calendar.events</code>
+              </p>
+              <button
+                className="btn btn-secondary"
+                onClick={handleCreateTestEvent}
+                disabled={creatingEvent}
+              >
+                {creatingEvent ? 'Creating...' : 'Create Test Event'}
+              </button>
+
+              {testEventResult && (
+                <div className="test-results">
+                  {testEventResult.success ? (
+                    <div className="test-result-success">
+                      Event created successfully!
+                      {testEventResult.event_link && (
+                        <>
+                          {' '}
+                          <a href={testEventResult.event_link} target="_blank" rel="noopener noreferrer">
+                            View in Google Calendar
+                          </a>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="test-result-error">
+                      Failed: {testEventResult.error || 'Unknown error'}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Scheduling Preferences */}
       {settings?.is_connected && (

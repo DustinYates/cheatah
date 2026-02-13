@@ -16,6 +16,11 @@ export default function EmailSettings() {
   const [disconnecting, setDisconnecting] = useState(false);
   const [refreshingWatch, setRefreshingWatch] = useState(false);
 
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState(null);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [recentMessages, setRecentMessages] = useState(null);
+
   const [formData, setFormData] = useState({
     is_enabled: true,
     lead_capture_subject_prefixes: [],
@@ -141,6 +146,35 @@ export default function EmailSettings() {
     }
   };
 
+  const handleSendTestEmail = async () => {
+    setSendingTestEmail(true);
+    setTestEmailResult(null);
+    setFormError('');
+    try {
+      const data = await api.sendTestEmail();
+      setTestEmailResult(data);
+      setSuccess(data.message || 'Test email sent!');
+    } catch (err) {
+      setFormError(err.message || 'Failed to send test email');
+    } finally {
+      setSendingTestEmail(false);
+    }
+  };
+
+  const handleReadRecentMessages = async () => {
+    setLoadingMessages(true);
+    setRecentMessages(null);
+    setFormError('');
+    try {
+      const data = await api.getRecentMessages();
+      setRecentMessages(data);
+    } catch (err) {
+      setFormError(err.message || 'Failed to read messages');
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
   if (needsTenant) {
     return (
       <div className="email-settings-page">
@@ -255,6 +289,79 @@ export default function EmailSettings() {
           </div>
         )}
       </section>
+
+      {/* Integration Test — demonstrates gmail.send and gmail.readonly scopes */}
+      {settings?.is_connected && (
+        <section className="settings-section">
+          <h2>Integration Test</h2>
+          <p className="section-description">
+            Test the Gmail integration to verify OAuth scopes are working correctly.
+          </p>
+
+          <div className="test-actions">
+            <div className="test-action-card">
+              <h3>Send Test Email</h3>
+              <p className="help-text">
+                Sends a test email from this Gmail account to itself.
+                <br />
+                <strong>Scope used:</strong> <code>gmail.send</code>
+              </p>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleSendTestEmail}
+                disabled={sendingTestEmail}
+              >
+                {sendingTestEmail ? 'Sending...' : 'Send Test Email'}
+              </button>
+
+              {testEmailResult && (
+                <div className="test-results">
+                  <div className="test-result-success">
+                    {testEmailResult.message}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="test-action-card">
+              <h3>Read Recent Emails</h3>
+              <p className="help-text">
+                Reads the 5 most recent messages from the connected Gmail inbox.
+                <br />
+                <strong>Scope used:</strong> <code>gmail.readonly</code>
+              </p>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleReadRecentMessages}
+                disabled={loadingMessages}
+              >
+                {loadingMessages ? 'Reading...' : 'Read Recent Emails'}
+              </button>
+
+              {recentMessages && (
+                <div className="test-results">
+                  <div className="test-result-header">
+                    Found <strong>{recentMessages.count}</strong> recent message(s)
+                  </div>
+                  {recentMessages.messages?.length > 0 && (
+                    <ul className="test-messages-list">
+                      {recentMessages.messages.map((msg, i) => (
+                        <li key={msg.id || i}>
+                          <strong>{msg.subject}</strong>
+                          <br />
+                          <span className="help-text">From: {msg.from} | {msg.date}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Settings Form - Only show if connected */}
       {settings?.is_connected && (

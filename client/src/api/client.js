@@ -866,6 +866,16 @@ class ApiClient {
     });
   }
 
+  async sendTestEmail() {
+    return this.request('/email/test/send-test-email', {
+      method: 'POST',
+    });
+  }
+
+  async getRecentMessages() {
+    return this.request('/email/test/recent-messages');
+  }
+
   // SMS settings methods (tenant-facing)
   async getSmsSettings() {
     return this.request('/sms/settings');
@@ -984,6 +994,13 @@ class ApiClient {
     if (dateStart) params.set('date_start', dateStart);
     params.set('num_days', numDays.toString());
     return this.request(`/calendar/available-slots?${params}`);
+  }
+
+  async bookCalendarMeeting(data) {
+    return this.request('/calendar/book', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   async getCalendarEvents(weekOffset = 0) {

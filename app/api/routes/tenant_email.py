@@ -862,6 +862,136 @@ async def disconnect_sendgrid_outbound(
     }
 
 
+# ============================================================================
+# Integration Test Endpoints (for Google OAuth Verification)
+# ============================================================================
+
+
+@router.post("/test/send-test-email")
+async def send_test_email(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Send a test email to the connected Gmail account to demonstrate gmail.send scope.
+
+    Sends a simple test email from the connected account to itself.
+    """
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    config_repo = TenantEmailConfigRepository(db)
+    config = await config_repo.get_by_tenant_id(tenant_id)
+
+    if not config or not config.gmail_refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Gmail not connected. Please connect Gmail first.",
+        )
+
+    try:
+        gmail_client = GmailClient(
+            refresh_token=config.gmail_refresh_token,
+            access_token=config.gmail_access_token,
+            token_expires_at=config.gmail_token_expires_at,
+        )
+
+        from datetime import datetime
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        result = gmail_client.send_message(
+            to=config.gmail_email,
+            subject=f"ConvoPro Integration Test - {timestamp}",
+            body=(
+                f"This is an automated test email sent by ConvoPro at {timestamp}.\n\n"
+                "This confirms that the Gmail send (gmail.send) scope is working correctly.\n\n"
+                "This email was sent using the Gmail API on behalf of the connected account."
+            ),
+        )
+
+        # Update tokens if refreshed
+        token_info = gmail_client.get_token_info()
+        await config_repo.update_tokens(
+            tenant_id=tenant_id,
+            access_token=token_info["access_token"],
+            token_expires_at=token_info["token_expires_at"],
+        )
+
+        return {
+            "status": "ok",
+            "message": f"Test email sent successfully to {config.gmail_email}",
+            "message_id": result.get("id"),
+            "scope_demonstrated": "gmail.send",
+        }
+
+    except Exception as e:
+        logger.error(f"Test email send failed for tenant {tenant_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send test email: {str(e)}",
+        )
+
+
+@router.get("/test/recent-messages")
+async def get_recent_messages(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Read recent inbox messages to demonstrate gmail.readonly scope.
+
+    Returns the 5 most recent messages from the connected Gmail inbox.
+    """
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    config_repo = TenantEmailConfigRepository(db)
+    config = await config_repo.get_by_tenant_id(tenant_id)
+
+    if not config or not config.gmail_refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Gmail not connected. Please connect Gmail first.",
+        )
+
+    try:
+        gmail_client = GmailClient(
+            refresh_token=config.gmail_refresh_token,
+            access_token=config.gmail_access_token,
+            token_expires_at=config.gmail_token_expires_at,
+        )
+
+        messages = gmail_client.list_recent_messages(max_results=5)
+
+        # Update tokens if refreshed
+        token_info = gmail_client.get_token_info()
+        await config_repo.update_tokens(
+            tenant_id=tenant_id,
+            access_token=token_info["access_token"],
+            token_expires_at=token_info["token_expires_at"],
+        )
+
+        return {
+            "status": "ok",
+            "messages": messages,
+            "count": len(messages),
+            "scope_demonstrated": "gmail.readonly",
+        }
+
+    except Exception as e:
+        logger.error(f"Read recent messages failed for tenant {tenant_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read messages: {str(e)}",
+        )
+
+
 def _get_gmail_forwarding_instructions(parse_address: str, prefixes: list[str] | None) -> str:
     """Generate Gmail forwarding setup instructions."""
     prefix_list = prefixes or ["Email Capture from Booking Page", "Get In Touch Form Submission"]

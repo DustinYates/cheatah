@@ -307,3 +307,80 @@
 .inline-link:hover {
   text-decoration: underline;
 }
+
+/* Integration Test Section */
+.test-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.test-action-card {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.test-action-card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.test-action-card code {
+  background: #e5e7eb;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.test-results {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.test-result-header {
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.test-slots-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.test-slots-list li {
+  padding: 4px 0;
+  color: #374151;
+  font-size: 13px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.test-slots-list li:last-child {
+  border-bottom: none;
+}
+
+.test-result-success {
+  color: #166534;
+  font-weight: 500;
+}
+
+.test-result-success a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.test-result-success a:hover {
+  text-decoration: underline;
+}
+
+.test-result-error {
+  color: #991b1b;
+}

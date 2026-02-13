@@ -638,6 +638,61 @@ class GmailClient:
             logger.error(f"Gmail send message failed: {e}")
             raise GmailAPIError(f"Failed to send message: {str(e)}") from e
 
+    def list_recent_messages(self, max_results: int = 5) -> list[dict[str, Any]]:
+        """List recent messages from the inbox.
+
+        Args:
+            max_results: Maximum number of messages to return (1-10)
+
+        Returns:
+            List of message summaries with id, subject, from, date, snippet
+        """
+        try:
+            service = self._get_service()
+            results = service.users().messages().list(
+                userId="me",
+                maxResults=min(max_results, 10),
+                labelIds=["INBOX"],
+            ).execute()
+
+            messages = results.get("messages", [])
+            summaries = []
+
+            for msg_ref in messages:
+                msg = service.users().messages().get(
+                    userId="me",
+                    id=msg_ref["id"],
+                    format="metadata",
+                    metadataHeaders=["Subject", "From", "Date"],
+                ).execute()
+
+                headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+                summaries.append({
+                    "id": msg["id"],
+                    "subject": headers.get("Subject", "(no subject)"),
+                    "from": headers.get("From", "unknown"),
+                    "date": headers.get("Date", ""),
+                    "snippet": msg.get("snippet", ""),
+                })
+
+            return summaries
+        except HttpError as e:
+            logger.error(f"Gmail list recent messages failed: {e}")
+            raise GmailAPIError(f"Failed to list messages: {str(e)}") from e
+
+    def get_profile(self) -> dict[str, Any]:
+        """Get the connected Gmail profile info.
+
+        Returns:
+            Profile with emailAddress, messagesTotal, threadsTotal, historyId
+        """
+        try:
+            service = self._get_service()
+            return service.users().getProfile(userId="me").execute()
+        except HttpError as e:
+            logger.error(f"Gmail get profile failed: {e}")
+            raise GmailAPIError(f"Failed to get profile: {str(e)}") from e
+
     def mark_as_read(self, message_id: str) -> bool:
         """Mark a message as read.
         

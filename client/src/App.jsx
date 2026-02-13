@@ -28,6 +28,7 @@ import WidgetSettings from './pages/WidgetSettings';
 import SmsSettings from './pages/SmsSettings';
 import TelephonySettings from './pages/TelephonySettings';
 import EmailSettings from './pages/EmailSettings';
+import CampaignSettings from './pages/CampaignSettings';
 import EscalationSettings from './pages/EscalationSettings';
 import CalendarSettings from './pages/CalendarSettings';
 import DncList from './pages/DncList';
@@ -94,6 +95,7 @@ function App() {
             <Route path="settings/escalation" element={<EscalationSettings />} />
             <Route path="settings/calendar" element={<CalendarSettings />} />
             <Route path="settings/dnc" element={<DncList />} />
+            <Route path="settings/campaigns" element={<CampaignSettings />} />
             <Route path="settings/customer-support" element={<CustomerSupportSettings />} />
             <Route path="settings/profile" element={<BusinessProfile />} />
 

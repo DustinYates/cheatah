@@ -1,0 +1,574 @@
+/* CampaignSettings.css
+   Page layout + campaign-specific classes.
+   sms-* utility classes (toggle, btn, card, toast, save-bar, etc.)
+   are provided by the inline <style> in SmsSettings.jsx and the
+   shared settings page styles — we only define what's new here. */
+
+/* ── Page Layout ─────────────────────────────────────────────────────── */
+
+.campaign-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 3rem;
+}
+
+/* ── Sticky Save Bar (duplicate from SmsSettings inline for standalone use) */
+
+.campaign-page .sms-save-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: #1a1a1a;
+  transform: translateY(-100%);
+  transition: transform 0.2s ease;
+}
+.campaign-page .sms-save-bar--visible {
+  transform: translateY(0);
+}
+.campaign-page .sms-save-bar__content {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0.75rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.campaign-page .sms-save-bar__text {
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.campaign-page .sms-save-bar__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ── Toast ────────────────────────────────────────────────────────────── */
+
+.campaign-page .sms-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  z-index: 200;
+  animation: campaignSlideUp 0.3s ease;
+}
+.campaign-page .sms-toast--success {
+  background: #065f46;
+  color: #fff;
+}
+.campaign-page .sms-toast--error {
+  background: #991b1b;
+  color: #fff;
+}
+@keyframes campaignSlideUp {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+
+.campaign-page .sms-header {
+  margin-bottom: 1.5rem;
+}
+.campaign-page .sms-header__title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #111;
+  margin: 0 0 0.25rem;
+}
+.campaign-page .sms-header__subtitle {
+  font-size: 0.9375rem;
+  color: #666;
+  margin: 0;
+}
+
+/* ── Cards ────────────────────────────────────────────────────────────── */
+
+.campaign-page .sms-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.campaign-page .sms-card {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.campaign-page .sms-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+.campaign-page .sms-card__title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111;
+  margin: 0;
+}
+.campaign-page .sms-card__badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.campaign-page .sms-card__badge--new {
+  background: #dcfce7;
+  color: #166534;
+}
+.campaign-page .sms-card__body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ── Fields & Inputs ─────────────────────────────────────────────────── */
+
+.campaign-page .sms-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.campaign-page .sms-field--toggle {
+  gap: 0.25rem;
+}
+.campaign-page .sms-field__label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #333;
+}
+.campaign-page .sms-field__description {
+  font-size: 0.8125rem;
+  color: #666;
+  margin: 0;
+  line-height: 1.4;
+}
+.campaign-page .sms-field__hint {
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 0.25rem;
+}
+
+.campaign-page .sms-input {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.campaign-page .sms-input:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+.campaign-page .sms-input--number {
+  width: 80px;
+  text-align: center;
+}
+.campaign-page .sms-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.campaign-page .sms-input-group__suffix {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.campaign-page .sms-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  resize: vertical;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+.campaign-page .sms-textarea:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+/* ── Toggle Switch ───────────────────────────────────────────────────── */
+
+.campaign-page .sms-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+.campaign-page .sms-toggle__input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.campaign-page .sms-toggle__switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: #d1d5db;
+  border-radius: 12px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.campaign-page .sms-toggle__switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+.campaign-page .sms-toggle__input:checked + .sms-toggle__switch {
+  background: #4f46e5;
+}
+.campaign-page .sms-toggle__input:checked + .sms-toggle__switch::after {
+  transform: translateX(20px);
+}
+.campaign-page .sms-toggle__input:focus-visible + .sms-toggle__switch {
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3);
+}
+.campaign-page .sms-toggle__input:disabled + .sms-toggle__switch {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.campaign-page .sms-toggle__label {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #111;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+
+.campaign-page .sms-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: none;
+}
+.campaign-page .sms-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.campaign-page .sms-btn--primary {
+  background: #4f46e5;
+  color: #fff;
+}
+.campaign-page .sms-btn--primary:hover:not(:disabled) {
+  background: #4338ca;
+}
+.campaign-page .sms-btn--ghost {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.3);
+}
+.campaign-page .sms-btn--ghost:hover:not(:disabled) {
+  background: rgba(255,255,255,0.1);
+}
+.campaign-page .sms-btn--secondary {
+  background: #fff;
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+}
+.campaign-page .sms-btn--secondary:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+.campaign-page .sms-btn--lg {
+  padding: 0.75rem 2rem;
+  font-size: 1rem;
+}
+
+/* ── Status Badge ────────────────────────────────────────────────────── */
+
+.campaign-page .sms-status-badge {
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+.campaign-page .sms-status-badge--active {
+  background: #dcfce7;
+  color: #166534;
+}
+.campaign-page .sms-status-badge--inactive {
+  background: #fef3c7;
+  color: #92400e;
+}
+.campaign-page .sms-status-badge--modified {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+/* ── Actions Footer ──────────────────────────────────────────────────── */
+
+.campaign-page .sms-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* ── Collapsible Sections ─────────────────────────────────────────────── */
+
+.campaign-section {
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.campaign-section__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: #f9fafb;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.campaign-section__toggle:hover {
+  background: #f3f4f6;
+}
+
+.campaign-section__arrow {
+  font-size: 0.6875rem;
+  color: #6b7280;
+  width: 1rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.campaign-section__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #333;
+}
+
+/* ── Steps ────────────────────────────────────────────────────────────── */
+
+.campaign-steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.campaign-step {
+  padding: 1rem;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.campaign-step__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.campaign-step__badge {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.625rem;
+  background: #4f46e5;
+  color: #fff;
+  border-radius: 4px;
+}
+
+.campaign-step__delay {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+/* ── Response Templates ──────────────────────────────────────────────── */
+
+.campaign-response-templates {
+  display: flex;
+  flex-direction: column;
+}
+
+.campaign-response-card {
+  padding: 1rem;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.campaign-response-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.campaign-response-card__category {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #111;
+  text-transform: capitalize;
+}
+
+.campaign-response-card__action {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.5rem;
+  background: #dbeafe;
+  color: #1e40af;
+  border-radius: 4px;
+}
+
+.campaign-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.campaign-keyword {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.2rem 0.5rem;
+  background: #f3f4f6;
+  color: #4b5563;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+/* ── Enrollments Table ───────────────────────────────────────────────── */
+
+.campaign-enrollments-empty {
+  padding: 1.5rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.campaign-enrollments-table-wrapper {
+  overflow-x: auto;
+}
+
+.campaign-enrollments-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.campaign-enrollments-table thead {
+  background: #f9fafb;
+}
+
+.campaign-enrollments-table th {
+  padding: 0.625rem 0.875rem;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  border-bottom: 1px solid #e5e5e5;
+  white-space: nowrap;
+}
+
+.campaign-enrollments-table td {
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: middle;
+}
+
+.campaign-enrollments-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.campaign-enrollments-table tbody tr:hover {
+  background: #fafafa;
+}
+
+.campaign-enrollments-table__name {
+  font-weight: 500;
+  color: #111;
+}
+
+.campaign-enrollments-table__phone {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: #4b5563;
+}
+
+.campaign-enrollments-table__campaign {
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.campaign-enrollments-table__step {
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  color: #4f46e5;
+}
+
+.campaign-enrollments-table__date {
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.campaign-btn--sm {
+  padding: 0.25rem 0.625rem !important;
+  font-size: 0.75rem !important;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .campaign-page {
+    padding: 1rem;
+  }
+
+  .campaign-page .sms-save-bar__content {
+    padding: 0.75rem 1rem;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .campaign-enrollments-table th,
+  .campaign-enrollments-table td {
+    padding: 0.5rem;
+    font-size: 0.75rem;
+  }
+}

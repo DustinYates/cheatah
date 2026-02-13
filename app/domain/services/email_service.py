@@ -269,6 +269,27 @@ class EmailService:
                         gmail_thread_id=thread_id,
                         lead_id=lead.id,
                     )
+                    # Drip campaign enrollment (if toggle enabled)
+                    if getattr(email_config, 'drip_campaign_enabled', False):
+                        try:
+                            from app.domain.services.drip_campaign_service import DripCampaignService
+                            drip_service = DripCampaignService(self.session)
+                            campaign_type = drip_service.detect_campaign_type(subject, body)
+                            context_data = {
+                                "first_name": extracted_info.get("name", "").split()[0] if extracted_info.get("name") else None,
+                                "email_subject": subject,
+                                "source": "email",
+                            }
+                            enrollment = await drip_service.enroll_lead(
+                                tenant_id=tenant_id,
+                                lead_id=lead.id,
+                                campaign_type=campaign_type,
+                                context_data=context_data,
+                            )
+                            if enrollment:
+                                logger.info(f"Lead {lead.id} enrolled in {campaign_type} drip campaign")
+                        except Exception as e:
+                            logger.error(f"Drip enrollment failed for lead {lead.id}: {e}", exc_info=True)
                 else:
                     print(f"[LEAD_CAPTURE] FAILED: lead_service.capture_lead returned None", flush=True)
             except Exception as e:

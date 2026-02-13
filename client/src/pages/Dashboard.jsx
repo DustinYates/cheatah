@@ -553,6 +553,27 @@ export default function Dashboard() {
     }
   };
 
+  const handleStopDrip = async (lead) => {
+    if (!confirm(`Stop drip campaign for ${lead.name || 'this lead'}?`)) {
+      return;
+    }
+
+    setActionLoading(`drip-${lead.id}`);
+    try {
+      await api.optOutLeadFromDrip(lead.id);
+      setLeads(prevLeads => prevLeads.map(l =>
+        l.id === lead.id
+          ? { ...l, extra_data: { ...l.extra_data, drip_enrolled: false } }
+          : l
+      ));
+      setError('');
+    } catch (err) {
+      setError(`Failed to stop drip: ${err.message || 'Unknown error'}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Check if a lead can receive SMS follow-up (has phone + not already sent)
   const needsFollowUp = (lead) => {
     return lead.phone &&
@@ -1361,6 +1382,11 @@ export default function Dashboard() {
                             aria-label="Follow-up requested"
                           />
                         )}
+                        {lead.extra_data?.drip_enrolled && (
+                          <span className="drip-badge" title="Drip campaign active">
+                            Drip
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="col-date">
@@ -1380,6 +1406,23 @@ export default function Dashboard() {
                     </td>
                     <td className="actions-cell col-actions">
                       <div className="actions-container">
+                        {lead.extra_data?.drip_enrolled && (
+                          <IconButton
+                            className="icon-button--soft icon-button--warning"
+                            onClick={() => handleStopDrip(lead)}
+                            disabled={actionLoading === `drip-${lead.id}`}
+                            title="Stop drip campaign"
+                            ariaLabel="Stop drip campaign"
+                          >
+                            {actionLoading === `drip-${lead.id}` ? (
+                              <span className="spinner">⋯</span>
+                            ) : (
+                              <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </IconButton>
+                        )}
                         {needsFollowUp(lead) && (
                           <IconButton
                             className="icon-button--soft icon-button--info"
@@ -1441,6 +1484,20 @@ export default function Dashboard() {
                           </IconButton>
                           {openActionMenuId === lead.id && (
                             <div className="action-menu__popover" role="menu">
+                              {lead.extra_data?.drip_enrolled && (
+                                <button
+                                  type="button"
+                                  className="action-menu__item"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    handleStopDrip(lead);
+                                  }}
+                                  disabled={actionLoading === `drip-${lead.id}`}
+                                  role="menuitem"
+                                >
+                                  Stop drip campaign
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="action-menu__item action-menu__item--danger"

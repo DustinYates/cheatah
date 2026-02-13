@@ -876,6 +876,50 @@ class ApiClient {
     return this.request('/email/test/recent-messages');
   }
 
+  // Drip Campaign methods
+  async getDripCampaigns() {
+    return this.request('/drip-campaigns');
+  }
+
+  async getDripCampaign(campaignId) {
+    return this.request(`/drip-campaigns/${campaignId}`);
+  }
+
+  async updateDripCampaign(campaignId, data) {
+    return this.request(`/drip-campaigns/${campaignId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateDripCampaignSteps(campaignId, steps) {
+    return this.request(`/drip-campaigns/${campaignId}/steps`, {
+      method: 'PUT',
+      body: JSON.stringify(steps),
+    });
+  }
+
+  async getDripEnrollments(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/drip-campaigns/enrollments/list${query ? `?${query}` : ''}`);
+  }
+
+  async cancelDripEnrollment(enrollmentId) {
+    return this.request(`/drip-campaigns/enrollments/${enrollmentId}/cancel`, {
+      method: 'POST',
+    });
+  }
+
+  async getLeadDripStatus(leadId) {
+    return this.request(`/drip-campaigns/leads/${leadId}/status`);
+  }
+
+  async optOutLeadFromDrip(leadId) {
+    return this.request(`/drip-campaigns/leads/${leadId}/opt-out`, {
+      method: 'POST',
+    });
+  }
+
   // SMS settings methods (tenant-facing)
   async getSmsSettings() {
     return this.request('/sms/settings');

@@ -191,6 +191,9 @@ export default function Layout() {
                   <NavLink to="/settings/escalation">Escalations</NavLink>
                 </li>
                 <li>
+                  <NavLink to="/settings/campaigns">Campaigns</NavLink>
+                </li>
+                <li>
                   <NavLink to="/settings/dnc">Do Not Contact</NavLink>
                 </li>
                 {user?.is_global_admin && (

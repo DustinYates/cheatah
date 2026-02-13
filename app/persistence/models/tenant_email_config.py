@@ -68,6 +68,9 @@ class TenantEmailConfig(Base):
         "Get In Touch Form Submission",
     ])
 
+    # Drip campaign auto-enrollment for email leads
+    drip_campaign_enabled = Column(Boolean, default=False, nullable=False)
+
     # SendGrid Inbound Parse Configuration
     # Alternative to Gmail API - uses email forwarding instead of OAuth
     sendgrid_enabled = Column(Boolean, default=False, nullable=False)

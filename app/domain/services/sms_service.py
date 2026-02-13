@@ -124,6 +124,8 @@ class SmsService:
                 # Also opt out of SMS
                 await opt_in_service.opt_out(tenant_id, phone_number, method="DNC")
                 logger.info(f"DNC block via SMS - tenant_id={tenant_id}, phone={phone_number}")
+                # Cancel any active drip campaigns for this phone
+                await self._cancel_drip_for_phone(tenant_id, phone_number, "dnc")
             except Exception as e:
                 logger.warning(f"DNC block failed: {e}")
             return SmsResult(
@@ -136,6 +138,8 @@ class SmsService:
             try:
                 await opt_in_service.opt_out(tenant_id, phone_number, method="STOP")
                 logger.info(f"Opt-out via STOP - tenant_id={tenant_id}, phone={phone_number}")
+                # Cancel any active drip campaigns for this phone
+                await self._cancel_drip_for_phone(tenant_id, phone_number, "stop_keyword")
             except Exception as e:
                 logger.warning(f"Opt-out failed: {e}")
             return SmsResult(
@@ -211,6 +215,27 @@ class SmsService:
 
         # Check if this is a follow-up conversation and extract qualification data
         lead = await self._get_lead_for_conversation(tenant_id, conversation.id)
+
+        # Check for active drip campaign enrollment — handle response if enrolled
+        if lead and lead.extra_data and lead.extra_data.get("drip_enrolled"):
+            try:
+                from app.domain.services.drip_campaign_service import DripCampaignService
+                drip_service = DripCampaignService(self.session)
+                drip_result = await drip_service.handle_response(
+                    tenant_id, lead.id, message_body
+                )
+                if drip_result.get("handled"):
+                    logger.info(
+                        f"Drip campaign handled SMS from {phone_number}: "
+                        f"category={drip_result.get('category')}"
+                    )
+                    return SmsResult(
+                        response_message=drip_result.get("reply", ""),
+                    )
+            except Exception as e:
+                logger.error(f"Drip response handling failed: {e}", exc_info=True)
+                # Fall through to normal processing
+
         is_followup = False
         qualification_context = None
 
@@ -605,6 +630,26 @@ class SmsService:
         """
         lead_repo = LeadRepository(self.session)
         return await lead_repo.get_by_conversation(tenant_id, conversation_id)
+
+    async def _cancel_drip_for_phone(
+        self, tenant_id: int, phone_number: str, reason: str
+    ) -> None:
+        """Cancel all active drip campaigns for a phone number."""
+        try:
+            from app.domain.services.drip_campaign_service import DripCampaignService
+            lead_repo = LeadRepository(self.session)
+            # Find leads by phone
+            leads = await lead_repo.find_leads_with_conversation_by_email_or_phone(
+                tenant_id, phone=phone_number
+            )
+            drip_service = DripCampaignService(self.session)
+            for lead in leads:
+                if lead.extra_data and lead.extra_data.get("drip_enrolled"):
+                    count = await drip_service.cancel_all_for_lead(tenant_id, lead.id, reason)
+                    if count > 0:
+                        logger.info(f"Cancelled {count} drip enrollments for lead {lead.id} ({reason})")
+        except Exception as e:
+            logger.error(f"Failed to cancel drip for phone {phone_number}: {e}", exc_info=True)
 
     async def _check_and_notify_high_intent_lead(
         self,

@@ -40,6 +40,7 @@ class EmailSettingsResponse(BaseModel):
     escalation_rules: dict | None
     watch_active: bool  # Whether Gmail watch is active
     lead_capture_subject_prefixes: list[str] | None  # Email subject prefixes that trigger lead creation
+    drip_campaign_enabled: bool = False  # Auto-enroll email leads in drip campaigns
     # SendGrid Inbound Parse settings
     sendgrid_enabled: bool = False
     sendgrid_parse_address: str | None = None
@@ -68,6 +69,7 @@ class UpdateEmailSettingsRequest(BaseModel):
     max_thread_depth: int = 10
     escalation_rules: dict | None = None
     lead_capture_subject_prefixes: list[str] | None = None  # Email subject prefixes that trigger lead creation
+    drip_campaign_enabled: bool = False  # Auto-enroll email leads in drip campaigns
 
 
 class OAuthStartResponse(BaseModel):
@@ -124,6 +126,7 @@ async def get_email_settings(
             escalation_rules=None,
             watch_active=False,
             lead_capture_subject_prefixes=DEFAULT_LEAD_CAPTURE_SUBJECT_PREFIXES,
+            drip_campaign_enabled=False,
             sendgrid_enabled=False,
             sendgrid_parse_address=None,
             email_ingestion_method="gmail",
@@ -163,6 +166,7 @@ async def get_email_settings(
         escalation_rules=config.escalation_rules,
         watch_active=watch_active,
         lead_capture_subject_prefixes=prefixes,
+        drip_campaign_enabled=config.drip_campaign_enabled,
         sendgrid_enabled=config.sendgrid_enabled,
         sendgrid_parse_address=config.sendgrid_parse_address,
         email_ingestion_method=config.email_ingestion_method or "gmail",
@@ -203,6 +207,7 @@ async def update_email_settings(
             max_thread_depth=settings_data.max_thread_depth,
             escalation_rules=settings_data.escalation_rules,
             lead_capture_subject_prefixes=settings_data.lead_capture_subject_prefixes,
+            drip_campaign_enabled=settings_data.drip_campaign_enabled,
         )
     else:
         # Update existing - only allow enabling if Gmail is connected
@@ -222,8 +227,9 @@ async def update_email_settings(
             max_thread_depth=settings_data.max_thread_depth,
             escalation_rules=settings_data.escalation_rules,
             lead_capture_subject_prefixes=settings_data.lead_capture_subject_prefixes,
+            drip_campaign_enabled=settings_data.drip_campaign_enabled,
         )
-    
+
     from datetime import datetime
     watch_active = False
     if config.watch_expiration:
@@ -254,6 +260,7 @@ async def update_email_settings(
         escalation_rules=config.escalation_rules,
         watch_active=watch_active,
         lead_capture_subject_prefixes=prefixes,
+        drip_campaign_enabled=config.drip_campaign_enabled,
         sendgrid_enabled=config.sendgrid_enabled,
         sendgrid_parse_address=config.sendgrid_parse_address,
         email_ingestion_method=config.email_ingestion_method or "gmail",

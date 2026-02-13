@@ -33,6 +33,7 @@ from app.persistence.models.sms_burst_config import SmsBurstConfig
 from app.persistence.models.communications_health_snapshot import CommunicationsHealthSnapshot
 from app.persistence.models.anomaly_alert import AnomalyAlert
 from app.persistence.models.service_health_incident import ServiceHealthIncident
+from app.persistence.models.drip_campaign import DripCampaign, DripCampaignStep, DripEnrollment
 from app.persistence.models.customer import Customer
 from app.persistence.models.tenant_customer_support_config import TenantCustomerSupportConfig
 from app.persistence.models.forum import (

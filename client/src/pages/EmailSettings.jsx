@@ -52,6 +52,7 @@ export default function EmailSettings() {
       setFormData({
         is_enabled: settings.is_enabled ?? true,
         lead_capture_subject_prefixes: settings.lead_capture_subject_prefixes || [],
+        drip_campaign_enabled: settings.drip_campaign_enabled ?? false,
       });
     }
   }, [settings]);
@@ -440,6 +441,32 @@ export default function EmailSettings() {
               <small>
                 Emails with subjects starting with these prefixes (case-insensitive) will create leads.
                 Examples: "Email Capture from Booking Page", "Get In Touch Form Submission"
+              </small>
+            </div>
+          </section>
+
+          <section className="settings-section">
+            <h2>Drip Campaign</h2>
+            <div className="form-group">
+              <label className="email-processing-toggle">
+                <span className="email-processing-toggle__text">
+                  {formData.drip_campaign_enabled ? 'Drip campaign enabled' : 'Drip campaign disabled'}
+                </span>
+                <span className="email-processing-toggle__control">
+                  <input
+                    id="drip-campaign-toggle"
+                    type="checkbox"
+                    checked={formData.drip_campaign_enabled}
+                    onChange={(e) => setFormData(prev => ({ ...prev, drip_campaign_enabled: e.target.checked }))}
+                    className="email-processing-toggle__input"
+                    aria-describedby="drip-campaign-help"
+                  />
+                  <span className="email-processing-toggle__switch" aria-hidden="true"></span>
+                </span>
+              </label>
+              <small id="drip-campaign-help">
+                When enabled, email leads from pre-registration forms will automatically be enrolled in the drip campaign sequence.
+                Configure campaigns in Settings &rarr; Campaigns.
               </small>
             </div>
           </section>

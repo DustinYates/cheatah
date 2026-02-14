@@ -589,6 +589,7 @@ async def get_tenant_config_detail(
     if voice_cfg:
         voice_data = {
             "agent_id": voice_cfg.telnyx_agent_id,
+            "voice_agent_id": voice_cfg.voice_agent_id,
             "handoff_mode": voice_cfg.handoff_mode,
             "transfer_number": voice_cfg.live_transfer_number,
             "enabled": voice_cfg.is_enabled or False,

@@ -28,6 +28,7 @@ class TenantVoiceConfig(Base):
     handoff_mode = Column(String(50), default="take_message", nullable=False)
     live_transfer_number = Column(String(50), nullable=True)  # Phone number for live transfers
     telnyx_agent_id = Column(String(255), nullable=True)  # Telnyx AI agent/assistant ID
+    voice_agent_id = Column(String(255), nullable=True)  # Second Telnyx AI agent (for voice_phone_number)
     
     # Escalation rules (JSON)
     # Schema: {

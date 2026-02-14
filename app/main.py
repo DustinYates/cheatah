@@ -183,6 +183,7 @@ async def telnyx_diagnostics():
                     "messaging_profile_id": sms_cfg.telnyx_messaging_profile_id if sms_cfg else None,
                     "voice_enabled": sms_cfg.voice_enabled if sms_cfg else False,
                     "agent_id": voice_cfg.telnyx_agent_id if voice_cfg else None,
+                    "voice_agent_id": voice_cfg.voice_agent_id if voice_cfg else None,
                     "api_key_present": bool(sms_cfg and sms_cfg.telnyx_api_key),
                     "telnyx_api_checks": {},
                 }

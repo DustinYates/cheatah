@@ -674,7 +674,10 @@ async def _get_tenant_from_assistant_id(
         return None
 
     stmt = select(TenantVoiceConfig).where(
-        TenantVoiceConfig.telnyx_agent_id == assistant_id
+        or_(
+            TenantVoiceConfig.telnyx_agent_id == assistant_id,
+            TenantVoiceConfig.voice_agent_id == assistant_id,
+        )
     ).limit(1)
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()

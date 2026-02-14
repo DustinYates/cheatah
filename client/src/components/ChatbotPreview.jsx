@@ -121,7 +121,7 @@ export default function ChatbotPreview({ className = '' }) {
             {/* Widget Header */}
             <div className="chatbot-preview__widget-header">
               <div className="chatbot-preview__widget-header-content">
-                <span className="chatbot-preview__widget-avatar">🐆</span>
+                <span className="chatbot-preview__widget-avatar">💬</span>
                 <div className="chatbot-preview__widget-info">
                   <span className="chatbot-preview__widget-title">Chat Support</span>
                   <span className="chatbot-preview__widget-status">
@@ -144,7 +144,7 @@ export default function ChatbotPreview({ className = '' }) {
                   className={`chatbot-preview__message chatbot-preview__message--${msg.role}`}
                 >
                   {msg.role === 'assistant' && (
-                    <span className="chatbot-preview__message-avatar">🐆</span>
+                    <span className="chatbot-preview__message-avatar">💬</span>
                   )}
                   <div className="chatbot-preview__bubble">
                     {renderLinkifiedText(msg.content)}
@@ -155,7 +155,7 @@ export default function ChatbotPreview({ className = '' }) {
               {/* Typing indicator */}
               {loading && (
                 <div className="chatbot-preview__message chatbot-preview__message--assistant">
-                  <span className="chatbot-preview__message-avatar">🐆</span>
+                  <span className="chatbot-preview__message-avatar">💬</span>
                   <div className="chatbot-preview__bubble chatbot-preview__typing">
                     <span></span>
                     <span></span>

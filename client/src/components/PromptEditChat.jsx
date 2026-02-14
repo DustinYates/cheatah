@@ -96,7 +96,7 @@ export default function PromptEditChat({ bundle, onClose, onUpdate }) {
               className={`edit-message ${msg.type}`}
               ref={idx === messages.length - 1 ? lastMessageRef : null}
             >
-              {msg.type === 'assistant' && <span className="avatar">🐆</span>}
+              {msg.type === 'assistant' && <span className="avatar">💬</span>}
               <div className="edit-message-content">
                 {msg.content.split('\n').map((line, i) => (
                   <p key={i}>{line}</p>
@@ -107,7 +107,7 @@ export default function PromptEditChat({ bundle, onClose, onUpdate }) {
 
           {loading && (
             <div className="edit-message assistant">
-              <span className="avatar">🐆</span>
+              <span className="avatar">💬</span>
               <div className="edit-message-content typing">
                 <span></span><span></span><span></span>
               </div>

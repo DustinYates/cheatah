@@ -477,9 +477,6 @@ class EmailService:
                     gmail_client=gmail_client,
                 )
                 results.append(result)
-                
-                # Mark as read
-                gmail_client.mark_as_read(message_id)
             
             return results
             

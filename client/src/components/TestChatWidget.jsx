@@ -121,7 +121,7 @@ export default function TestChatWidget({ onTestComplete, className = '' }) {
           {/* Header */}
           <div className="test-chat-widget__header">
             <div className="test-chat-widget__header-left">
-              <span className="test-chat-widget__avatar">🐆</span>
+              <span className="test-chat-widget__avatar">💬</span>
               <div className="test-chat-widget__header-text">
                 <span className="test-chat-widget__title">Test Chat</span>
                 <span className="test-chat-widget__subtitle">Testing live prompt</span>
@@ -167,7 +167,7 @@ export default function TestChatWidget({ onTestComplete, className = '' }) {
                   className={`test-chat-widget__message test-chat-widget__message--${msg.role}`}
                 >
                   {msg.role === 'assistant' && (
-                    <span className="test-chat-widget__message-avatar">🐆</span>
+                    <span className="test-chat-widget__message-avatar">💬</span>
                   )}
                   <div className="test-chat-widget__bubble">
                     {renderLinkifiedText(msg.content)}
@@ -179,7 +179,7 @@ export default function TestChatWidget({ onTestComplete, className = '' }) {
             {/* Typing indicator */}
             {loading && (
               <div className="test-chat-widget__message test-chat-widget__message--assistant">
-                <span className="test-chat-widget__message-avatar">🐆</span>
+                <span className="test-chat-widget__message-avatar">💬</span>
                 <div className="test-chat-widget__bubble test-chat-widget__typing">
                   <span />
                   <span />

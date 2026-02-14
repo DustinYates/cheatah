@@ -60,7 +60,6 @@ class GmailClient:
     SCOPES = [
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/gmail.send",
-        "https://www.googleapis.com/auth/gmail.modify",
     ]
 
     def __init__(
@@ -692,49 +691,6 @@ class GmailClient:
         except HttpError as e:
             logger.error(f"Gmail get profile failed: {e}")
             raise GmailAPIError(f"Failed to get profile: {str(e)}") from e
-
-    def mark_as_read(self, message_id: str) -> bool:
-        """Mark a message as read.
-        
-        Args:
-            message_id: Gmail message ID
-            
-        Returns:
-            True if successful
-        """
-        try:
-            service = self._get_service()
-            service.users().messages().modify(
-                userId="me",
-                id=message_id,
-                body={"removeLabelIds": ["UNREAD"]},
-            ).execute()
-            return True
-        except HttpError as e:
-            logger.error(f"Gmail mark as read failed: {e}")
-            return False
-
-    def add_label(self, message_id: str, label_id: str) -> bool:
-        """Add a label to a message.
-        
-        Args:
-            message_id: Gmail message ID
-            label_id: Label ID to add
-            
-        Returns:
-            True if successful
-        """
-        try:
-            service = self._get_service()
-            service.users().messages().modify(
-                userId="me",
-                id=message_id,
-                body={"addLabelIds": [label_id]},
-            ).execute()
-            return True
-        except HttpError as e:
-            logger.error(f"Gmail add label failed: {e}")
-            return False
 
     @staticmethod
     def parse_email_address(email_header: str) -> tuple[str, str]:

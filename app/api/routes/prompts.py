@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(dependencies=[Depends(require_global_admin)])
 
+# Separate router for endpoints accessible to any authenticated tenant user
+tenant_router = APIRouter()
+
 
 class PromptSectionCreate(BaseModel):
     """Prompt section creation request."""
@@ -434,7 +437,7 @@ async def deactivate_prompt_bundle(
     )
 
 
-@router.post("/test", response_model=PromptTestResponse)
+@tenant_router.post("/test", response_model=PromptTestResponse)
 async def test_prompt(
     test_request: PromptTestRequest,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -555,7 +558,7 @@ async def delete_prompt_bundle(
     await db.commit()
 
 
-@router.get("/compose", response_model=PromptComposeResponse)
+@tenant_router.get("/compose", response_model=PromptComposeResponse)
 async def get_composed_prompt(
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],

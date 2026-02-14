@@ -1207,9 +1207,11 @@ async def telnyx_ai_call_complete(
             f"AI call data extracted: name={caller_name}, email={caller_email}, intent={caller_intent[:50] if caller_intent else 'none'}"
         )
 
-        # WORKAROUND: Telnyx Insights webhooks not firing for voice calls
-        # If we have no insights data OR no transcript, try to fetch from Telnyx API directly
-        if ((not caller_name and not caller_email) or not transcript) and call_id and settings.telnyx_api_key:
+        # ALWAYS fetch transcript from Telnyx API and run LLM extraction.
+        # Even when webhook insights provide name/email/summary, they may contain
+        # stale data from the AI agent's memory of previous calls. LLM extraction
+        # on the actual transcript gives us a fresh summary for THIS specific call.
+        if call_id and settings.telnyx_api_key:
             try:
                 from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
                 telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
@@ -1285,19 +1287,22 @@ async def telnyx_ai_call_complete(
                             await asyncio.sleep(retry_delay)
 
                     if extracted:
-                        # Use extracted data if we didn't get it from webhook
+                        # Name/email: fill gaps only (webhook insights for these are usually correct)
                         if extracted.get("name") and not caller_name:
                             caller_name = extracted["name"]
                             logger.info(f"Extracted caller_name from transcript: {caller_name}")
                         if extracted.get("email") and not caller_email:
                             caller_email = extracted["email"]
                             logger.info(f"Extracted caller_email from transcript: {caller_email}")
-                        if extracted.get("intent") and not caller_intent:
+                        # Summary/intent: LLM ALWAYS wins over webhook insights.
+                        # Webhook insights may contain stale data from the AI agent's
+                        # memory of previous calls. LLM analyzes THIS call's transcript.
+                        if extracted.get("intent"):
                             caller_intent = extracted["intent"]
-                            logger.info(f"Extracted caller_intent from transcript: {caller_intent}")
-                        if extracted.get("summary") and not summary:
+                            logger.info(f"Extracted caller_intent from transcript (overriding webhook): {caller_intent}")
+                        if extracted.get("summary"):
                             summary = extracted["summary"]
-                            logger.info(f"Extracted summary from transcript (first 100 chars): {summary[:100]}")
+                            logger.info(f"Extracted summary from transcript (overriding webhook, first 100 chars): {summary[:100]}")
                         if extracted.get("transcript") and not transcript:
                             transcript = extracted["transcript"]
 
@@ -1446,14 +1451,19 @@ async def telnyx_ai_call_complete(
                 logger.info(f"Unknown event type '{event_type}', but telnyx_conversation_channel=phone_call - classifying as voice")
                 is_voice_call = True
                 is_sms_interaction = False
-            else:
-                # Default to voice — safer than SMS because voice transcript
-                # messages won't inflate SMS billing counts. The ai-call-complete
-                # endpoint primarily receives voice call webhooks; genuine SMS
-                # events (message.*) are already handled by the is_sms_event branch.
-                logger.warning(f"Unknown event type '{event_type}', defaulting to voice classification (safer for billing)")
+            elif has_voice_signals:
+                # Has duration > 0 or recording URL — real phone call happened
+                logger.info(f"Unknown event type '{event_type}', has voice signals (duration={duration}) - classifying as voice")
                 is_voice_call = True
                 is_sms_interaction = False
+            else:
+                # No voice signals (no duration, no recording) — likely SMS/text
+                # AI assistant SMS conversations fire ai-call-complete but have no
+                # call duration or recording. Classify as SMS to avoid showing
+                # text messages with a "Call" badge.
+                logger.info(f"Unknown event type '{event_type}', no voice signals - classifying as SMS")
+                is_voice_call = False
+                is_sms_interaction = True
 
         logger.info(
             f"Channel classification: is_voice_call={is_voice_call}, is_sms_interaction={is_sms_interaction}, "
@@ -2117,6 +2127,7 @@ async def telnyx_ai_call_complete(
 
         # Create Lead from caller (always create new lead, link to existing contact)
         lead = None
+        contact_id = None
         if from_number:
             normalized_from = _normalize_phone(from_number)
 
@@ -2185,6 +2196,7 @@ async def telnyx_ai_call_complete(
         if existing_summary:
             # Update existing summary
             existing_summary.lead_id = lead_id
+            existing_summary.contact_id = contact_id
             existing_summary.intent = final_intent
             existing_summary.outcome = outcome
             existing_summary.summary_text = summary or None
@@ -2194,12 +2206,13 @@ async def telnyx_ai_call_complete(
                 "email": caller_email or None,
                 "reason": caller_intent or (summary[:200] if summary else None),
             }
-            logger.info(f"Updated existing CallSummary for call_id={call.id}, intent={final_intent}, outcome={outcome}, name={caller_name}")
+            logger.info(f"Updated existing CallSummary for call_id={call.id}, intent={final_intent}, outcome={outcome}, name={caller_name}, contact_id={contact_id}")
         else:
             # Create new summary
             call_summary = CallSummary(
                 call_id=call.id,
                 lead_id=lead_id,
+                contact_id=contact_id,
                 intent=final_intent,
                 outcome=outcome,
                 summary_text=summary or None,

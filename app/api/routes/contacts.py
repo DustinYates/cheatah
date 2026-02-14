@@ -233,18 +233,18 @@ async def _get_contact_communication_timestamps(
     if not contact_ids:
         return {}
 
-    # Subquery 1: Messages via Lead -> Conversation -> Message
+    # Subquery 1: Messages via Lead.contact_id -> Conversation -> Message
     messages_query = (
         select(
-            Contact.id.label("contact_id"),
+            Lead.contact_id.label("contact_id"),
             Message.created_at.label("timestamp"),
         )
-        .select_from(Contact)
-        .join(Lead, Contact.lead_id == Lead.id)
+        .select_from(Lead)
         .join(Conversation, Lead.conversation_id == Conversation.id)
         .join(Message, Message.conversation_id == Conversation.id)
         .where(
-            Contact.id.in_(contact_ids),
+            Lead.contact_id.in_(contact_ids),
+            Lead.conversation_id.isnot(None),
             Message.created_at.isnot(None),
         )
     )
@@ -263,17 +263,16 @@ async def _get_contact_communication_timestamps(
         )
     )
 
-    # Subquery 3: Emails via Lead -> EmailIngestionLog
+    # Subquery 3: Emails via Lead.contact_id -> EmailIngestionLog
     emails_query = (
         select(
-            Contact.id.label("contact_id"),
+            Lead.contact_id.label("contact_id"),
             EmailIngestionLog.received_at.label("timestamp"),
         )
-        .select_from(Contact)
-        .join(Lead, Contact.lead_id == Lead.id)
+        .select_from(Lead)
         .join(EmailIngestionLog, EmailIngestionLog.lead_id == Lead.id)
         .where(
-            Contact.id.in_(contact_ids),
+            Lead.contact_id.in_(contact_ids),
             EmailIngestionLog.status == "processed",
             EmailIngestionLog.received_at.isnot(None),
         )
@@ -1120,52 +1119,51 @@ async def get_contact_activity_feed(
 
     # Get conversations (SMS and web chat)
     if not channel or channel in ("sms", "chat"):
-        if contact.lead_id:
-            conv_stmt = (
-                select(Conversation)
-                .select_from(Lead)
-                .join(Conversation, Lead.conversation_id == Conversation.id)
-                .where(Lead.contact_id == contact_id)
+        conv_stmt = (
+            select(Conversation)
+            .select_from(Lead)
+            .join(Conversation, Lead.conversation_id == Conversation.id)
+            .where(Lead.contact_id == contact_id)
+        )
+        if channel == "sms":
+            conv_stmt = conv_stmt.where(Conversation.channel == "sms")
+        elif channel == "chat":
+            conv_stmt = conv_stmt.where(Conversation.channel == "web")
+
+        conv_result = await db.execute(conv_stmt)
+        for (conv,) in conv_result:
+            # Get message count and preview
+            msg_count_stmt = select(func.count()).where(
+                Message.conversation_id == conv.id,
+                Message.role != "system"
             )
-            if channel == "sms":
-                conv_stmt = conv_stmt.where(Conversation.channel == "sms")
-            elif channel == "chat":
-                conv_stmt = conv_stmt.where(Conversation.channel == "web")
+            msg_count = (await db.execute(msg_count_stmt)).scalar() or 0
 
-            conv_result = await db.execute(conv_stmt)
-            for (conv,) in conv_result:
-                # Get message count and preview
-                msg_count_stmt = select(func.count()).where(
-                    Message.conversation_id == conv.id,
-                    Message.role != "system"
-                )
-                msg_count = (await db.execute(msg_count_stmt)).scalar() or 0
+            # Get last message for preview
+            last_msg_stmt = (
+                select(Message)
+                .where(Message.conversation_id == conv.id, Message.role == "user")
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            )
+            last_msg_result = await db.execute(last_msg_stmt)
+            last_msg = last_msg_result.scalar_one_or_none()
 
-                # Get last message for preview
-                last_msg_stmt = (
-                    select(Message)
-                    .where(Message.conversation_id == conv.id, Message.role == "user")
-                    .order_by(Message.created_at.desc())
-                    .limit(1)
-                )
-                last_msg_result = await db.execute(last_msg_stmt)
-                last_msg = last_msg_result.scalar_one_or_none()
+            preview = ""
+            if last_msg and last_msg.content:
+                preview = last_msg.content[:100] + ("..." if len(last_msg.content) > 100 else "")
 
-                preview = ""
-                if last_msg and last_msg.content:
-                    preview = last_msg.content[:100] + ("..." if len(last_msg.content) > 100 else "")
-
-                conv_type = "sms" if conv.channel == "sms" else "chat"
-                items.append(ActivityItem(
-                    id=f"{conv_type}-{conv.id}",
-                    type=conv_type,
-                    timestamp=conv.updated_at.isoformat() if conv.updated_at else conv.created_at.isoformat(),
-                    summary=preview or f"{msg_count} messages",
-                    details=ActivityItemDetails(
-                        channel=conv.channel,
-                        message_count=msg_count,
-                    ),
-                ))
+            conv_type = "sms" if conv.channel == "sms" else "chat"
+            items.append(ActivityItem(
+                id=f"{conv_type}-{conv.id}",
+                type=conv_type,
+                timestamp=conv.updated_at.isoformat() if conv.updated_at else conv.created_at.isoformat(),
+                summary=preview or f"{msg_count} messages",
+                details=ActivityItemDetails(
+                    channel=conv.channel,
+                    message_count=msg_count,
+                ),
+            ))
 
     # Get email conversations
     if not channel or channel == "email":

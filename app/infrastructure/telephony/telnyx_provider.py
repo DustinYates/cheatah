@@ -756,13 +756,19 @@ Extract:
 1. "name" - The caller's full name if they explicitly stated it. Empty string if not provided.
 2. "email" - The caller's email if they mentioned it. Empty string if not provided.
 3. "intent" - One of: "pricing_info", "hours_location", "booking_request", "support_request", "wrong_number", "general_inquiry"
-4. "summary" - A brief 1-sentence summary (max 100 characters) of why the caller called.
+4. "summary" - A brief 1-sentence summary (max 100 characters) of why the caller called in THIS conversation.
 
 CRITICAL rules for name extraction:
 - Only extract a name if the caller EXPLICITLY stated their name (e.g., "My name is John Smith", "I'm Sarah", "It's Mike")
 - NEVER extract these as names: "for me", "for myself", "myself", "me", "for my child", "for my son", "for my daughter", "for my wife", "for my husband" - these are responses to "who is this for?" and are NOT names
 - Do not infer or guess names from context
 - If no explicit name was stated, return empty string ""
+
+CRITICAL rules for summary:
+- Summarize ONLY what was discussed in THIS specific conversation
+- If the assistant references previous calls, past enrollments, or historical context, do NOT include those in the summary
+- Focus on the NEW reason for this call, not accumulated history
+- The summary should answer: "What did the caller want TODAY?"
 
 Return ONLY compact JSON (no extra whitespace or newlines):"""
 

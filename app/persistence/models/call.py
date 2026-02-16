@@ -36,6 +36,7 @@ class Call(Base):
 
     # Voice agent variant tracking (for A/B testing)
     assistant_id = Column(String(255), nullable=True, index=True)  # Telnyx AI assistant ID
+    assistant_version_id = Column(String(255), nullable=True)  # Traffic Distribution version ID
     voice_model = Column(String(255), nullable=True, index=True)  # Voice model used (e.g., "ElevenLabsJessica")
 
     # Handoff tracking (Phase 2)

@@ -1965,7 +1965,8 @@ async def telnyx_ai_call_complete(
             telnyx_ai_voice = TelnyxAIService(settings.telnyx_api_key)
 
             # Strategy 1: Fetch version name via assistant_version_id (Traffic Distribution)
-            # Each traffic distribution variant is an assistant version with a distinct name
+            # Each traffic distribution variant is an assistant version with different voice settings.
+            # The voice_settings.voice field identifies the variant (e.g., "ElevenLabsJessica").
             if assistant_version_id and assistant_id:
                 try:
                     voice_model = await telnyx_ai_voice.get_assistant_version_name(
@@ -1976,7 +1977,25 @@ async def telnyx_ai_call_complete(
                 except Exception as e:
                     logger.warning(f"Failed to get voice_model from Versions API: {e}")
 
-            # Strategy 2: Fallback to Conversations API
+            # Strategy 2: List all versions and match by version_id
+            # Useful if the single-version lookup didn't return a voice variant name
+            if not voice_model and assistant_version_id and assistant_id:
+                try:
+                    versions = await telnyx_ai_voice.list_assistant_versions(assistant_id)
+                    for v in versions:
+                        if str(v.get("id")) == str(assistant_version_id):
+                            vs = v.get("voice_settings", {}) or {}
+                            voice_model = (
+                                vs.get("voice") or vs.get("name")
+                                or v.get("description") or ""
+                            )
+                            if voice_model:
+                                logger.info(f"Got voice_model from version list: {voice_model}")
+                            break
+                except Exception as e:
+                    logger.warning(f"Failed to list versions for voice_model: {e}")
+
+            # Strategy 3: Fallback to Conversations API
             if not voice_model and telnyx_conversation_id:
                 try:
                     voice_model = await telnyx_ai_voice.get_conversation_voice_model(telnyx_conversation_id) or ""
@@ -2010,6 +2029,8 @@ async def telnyx_ai_call_complete(
             # Set voice variant tracking fields
             if assistant_id and not call.assistant_id:
                 call.assistant_id = assistant_id
+            if assistant_version_id and not call.assistant_version_id:
+                call.assistant_version_id = assistant_version_id
             if voice_model and not call.voice_model:
                 call.voice_model = voice_model
         else:
@@ -2032,6 +2053,7 @@ async def telnyx_ai_call_complete(
                 ended_at=actual_end if actual_end != actual_start else now,
                 language=detected_language,
                 assistant_id=assistant_id or None,
+                assistant_version_id=assistant_version_id or None,
                 voice_model=voice_model or None,
             )
             db.add(call)

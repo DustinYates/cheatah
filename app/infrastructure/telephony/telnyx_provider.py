@@ -318,40 +318,92 @@ class TelnyxAIService:
     async def get_assistant_version_name(
         self, assistant_id: str, version_id: str
     ) -> str | None:
-        """Get the name of a specific assistant version (for A/B test voice identification).
+        """Get the voice variant name for a specific assistant version (A/B test identification).
 
         With Telnyx Traffic Distribution, each voice variant is a version of the
-        same assistant. The version name (e.g., "ElevenLabsJessica") identifies
-        which voice was used for a call.
+        same assistant with different voice settings. The voice name (e.g.,
+        "ElevenLabsJessica", "DBOT - Emma Multilingual") identifies which variant
+        handled a call.
+
+        Priority order:
+          1. voice_settings.voice — the actual TTS voice name (best identifier)
+          2. voice_settings.name — alternative voice name field
+          3. description — version description (may contain variant label)
+          4. name — only if different from parent assistant name (often just the
+             assistant name, not useful for variant identification)
 
         Args:
             assistant_id: The Telnyx AI assistant ID
             version_id: The assistant version ID from webhook metadata
 
         Returns:
-            Version name string or None if not found
+            Voice variant name string or None if not found
         """
         try:
             async with self._get_client() as client:
-                logger.info(f"[TELNYX-API] Fetching version name: assistant={assistant_id}, version={version_id}")
-                response = await client.get(f"/ai/assistants/{assistant_id}/versions/{version_id}")
-                response.raise_for_status()
-                data = response.json()
-                version_data = data.get("data", data)
+                logger.info(f"[TELNYX-API] Fetching version: assistant={assistant_id}, version={version_id}")
 
-                name = version_data.get("name")
-                if name:
-                    logger.info(f"[TELNYX-API] Version name: {name}")
-                    return str(name)
+                # Fetch both the assistant (for name comparison) and the version
+                version_resp = await client.get(
+                    f"/ai/assistants/{assistant_id}/versions/{version_id}"
+                )
+                version_resp.raise_for_status()
+                version_json = version_resp.json()
+                version_data = version_json.get("data", version_json)
 
-                # Fallback: try voice_settings.voice
+                # Log full structure for debugging Traffic Distribution fields
+                logger.info(
+                    f"[TELNYX-API] Version data keys: {list(version_data.keys())}, "
+                    f"version_data sample: {str(version_data)[:600]}"
+                )
+
+                # 1. voice_settings — the actual voice variant identifier
                 voice_settings = version_data.get("voice_settings", {}) or {}
-                voice = voice_settings.get("voice")
-                if voice:
-                    logger.info(f"[TELNYX-API] Version voice: {voice}")
-                    return str(voice)
+                if voice_settings:
+                    logger.info(f"[TELNYX-API] voice_settings: {voice_settings}")
+                voice_name = (
+                    voice_settings.get("voice")
+                    or voice_settings.get("name")
+                    or voice_settings.get("model")
+                    or voice_settings.get("voice_id")
+                )
+                if voice_name:
+                    logger.info(f"[TELNYX-API] Version voice from voice_settings: {voice_name}")
+                    return str(voice_name)
 
-                logger.info(f"[TELNYX-API] No name found in version data. Keys: {list(version_data.keys())}")
+                # 2. description — some versions use description as the variant label
+                description = version_data.get("description")
+                if description:
+                    logger.info(f"[TELNYX-API] Version description: {description}")
+                    return str(description)
+
+                # 3. name — but only if it looks like a variant name, not the assistant name
+                #    Fetch assistant name to compare
+                version_name = version_data.get("name")
+                if version_name:
+                    try:
+                        assistant_resp = await client.get(f"/ai/assistants/{assistant_id}")
+                        assistant_resp.raise_for_status()
+                        assistant_json = assistant_resp.json()
+                        assistant_data = assistant_json.get("data", assistant_json)
+                        assistant_name = assistant_data.get("name", "")
+                        if version_name != assistant_name:
+                            logger.info(
+                                f"[TELNYX-API] Version name '{version_name}' differs from "
+                                f"assistant name '{assistant_name}' — using as variant"
+                            )
+                            return str(version_name)
+                        logger.info(
+                            f"[TELNYX-API] Version name '{version_name}' matches assistant "
+                            f"name — not useful for variant identification"
+                        )
+                    except Exception as e:
+                        logger.warning(f"[TELNYX-API] Failed to fetch assistant for name comparison: {e}")
+                        # Can't compare, return the name anyway as last resort
+                        logger.info(f"[TELNYX-API] Returning version name as fallback: {version_name}")
+                        return str(version_name)
+
+                logger.info(f"[TELNYX-API] No variant name found in version data")
                 return None
 
         except httpx.HTTPError as e:
@@ -360,6 +412,35 @@ class TelnyxAIService:
         except Exception as e:
             logger.warning(f"[TELNYX-API] Unexpected error getting version name: {type(e).__name__}: {e}")
             return None
+
+    async def list_assistant_versions(
+        self, assistant_id: str
+    ) -> list[dict[str, Any]]:
+        """List all versions of an assistant (for Traffic Distribution mapping).
+
+        Returns:
+            List of version objects with id, name, voice_settings, etc.
+        """
+        try:
+            async with self._get_client() as client:
+                logger.info(f"[TELNYX-API] Listing versions for assistant: {assistant_id}")
+                response = await client.get(f"/ai/assistants/{assistant_id}/versions")
+                response.raise_for_status()
+                data = response.json()
+                versions = data.get("data", [])
+                logger.info(f"[TELNYX-API] Found {len(versions)} versions")
+                for v in versions:
+                    vs = v.get("voice_settings", {}) or {}
+                    logger.info(
+                        f"[TELNYX-API] Version id={v.get('id')}, "
+                        f"name={v.get('name')}, "
+                        f"voice={vs.get('voice')}, "
+                        f"description={v.get('description')}"
+                    )
+                return versions
+        except Exception as e:
+            logger.warning(f"[TELNYX-API] Failed to list versions: {type(e).__name__}: {e}")
+            return []
 
     async def get_conversation_messages(
         self, conversation_id: str

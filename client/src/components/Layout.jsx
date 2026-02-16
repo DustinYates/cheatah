@@ -87,11 +87,9 @@ export default function Layout() {
           <li>
             <NavLink to="/" end>Leads</NavLink>
           </li>
-          {user?.is_global_admin && (
           <li>
             <NavLink to="/customers">Customers</NavLink>
           </li>
-          )}
           <li>
             <NavLink to="/contacts">Contacts</NavLink>
           </li>

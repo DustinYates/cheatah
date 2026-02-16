@@ -129,8 +129,8 @@ async def process_followup_task(
             conv.phone_number = payload.phone_number
             await db.commit()
 
-        # Update lead with follow-up info
-        extra_data = lead.extra_data or {}
+        # Update lead with follow-up info (create new dict to trigger SQLAlchemy change detection)
+        extra_data = dict(lead.extra_data or {})
         extra_data["followup_conversation_id"] = conversation.id
         extra_data["followup_sent_at"] = datetime.now(timezone.utc).isoformat()
         lead.extra_data = extra_data

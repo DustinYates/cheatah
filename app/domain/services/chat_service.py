@@ -538,6 +538,31 @@ class ChatService:
             if existing_lead_after:
                 lead_captured = True
 
+        # Create anonymous lead for web conversations so every chat shows on dashboard.
+        # SMS/email/voice always have contact info, but web chats may not.
+        if not lead_captured and conversation.channel == "web":
+            try:
+                anon_lead = await self.lead_service.capture_lead(
+                    tenant_id=tenant_id,
+                    conversation_id=conversation.id,
+                    name=None,
+                    email=None,
+                    phone=None,
+                    metadata={"source": "chatbot", "anonymous": True},
+                    skip_dedup=True,
+                )
+                lead_captured = True
+                logger.info(
+                    f"Anonymous lead created for web chat - tenant_id={tenant_id}, "
+                    f"conversation_id={conversation.id}, lead_id={anon_lead.id}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to create anonymous lead - tenant_id={tenant_id}, "
+                    f"conversation_id={conversation.id}, error={e}",
+                    exc_info=True,
+                )
+
         # Link conversation to contact if not already linked
         # This ensures the SMS handoff and lead timeline can find the conversation
         if not conversation.contact_id:

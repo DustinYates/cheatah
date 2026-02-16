@@ -173,8 +173,8 @@ class FollowUpService:
                 delay_seconds=delay_minutes * 60,
             )
 
-            # Update lead extra_data
-            extra_data = lead.extra_data or {}
+            # Update lead extra_data (create new dict to trigger SQLAlchemy change detection)
+            extra_data = dict(lead.extra_data or {})
             extra_data["followup_scheduled"] = True
             extra_data["followup_task_id"] = task_name
             extra_data["followup_scheduled_at"] = datetime.now(timezone.utc).isoformat()
@@ -257,8 +257,8 @@ class FollowUpService:
                 delay_seconds=0,  # Immediate execution
             )
 
-            # Update lead extra_data
-            extra_data = lead.extra_data or {}
+            # Update lead extra_data (create new dict to trigger SQLAlchemy change detection)
+            extra_data = dict(lead.extra_data or {})
             extra_data["followup_scheduled"] = True
             extra_data["followup_task_id"] = task_name
             extra_data["followup_scheduled_at"] = datetime.now(timezone.utc).isoformat()

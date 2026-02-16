@@ -859,7 +859,7 @@ class PromiseFulfillmentService:
 
             if lead:
                 # Update lead metadata
-                extra_data = lead.extra_data or {}
+                extra_data = dict(lead.extra_data or {})
                 if isinstance(extra_data, str):
                     extra_data = json.loads(extra_data)
 

@@ -67,14 +67,14 @@ class PendingPromiseService:
         self.session = session
 
     def _get_extra_data(self, lead: Lead) -> dict[str, Any]:
-        """Safely get extra_data as a dict."""
+        """Safely get extra_data as a new dict (copy to trigger SQLAlchemy change detection)."""
         extra_data = lead.extra_data or {}
         if isinstance(extra_data, str):
             try:
                 extra_data = json.loads(extra_data)
             except json.JSONDecodeError:
                 extra_data = {}
-        return extra_data
+        return dict(extra_data)
 
     async def store_pending_promise(
         self, lead: Lead, promise: DetectedPromise

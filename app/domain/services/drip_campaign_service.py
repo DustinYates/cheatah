@@ -83,8 +83,8 @@ class DripCampaignService:
         )
         self.session.add(enrollment)
 
-        # Mark lead as drip enrolled
-        extra_data = lead.extra_data or {}
+        # Mark lead as drip enrolled (use dict() to trigger SQLAlchemy change detection)
+        extra_data = dict(lead.extra_data or {})
         extra_data["drip_enrolled"] = True
         if "drip_enrollment_ids" not in extra_data:
             extra_data["drip_enrollment_ids"] = []
@@ -93,7 +93,8 @@ class DripCampaignService:
         await self.session.refresh(enrollment)
 
         # Update the enrollment IDs list now that we have the ID
-        extra_data["drip_enrollment_ids"].append(enrollment.id)
+        extra_data = dict(lead.extra_data or {})
+        extra_data.setdefault("drip_enrollment_ids", []).append(enrollment.id)
         lead.extra_data = extra_data
         await self.session.commit()
 
@@ -395,7 +396,7 @@ class DripCampaignService:
             # Update lead extra_data
             lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
             if lead:
-                extra_data = lead.extra_data or {}
+                extra_data = dict(lead.extra_data or {})
                 extra_data["drip_enrolled"] = False
                 lead.extra_data = extra_data
                 await self.session.commit()

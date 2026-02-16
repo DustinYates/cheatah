@@ -266,7 +266,7 @@ class ChatSmsHandoffService:
             if not lead:
                 return
 
-            extra_data = lead.extra_data or {}
+            extra_data = dict(lead.extra_data or {})
             extra_data["handoff"] = {
                 "from_channel": "web",
                 "from_conversation_id": chat_conversation_id,

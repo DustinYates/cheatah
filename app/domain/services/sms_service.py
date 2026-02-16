@@ -837,7 +837,7 @@ Respond with ONLY valid JSON, no explanation:
             lead: Lead to update
             extracted: Extracted data dictionary
         """
-        extra_data = lead.extra_data or {}
+        extra_data = dict(lead.extra_data or {})
         qual_data = extra_data.get("qualification_data", {})
 
         # Update qualification data (don't overwrite existing values)
@@ -948,7 +948,7 @@ Respond with ONLY valid JSON, no explanation:
                         if extracted_email and not source_lead.email:
                             source_lead.email = extracted_email
                         # Track the linked SMS conversation
-                        extra_data = source_lead.extra_data or {}
+                        extra_data = dict(source_lead.extra_data or {})
                         extra_data.setdefault("linked_conversations", [])
                         if conversation.id not in extra_data["linked_conversations"]:
                             extra_data["linked_conversations"].append(conversation.id)

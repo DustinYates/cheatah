@@ -1413,8 +1413,9 @@ async def telnyx_ai_call_complete(
         logger.info(f"Found tenant_id={tenant_id} for AI call")
 
         # Determine if this is a voice call vs SMS/chat interaction
-        # PRIMARY: Use event_type as the definitive classifier
-        # SECONDARY: Use duration only for capturing call metrics, not classification
+        # PRIMARY: telnyx_conversation_channel metadata (most reliable — set by Telnyx AI Agent)
+        # SECONDARY: event_type prefix (call.* vs message.*)
+        # TERTIARY: voice signals (duration/recording) as fallback
 
         # Normalize event_type for comparison
         normalized_event_type = event_type.lower().strip() if event_type else ""
@@ -1437,30 +1438,35 @@ async def telnyx_ai_call_complete(
             bool(recording_url)
         )
 
-        # Final classification based on event type (not duration)
-        if is_sms_event:
+        # Telnyx AI Agent sets telnyx_conversation_channel in metadata:
+        # "phone_call", "web_call", or "sms_chat"
+        # This is the most reliable signal — Telnyx uses call.* event types
+        # for ALL AI Agent conversations (including SMS), so event_type alone
+        # can misclassify SMS agent conversations as voice calls.
+        conversation_channel = metadata.get("telnyx_conversation_channel", "")
+
+        # Final classification: metadata channel > event type > voice signals
+        if conversation_channel == "sms_chat":
+            is_voice_call = False
+            is_sms_interaction = True
+            logger.info(f"telnyx_conversation_channel=sms_chat - classifying as SMS (event_type={event_type})")
+        elif conversation_channel == "phone_call":
+            is_voice_call = True
+            is_sms_interaction = False
+            logger.info(f"telnyx_conversation_channel=phone_call - classifying as voice")
+        elif is_sms_event:
             is_voice_call = False
             is_sms_interaction = True
         elif is_voice_event:
             is_voice_call = True
             is_sms_interaction = False
         else:
-            # Unknown event type - check metadata for channel info before defaulting
-            conversation_channel = metadata.get("telnyx_conversation_channel", "")
-            if conversation_channel == "phone_call":
-                logger.info(f"Unknown event type '{event_type}', but telnyx_conversation_channel=phone_call - classifying as voice")
-                is_voice_call = True
-                is_sms_interaction = False
-            elif has_voice_signals:
-                # Has duration > 0 or recording URL — real phone call happened
+            # Unknown event type, no metadata channel — use voice signals
+            if has_voice_signals:
                 logger.info(f"Unknown event type '{event_type}', has voice signals (duration={duration}) - classifying as voice")
                 is_voice_call = True
                 is_sms_interaction = False
             else:
-                # No voice signals (no duration, no recording) — likely SMS/text
-                # AI assistant SMS conversations fire ai-call-complete but have no
-                # call duration or recording. Classify as SMS to avoid showing
-                # text messages with a "Call" badge.
                 logger.info(f"Unknown event type '{event_type}', no voice signals - classifying as SMS")
                 is_voice_call = False
                 is_sms_interaction = True
@@ -1468,7 +1474,7 @@ async def telnyx_ai_call_complete(
         logger.info(
             f"Channel classification: is_voice_call={is_voice_call}, is_sms_interaction={is_sms_interaction}, "
             f"event_type={event_type}, is_voice_event={is_voice_event}, is_sms_event={is_sms_event}, "
-            f"has_voice_signals={has_voice_signals}, duration={duration}"
+            f"has_voice_signals={has_voice_signals}, duration={duration}, conversation_channel={conversation_channel}"
         )
 
         if is_sms_interaction or (not is_voice_call and not call_id):

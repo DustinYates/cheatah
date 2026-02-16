@@ -287,6 +287,7 @@ async def zapier_family_sync(
     email = _find([
         "email", "email1", "email_address", "students_email",
     ])
+    status = _find(["status", "family_status", "account_status"])
 
     if not jackrabbit_id:
         raise HTTPException(
@@ -294,16 +295,12 @@ async def zapier_family_sync(
             detail="Could not find family/jackrabbit ID in payload",
         )
 
-    # Build customer data from whatever we found
-    customer_data = {}
+    # Preserve the full raw payload so nothing is lost (address, loc, students, etc.)
+    customer_data = {k: v for k, v in body.items() if v is not None}
     if name:
         customer_data["name"] = name
     if email:
         customer_data["email"] = email
-
-    if not customer_data:
-        # Use the raw body as customer_data so nothing is lost
-        customer_data = {k: str(v) for k, v in body.items() if v}
 
     # Normalize phone (treat empty as None)
     phone = phone if phone else None
@@ -329,6 +326,7 @@ async def zapier_family_sync(
         email=email,
         account_data=account_data,
         jackrabbit_customer_id=customer.id,
+        status=status,
     )
 
     logger.info(
@@ -337,6 +335,7 @@ async def zapier_family_sync(
             "tenant_id": tenant_id,
             "jackrabbit_id": jackrabbit_id,
             "customer_id": customer.id,
+            "status": status,
         },
     )
 

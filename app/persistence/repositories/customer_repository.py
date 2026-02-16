@@ -140,6 +140,7 @@ class CustomerRepository(BaseRepository[Customer]):
         email: str | None = None,
         account_data: dict | None = None,
         jackrabbit_customer_id: int | None = None,
+        status: str | None = None,
     ) -> Customer:
         """Create or update customer from Jackrabbit sync.
 
@@ -151,10 +152,15 @@ class CustomerRepository(BaseRepository[Customer]):
             email: Email address
             account_data: Account details JSON
             jackrabbit_customer_id: FK to jackrabbit_customers table
+            status: Account status from Jackrabbit (active/inactive)
 
         Returns:
             Created or updated customer
         """
+        resolved_status = (status or "active").lower().strip()
+        if resolved_status not in ("active", "inactive", "suspended"):
+            resolved_status = "active"
+
         # Try to find by external_customer_id first
         existing = await self.get_by_external_id(tenant_id, external_customer_id)
 
@@ -164,6 +170,7 @@ class CustomerRepository(BaseRepository[Customer]):
             existing.email = email
             existing.account_data = account_data
             existing.jackrabbit_customer_id = jackrabbit_customer_id
+            existing.status = resolved_status
             existing.last_synced_at = datetime.utcnow()
             existing.sync_source = "jackrabbit"
             await self.session.commit()
@@ -180,7 +187,7 @@ class CustomerRepository(BaseRepository[Customer]):
             jackrabbit_customer_id=jackrabbit_customer_id,
             last_synced_at=datetime.utcnow(),
             sync_source="jackrabbit",
-            status="active",
+            status=resolved_status,
         )
         self.session.add(customer)
         await self.session.commit()

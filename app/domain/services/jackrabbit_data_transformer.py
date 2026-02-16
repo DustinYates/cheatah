@@ -55,6 +55,21 @@ def transform_jackrabbit_to_account_data(customer_data: dict | None) -> dict:
     elif "status" in customer_data:
         result["enrollment_status"] = str(customer_data["status"]).lower()
 
+    # Extract address fields
+    address = _extract_address(customer_data)
+    if address:
+        result["address"] = address
+
+    # Extract location code (Jackrabbit "Loc" field)
+    location_code = _extract_location_code(customer_data)
+    if location_code:
+        result["location_code"] = location_code
+
+    # Extract student names
+    students = _extract_students(customer_data)
+    if students:
+        result["students"] = students
+
     # Pass through extra fields not already handled
     _HANDLED_KEYS = {
         "enrollments", "classes", "enroll", "enrolled_classes",
@@ -63,6 +78,11 @@ def transform_jackrabbit_to_account_data(customer_data: dict | None) -> dict:
         "status", "name", "email", "phone", "phone_number", "phone1",
         "family_name", "first_name", "last_name",
         "id", "family_id", "fam_id",
+        # Address / location / students (handled above)
+        "address", "street", "street_address", "mailing_address",
+        "city", "state", "zip", "zip_code", "zipcode", "postal_code",
+        "loc", "location", "location_code",
+        "students", "student_names", "children",
     }
     for key, value in customer_data.items():
         if key.lower() not in _HANDLED_KEYS and value is not None:
@@ -192,4 +212,61 @@ def _extract_member_since(data: dict) -> str | None:
         value = data.get(key)
         if value:
             return str(value)
+    return None
+
+
+def _extract_address(data: dict) -> dict | None:
+    """Extract address fields from Jackrabbit data.
+
+    Returns a dict with street, city, state, zip — or None if nothing found.
+    """
+    # Try a single combined address field first
+    for key in ["address", "street", "street_address", "mailing_address"]:
+        val = data.get(key) or data.get(key.title())
+        if val:
+            break
+    else:
+        val = None
+
+    city = data.get("city") or data.get("City")
+    state = data.get("state") or data.get("State")
+    zip_code = data.get("zip") or data.get("Zip") or data.get("zip_code") or data.get("postal_code")
+
+    if not val and not city and not zip_code:
+        return None
+
+    result = {}
+    if val:
+        result["street"] = str(val).strip()
+    if city:
+        result["city"] = str(city).strip()
+    if state:
+        result["state"] = str(state).strip()
+    if zip_code:
+        result["zip"] = str(zip_code).strip()
+    return result
+
+
+def _extract_location_code(data: dict) -> str | None:
+    """Extract Jackrabbit location code (Loc field)."""
+    for key in ["loc", "Loc", "location_code", "location"]:
+        val = data.get(key)
+        if val:
+            return str(val).strip()
+    return None
+
+
+def _extract_students(data: dict) -> list[str] | None:
+    """Extract student names from Jackrabbit data.
+
+    Jackrabbit returns students as a comma-separated string like
+    "Sumaiya, Zebadiyah" or as a list.
+    """
+    for key in ["students", "Students", "student_names", "children"]:
+        val = data.get(key)
+        if val:
+            if isinstance(val, list):
+                return [str(s).strip() for s in val if s]
+            if isinstance(val, str):
+                return [s.strip() for s in val.split(",") if s.strip()]
     return None

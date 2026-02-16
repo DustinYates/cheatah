@@ -21,7 +21,7 @@ class CustomerResponse(BaseModel):
     tenant_id: int
     name: str | None
     email: str | None
-    phone: str
+    phone: str | None
     status: str
     account_type: str | None
     external_customer_id: str | None

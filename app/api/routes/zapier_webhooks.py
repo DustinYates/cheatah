@@ -30,12 +30,32 @@ class ZapierCallbackPayload(BaseModel):
 
 
 class CustomerUpdatePayload(BaseModel):
-    """Payload for proactive customer data update from Zapier."""
+    """Payload for proactive customer data update from Zapier.
+
+    Accepts either nested `customer_data` dict or flat `name`/`email` fields
+    for easier Zapier configuration (Zapier's UI mangles double-underscore keys).
+    """
     tenant_id: int
     jackrabbit_id: str
     action: str  # "update" | "invalidate"
     phone_number: str | None = None
     customer_data: dict | None = None
+    # Flat alternatives to customer_data (for Zapier convenience)
+    name: str | None = None
+    email: str | None = None
+
+    def get_customer_data(self) -> dict | None:
+        """Return customer_data, building it from flat fields if needed."""
+        if self.customer_data:
+            return self.customer_data
+        if self.name or self.email:
+            data = {}
+            if self.name:
+                data["name"] = self.name
+            if self.email:
+                data["email"] = self.email
+            return data
+        return None
 
 
 @router.post("/callback")
@@ -163,31 +183,34 @@ async def zapier_customer_update(
         )
 
     elif payload.action == "update":
-        # Update cached customer data
-        if not payload.phone_number or not payload.customer_data:
+        # Build customer_data from flat fields or nested dict
+        customer_data = payload.get_customer_data()
+        if not customer_data:
             raise HTTPException(
                 status_code=400,
-                detail="phone_number and customer_data required for update",
+                detail="name, email, or customer_data required for update",
             )
+        # Treat empty string phone as None
+        phone = payload.phone_number or None
 
         customer = await customer_repo.upsert(
             tenant_id=payload.tenant_id,
             jackrabbit_id=payload.jackrabbit_id,
-            phone_number=payload.phone_number,
-            email=payload.customer_data.get("email"),
-            name=payload.customer_data.get("name"),
-            customer_data=payload.customer_data,
+            phone_number=phone,
+            email=customer_data.get("email"),
+            name=customer_data.get("name"),
+            customer_data=customer_data,
         )
 
         # Sync to customers table for UI display
         main_customer_repo = CustomerRepository(db)
-        account_data = transform_jackrabbit_to_account_data(payload.customer_data)
+        account_data = transform_jackrabbit_to_account_data(customer_data)
         await main_customer_repo.upsert_from_jackrabbit(
             tenant_id=payload.tenant_id,
             external_customer_id=payload.jackrabbit_id,
-            phone=payload.phone_number,
-            name=payload.customer_data.get("name"),
-            email=payload.customer_data.get("email"),
+            phone=phone,
+            name=customer_data.get("name"),
+            email=customer_data.get("email"),
             account_data=account_data,
             jackrabbit_customer_id=customer.id,
         )
@@ -208,3 +231,116 @@ async def zapier_customer_update(
 
     else:
         raise HTTPException(status_code=400, detail=f"Unknown action: {payload.action}")
+
+
+@router.post("/family-sync/{tenant_id}")
+async def zapier_family_sync(
+    tenant_id: int,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Flexible family sync endpoint for Zapier free-tier POST action.
+
+    Accepts raw Jackrabbit trigger data with Data Pass-Through=True.
+    Tenant ID is in the URL path, so Zapier's key-value editor doesn't need
+    to handle it. The endpoint fuzzy-matches Jackrabbit field names regardless
+    of how Zapier mangles the keys.
+
+    URL format: /api/v1/zapier/family-sync/{tenant_id}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        logger.warning("family-sync: could not parse JSON body")
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    if not isinstance(body, dict) or not body:
+        raise HTTPException(status_code=400, detail="Empty payload")
+
+    logger.info(f"family-sync raw payload for tenant {tenant_id}: {body}")
+
+    # Fuzzy-match Jackrabbit fields from whatever keys Zapier sends.
+    # We check both the key name and fall back to scanning all values.
+    def _find(keys: list[str]) -> str | None:
+        """Find value by checking multiple possible key names (case-insensitive)."""
+        body_lower = {k.lower().replace(" ", "_").replace("-", "_"): v for k, v in body.items()}
+        for key in keys:
+            k = key.lower().replace(" ", "_").replace("-", "_")
+            if k in body_lower:
+                val = body_lower[k]
+                return str(val).strip() if val else None
+        return None
+
+    jackrabbit_id = _find([
+        "family_id", "familyid", "family_Id", "id", "fam_id",
+        "jackrabbit_id", "jr_id",
+    ])
+    name = _find([
+        "name", "family_name", "familyname", "full_name",
+        "first_name", "lastname", "last_name",
+    ])
+    phone = _find([
+        "phone_number", "phone", "home_phone", "homephone",
+        "cell_phone", "cellphone", "mobile", "contacts_home_phone",
+        "work_phone",
+    ])
+    email = _find([
+        "email", "email1", "email_address", "students_email",
+    ])
+
+    if not jackrabbit_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not find family/jackrabbit ID in payload",
+        )
+
+    # Build customer data from whatever we found
+    customer_data = {}
+    if name:
+        customer_data["name"] = name
+    if email:
+        customer_data["email"] = email
+
+    if not customer_data:
+        # Use the raw body as customer_data so nothing is lost
+        customer_data = {k: str(v) for k, v in body.items() if v}
+
+    # Normalize phone (treat empty as None)
+    phone = phone if phone else None
+
+    customer_repo = JackrabbitCustomerRepository(db)
+    customer = await customer_repo.upsert(
+        tenant_id=tenant_id,
+        jackrabbit_id=jackrabbit_id,
+        phone_number=phone,
+        email=email,
+        name=name,
+        customer_data=customer_data,
+    )
+
+    # Sync to customers table
+    main_customer_repo = CustomerRepository(db)
+    account_data = transform_jackrabbit_to_account_data(customer_data)
+    await main_customer_repo.upsert_from_jackrabbit(
+        tenant_id=tenant_id,
+        external_customer_id=jackrabbit_id,
+        phone=phone,
+        name=name,
+        email=email,
+        account_data=account_data,
+        jackrabbit_customer_id=customer.id,
+    )
+
+    logger.info(
+        f"Family synced via Zapier",
+        extra={
+            "tenant_id": tenant_id,
+            "jackrabbit_id": jackrabbit_id,
+            "customer_id": customer.id,
+        },
+    )
+
+    return JSONResponse(
+        content={"status": "synced", "customer_id": customer.id},
+        status_code=200,
+    )

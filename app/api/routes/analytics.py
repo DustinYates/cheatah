@@ -26,6 +26,7 @@ from app.persistence.models.call_summary import CallSummary
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.customer import Customer
 from app.persistence.models.escalation import Escalation
+from app.persistence.models.contact import Contact
 from app.persistence.models.lead import Lead
 from app.persistence.models.tenant import Tenant
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
@@ -1825,46 +1826,56 @@ async def get_savings_analytics(
         unique_phones_sent += phones
         by_asset_type[row.asset_type] = count
 
-    # Query 5: Verified enrollments — running tally (not date-filtered)
-    # A customer counts as "verified enrolled" if their phone or email
-    # matches any lead, conversation, or call for this tenant.
-    lead_phone_exists = (
-        select(Lead.id)
+    # Query 5: Verified conversions — running tally (not date-filtered)
+    # A customer counts as a "verified conversion" if their phone or email
+    # matches a contact who ACTUALLY ENGAGED with a bot (replied to chat,
+    # called in, or sent an SMS). Contacts who only received auto-sent
+    # drip/follow-up messages but never responded do NOT count.
+    has_chat_engagement = (
+        select(Message.id)
+        .join(Conversation, Message.conversation_id == Conversation.id)
         .where(
-            Lead.tenant_id == ctx.tenant_id,
-            Lead.phone.isnot(None),
-            Lead.phone == Customer.phone,
-        )
-        .correlate(Customer)
-        .exists()
-    )
-    lead_email_exists = (
-        select(Lead.id)
-        .where(
-            Lead.tenant_id == ctx.tenant_id,
-            Lead.email.isnot(None),
-            Customer.email.isnot(None),
-            func.lower(Lead.email) == func.lower(Customer.email),
-        )
-        .correlate(Customer)
-        .exists()
-    )
-    conv_phone_exists = (
-        select(Conversation.id)
-        .where(
+            Conversation.contact_id == Contact.id,
             Conversation.tenant_id == ctx.tenant_id,
-            Conversation.phone_number.isnot(None),
-            Conversation.phone_number == Customer.phone,
+            Message.role == "user",
         )
-        .correlate(Customer)
+        .correlate(Contact)
         .exists()
     )
-    call_phone_exists = (
+    has_call_engagement = (
         select(Call.id)
         .where(
+            Call.from_number == Contact.phone,
             Call.tenant_id == ctx.tenant_id,
-            Call.from_number.isnot(None),
-            Call.from_number == Customer.phone,
+            Contact.phone.isnot(None),
+            Call.duration > 0,
+        )
+        .correlate(Contact)
+        .exists()
+    )
+    contact_phone_exists = (
+        select(Contact.id)
+        .where(
+            Contact.tenant_id == ctx.tenant_id,
+            Contact.phone.isnot(None),
+            Contact.phone == Customer.phone,
+            Contact.deleted_at.is_(None),
+            Contact.merged_into_contact_id.is_(None),
+            has_chat_engagement | has_call_engagement,
+        )
+        .correlate(Customer)
+        .exists()
+    )
+    contact_email_exists = (
+        select(Contact.id)
+        .where(
+            Contact.tenant_id == ctx.tenant_id,
+            Contact.email.isnot(None),
+            Customer.email.isnot(None),
+            func.lower(Contact.email) == func.lower(Customer.email),
+            Contact.deleted_at.is_(None),
+            Contact.merged_into_contact_id.is_(None),
+            has_chat_engagement | has_call_engagement,
         )
         .correlate(Customer)
         .exists()
@@ -1876,7 +1887,7 @@ async def get_savings_analytics(
         )
         .where(
             Customer.tenant_id == ctx.tenant_id,
-            lead_phone_exists | lead_email_exists | conv_phone_exists | call_phone_exists,
+            contact_phone_exists | contact_email_exists,
         )
     )
     enrollment_result = await db.execute(enrollment_stmt)

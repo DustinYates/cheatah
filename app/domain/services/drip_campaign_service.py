@@ -72,6 +72,16 @@ class DripCampaignService:
             logger.warning(f"Lead {lead_id} has no phone number, cannot enroll in drip")
             return None
 
+        # Skip drip for phone numbers that belong to existing customers
+        from app.persistence.repositories.customer_repository import CustomerRepository
+        customer = await CustomerRepository(self.session).get_by_phone(tenant_id, lead.phone)
+        if customer:
+            logger.info(
+                f"Lead {lead_id} phone {lead.phone} matches existing customer "
+                f"{customer.id} ({customer.name}), skipping drip enrollment"
+            )
+            return None
+
         # Create enrollment
         enrollment = DripEnrollment(
             tenant_id=tenant_id,

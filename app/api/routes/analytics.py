@@ -24,6 +24,7 @@ from app.domain.services.repetition_detector import RepetitionDetector
 from app.persistence.models.call import Call
 from app.persistence.models.call_summary import CallSummary
 from app.persistence.models.conversation import Conversation, Message
+from app.persistence.models.customer import Customer
 from app.persistence.models.escalation import Escalation
 from app.persistence.models.lead import Lead
 from app.persistence.models.tenant import Tenant
@@ -1824,54 +1825,58 @@ async def get_savings_analytics(
         unique_phones_sent += phones
         by_asset_type[row.asset_type] = count
 
-    # Query 5: Jackrabbit enrollment verification
-    # Cross-reference Jackrabbit customers with AI interactions (conversations,
-    # calls, leads) to count verified conversions.
-    conv_exists = (
-        select(Conversation.id)
+    # Query 5: Verified enrollments — running tally (not date-filtered)
+    # A customer counts as "verified enrolled" if their phone or email
+    # matches any lead, conversation, or call for this tenant.
+    lead_phone_exists = (
+        select(Lead.id)
         .where(
-            Conversation.tenant_id == ctx.tenant_id,
-            Conversation.phone_number == JackrabbitCustomer.phone_number,
-            Conversation.created_at >= ctx.start_datetime,
-            Conversation.created_at <= ctx.end_datetime,
+            Lead.tenant_id == ctx.tenant_id,
+            Lead.phone.isnot(None),
+            Lead.phone == Customer.phone,
         )
-        .correlate(JackrabbitCustomer)
-        .exists()
-    )
-    call_ts = func.coalesce(Call.started_at, Call.created_at)
-    call_exists = (
-        select(Call.id)
-        .where(
-            Call.tenant_id == ctx.tenant_id,
-            Call.from_number == JackrabbitCustomer.phone_number,
-            call_ts >= ctx.start_datetime,
-            call_ts <= ctx.end_datetime,
-        )
-        .correlate(JackrabbitCustomer)
+        .correlate(Customer)
         .exists()
     )
     lead_email_exists = (
         select(Lead.id)
         .where(
             Lead.tenant_id == ctx.tenant_id,
-            JackrabbitCustomer.email.isnot(None),
-            Lead.email == JackrabbitCustomer.email,
-            Lead.created_at >= ctx.start_datetime,
-            Lead.created_at <= ctx.end_datetime,
+            Lead.email.isnot(None),
+            Customer.email.isnot(None),
+            func.lower(Lead.email) == func.lower(Customer.email),
         )
-        .correlate(JackrabbitCustomer)
+        .correlate(Customer)
+        .exists()
+    )
+    conv_phone_exists = (
+        select(Conversation.id)
+        .where(
+            Conversation.tenant_id == ctx.tenant_id,
+            Conversation.phone_number.isnot(None),
+            Conversation.phone_number == Customer.phone,
+        )
+        .correlate(Customer)
+        .exists()
+    )
+    call_phone_exists = (
+        select(Call.id)
+        .where(
+            Call.tenant_id == ctx.tenant_id,
+            Call.from_number.isnot(None),
+            Call.from_number == Customer.phone,
+        )
+        .correlate(Customer)
         .exists()
     )
     enrollment_stmt = (
         select(
-            func.count(func.distinct(JackrabbitCustomer.id)).label("verified_count"),
-            func.count(func.distinct(JackrabbitCustomer.phone_number)).label(
-                "verified_phones"
-            ),
+            func.count(func.distinct(Customer.id)).label("verified_count"),
+            func.count(func.distinct(Customer.phone)).label("verified_phones"),
         )
         .where(
-            JackrabbitCustomer.tenant_id == ctx.tenant_id,
-            conv_exists | call_exists | lead_email_exists,
+            Customer.tenant_id == ctx.tenant_id,
+            lead_phone_exists | lead_email_exists | conv_phone_exists | call_phone_exists,
         )
     )
     enrollment_result = await db.execute(enrollment_stmt)

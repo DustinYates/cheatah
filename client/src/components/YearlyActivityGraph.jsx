@@ -1,75 +1,58 @@
 import { useState, useMemo } from 'react';
 import './YearlyActivityGraph.css';
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-// getISOWeek returns the ISO 8601 week number (1-53)
-const getISOWeek = (date) => {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-};
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
- * GitHub-style yearly contribution graph.
- * Shows 52 weeks of activity with color intensity based on volume.
+ * Monthly activity graph — 12 cells, one per month, colored by volume.
  */
 export default function YearlyActivityGraph({ data = [], metric = 'total' }) {
   const [hovered, setHovered] = useState(null);
 
-  // Build a map of date -> value and calculate weeks
-  const { weeks, maxVal, weekLabels } = useMemo(() => {
-    const dataMap = {};
-    let max = 1;
+  const { months, maxVal } = useMemo(() => {
+    // Aggregate daily data into months
+    const monthMap = {};
 
     for (const d of data) {
+      const key = d.date?.slice(0, 7); // "YYYY-MM"
+      if (!key) continue;
       const val = metric === 'calls' ? (d.calls || 0)
         : metric === 'sms' ? (d.sms || 0)
         : (d.calls || 0) + (d.sms || 0) + (d.emails || 0);
-      dataMap[d.date] = { ...d, val };
-      if (val > max) max = val;
-    }
 
-    // Generate last 52 weeks of dates
-    const today = new Date();
-    const weeks = [];
-    const labels = [];
-
-    // Start from 52 weeks ago, aligned to Sunday
-    const start = new Date(today);
-    start.setDate(start.getDate() - 364 - start.getDay());
-
-    for (let w = 0; w < 53; w++) {
-      const week = [];
-      for (let d = 0; d < 7; d++) {
-        const date = new Date(start);
-        date.setDate(start.getDate() + w * 7 + d);
-        const dateStr = date.toISOString().split('T')[0];
-        const cell = dataMap[dateStr];
-
-        // Track week number labels (use Monday of each week)
-        if (d === 1) {
-          const wn = getISOWeek(date);
-          // Show every 4th week to avoid crowding
-          if (wn % 4 === 1) {
-            labels.push({ week: w, label: `W${wn}` });
-          }
-        }
-
-        week.push({
-          date: dateStr,
-          dayOfWeek: d,
-          val: cell?.val || 0,
-          calls: cell?.calls || 0,
-          sms: cell?.sms || 0,
-          emails: cell?.emails || 0,
-          isFuture: date > today,
-        });
+      if (!monthMap[key]) {
+        monthMap[key] = { calls: 0, sms: 0, emails: 0, val: 0, days: 0 };
       }
-      weeks.push(week);
+      monthMap[key].calls += d.calls || 0;
+      monthMap[key].sms += d.sms || 0;
+      monthMap[key].emails += d.emails || 0;
+      monthMap[key].val += val;
+      monthMap[key].days += 1;
     }
 
-    return { weeks, maxVal: max, weekLabels: labels };
+    // Build last 12 months
+    const today = new Date();
+    const months = [];
+    let max = 1;
+
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const agg = monthMap[key] || { calls: 0, sms: 0, emails: 0, val: 0, days: 0 };
+      const isFuture = date > today;
+
+      months.push({
+        key,
+        label: MONTH_NAMES[date.getMonth()],
+        year: date.getFullYear(),
+        ...agg,
+        isFuture,
+      });
+
+      if (agg.val > max) max = agg.val;
+    }
+
+    return { months, maxVal: max };
   }, [data, metric]);
 
   const getLevel = (val) => {
@@ -81,49 +64,18 @@ export default function YearlyActivityGraph({ data = [], metric = 'total' }) {
     return 4;
   };
 
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr + 'T00:00:00');
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
-  };
-
   return (
     <div className="yearly-graph-container">
-      <div className="yearly-graph">
-        {/* Week number labels */}
-        <div className="yearly-month-row">
-          <div className="yearly-day-spacer" />
-          {weeks.map((_, weekIdx) => {
-            const label = weekLabels.find(l => l.week === weekIdx);
-            return (
-              <div key={weekIdx} className="yearly-month-cell">
-                {label?.label || ''}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Day rows */}
-        {[0, 1, 2, 3, 4, 5, 6].map(dayIdx => (
-          <div key={dayIdx} className="yearly-day-row">
-            <div className="yearly-day-label">
-              {dayIdx === 1 ? 'Mon' : dayIdx === 3 ? 'Wed' : dayIdx === 5 ? 'Fri' : ''}
-            </div>
-            {weeks.map((week, weekIdx) => {
-              const cell = week[dayIdx];
-              return (
-                <div
-                  key={weekIdx}
-                  className={`yearly-cell level-${cell.isFuture ? 'future' : getLevel(cell.val)}`}
-                  onMouseEnter={() => !cell.isFuture && setHovered(cell)}
-                  onMouseLeave={() => setHovered(null)}
-                />
-              );
-            })}
+      <div className="yearly-months">
+        {months.map((m) => (
+          <div
+            key={m.key}
+            className="yearly-month-block"
+            onMouseEnter={() => !m.isFuture && setHovered(m)}
+            onMouseLeave={() => setHovered(null)}
+          >
+            <div className={`yearly-cell yearly-cell-lg level-${m.isFuture ? 'future' : getLevel(m.val)}`} />
+            <span className="yearly-month-label">{m.label}</span>
           </div>
         ))}
       </div>
@@ -142,7 +94,7 @@ export default function YearlyActivityGraph({ data = [], metric = 'total' }) {
       {/* Tooltip */}
       {hovered && (
         <div className="yearly-tooltip">
-          <strong>{hovered.val} interactions</strong> on {formatDate(hovered.date)}
+          <strong>{hovered.val} interactions</strong> in {hovered.label} {hovered.year}
           {hovered.calls > 0 && <span> | {hovered.calls} calls</span>}
           {hovered.sms > 0 && <span> | {hovered.sms} SMS</span>}
           {hovered.emails > 0 && <span> | {hovered.emails} emails</span>}

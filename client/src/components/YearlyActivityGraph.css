@@ -3,63 +3,47 @@
   padding-bottom: 40px;
 }
 
-.yearly-graph {
+.yearly-months {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.yearly-month-block {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  overflow-x: auto;
-}
-
-.yearly-month-row {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 4px;
-}
-
-.yearly-day-spacer {
-  width: 32px;
-  flex-shrink: 0;
-}
-
-.yearly-month-cell {
-  width: 18px;
-  font-size: 0.65rem;
-  color: var(--color-text-muted);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.yearly-day-row {
-  display: flex;
-  gap: 4px;
-}
-
-.yearly-day-label {
-  width: 32px;
-  flex-shrink: 0;
-  font-size: 0.65rem;
-  color: var(--color-text-muted);
-  display: flex;
   align-items: center;
-  height: 18px;
+  gap: 6px;
+  flex: 1;
+}
+
+.yearly-month-label {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
 }
 
 .yearly-cell {
   width: 18px;
   height: 18px;
-  border-radius: 2px;
+  border-radius: 3px;
   cursor: pointer;
   transition: transform 0.1s;
   flex-shrink: 0;
 }
 
+.yearly-cell.yearly-cell-lg {
+  width: 100%;
+  height: 40px;
+  border-radius: 4px;
+}
+
 .yearly-cell:hover {
-  transform: scale(1.2);
+  transform: scale(1.1);
   z-index: 1;
   box-shadow: 0 0 4px rgba(0,0,0,0.2);
 }
 
-/* GitHub-style green levels */
+/* Green levels */
 .yearly-cell.level-0 {
   background-color: var(--color-bg-tertiary, #3a3a4a);
 }
@@ -85,7 +69,6 @@
   cursor: default;
 }
 
-/* Dark mode overrides */
 @media (prefers-color-scheme: dark) {
   .yearly-cell.level-0 {
     background-color: #3a3a4a;
@@ -97,7 +80,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  margin-top: 8px;
+  margin-top: 12px;
   font-size: 0.65rem;
   color: var(--color-text-muted);
 }
@@ -108,6 +91,7 @@
 
 .yearly-legend .yearly-cell:hover {
   transform: none;
+  box-shadow: none;
 }
 
 .yearly-legend-label {

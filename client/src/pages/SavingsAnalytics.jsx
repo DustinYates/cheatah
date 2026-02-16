@@ -545,7 +545,7 @@ export default function SavingsAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Verified Enrollments
-                <span className="info-icon" data-tooltip="Jackrabbit customers whose phone number or email matches someone who interacted with the AI via chat, SMS, or voice call. Proves the AI tool contributed to actual enrollments.">i</span>
+                <span className="info-icon" data-tooltip="Customers whose phone number or email matches someone who interacted with the AI via chat, SMS, or voice call. This is a running total that only grows over time.">i</span>
               </span>
               <span className="metric-value">{formatNumber(data.conversions.verified_enrollments || 0)}</span>
             </div>
@@ -553,7 +553,7 @@ export default function SavingsAnalytics() {
               <div className="metric-row">
                 <span className="metric-label">
                   Verified Unique Phones
-                  <span className="info-icon" data-tooltip="Distinct phone numbers that both interacted with the AI and appear as enrolled Jackrabbit customers.">i</span>
+                  <span className="info-icon" data-tooltip="Distinct phone numbers that both interacted with the AI and appear as enrolled customers.">i</span>
                 </span>
                 <span className="metric-value">{formatNumber(data.conversions.verified_phones)}</span>
               </div>

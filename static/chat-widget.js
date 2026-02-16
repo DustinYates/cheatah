@@ -116,6 +116,19 @@
       }
     },
 
+    // Generate a UUID v4 for session identification
+    generateSessionId: function() {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+      // Fallback for older browsers
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0;
+        var v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    },
+
     // Track analytics event (batched for efficiency)
     trackEvent: function(eventType, eventData, settingsSnapshot) {
       if (!this.config || !this.visitorId) return;
@@ -316,6 +329,12 @@
       this.attachEventListeners();
       this.fetchSettings();
       this.restoreSession(); // Restore previous session on init
+      // Ensure we always have a session ID before any messages are sent.
+      // Generate a client-side UUID so concurrent messages go to the same conversation.
+      if (!this.sessionId) {
+        this.sessionId = this.generateSessionId();
+        this.saveSession();
+      }
       this.startAnalyticsInterval();
       // Track impression after widget is created (defer to allow DOM to settle)
       var self = this;
@@ -2450,8 +2469,12 @@
 
         const data = await response.json();
 
-        // Update session ID and persist it
-        this.sessionId = data.session_id;
+        // Only adopt server session_id if we don't already have one.
+        // Once we have a client-generated UUID, keep using it — the server
+        // maps it to the conversation via external_id.
+        if (!this.sessionId) {
+          this.sessionId = data.session_id;
+        }
         this.saveSession();
 
         // Add assistant response
@@ -2673,7 +2696,9 @@
         });
 
         const data = await response.json();
-        this.secondarySessionId = data.session_id;
+        if (!this.secondarySessionId) {
+          this.secondarySessionId = data.session_id;
+        }
 
         // Add bot response
         const botMsg = document.createElement('div');

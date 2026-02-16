@@ -167,10 +167,11 @@ class ChatService:
             raise ValueError(f"Tenant {tenant_id} is not active")
 
         # Get or create conversation
-        conversation = await self._get_or_create_conversation(
+        conversation, client_session_id = await self._get_or_create_conversation(
             tenant_id, session_id
         )
-        session_id = str(conversation.id)  # Use conversation ID as session_id
+        # If client sent a UUID, echo it back; otherwise use numeric conversation ID
+        session_id = client_session_id or str(conversation.id)
 
         # Get conversation history
         messages = await self.conversation_service.get_conversation_history(
@@ -1370,33 +1371,49 @@ class ChatService:
 
     async def _get_or_create_conversation(
         self, tenant_id: int, session_id: str | None
-    ) -> Conversation:
+    ) -> tuple[Conversation, str | None]:
         """Get existing conversation or create new one.
-        
+
         Args:
             tenant_id: Tenant ID
-            session_id: Session ID (conversation ID as string)
-            
+            session_id: Session ID. Can be:
+                - None: creates new conversation
+                - Numeric string: legacy lookup by conversation.id
+                - UUID string: lookup/create by external_id (idempotent)
+
         Returns:
-            Conversation
+            Tuple of (Conversation, client_session_id or None).
+            client_session_id is non-None when the client sent a UUID,
+            so we echo it back instead of the numeric conversation id.
         """
         if session_id:
+            # Try numeric lookup first (legacy clients)
             try:
                 conversation_id = int(session_id)
                 conversation = await self.conversation_service.get_conversation(
                     tenant_id, conversation_id
                 )
                 if conversation:
-                    return conversation
+                    return conversation, None
             except ValueError:
-                pass  # Invalid session_id, create new
-        
-        # Create new conversation
-        return await self.conversation_service.create_conversation(
+                pass  # Not numeric — treat as UUID/external_id
+
+            # UUID/external_id path — create_conversation does idempotency
+            # check via get_by_external_id, returns existing if found
+            conversation = await self.conversation_service.create_conversation(
+                tenant_id=tenant_id,
+                channel="web",
+                external_id=session_id,
+            )
+            return conversation, session_id
+
+        # No session_id at all — create new conversation
+        conversation = await self.conversation_service.create_conversation(
             tenant_id=tenant_id,
             channel="web",
             external_id=None,
         )
+        return conversation, None
 
     async def _get_class_schedule_context(self, tenant_id: int) -> str | None:
         """Fetch live class schedule from Jackrabbit for prompt injection."""

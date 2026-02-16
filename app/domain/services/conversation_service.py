@@ -1,10 +1,15 @@
 """Conversation service for managing conversations and messages."""
 
+import logging
+
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.repositories.conversation_repository import ConversationRepository
 from app.persistence.repositories.message_repository import MessageRepository
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationService:
@@ -36,12 +41,26 @@ class ConversationService:
             if existing:
                 return existing
 
-        conversation = await self.conversation_repo.create(
-            tenant_id,
-            channel=channel,
-            external_id=external_id,
-        )
-        return conversation
+        try:
+            conversation = await self.conversation_repo.create(
+                tenant_id,
+                channel=channel,
+                external_id=external_id,
+            )
+            return conversation
+        except IntegrityError:
+            # Unique index violation — another concurrent request created it first
+            await self.session.rollback()
+            if external_id:
+                existing = await self.conversation_repo.get_by_external_id(
+                    tenant_id, external_id
+                )
+                if existing:
+                    logger.info(
+                        f"Resolved concurrent conversation creation for external_id={external_id}"
+                    )
+                    return existing
+            raise
 
     async def add_message(
         self, tenant_id: int, conversation_id: int, role: str, content: str,

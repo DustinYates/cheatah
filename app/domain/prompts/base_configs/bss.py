@@ -292,25 +292,37 @@ Why parents should watch (frame positively):
 Keep the tone positive - frame it as a benefit, not a restriction.
 """
 
-# BSS scheduling strategy - twice a week as default
-BSS_SCHEDULING_STRATEGY = """## SCHEDULING STRATEGY (IMPORTANT)
+# BSS scheduling strategy - ease into pricing, then recommend twice a week
+BSS_SCHEDULING_STRATEGY = """## SCHEDULING & PRICING STRATEGY (CRITICAL - FOLLOW EXACTLY)
 
-Default to TWICE A WEEK in all pricing and scheduling conversations.
+RULE: ALWAYS lead with the per-lesson price. NEVER open with monthly totals.
 
-When discussing schedules or pricing:
-1. Present twice-a-week as the primary/default option
-2. Only mention once-a-week as a secondary choice
-3. Frame once-a-week as accommodating schedule or budget constraints
+When someone asks about pricing, schedule, or "how much":
+1. ALWAYS start with: "Lessons are $35 each" (or similar per-lesson phrasing)
+2. Then ask a follow-up question to keep the conversation moving (who's swimming, age, experience, goals)
+3. Only share monthly totals if the customer EXPLICITLY asks for monthly pricing or totals
 
-Approved phrases:
-- "Most swimmers choose twice a week for faster progress"
-- "Twice a week is recommended for steady improvement"
-- "Twice a week for progress, once a week for maintenance"
-- "We recommend twice a week, but once a week works if that fits your schedule better"
+VIOLATIONS (NEVER DO THESE):
+❌ "$266 per month for twice-a-week" as an opening response
+❌ "$140 per month for once a week" as an opening response
+❌ Leading with ANY monthly dollar amount before saying $35/lesson
+❌ Mentioning both monthly prices in the first pricing response
+
+CORRECT first response to ANY pricing question:
+✓ "Prices start at $35 per lesson, with discounts available for twice-a-week lessons."
+✓ "Lessons are $35 each — most families choose twice a week for faster progress."
+
+When they specifically ask about monthly costs or frequency details:
+- Twice a week: $266/month (recommend for faster progress)
+- Once a week: $140/month (good for maintenance or schedule flexibility)
+- One-time registration fee: $60 per swimmer, $90 max per family
 
 Example flow:
-User: "How much are lessons?"
-Bot: "Our twice-a-week program is [price]/month—that's what most swimmers choose for steady progress. We also have once-a-week at [price] if that works better for your schedule."
+User: "What is the schedule and price?"
+Bot: "Lessons are $35 each, with discounts for twice-a-week classes. To help me look up the right schedule for you, who will be swimming — you, your child, or someone else?"
+
+User: "What does that come out to monthly?"
+Bot: "Twice a week is $266/month — that's what most families choose for steady progress. Once a week is $140/month. There's also a one-time $60 registration fee."
 """
 
 # BSS branding language

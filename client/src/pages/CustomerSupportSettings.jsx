@@ -43,7 +43,7 @@ export default function CustomerSupportSettings() {
     try {
       const data = await api.getCustomerSupportConfig();
       if (data) {
-        setConfig({
+        const normalized = {
           is_enabled: data.is_enabled || false,
           telnyx_agent_id: data.telnyx_agent_id || '',
           telnyx_phone_number: data.telnyx_phone_number || '',
@@ -59,8 +59,9 @@ export default function CustomerSupportSettings() {
             max_conversation_turns: 10,
             auto_lookup_customer: true,
           },
-        });
-        setOriginalConfig(data);
+        };
+        setConfig(normalized);
+        setOriginalConfig(JSON.parse(JSON.stringify(normalized)));
       }
     } catch (err) {
       if (!err.message?.includes('Not Found')) {
@@ -83,7 +84,7 @@ export default function CustomerSupportSettings() {
     setSaving(true);
     try {
       await api.updateCustomerSupportConfig(config);
-      setOriginalConfig(config);
+      setOriginalConfig(JSON.parse(JSON.stringify(config)));
       showToast('Settings saved successfully');
     } catch (err) {
       showToast(err.message || 'Failed to save settings', 'error');

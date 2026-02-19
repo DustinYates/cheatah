@@ -316,7 +316,7 @@ export default function WidgetSettings() {
     try {
       const data = await api.getWidgetSettings();
       setWidgetSettings(data);
-      setWidgetBaseline(data);
+      setWidgetBaseline(JSON.parse(JSON.stringify(data)));
     } catch (err) {
       setWidgetError(err.message || 'Failed to load widget settings');
     } finally {
@@ -513,7 +513,7 @@ export default function WidgetSettings() {
 
     try {
       await api.updateWidgetSettings(widgetSettings);
-      setWidgetBaseline(widgetSettings);
+      setWidgetBaseline(JSON.parse(JSON.stringify(widgetSettings)));
       setWidgetSuccess('Saved for this tenant');
       setTimeout(() => setWidgetSuccess(''), 3000);
     } catch (err) {

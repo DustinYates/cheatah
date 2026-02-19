@@ -106,7 +106,7 @@ export default function SmsSettings() {
           business_hours: normalizeBusinessHours(data.business_hours),
         };
         setSettings(normalizedSettings);
-        setOriginalSettings(normalizedSettings);
+        setOriginalSettings(JSON.parse(JSON.stringify(normalizedSettings)));
         setPhoneNumberDraft(data.phone_number || '');
       } else if (response.status === 404) {
         const defaultState = {
@@ -128,7 +128,7 @@ export default function SmsSettings() {
           lead_notification_quiet_hours_enabled: true,
         };
         setSettings(defaultState);
-        setOriginalSettings(defaultState);
+        setOriginalSettings(JSON.parse(JSON.stringify(defaultState)));
         setPhoneNumberDraft('');
       } else {
         const errorData = await response.json().catch(() => ({}));
@@ -155,7 +155,7 @@ export default function SmsSettings() {
           lead_notification_quiet_hours_enabled: true,
         };
         setSettings(defaultState);
-        setOriginalSettings(defaultState);
+        setOriginalSettings(JSON.parse(JSON.stringify(defaultState)));
         setPhoneNumberDraft('');
       } else {
         setError(err.message || 'Failed to load SMS settings');
@@ -225,7 +225,7 @@ export default function SmsSettings() {
           business_hours: normalizeBusinessHours(data.business_hours),
         };
         setSettings(normalizedSettings);
-        setOriginalSettings(normalizedSettings);
+        setOriginalSettings(JSON.parse(JSON.stringify(normalizedSettings)));
         setPhoneNumberDraft(data.phone_number || '');
         showToast('Settings saved successfully');
       } else {
@@ -241,7 +241,7 @@ export default function SmsSettings() {
 
   const handleCancel = () => {
     if (originalSettings) {
-      setSettings(originalSettings);
+      setSettings(JSON.parse(JSON.stringify(originalSettings)));
       setPhoneNumberDraft(originalSettings.phone_number || '');
     }
   };

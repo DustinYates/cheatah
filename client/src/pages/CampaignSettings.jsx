@@ -396,7 +396,7 @@ export default function CampaignSettings() {
 
                 {expandedSections[`steps-${campaign.id}`] && (
                   <div className="campaign-steps">
-                    {campaign.steps
+                    {[...campaign.steps]
                       .sort((a, b) => a.step_number - b.step_number)
                       .map((step) => (
                         <div key={step.step_number} className="campaign-step">

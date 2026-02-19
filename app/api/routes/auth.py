@@ -64,6 +64,13 @@ class ForgotPasswordRequest(BaseModel):
     email: str
 
 
+class ChangePasswordRequest(BaseModel):
+    """Change password request (authenticated)."""
+
+    current_password: str
+    new_password: str
+
+
 class ResetPasswordRequest(BaseModel):
     """Reset password request."""
 
@@ -379,3 +386,29 @@ async def reset_password(
     await db.commit()
 
     return {"message": "Password has been reset successfully. You can now sign in."}
+
+
+@router.post("/change-password")
+async def change_password(
+    data: ChangePasswordRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Change password for the currently authenticated user."""
+    if not verify_password(data.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+
+    if len(data.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters.",
+        )
+
+    current_user.hashed_password = hash_password(data.new_password)
+    current_user.must_change_password = False
+    await db.commit()
+
+    return {"message": "Password changed successfully."}

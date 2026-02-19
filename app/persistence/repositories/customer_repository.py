@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.phone import normalize_phone_e164
 from app.persistence.models.customer import Customer
 from app.persistence.repositories.base import BaseRepository
 
@@ -160,6 +161,9 @@ class CustomerRepository(BaseRepository[Customer]):
         resolved_status = (status or "active").lower().strip()
         if resolved_status not in ("active", "inactive", "suspended"):
             resolved_status = "active"
+
+        # Normalize phone to E.164 before storing
+        phone = normalize_phone_e164(phone) or phone
 
         # Try to find by external_customer_id first
         existing = await self.get_by_external_id(tenant_id, external_customer_id)

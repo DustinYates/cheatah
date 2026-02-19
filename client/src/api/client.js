@@ -132,6 +132,13 @@ class ApiClient {
     });
   }
 
+  async changePassword(currentPassword, newPassword) {
+    return this.request('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+  }
+
   setSelectedTenant(tenantId) {
     if (tenantId) {
       localStorage.setItem('selectedTenantId', tenantId.toString());

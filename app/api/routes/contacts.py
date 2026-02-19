@@ -15,6 +15,7 @@ from app.persistence.models.tenant import User
 from app.persistence.models.call import Call
 from app.persistence.models.call_summary import CallSummary
 from app.persistence.models.email_ingestion_log import EmailIngestionLog
+from app.persistence.models.customer import Customer
 from app.persistence.models.jackrabbit_customer import JackrabbitCustomer
 from app.persistence.repositories.contact_repository import ContactRepository
 from app.domain.services.contact_merge_service import ContactMergeService
@@ -203,22 +204,46 @@ async def _get_customer_names_by_phone(
     tenant_id: int,
     phone_numbers: list[str],
 ) -> dict[str, str]:
-    """Get customer names from JackrabbitCustomer cache by phone number.
+    """Get customer names by phone number using normalized comparison.
 
-    Returns dict of phone_number -> customer_name
+    Compares last-10-digits of contact phones against customer phones
+    to handle E.164 vs display format mismatches.
+
+    Returns dict of contact_phone -> customer_name
     """
     if not phone_numbers:
         return {}
 
+    from app.core.phone import normalize_phone_for_dedup
+
+    # Build normalized → original contact phone mapping
+    norm_to_contact: dict[str, str] = {}
+    for p in phone_numbers:
+        if p:
+            norm_to_contact[normalize_phone_for_dedup(p)] = p
+
+    if not norm_to_contact:
+        return {}
+
+    # Normalize customer phones in SQL: strip non-digits, take last 10
+    norm_expr = func.right(
+        func.regexp_replace(Customer.phone, '[^0-9]', '', 'g'), 10
+    )
     stmt = select(
-        JackrabbitCustomer.phone_number,
-        JackrabbitCustomer.name
+        norm_expr.label("norm_phone"),
+        Customer.name,
     ).where(
-        JackrabbitCustomer.tenant_id == tenant_id,
-        JackrabbitCustomer.phone_number.in_(phone_numbers),
+        Customer.tenant_id == tenant_id,
+        norm_expr.in_(list(norm_to_contact.keys())),
     )
     result = await db.execute(stmt)
-    return {row.phone_number: row.name for row in result if row.name}
+
+    # Map back: normalized phone → original contact phone → customer name
+    return {
+        norm_to_contact[row.norm_phone]: row.name
+        for row in result
+        if row.name and row.norm_phone in norm_to_contact
+    }
 
 
 async def _get_contact_communication_timestamps(

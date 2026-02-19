@@ -461,6 +461,24 @@ async def telnyx_inbound_sms_webhook(
 
         logger.info(f"Found tenant_id={tenant_id} for Telnyx number: {to_number}")
 
+        # Check if tenant uses Telnyx AI Agent — if so, the AI handles SMS
+        # responses directly and ai-call-complete records the transcript.
+        # Processing here would send a DUPLICATE reply via our Gemini LLM.
+        from app.persistence.models.tenant_voice_config import TenantVoiceConfig
+        voice_cfg_result = await db.execute(
+            select(TenantVoiceConfig).where(
+                TenantVoiceConfig.tenant_id == tenant_id
+            ).limit(1)
+        )
+        voice_cfg = voice_cfg_result.scalar_one_or_none()
+        if voice_cfg and voice_cfg.telnyx_agent_id:
+            logger.info(
+                f"Tenant {tenant_id} uses Telnyx AI Agent ({voice_cfg.telnyx_agent_id}) — "
+                f"skipping /sms/inbound processing to avoid duplicate replies. "
+                f"ai-call-complete will record the conversation."
+            )
+            return JSONResponse(content={"status": "ok"})
+
         # Queue message for async processing
         if settings.cloud_tasks_worker_url:
             cloud_tasks = CloudTasksClient()
@@ -1550,74 +1568,117 @@ async def telnyx_ai_call_complete(
                                 sample_msg = actual_messages[0]
                                 logger.info(f"[SMS-MESSAGES] Sample message keys: {list(sample_msg.keys())}, sample: {str(sample_msg)[:500]}")
 
-                            # Get next sequence number
-                            msg_result = await db.execute(
-                                select(Message).where(
+                            # Guard: skip if conversation already has messages
+                            # (prevents duplicates if /sms/inbound already stored them)
+                            existing_count_result = await db.execute(
+                                select(func.count()).where(
                                     Message.conversation_id == sms_conversation.id
-                                ).order_by(Message.sequence_number.desc()).limit(1)
+                                )
                             )
-                            last_msg = msg_result.scalar_one_or_none()
-                            next_seq = (last_msg.sequence_number + 1) if last_msg else 1
+                            existing_msg_count = existing_count_result.scalar() or 0
+                            if existing_msg_count > 0:
+                                logger.info(
+                                    f"[SMS-MESSAGES] Conversation {sms_conversation.id} already has "
+                                    f"{existing_msg_count} messages — skipping Telnyx API message storage to avoid duplicates"
+                                )
+                                actual_messages_stored = True  # Mark as stored so fallback doesn't fire
 
-                            # Store each actual message individually
-                            # Filter out tool call results and API error responses
-                            for msg in actual_messages:
-                                msg_role = msg.get("role", "user")
-                                msg_content = msg.get("text", msg.get("content", ""))
-
-                                # Skip tool/function messages (these are API call results)
-                                if msg_role in ("tool", "function", "system"):
-                                    logger.debug(f"Skipping {msg_role} message from Telnyx AI conversation")
-                                    continue
-
-                                # Skip messages that look like API error responses
-                                if msg_content and msg_content.strip():
-                                    content_stripped = msg_content.strip()
-                                    # Check if content looks like a JSON error response
+                                # Still extract assistant transcript for downstream use
+                                assistant_texts = []
+                                for msg in actual_messages:
+                                    if msg.get("role") != "assistant":
+                                        continue
+                                    content = msg.get("text", msg.get("content", ""))
+                                    if not content or not content.strip():
+                                        continue
+                                    content_stripped = content.strip()
                                     if content_stripped.startswith("{") and (
                                         '"http_status"' in content_stripped
                                         or '"errors"' in content_stripped
                                         or '"error"' in content_stripped
-                                        or '"http_body"' in content_stripped
                                     ):
-                                        logger.warning(f"Skipping API error response from Telnyx AI conversation: {content_stripped[:200]}")
+                                        continue
+                                    assistant_texts.append(content)
+                                if assistant_texts:
+                                    actual_assistant_transcript = "\n".join(assistant_texts)
+
+                                # Check if AI already sent registration URL
+                                for msg in actual_messages:
+                                    msg_text = msg.get("text", msg.get("content", "")) or ""
+                                    if "britishswimschool.com" in msg_text and "register" in msg_text:
+                                        ai_sent_registration_url = True
+                                        break
+                            else:
+                                # No existing messages — safe to store from Telnyx API
+
+                                # Get next sequence number
+                                msg_result = await db.execute(
+                                    select(Message).where(
+                                        Message.conversation_id == sms_conversation.id
+                                    ).order_by(Message.sequence_number.desc()).limit(1)
+                                )
+                                last_msg = msg_result.scalar_one_or_none()
+                                next_seq = (last_msg.sequence_number + 1) if last_msg else 1
+
+                                # Store each actual message individually
+                                # Filter out tool call results and API error responses
+                                for msg in actual_messages:
+                                    msg_role = msg.get("role", "user")
+                                    msg_content = msg.get("text", msg.get("content", ""))
+
+                                    # Skip tool/function messages (these are API call results)
+                                    if msg_role in ("tool", "function", "system"):
+                                        logger.debug(f"Skipping {msg_role} message from Telnyx AI conversation")
                                         continue
 
-                                    new_msg = Message(
-                                        conversation_id=sms_conversation.id,
-                                        role=msg_role,
-                                        content=msg_content,
-                                        sequence_number=next_seq,
-                                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
-                                    )
-                                    db.add(new_msg)
-                                    next_seq += 1
+                                    # Skip messages that look like API error responses
+                                    if msg_content and msg_content.strip():
+                                        content_stripped = msg_content.strip()
+                                        # Check if content looks like a JSON error response
+                                        if content_stripped.startswith("{") and (
+                                            '"http_status"' in content_stripped
+                                            or '"errors"' in content_stripped
+                                            or '"error"' in content_stripped
+                                            or '"http_body"' in content_stripped
+                                        ):
+                                            logger.warning(f"Skipping API error response from Telnyx AI conversation: {content_stripped[:200]}")
+                                            continue
 
-                            actual_messages_stored = True
-                            logger.info(f"Stored {len(actual_messages)} actual SMS messages from Telnyx API: conversation_id={sms_conversation.id}")
+                                        new_msg = Message(
+                                            conversation_id=sms_conversation.id,
+                                            role=msg_role,
+                                            content=msg_content,
+                                            sequence_number=next_seq,
+                                            message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
+                                        )
+                                        db.add(new_msg)
+                                        next_seq += 1
 
-                            # Build transcript from assistant messages for class level detection
-                            # The assistant messages contain specific class recommendations like "Young Adult Level 3"
-                            # Filter out error responses and tool messages
-                            assistant_texts = []
-                            for msg in actual_messages:
-                                if msg.get("role") != "assistant":
-                                    continue
-                                content = msg.get("text", msg.get("content", ""))
-                                if not content or not content.strip():
-                                    continue
-                                # Skip if it looks like an API error response
-                                content_stripped = content.strip()
-                                if content_stripped.startswith("{") and (
-                                    '"http_status"' in content_stripped
-                                    or '"errors"' in content_stripped
-                                    or '"error"' in content_stripped
-                                ):
-                                    continue
-                                assistant_texts.append(content)
-                            if assistant_texts:
-                                actual_assistant_transcript = "\n".join(assistant_texts)
-                                logger.info(f"Built actual assistant transcript ({len(actual_assistant_transcript)} chars) for registration link")
+                                actual_messages_stored = True
+                                logger.info(f"Stored {len(actual_messages)} actual SMS messages from Telnyx API: conversation_id={sms_conversation.id}")
+
+                                # Build transcript from assistant messages for class level detection
+                                # The assistant messages contain specific class recommendations like "Young Adult Level 3"
+                                # Filter out error responses and tool messages
+                                assistant_texts = []
+                                for msg in actual_messages:
+                                    if msg.get("role") != "assistant":
+                                        continue
+                                    content = msg.get("text", msg.get("content", ""))
+                                    if not content or not content.strip():
+                                        continue
+                                    # Skip if it looks like an API error response
+                                    content_stripped = content.strip()
+                                    if content_stripped.startswith("{") and (
+                                        '"http_status"' in content_stripped
+                                        or '"errors"' in content_stripped
+                                        or '"error"' in content_stripped
+                                    ):
+                                        continue
+                                    assistant_texts.append(content)
+                                if assistant_texts:
+                                    actual_assistant_transcript = "\n".join(assistant_texts)
+                                    logger.info(f"Built actual assistant transcript ({len(actual_assistant_transcript)} chars) for registration link")
 
                             # Check if AI already sent a registration URL in the conversation
                             # This prevents our fallback from sending a duplicate

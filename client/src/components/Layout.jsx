@@ -207,6 +207,9 @@ export default function Layout() {
                 <li>
                   <NavLink to="/settings/profile">Business Profile</NavLink>
                 </li>
+                <li>
+                  <NavLink to="/settings/account">Account</NavLink>
+                </li>
               </ul>
             )}
           </li>

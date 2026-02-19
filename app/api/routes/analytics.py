@@ -1853,12 +1853,19 @@ async def get_savings_analytics(
         .correlate(Contact)
         .exists()
     )
+    # Normalize phones to last 10 digits for comparison (handles E.164 vs display format)
+    _norm_contact_phone = func.right(
+        func.regexp_replace(Contact.phone, '[^0-9]', '', 'g'), 10
+    )
+    _norm_customer_phone = func.right(
+        func.regexp_replace(Customer.phone, '[^0-9]', '', 'g'), 10
+    )
     contact_phone_exists = (
         select(Contact.id)
         .where(
             Contact.tenant_id == ctx.tenant_id,
             Contact.phone.isnot(None),
-            Contact.phone == Customer.phone,
+            _norm_contact_phone == _norm_customer_phone,
             Contact.deleted_at.is_(None),
             Contact.merged_into_contact_id.is_(None),
             has_chat_engagement | has_call_engagement,

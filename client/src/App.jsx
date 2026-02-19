@@ -40,6 +40,7 @@ import Forums from './pages/Forums';
 import ForumDetail from './pages/ForumDetail';
 import ForumPost from './pages/ForumPost';
 import NewForumPost from './pages/NewForumPost';
+import AccountSettings from './pages/AccountSettings';
 import Support from './pages/Support';
 import UsageBilling from './pages/UsageBilling';
 import './App.css';
@@ -98,6 +99,7 @@ function App() {
             <Route path="settings/campaigns" element={<CampaignSettings />} />
             <Route path="settings/customer-support" element={<CustomerSupportSettings />} />
             <Route path="settings/profile" element={<BusinessProfile />} />
+            <Route path="settings/account" element={<AccountSettings />} />
 
             {/* Redirects for backward compatibility */}
             <Route path="settings/widget" element={<Navigate to="/settings/chatbot" replace />} />

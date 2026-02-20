@@ -217,6 +217,23 @@ def _generate_initial_message(lead: Lead, sms_config: TenantSmsConfig) -> str:
                     logger.info(f"Using subject-specific template for prefix: {prefix}")
                     return message
 
+    # Check for source-specific template (e.g., __voice_call_default, __chatbot_default)
+    source = lead.extra_data.get("source") if lead.extra_data else None
+    if source and sms_config.settings:
+        subject_templates = sms_config.settings.get("followup_subject_templates", {})
+        source_key = f"__{source}_default"
+        template_data = subject_templates.get(source_key)
+        if template_data:
+            if isinstance(template_data, dict):
+                template = template_data.get("message", "")
+            else:
+                template = template_data
+            if template:
+                message = template.replace("{name}", lead_name or "there")
+                message = message.replace("{first_name}", first_name or "there")
+                logger.info(f"Using source-specific template for source: {source}")
+                return message
+
     # Check for global custom template in settings
     custom_template = None
     if sms_config.settings:
@@ -229,7 +246,6 @@ def _generate_initial_message(lead: Lead, sms_config: TenantSmsConfig) -> str:
         return message
 
     # Default contextual message based on source
-    source = lead.extra_data.get("source") if lead.extra_data else "contact"
 
     if source == "voice_call":
         if first_name:

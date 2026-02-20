@@ -1090,6 +1090,7 @@ async def telnyx_ai_call_complete(
         caller_name = ""
         caller_email = ""
         caller_intent = ""
+        sms_consent = None
         import re
 
         # Log raw results for debugging name extraction issues
@@ -1323,8 +1324,10 @@ async def telnyx_ai_call_complete(
                             logger.info(f"Extracted summary from transcript (overriding webhook, first 100 chars): {summary[:100]}")
                         if extracted.get("transcript") and not transcript:
                             transcript = extracted["transcript"]
+                        # SMS consent: if caller agreed to receive a text
+                        sms_consent = extracted.get("sms_consent")
 
-                    logger.info(f"Final extracted data: name={caller_name}, email={caller_email}, intent={caller_intent}")
+                    logger.info(f"Final extracted data: name={caller_name}, email={caller_email}, intent={caller_intent}, sms_consent={sms_consent}")
                 else:
                     logger.info(f"Could not find conversation for call_control_id={call_id}")
             except Exception as e:
@@ -2229,7 +2232,14 @@ async def telnyx_ai_call_complete(
                 "caller_email": caller_email or None,
                 "caller_intent": caller_intent or None,
                 "transcript": transcript[:2000] if transcript else None,
+                "sms_consent": sms_consent,
             }
+
+            # Build extra_data with source and conditional follow-up skip
+            lead_extra = {"source": "voice_call", "voice_calls": [call_data]}
+            if sms_consent is False or sms_consent is None:
+                lead_extra["skip_followup"] = True
+                lead_extra["skip_followup_reason"] = "no_sms_consent" if sms_consent is False else "sms_consent_not_asked"
 
             # Always create new lead for each call
             display_name = caller_name if caller_name else f"Caller {normalized_from}"
@@ -2239,7 +2249,7 @@ async def telnyx_ai_call_complete(
                 name=display_name,
                 email=caller_email or None,
                 status="new",
-                extra_data={"source": "voice_call", "voice_calls": [call_data]},
+                extra_data=lead_extra,
             )
             db.add(lead)
             await db.flush()

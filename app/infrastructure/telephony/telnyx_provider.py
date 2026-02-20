@@ -838,6 +838,7 @@ Extract:
 2. "email" - The caller's email if they mentioned it. Empty string if not provided.
 3. "intent" - One of: "pricing_info", "hours_location", "booking_request", "support_request", "wrong_number", "general_inquiry"
 4. "summary" - A brief 1-sentence summary (max 100 characters) of why the caller called in THIS conversation.
+5. "sms_consent" - true if the caller agreed to receive a text message (e.g., "yes send me a text", "sure", "that would be great"), false if they declined, null if it was never asked or unclear.
 
 CRITICAL rules for name extraction:
 - Only extract a name if the caller EXPLICITLY stated their name (e.g., "My name is John Smith", "I'm Sarah", "It's Mike")
@@ -887,6 +888,7 @@ Return ONLY compact JSON (no extra whitespace or newlines):"""
                 "intent": intent,
                 "summary": extracted.get("summary", "").strip(),
                 "transcript": transcript,
+                "sms_consent": extracted.get("sms_consent"),
             }
 
             logger.info(f"LLM extraction result: name={result['name']}, email={result['email']}, intent={result['intent']}")

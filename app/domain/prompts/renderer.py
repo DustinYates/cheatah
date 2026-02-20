@@ -271,6 +271,7 @@ def render_policies(policies: Policies) -> str:
     add_policy_group("Withdrawal/Cancellation", policies.withdrawal_cancellation)
     add_policy_group("Makeup/Reschedule", policies.makeup_reschedule)
     add_policy_group("Trial Classes", policies.trial_classes)
+    add_policy_group("Services NOT Offered", policies.services_not_offered)
 
     return "\n".join(lines) if len(lines) > 1 else ""
 

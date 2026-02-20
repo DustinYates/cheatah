@@ -157,6 +157,7 @@ class Policies(BaseModel):
     withdrawal_cancellation: list[str] = Field(default_factory=list)
     makeup_reschedule: list[str] = Field(default_factory=list)
     trial_classes: list[str] = Field(default_factory=list)
+    services_not_offered: list[str] = Field(default_factory=list)
 
     @property
     def items(self) -> list[str]:
@@ -167,6 +168,7 @@ class Policies(BaseModel):
             + self.withdrawal_cancellation
             + self.makeup_reschedule
             + self.trial_classes
+            + self.services_not_offered
         )
 
 

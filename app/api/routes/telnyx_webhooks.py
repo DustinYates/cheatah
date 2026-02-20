@@ -4366,6 +4366,34 @@ async def send_booking_link_tool(
         except Exception as dedup_err:
             logger.warning(f"[TOOL] Failed to create SentAsset dedup record (SMS still sent): {dedup_err}")
 
+        # Update matching lead to reflect that booking link was sent
+        try:
+            from app.persistence.models.lead import Lead as BookingLead
+            phone_for_lookup = normalize_phone_for_dedup(formatted_to)
+            stmt = (
+                select(BookingLead)
+                .where(BookingLead.tenant_id == tenant_id)
+                .where(BookingLead.phone == phone_for_lookup)
+                .order_by(BookingLead.created_at.desc())
+            )
+            result = await db.execute(stmt)
+            lead = result.scalar_one_or_none()
+            if lead:
+                extra = lead.extra_data or {}
+                extra["booking_link_sent"] = True
+                extra["booking_link_sent_at"] = datetime.now(timezone.utc).isoformat()
+                extra["booking_link_message_id"] = sms_result.message_id
+                lead.extra_data = extra
+                # Mark follow-up as handled if it was requested
+                if hasattr(lead, 'followup_status') and lead.followup_status in ('requested', 'pending', None):
+                    lead.followup_status = 'handled'
+                await db.commit()
+                logger.info(f"[TOOL] Updated lead {lead.id} with booking_link_sent=True")
+            else:
+                logger.info(f"[TOOL] No lead found for phone={phone_for_lookup}, tenant={tenant_id} to update")
+        except Exception as lead_err:
+            logger.warning(f"[TOOL] Failed to update lead with booking link status (SMS still sent): {lead_err}")
+
         return JSONResponse(content={
             "status": "ok",
             "result": "I just sent you a text message with a link to schedule a time with our team. "

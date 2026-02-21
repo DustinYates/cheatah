@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_tenant, get_current_user, require_global_admin
+from app.api.deps import get_current_tenant, get_current_user, require_global_admin, require_prompt_admin
 from app.domain.prompts.assembler import PromptAssembler
 from app.domain.prompts.base_configs import get_base_config
 from app.domain.prompts.schemas.v1.bss_schema import BSSTenantConfig
@@ -15,7 +15,7 @@ from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 from app.persistence.repositories.tenant_prompt_config_repository import TenantPromptConfigRepository
 
-router = APIRouter(dependencies=[Depends(require_global_admin)])
+router = APIRouter()
 
 
 class PromptConfigRequest(BaseModel):
@@ -78,6 +78,7 @@ class ValidationErrorResponse(BaseModel):
 )
 async def upsert_prompt_config(
     request: PromptConfigRequest,
+    _: Annotated[User, Depends(require_prompt_admin)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -205,6 +206,7 @@ async def preview_prompt(
 
 @router.delete("/config", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_prompt_config(
+    _: Annotated[User, Depends(require_prompt_admin)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -441,6 +443,7 @@ async def get_channel_prompt(
 async def set_channel_prompt(
     channel: str,
     request: ChannelPromptRequest,
+    _: Annotated[User, Depends(require_prompt_admin)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -491,6 +494,7 @@ async def set_channel_prompt(
 @router.delete("/channel-prompts/{channel}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_channel_prompt(
     channel: str,
+    _: Annotated[User, Depends(require_prompt_admin)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],

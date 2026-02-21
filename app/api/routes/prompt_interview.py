@@ -7,7 +7,7 @@ from enum import Enum
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.deps import require_global_admin, require_tenant_admin
+from app.api.deps import require_global_admin, require_tenant_admin, require_prompt_admin, get_current_user, get_current_tenant
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
 from app.persistence.models.prompt import PromptBundle, PromptSection, PromptStatus
@@ -16,7 +16,7 @@ from app.persistence.repositories.prompt_repository import PromptRepository
 from app.llm.gemini_client import GeminiClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(dependencies=[Depends(require_global_admin)])
+router = APIRouter()
 
 
 class InterviewSuggestionsResponse(BaseModel):
@@ -699,7 +699,7 @@ def get_next_step_and_question(
 @router.post("/interview/answer", response_model=InterviewResponse)
 async def submit_answer(
     request: InterviewAnswerRequest,
-    admin_data: Annotated[tuple[User, int], Depends(require_tenant_admin)],
+    _: Annotated[User, Depends(require_prompt_admin)],
 ) -> InterviewResponse:
     """Submit an answer and get the next question."""
     current_step = InterviewStep(request.current_step)
@@ -761,11 +761,11 @@ async def submit_answer(
 @router.post("/interview/generate", response_model=GeneratePromptResponse)
 async def generate_prompt_from_interview(
     request: GeneratePromptRequest,
-    admin_data: Annotated[tuple[User, int], Depends(require_tenant_admin)],
+    _: Annotated[User, Depends(require_prompt_admin)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> GeneratePromptResponse:
     """Generate a prompt bundle from collected interview data."""
-    current_user, tenant_id = admin_data
     data = request.collected_data
     
     # Build the prompt sections
@@ -1017,11 +1017,11 @@ Remember: One piece of contact info is acceptable. Name + (email or phone) is id
 async def edit_prompt_via_chat(
     bundle_id: int,
     request: EditPromptRequest,
-    admin_data: Annotated[tuple[User, int], Depends(require_tenant_admin)],
+    _: Annotated[User, Depends(require_prompt_admin)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EditPromptResponse:
     """Edit an existing prompt via natural language instruction."""
-    current_user, tenant_id = admin_data
     prompt_repo = PromptRepository(db)
     
     # Get the existing bundle

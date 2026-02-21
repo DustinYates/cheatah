@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_current_tenant, get_current_user, require_global_admin
+from app.api.deps import get_current_tenant, get_current_user, require_global_admin, require_prompt_admin
 from app.domain.services.prompt_service import PromptService
 from app.domain.services.voice_prompt_transformer import transform_chat_to_voice
 from app.persistence.database import get_db
@@ -13,7 +13,7 @@ from app.persistence.models.tenant import User
 from app.persistence.models.prompt import PromptStatus, SectionScope
 from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(dependencies=[Depends(require_global_admin)])
+router = APIRouter()
 
 # Separate router for endpoints accessible to any authenticated tenant user
 tenant_router = APIRouter()
@@ -118,6 +118,7 @@ class VoicePromptResponse(BaseModel):
 @router.post("/bundles", response_model=PromptBundleResponse)
 async def create_prompt_bundle(
     bundle_data: PromptBundleCreate,
+    _: Annotated[User, Depends(require_prompt_admin)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -290,6 +291,7 @@ async def get_voice_prompt(
 async def update_prompt_bundle(
     bundle_id: int,
     bundle_data: PromptBundleUpdate,
+    _: Annotated[User, Depends(require_prompt_admin)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -350,6 +352,7 @@ async def update_prompt_bundle(
 @router.put("/bundles/{bundle_id}/activate", response_model=PromptBundleResponse)
 async def activate_prompt_bundle(
     bundle_id: int,
+    _: Annotated[User, Depends(require_prompt_admin)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -380,6 +383,7 @@ async def activate_prompt_bundle(
 @router.put("/bundles/{bundle_id}/publish", response_model=PromptBundleResponse)
 async def publish_prompt_bundle(
     bundle_id: int,
+    _: Annotated[User, Depends(require_prompt_admin)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -410,6 +414,7 @@ async def publish_prompt_bundle(
 @router.put("/bundles/{bundle_id}/deactivate", response_model=PromptBundleResponse)
 async def deactivate_prompt_bundle(
     bundle_id: int,
+    _: Annotated[User, Depends(require_prompt_admin)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -528,6 +533,7 @@ async def test_prompt(
 @router.delete("/bundles/{bundle_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_prompt_bundle(
     bundle_id: int,
+    _: Annotated[User, Depends(require_prompt_admin)],
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int | None, Depends(get_current_tenant)],
     db: Annotated[AsyncSession, Depends(get_db)],

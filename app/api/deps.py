@@ -228,17 +228,42 @@ async def require_tenant_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tenant context required",
         )
-    
+
     # Global admins can impersonate any tenant
     is_global = is_global_admin(current_user)
     # Tenant admins must belong to the tenant and have admin role
     is_tenant_admin = current_user.tenant_id == tenant_id and current_user.role in ("admin", "tenant_admin")
-    
+
     if not (is_global or is_tenant_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tenant admin access required",
         )
-    
+
     return current_user, tenant_id
+
+
+async def require_prompt_admin(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """Require global admin role for prompt editing.
+
+    Only global admins are allowed to create, edit, publish, or delete prompts.
+    This is a strict security policy for prompt configuration.
+
+    Args:
+        current_user: Current authenticated user
+
+    Returns:
+        Current user if admin
+
+    Raises:
+        HTTPException: If user is not global admin
+    """
+    if not is_global_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Global admin access required to edit prompts",
+        )
+    return current_user
 

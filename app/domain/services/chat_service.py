@@ -61,7 +61,17 @@ _LOWERCASE_ENDING_PATTERN = re.compile(r"[a-z]$")
 # This is a reliable fallback since the bot only greets by name when it recognized the name
 # Includes common greeting patterns: "Hi X", "Hello X", "Hey X", "Nice to meet you, X"
 _BOT_GREETING_NAME_PATTERN = re.compile(
-    r"(?:nice to meet you|great to (?:meet you|have you (?:here|with us))|(?:good |great |so glad )to have you here|hello|hey|hi|I can help with that)[,!]?\s+([A-Z][a-z]+)",
+    r"(?:"
+    r"nice to meet you|great to (?:meet you|have you (?:here|with us))"
+    r"|(?:good |great |so glad )to have you here"
+    r"|hello|hey|hi"
+    r"|I can help with that"
+    r"|thanks for (?:sharing|letting me know|that)"
+    r"|great|perfect|awesome|wonderful|lovely"
+    r"|welcome"
+    r"|good to (?:hear|know|meet)"
+    r"|glad (?:to help|you're here)"
+    r")[,!]?\s+([A-Z][a-z]+)",
     re.IGNORECASE
 )
 # Patterns for chat-to-SMS handoff detection
@@ -1792,11 +1802,19 @@ Replace null with the actual value if found. Use null if not found or uncertain.
             )
 
             # Parse JSON response
-            response = response.strip()
+            response = (response or "").strip()
 
-            # Log if response is empty (common Gemini issue)
+            # Retry once if response is empty (common Gemini issue)
             if not response:
-                logger.warning("LLM returned empty response for name extraction - falling back to regex")
+                logger.warning("LLM returned empty response for name extraction - retrying once")
+                response = await self.llm_orchestrator.generate(
+                    extraction_prompt,
+                    context={"temperature": 0.1, "max_tokens": 150},
+                )
+                response = (response or "").strip()
+
+            if not response:
+                logger.warning("LLM returned empty response on retry - falling back to regex")
 
             # Strip markdown code blocks if present
             if response.startswith("`"):
@@ -1858,28 +1876,46 @@ Replace null with the actual value if found. Use null if not found or uncertain.
             logger.error(f"LLM extraction failed: {e}", exc_info=True)
             # Fall through to regex fallback below
 
-        # CONTEXT-AWARE FALLBACK: If assistant just asked for name, user's response IS their name
-        # This is the most reliable pattern - "who am I chatting with?" -> "Terrell Pipkin."
+        # CONTEXT-AWARE FALLBACK: Scan the FULL conversation for name Q&A pairs.
+        # For each assistant message that asked for the user's name, check the
+        # immediately following user message to see if it's a name.
+        # This is more robust than checking only the last assistant message,
+        # which after the messages refresh (line ~363) is the CURRENT response,
+        # not the one that asked the name question.
         if not result["name"] and messages:
-            # Find the last assistant message
-            last_assistant_msg = None
-            for msg in reversed(messages):
-                if msg.role == "assistant":
-                    last_assistant_msg = msg.content
-                    break
-
-            # Check if assistant asked for name
-            if last_assistant_msg and _NAME_QUESTION_PATTERN.search(last_assistant_msg):
-                # User's current message is likely their name - check if it looks like a name
-                standalone_match = _STANDALONE_NAME_PATTERN.match(current_user_message.strip())
-                if standalone_match:
-                    potential_name = standalone_match.group(1)
-                    validated = validate_name(potential_name, require_explicit=True)
-                    if validated:
-                        result["name"] = validated
-                        result["name_is_explicit"] = True
-                        result["name_confidence"] = "high"
-                        logger.info(f"Context-aware name extraction: assistant asked for name, user replied '{validated}'")
+            for i, msg in enumerate(messages):
+                if msg.role != "assistant" or not msg.content:
+                    continue
+                if not _NAME_QUESTION_PATTERN.search(msg.content):
+                    continue
+                # Found an assistant message asking for the name — get the next user message
+                for j in range(i + 1, len(messages)):
+                    if messages[j].role == "user" and messages[j].content:
+                        user_response = messages[j].content.strip()
+                        # Try standalone name pattern first ("John", "John Smith")
+                        standalone_match = _STANDALONE_NAME_PATTERN.match(user_response)
+                        if standalone_match:
+                            potential_name = standalone_match.group(1)
+                            validated = validate_name(potential_name, require_explicit=True)
+                            if validated:
+                                result["name"] = validated
+                                result["name_is_explicit"] = True
+                                result["name_confidence"] = "high"
+                                logger.info(f"Context-aware name extraction (standalone): assistant asked for name, user replied '{validated}'")
+                                break
+                        # Try regex extraction for patterns like "I'm Hammy", "It's John", "call me Sarah"
+                        regex_name, is_explicit = self._extract_name_regex(user_response)
+                        if regex_name:
+                            validated = validate_name(regex_name, require_explicit=True)
+                            if validated:
+                                result["name"] = validated
+                                result["name_is_explicit"] = True
+                                result["name_confidence"] = "high"
+                                logger.info(f"Context-aware name extraction (regex): assistant asked for name, user replied '{validated}'")
+                                break
+                    break  # Only check the immediately following user message
+                if result["name"]:
+                    break  # Found a name, stop scanning
 
         # NOTE: Regex fallback for name extraction was removed.
         # It ran on ALL user text and caused persistent false positives

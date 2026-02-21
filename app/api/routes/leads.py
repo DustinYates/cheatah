@@ -146,6 +146,18 @@ async def list_leads(
     for lead in leads:
         llm_responded = await _check_llm_responded(db, lead.conversation_id)
         conv_channel = await _get_conv_channel(db, lead.conversation_id)
+
+        # Derive conv_channel and llm_responded from extra_data for voice leads
+        # (voice calls use Call/CallSummary tables, not Conversation/Message)
+        if lead.extra_data:
+            if not conv_channel:
+                if lead.extra_data.get("voice_calls") or lead.extra_data.get("source") == "voice_call":
+                    conv_channel = "voice"
+            if llm_responded is None:
+                voice_calls = lead.extra_data.get("voice_calls") or []
+                if voice_calls and any(vc.get("transcript") for vc in voice_calls):
+                    llm_responded = True
+
         lead_responses.append(
             LeadResponse(
                 id=lead.id,
@@ -188,6 +200,16 @@ async def get_lead(
 
     llm_responded = await _check_llm_responded(db, lead.conversation_id)
     conv_channel = await _get_conv_channel(db, lead.conversation_id)
+
+    # Derive conv_channel and llm_responded from extra_data for voice leads
+    if lead.extra_data:
+        if not conv_channel:
+            if lead.extra_data.get("voice_calls") or lead.extra_data.get("source") == "voice_call":
+                conv_channel = "voice"
+        if llm_responded is None:
+            voice_calls = lead.extra_data.get("voice_calls") or []
+            if voice_calls and any(vc.get("transcript") for vc in voice_calls):
+                llm_responded = True
 
     return LeadResponse(
         id=lead.id,

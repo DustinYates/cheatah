@@ -1621,40 +1621,19 @@ async def telnyx_ai_call_complete(
                     db.add(assistant_msg)
                     logger.info(f"Added SMS messages (fallback) for usage tracking: conversation_id={sms_conversation.id}")
 
-                # Still create/update Lead from SMS AI Assistant interactions
-                existing_lead = await db.execute(
-                    select(Lead).where(
-                        Lead.tenant_id == tenant_id,
-                        Lead.phone == normalized_from,
-                    ).order_by(Lead.created_at.desc()).limit(1)
+                # Create or update Lead via LeadService (dedup by phone/email)
+                from app.domain.services.lead_service import LeadService
+                lead_service = LeadService(db)
+                display_name = caller_name if caller_name else f"SMS Contact {normalized_from}"
+                lead = await lead_service.capture_lead(
+                    tenant_id=tenant_id,
+                    phone=normalized_from,
+                    name=display_name,
+                    email=caller_email or None,
+                    conversation_id=sms_conversation.id if sms_conversation else None,
+                    metadata={"source": "sms_ai_assistant", "summary": summary},
                 )
-                lead = existing_lead.scalar_one_or_none()
-
-                if not lead:
-                    # Use phone number as fallback name if no name extracted
-                    display_name = caller_name if caller_name else f"SMS Contact {normalized_from}"
-                    lead = Lead(
-                        tenant_id=tenant_id,
-                        phone=normalized_from,
-                        name=display_name,
-                        email=caller_email or None,
-                        status="new",
-                        extra_data={"source": "sms_ai_assistant", "summary": summary},
-                        conversation_id=sms_conversation.id if sms_conversation else None,
-                    )
-                    db.add(lead)
-                    await db.flush()
-                    logger.info(f"Created Lead from SMS AI interaction: phone={normalized_from}, conversation_id={sms_conversation.id if sms_conversation else None}")
-                else:
-                    # Update lead with new info (overwrite empty fields)
-                    if caller_name and (not lead.name or lead.name.startswith("SMS Contact ")):
-                        lead.name = caller_name
-                    if caller_email and not lead.email:
-                        lead.email = caller_email
-                    # Update conversation_id if not set (link to latest SMS conversation)
-                    if sms_conversation and not lead.conversation_id:
-                        lead.conversation_id = sms_conversation.id
-                    logger.info(f"Updated existing Lead from SMS AI interaction: id={lead.id}, conversation_id={lead.conversation_id}")
+                logger.info(f"Lead from SMS AI interaction: lead_id={lead.id}, phone={normalized_from}, conversation_id={lead.conversation_id}")
 
                 # Sync lead info to matching contact (find/update/create contact)
                 contact_id = await _sync_lead_to_contact(
@@ -2027,18 +2006,17 @@ async def telnyx_ai_call_complete(
                 "transcript": transcript[:2000] if transcript else None,
             }
 
-            # Always create new lead for each call
+            # Create or update lead via LeadService (dedup by phone/email)
+            from app.domain.services.lead_service import LeadService
+            lead_service = LeadService(db)
             display_name = caller_name if caller_name else f"Caller {normalized_from}"
-            lead = Lead(
+            lead = await lead_service.capture_lead(
                 tenant_id=tenant_id,
                 phone=normalized_from,
                 name=display_name,
                 email=caller_email or None,
-                status="new",
-                extra_data={"voice_calls": [call_data]},
+                metadata={"voice_calls": [call_data]},
             )
-            db.add(lead)
-            await db.flush()
 
             # Sync lead info to matching contact (find/update/create contact)
             contact_id = await _sync_lead_to_contact(
@@ -2049,7 +2027,7 @@ async def telnyx_ai_call_complete(
                 email=caller_email,
                 name=caller_name,
             )
-            logger.info(f"Created new Lead from AI call: phone={normalized_from}, name={caller_name}, email={caller_email}, contact_id={contact_id}")
+            logger.info(f"Lead from AI call: lead_id={lead.id}, phone={normalized_from}, name={caller_name}, email={caller_email}, contact_id={contact_id}")
 
             lead_id = lead.id if lead else None
         else:

@@ -6,6 +6,7 @@ from app.persistence.models.call_summary import CallSummary
 from app.persistence.models.contact import Contact
 from app.persistence.models.contact_alias import ContactAlias
 from app.persistence.models.contact_merge_log import ContactMergeLog
+from app.persistence.models.lead_merge_log import LeadMergeLog
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.escalation import Escalation
 from app.persistence.models.lead import Lead
@@ -63,6 +64,7 @@ __all__ = [
     "Contact",
     "ContactAlias",
     "ContactMergeLog",
+    "LeadMergeLog",
     "EmailConversation",
     "EmailIngestionLog",
     "IngestionStatus",

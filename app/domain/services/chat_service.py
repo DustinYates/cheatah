@@ -511,9 +511,7 @@ class ChatService:
                             tenant_id, updated_lead, extracted_email, extracted_phone, extracted_name
                         )
                 else:
-                    # Create new lead with extracted information
-                    # skip_dedup=True ensures each conversation gets its own lead,
-                    # even if the phone/email matches an existing lead (e.g., family members)
+                    # Create new lead or update existing one with same email/phone
                     lead = await self.lead_service.capture_lead(
                         tenant_id=tenant_id,
                         conversation_id=conversation.id,
@@ -521,7 +519,6 @@ class ChatService:
                         phone=extracted_phone,
                         name=extracted_name,
                         metadata={"source": "chatbot"},
-                        skip_dedup=True,
                     )
                     lead_captured = True
                     logger.info(

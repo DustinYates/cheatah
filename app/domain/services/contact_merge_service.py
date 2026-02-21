@@ -261,12 +261,28 @@ class ContactMergeService:
             from_contact_id: Contact ID to reassign from
             to_contact_id: Contact ID to reassign to
         """
-        # Note: Neither Lead nor Conversation has a contact_id field.
-        # The relationships work differently:
-        # - Contact has a lead_id field pointing to Lead
-        # - Lead has a conversation_id field pointing to Conversation
-        # No direct reassignment needed - the merge log tracks what was merged.
-        pass
+        from app.persistence.models.tenant_email_config import EmailConversation
+
+        # Reassign leads pointing to the old contact
+        await self.session.execute(
+            update(Lead)
+            .where(Lead.tenant_id == tenant_id, Lead.contact_id == from_contact_id)
+            .values(contact_id=to_contact_id)
+        )
+
+        # Reassign conversations pointing to the old contact
+        await self.session.execute(
+            update(Conversation)
+            .where(Conversation.tenant_id == tenant_id, Conversation.contact_id == from_contact_id)
+            .values(contact_id=to_contact_id)
+        )
+
+        # Reassign email conversations pointing to the old contact
+        await self.session.execute(
+            update(EmailConversation)
+            .where(EmailConversation.tenant_id == tenant_id, EmailConversation.contact_id == from_contact_id)
+            .values(contact_id=to_contact_id)
+        )
 
     async def get_combined_conversation_history(
         self, tenant_id: int, contact_id: int

@@ -1062,6 +1062,15 @@ export default function Dashboard() {
       return { className: 'pending', title: 'Status unknown' };
     }
 
+    // Voice call leads handled by AI agent
+    if (lead.extra_data?.voice_calls?.length > 0) {
+      const hasTranscript = lead.extra_data.voice_calls.some(vc => vc.transcript);
+      if (hasTranscript) {
+        return { className: 'handled', title: 'Voice call - AI handled' };
+      }
+      return { className: 'pending', title: 'Voice call - brief/no transcript' };
+    }
+
     // Gray fallback: No conversation data
     return { className: 'no-data', title: 'No conversation data' };
   };

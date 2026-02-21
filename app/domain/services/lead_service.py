@@ -93,13 +93,13 @@ class LeadService:
         phone: str | None = None,
         name: str | None = None,
         metadata: dict | None = None,
-        skip_dedup: bool = True,
+        skip_dedup: bool = False,
         contact_id: int | None = None,
     ) -> Lead:
-        """Capture a lead (always creates a new lead record).
+        """Capture a lead, deduplicating by email/phone when possible.
 
-        Each lead is stored independently. Merging happens at the Contact
-        level, not the Lead level.
+        If skip_dedup is False (default), searches for an existing lead with
+        the same email or phone and updates it instead of creating a new one.
 
         Args:
             tenant_id: Tenant ID
@@ -108,9 +108,8 @@ class LeadService:
             phone: Optional phone (will be normalized to E.164 format)
             name: Optional name
             metadata: Optional metadata dictionary (mapped to extra_data)
-            skip_dedup: If True (default), always create a new lead even if one
-                       exists with the same email/phone. Each lead is stored
-                       independently; contact merging handles deduplication.
+            skip_dedup: If True, always create a new lead even if one exists
+                       with the same email/phone. Use for anonymous leads.
             contact_id: Optional contact ID to link the lead to an existing contact
 
         Returns:
@@ -356,6 +355,9 @@ class LeadService:
             await self.session.commit()
             await self.session.refresh(lead)
 
+            # Check if updated fields now match another lead — merge if so
+            lead = await self._check_and_merge_duplicate_leads(tenant_id, lead)
+
             # Check for auto-conversion after update (lead might now qualify)
             await self._check_and_auto_convert(tenant_id, lead)
 
@@ -564,6 +566,283 @@ class LeadService:
             updated = True
             logger.info(f"Updated contact {contact.id} with name from lead {lead.id}")
 
+    def _pick_primary_lead(self, lead_a: Lead, lead_b: Lead) -> tuple[Lead, Lead]:
+        """Determine which lead should be primary (kept) vs secondary (merged in).
+
+        Scores each lead by data richness. Primary = more data. Tie-break = older.
+
+        Returns:
+            (primary, secondary) tuple
+        """
+        def _score(lead: Lead) -> int:
+            score = 0
+            if lead.name and lead.name.strip():
+                # Real names score higher than placeholders
+                if lead.name.startswith("Caller ") or lead.name.startswith("SMS Contact "):
+                    score += 0  # Placeholder name doesn't count
+                else:
+                    score += 2
+            if lead.email:
+                score += 1
+            if lead.phone:
+                score += 1
+            if lead.conversation_id:
+                score += 1
+            if lead.contact_id:
+                score += 1
+            return score
+
+        score_a = _score(lead_a)
+        score_b = _score(lead_b)
+
+        if score_a > score_b:
+            return (lead_a, lead_b)
+        elif score_b > score_a:
+            return (lead_b, lead_a)
+        else:
+            # Tie-break: older lead is primary
+            if lead_a.created_at <= lead_b.created_at:
+                return (lead_a, lead_b)
+            return (lead_b, lead_a)
+
+    async def merge_leads(
+        self,
+        tenant_id: int,
+        primary_lead_id: int,
+        secondary_lead_id: int,
+        user_id: int = 0,
+    ) -> Lead:
+        """Merge secondary lead into primary lead.
+
+        Copies missing fields, reassigns child records, logs the merge,
+        and deletes the secondary lead.
+
+        Args:
+            tenant_id: Tenant ID
+            primary_lead_id: Lead to keep
+            secondary_lead_id: Lead to merge in and delete
+            user_id: Who initiated the merge (0 = system auto-merge)
+
+        Returns:
+            The updated primary lead
+        """
+        from app.persistence.models.call_summary import CallSummary
+        from app.persistence.models.drip_campaign import DripEnrollment
+        from app.persistence.models.email_ingestion_log import EmailIngestionLog
+        from app.persistence.models.lead_merge_log import LeadMergeLog
+        from app.persistence.models.tenant_email_config import EmailConversation
+
+        primary = await self.lead_repo.get_by_id(tenant_id, primary_lead_id)
+        secondary = await self.lead_repo.get_by_id(tenant_id, secondary_lead_id)
+
+        if not primary or not secondary:
+            raise ValueError(f"Lead not found: primary={primary_lead_id}, secondary={secondary_lead_id}")
+        if primary.id == secondary.id:
+            return primary
+
+        logger.info(f"Merging lead {secondary.id} into lead {primary.id} for tenant {tenant_id}")
+
+        # --- 1. Snapshot secondary before any changes ---
+        secondary_snapshot = {
+            "id": secondary.id,
+            "name": secondary.name,
+            "email": secondary.email,
+            "phone": secondary.phone,
+            "conversation_id": secondary.conversation_id,
+            "contact_id": secondary.contact_id,
+            "status": secondary.status,
+            "extra_data": secondary.extra_data,
+            "created_at": secondary.created_at.isoformat() if secondary.created_at else None,
+        }
+
+        # --- 2. Copy missing fields from secondary -> primary ---
+        field_resolutions = {}
+
+        # Name: prefer real names over placeholders
+        if not primary.name or primary.name.startswith("Caller ") or primary.name.startswith("SMS Contact "):
+            if secondary.name and not secondary.name.startswith("Caller ") and not secondary.name.startswith("SMS Contact "):
+                primary.name = secondary.name
+                field_resolutions["name"] = "secondary"
+            else:
+                field_resolutions["name"] = "primary"
+        else:
+            field_resolutions["name"] = "primary"
+
+        if not primary.email and secondary.email:
+            primary.email = secondary.email
+            field_resolutions["email"] = "secondary"
+        else:
+            field_resolutions["email"] = "primary"
+
+        if not primary.phone and secondary.phone:
+            primary.phone = secondary.phone
+            field_resolutions["phone"] = "secondary"
+        else:
+            field_resolutions["phone"] = "primary"
+
+        if not primary.contact_id and secondary.contact_id:
+            primary.contact_id = secondary.contact_id
+
+        # --- 3. Deep-merge extra_data ---
+        primary_extra = dict(primary.extra_data or {})
+        secondary_extra = dict(secondary.extra_data or {})
+
+        # Merge sources lists
+        primary_sources = primary_extra.get("sources", [])
+        if not primary_sources and primary_extra.get("source"):
+            primary_sources = [primary_extra["source"]]
+        secondary_sources = secondary_extra.get("sources", [])
+        if not secondary_sources and secondary_extra.get("source"):
+            secondary_sources = [secondary_extra["source"]]
+        combined_sources = list(dict.fromkeys(primary_sources + secondary_sources))  # dedup, preserve order
+        if combined_sources:
+            primary_extra["sources"] = combined_sources
+
+        # Merge voice_calls arrays
+        primary_calls = primary_extra.get("voice_calls", [])
+        secondary_calls = secondary_extra.get("voice_calls", [])
+        if secondary_calls:
+            primary_extra["voice_calls"] = primary_calls + secondary_calls
+
+        # Track merged conversation IDs
+        merged_convos = primary_extra.get("merged_conversation_ids", [])
+        if secondary.conversation_id:
+            merged_convos.append(secondary.conversation_id)
+        if merged_convos:
+            primary_extra["merged_conversation_ids"] = merged_convos
+
+        primary.extra_data = primary_extra
+
+        # --- 4. Reassign child FK records ---
+        # call_summaries (nullable)
+        await self.session.execute(
+            update(CallSummary)
+            .where(CallSummary.lead_id == secondary.id)
+            .values(lead_id=primary.id)
+        )
+
+        # email_conversations (nullable)
+        await self.session.execute(
+            update(EmailConversation)
+            .where(EmailConversation.lead_id == secondary.id)
+            .values(lead_id=primary.id)
+        )
+
+        # email_ingestion_logs (nullable)
+        await self.session.execute(
+            update(EmailIngestionLog)
+            .where(EmailIngestionLog.lead_id == secondary.id)
+            .values(lead_id=primary.id)
+        )
+
+        # contacts.lead_id (legacy, nullable)
+        await self.session.execute(
+            update(Contact)
+            .where(Contact.lead_id == secondary.id)
+            .values(lead_id=primary.id)
+        )
+
+        # drip_enrollments (NOT NULL + unique constraint per tenant/campaign/lead)
+        result = await self.session.execute(
+            select(DripEnrollment).where(DripEnrollment.lead_id == secondary.id)
+        )
+        for enrollment in result.scalars().all():
+            # Check if primary already enrolled in same campaign
+            existing_result = await self.session.execute(
+                select(DripEnrollment).where(
+                    DripEnrollment.lead_id == primary.id,
+                    DripEnrollment.campaign_id == enrollment.campaign_id,
+                    DripEnrollment.tenant_id == tenant_id,
+                )
+            )
+            if existing_result.scalar_one_or_none():
+                # Primary already enrolled — delete secondary's enrollment
+                await self.session.delete(enrollment)
+            else:
+                # Reassign to primary
+                enrollment.lead_id = primary.id
+
+        # --- 5. Create merge log ---
+        merge_log = LeadMergeLog(
+            tenant_id=tenant_id,
+            primary_lead_id=primary.id,
+            secondary_lead_id=secondary.id,
+            merged_by=user_id,
+            field_resolutions=field_resolutions,
+            secondary_data_snapshot=secondary_snapshot,
+        )
+        self.session.add(merge_log)
+
+        # --- 6. Delete secondary lead ---
+        await self.session.execute(
+            delete(Lead).where(Lead.id == secondary.id, Lead.tenant_id == tenant_id)
+        )
+
+        # --- 7. Update primary timestamp ---
+        primary.updated_at = datetime.utcnow()
+
+        await self.session.commit()
+        await self.session.refresh(primary)
+
+        logger.info(
+            f"Merged lead {secondary.id} into {primary.id}: "
+            f"fields={field_resolutions}, "
+            f"secondary_conversation_id={secondary_snapshot.get('conversation_id')}"
+        )
+        return primary
+
+    async def _check_and_merge_duplicate_leads(
+        self, tenant_id: int, lead: Lead
+    ) -> Lead:
+        """After updating a lead's email/phone, check if it now matches another lead.
+
+        If duplicates are found, merge them keeping the one with more data as primary.
+
+        Args:
+            tenant_id: Tenant ID
+            lead: The lead that was just updated
+
+        Returns:
+            The surviving lead (may be the original or a different primary)
+        """
+        from sqlalchemy import or_
+
+        if not lead.email and not lead.phone:
+            return lead
+
+        conditions = []
+        if lead.email:
+            conditions.append(Lead.email == lead.email)
+        if lead.phone:
+            conditions.append(Lead.phone == lead.phone)
+
+        stmt = (
+            select(Lead)
+            .where(
+                Lead.tenant_id == tenant_id,
+                Lead.id != lead.id,
+                or_(*conditions),
+            )
+            .order_by(Lead.created_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        duplicates = list(result.scalars().all())
+
+        if not duplicates:
+            return lead
+
+        logger.info(f"Found {len(duplicates)} duplicate leads for lead {lead.id}")
+
+        for duplicate in duplicates:
+            primary, secondary = self._pick_primary_lead(lead, duplicate)
+            lead = await self.merge_leads(
+                tenant_id=tenant_id,
+                primary_lead_id=primary.id,
+                secondary_lead_id=secondary.id,
+            )
+
+        return lead
+
     async def delete_lead(self, tenant_id: int, lead_id: int) -> bool:
         """Delete a lead by ID.
 
@@ -577,6 +856,9 @@ class LeadService:
         Returns:
             True if deleted, False if not found
         """
+        from app.persistence.models.call_summary import CallSummary
+        from app.persistence.models.drip_campaign import DripEnrollment
+        from app.persistence.models.email_ingestion_log import EmailIngestionLog
         from app.persistence.models.tenant_email_config import EmailConversation
 
         # Check if lead exists
@@ -598,6 +880,26 @@ class LeadService:
             update(EmailConversation)
             .where(EmailConversation.tenant_id == tenant_id, EmailConversation.lead_id == lead_id)
             .values(lead_id=None)
+        )
+
+        # Nullify call_summaries.lead_id
+        await self.session.execute(
+            update(CallSummary)
+            .where(CallSummary.lead_id == lead_id)
+            .values(lead_id=None)
+        )
+
+        # Nullify email_ingestion_logs.lead_id
+        await self.session.execute(
+            update(EmailIngestionLog)
+            .where(EmailIngestionLog.lead_id == lead_id)
+            .values(lead_id=None)
+        )
+
+        # Delete drip_enrollments (NOT NULL constraint — can't nullify)
+        await self.session.execute(
+            delete(DripEnrollment)
+            .where(DripEnrollment.lead_id == lead_id)
         )
 
         # Delete the lead

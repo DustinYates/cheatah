@@ -841,20 +841,36 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
 
         config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
         if not config_record:
-            # Create new config record
+            # Check for an inactive config (unique constraint allows only one per tenant)
+            from sqlalchemy import select
             from app.persistence.models.tenant_prompt_config import TenantPromptConfig
-            config_record = TenantPromptConfig(
-                tenant_id=tenant_id,
-                schema_version="v2",
-                config_json={prompt_key: prompt},
-                is_active=True,
+            stmt = select(TenantPromptConfig).where(
+                TenantPromptConfig.tenant_id == tenant_id,
             )
-            self.session.add(config_record)
+            result = await self.session.execute(stmt)
+            config_record = result.scalar_one_or_none()
+
+            if config_record:
+                # Reactivate and update existing inactive config
+                config_record.is_active = True
+                config_json = dict(config_record.config_json or {})
+                config_json[prompt_key] = prompt
+                config_record.config_json = config_json
+                attributes.flag_modified(config_record, "config_json")
+            else:
+                # Create new config record
+                config_record = TenantPromptConfig(
+                    tenant_id=tenant_id,
+                    schema_version="v2",
+                    config_json={prompt_key: prompt},
+                    is_active=True,
+                )
+                self.session.add(config_record)
         else:
-            # Update existing config
-            if config_record.config_json is None:
-                config_record.config_json = {}
-            config_record.config_json[prompt_key] = prompt
+            # Update existing active config
+            config_json = dict(config_record.config_json or {})
+            config_json[prompt_key] = prompt
+            config_record.config_json = config_json
             # Mark the JSON column as modified so SQLAlchemy detects the change
             attributes.flag_modified(config_record, "config_json")
 

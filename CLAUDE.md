@@ -247,6 +247,7 @@ Production secrets are in GCP Secret Manager, mounted as env vars in Cloud Run.
 6. Configure `tenant_widget_configs` for chat widget styling
 7. Connect Google Calendar via Settings → Calendar (optional)
 8. Optional: SendGrid for outbound email, Twilio as SMS/voice fallback
+9. **Verify chat demo** — Go to Settings → Chatbot and test the preview widget. Confirm it uses the correct tenant's prompt (not another tenant's data). Check that the `tenant_prompt_configs` row is `is_active=true`.
 
 ## Workflow Orchestration
 

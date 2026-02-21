@@ -1262,7 +1262,7 @@ async def get_conversation_analytics(
                 call_timestamp >= ctx.start_datetime,
                 call_timestamp <= ctx.end_datetime,
             )
-            .group_by(func.coalesce(Call.language, "unknown"))
+            .group_by(Call.language)
         )
         call_lang_result = await db.execute(call_lang_stmt)
 
@@ -1280,7 +1280,7 @@ async def get_conversation_analytics(
                 call_timestamp <= ctx.end_datetime,
                 CallSummary.lead_id.isnot(None),
             )
-            .group_by(func.coalesce(Call.language, "unknown"))
+            .group_by(Call.language)
         )
         call_leads_result = await db.execute(call_leads_stmt)
 

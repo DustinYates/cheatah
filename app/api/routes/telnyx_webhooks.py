@@ -461,24 +461,6 @@ async def telnyx_inbound_sms_webhook(
 
         logger.info(f"Found tenant_id={tenant_id} for Telnyx number: {to_number}")
 
-        # Check if tenant uses Telnyx AI Agent — if so, the AI handles SMS
-        # responses directly and ai-call-complete records the transcript.
-        # Processing here would send a DUPLICATE reply via our Gemini LLM.
-        from app.persistence.models.tenant_voice_config import TenantVoiceConfig
-        voice_cfg_result = await db.execute(
-            select(TenantVoiceConfig).where(
-                TenantVoiceConfig.tenant_id == tenant_id
-            ).limit(1)
-        )
-        voice_cfg = voice_cfg_result.scalar_one_or_none()
-        if voice_cfg and voice_cfg.telnyx_agent_id:
-            logger.info(
-                f"Tenant {tenant_id} uses Telnyx AI Agent ({voice_cfg.telnyx_agent_id}) — "
-                f"skipping /sms/inbound processing to avoid duplicate replies. "
-                f"ai-call-complete will record the conversation."
-            )
-            return JSONResponse(content={"status": "ok"})
-
         # Queue message for async processing
         if settings.cloud_tasks_worker_url:
             cloud_tasks = CloudTasksClient()
@@ -692,10 +674,7 @@ async def _get_tenant_from_assistant_id(
         return None
 
     stmt = select(TenantVoiceConfig).where(
-        or_(
-            TenantVoiceConfig.telnyx_agent_id == assistant_id,
-            TenantVoiceConfig.voice_agent_id == assistant_id,
-        )
+        TenantVoiceConfig.telnyx_agent_id == assistant_id
     ).limit(1)
     result = await db.execute(stmt)
     config = result.scalar_one_or_none()
@@ -893,37 +872,6 @@ async def telnyx_ai_call_complete(
         )
         logger.info(f"Telnyx assistant_id: {assistant_id}")
 
-        # Extract voice model from webhook payload (for A/B testing with Traffic Distribution)
-        voice_model = (
-            body.get("voice")
-            or body.get("voice_model")
-            or payload.get("voice")
-            or payload.get("voice_model")
-            or payload.get("tts_voice")
-            or metadata.get("voice")
-            or metadata.get("voice_model")
-            or metadata.get("tts_voice")
-            or data.get("voice")
-            or data.get("voice_model")
-            or conversation.get("voice")
-            or conversation.get("voice_model")
-            or ""
-        )
-        # Also check nested voice_settings if present
-        if not voice_model:
-            voice_settings = (
-                payload.get("voice_settings", {})
-                or data.get("voice_settings", {})
-                or conversation.get("voice_settings", {})
-                or {}
-            )
-            if isinstance(voice_settings, dict):
-                voice_model = voice_settings.get("voice") or voice_settings.get("name") or ""
-        if voice_model:
-            logger.info(f"Telnyx voice_model from webhook: {voice_model}")
-        else:
-            logger.info("No voice_model in webhook payload, will try Telnyx API later")
-
         # Extract conversation_id separately for AI Agent recording access
         telnyx_conversation_id = (
             payload.get("conversation_id")
@@ -933,22 +881,6 @@ async def telnyx_ai_call_complete(
             or ""
         )
         logger.info(f"Telnyx conversation_id: {telnyx_conversation_id}")
-
-        # Extract assistant_version_id for Traffic Distribution voice identification
-        assistant_version_id = (
-            metadata.get("assistant_version_id")
-            or payload.get("assistant_version_id")
-            or body.get("assistant_version_id")
-            or ""
-        )
-        # [AB-DEBUG] Always log version info to verify Traffic Distribution fields
-        logger.info(
-            f"[AB-DEBUG] assistant_version_id={assistant_version_id!r}, "
-            f"assistant_id={assistant_id!r}, "
-            f"metadata_keys={list(metadata.keys()) if metadata else []}, "
-            f"payload_keys={list(payload.keys()) if isinstance(payload, dict) else []}, "
-            f"body_keys_sample={[k for k in list(body.keys())[:20]]}"
-        )
 
         # [SMS-DEBUG] Log all potential phone number sources for transfer debugging
         logger.info(
@@ -1090,7 +1022,6 @@ async def telnyx_ai_call_complete(
         caller_name = ""
         caller_email = ""
         caller_intent = ""
-        sms_consent = None
         import re
 
         # Log raw results for debugging name extraction issues
@@ -1226,11 +1157,9 @@ async def telnyx_ai_call_complete(
             f"AI call data extracted: name={caller_name}, email={caller_email}, intent={caller_intent[:50] if caller_intent else 'none'}"
         )
 
-        # ALWAYS fetch transcript from Telnyx API and run LLM extraction.
-        # Even when webhook insights provide name/email/summary, they may contain
-        # stale data from the AI agent's memory of previous calls. LLM extraction
-        # on the actual transcript gives us a fresh summary for THIS specific call.
-        if call_id and settings.telnyx_api_key:
+        # WORKAROUND: Telnyx Insights webhooks not firing for voice calls
+        # If we have no insights data, try to fetch transcript from Telnyx API directly
+        if not caller_name and not caller_email and call_id and settings.telnyx_api_key:
             try:
                 from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
                 telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
@@ -1249,23 +1178,6 @@ async def telnyx_ai_call_complete(
                 if conversation:
                     conv_id = conversation.get("id")
                     logger.info(f"Found conversation {conv_id}, fetching messages")
-
-                    # Extract voice model from conversation data if not already found
-                    if not voice_model and conv_id:
-                        # Try from conversation object returned by list endpoint
-                        voice_model = (
-                            conversation.get("voice")
-                            or (conversation.get("voice_settings", {}) or {}).get("voice")
-                            or ""
-                        )
-                        if not voice_model:
-                            # Try dedicated API call to get full conversation details
-                            try:
-                                voice_model = await telnyx_ai.get_conversation_voice_model(conv_id) or ""
-                            except Exception as ve:
-                                logger.warning(f"Failed to get voice model from API: {ve}")
-                        if voice_model:
-                            logger.info(f"Extracted voice_model from Telnyx API: {voice_model}")
 
                     # Retry logic for race condition - Telnyx may not have messages ready yet
                     # Increased retries and delay based on production observation
@@ -1306,28 +1218,23 @@ async def telnyx_ai_call_complete(
                             await asyncio.sleep(retry_delay)
 
                     if extracted:
-                        # Name/email: fill gaps only (webhook insights for these are usually correct)
+                        # Use extracted data if we didn't get it from webhook
                         if extracted.get("name") and not caller_name:
                             caller_name = extracted["name"]
                             logger.info(f"Extracted caller_name from transcript: {caller_name}")
                         if extracted.get("email") and not caller_email:
                             caller_email = extracted["email"]
                             logger.info(f"Extracted caller_email from transcript: {caller_email}")
-                        # Summary/intent: LLM ALWAYS wins over webhook insights.
-                        # Webhook insights may contain stale data from the AI agent's
-                        # memory of previous calls. LLM analyzes THIS call's transcript.
-                        if extracted.get("intent"):
+                        if extracted.get("intent") and not caller_intent:
                             caller_intent = extracted["intent"]
-                            logger.info(f"Extracted caller_intent from transcript (overriding webhook): {caller_intent}")
-                        if extracted.get("summary"):
+                            logger.info(f"Extracted caller_intent from transcript: {caller_intent}")
+                        if extracted.get("summary") and not summary:
                             summary = extracted["summary"]
-                            logger.info(f"Extracted summary from transcript (overriding webhook, first 100 chars): {summary[:100]}")
+                            logger.info(f"Extracted summary from transcript (first 100 chars): {summary[:100]}")
                         if extracted.get("transcript") and not transcript:
                             transcript = extracted["transcript"]
-                        # SMS consent: if caller agreed to receive a text
-                        sms_consent = extracted.get("sms_consent")
 
-                    logger.info(f"Final extracted data: name={caller_name}, email={caller_email}, intent={caller_intent}, sms_consent={sms_consent}")
+                    logger.info(f"Final extracted data: name={caller_name}, email={caller_email}, intent={caller_intent}")
                 else:
                     logger.info(f"Could not find conversation for call_control_id={call_id}")
             except Exception as e:
@@ -1335,7 +1242,7 @@ async def telnyx_ai_call_complete(
 
         # FALLBACK: Try to get transcript from our own database
         # The voice_webhooks.py stores messages in the Conversation table during the call
-        if ((not caller_name and not caller_email) or not transcript) and from_number:
+        if not caller_name and not caller_email and from_number:
             try:
                 # Get tenant_id first (we need it for the query)
                 temp_tenant_id = await _get_tenant_from_telnyx_number(to_number, db) if to_number else None
@@ -1434,9 +1341,8 @@ async def telnyx_ai_call_complete(
         logger.info(f"Found tenant_id={tenant_id} for AI call")
 
         # Determine if this is a voice call vs SMS/chat interaction
-        # PRIMARY: telnyx_conversation_channel metadata (most reliable — set by Telnyx AI Agent)
-        # SECONDARY: event_type prefix (call.* vs message.*)
-        # TERTIARY: voice signals (duration/recording) as fallback
+        # PRIMARY: Use event_type as the definitive classifier
+        # SECONDARY: Use duration only for capturing call metrics, not classification
 
         # Normalize event_type for comparison
         normalized_event_type = event_type.lower().strip() if event_type else ""
@@ -1459,43 +1365,29 @@ async def telnyx_ai_call_complete(
             bool(recording_url)
         )
 
-        # Telnyx AI Agent sets telnyx_conversation_channel in metadata:
-        # "phone_call", "web_call", or "sms_chat"
-        # This is the most reliable signal — Telnyx uses call.* event types
-        # for ALL AI Agent conversations (including SMS), so event_type alone
-        # can misclassify SMS agent conversations as voice calls.
-        conversation_channel = metadata.get("telnyx_conversation_channel", "")
-
-        # Final classification: metadata channel > event type > voice signals
-        if conversation_channel == "sms_chat":
-            is_voice_call = False
-            is_sms_interaction = True
-            logger.info(f"telnyx_conversation_channel=sms_chat - classifying as SMS (event_type={event_type})")
-        elif conversation_channel == "phone_call":
-            is_voice_call = True
-            is_sms_interaction = False
-            logger.info(f"telnyx_conversation_channel=phone_call - classifying as voice")
-        elif is_sms_event:
+        # Final classification based on event type (not duration)
+        if is_sms_event:
             is_voice_call = False
             is_sms_interaction = True
         elif is_voice_event:
             is_voice_call = True
             is_sms_interaction = False
         else:
-            # Unknown event type, no metadata channel — use voice signals
-            if has_voice_signals:
-                logger.info(f"Unknown event type '{event_type}', has voice signals (duration={duration}) - classifying as voice")
+            # Unknown event type - check metadata for channel info before defaulting
+            conversation_channel = metadata.get("telnyx_conversation_channel", "")
+            if conversation_channel == "phone_call":
+                logger.info(f"Unknown event type '{event_type}', but telnyx_conversation_channel=phone_call - classifying as voice")
                 is_voice_call = True
                 is_sms_interaction = False
             else:
-                logger.info(f"Unknown event type '{event_type}', no voice signals - classifying as SMS")
+                logger.warning(f"Unknown event type '{event_type}', defaulting to SMS classification")
                 is_voice_call = False
                 is_sms_interaction = True
 
         logger.info(
             f"Channel classification: is_voice_call={is_voice_call}, is_sms_interaction={is_sms_interaction}, "
             f"event_type={event_type}, is_voice_event={is_voice_event}, is_sms_event={is_sms_event}, "
-            f"has_voice_signals={has_voice_signals}, duration={duration}, conversation_channel={conversation_channel}"
+            f"has_voice_signals={has_voice_signals}, duration={duration}"
         )
 
         if is_sms_interaction or (not is_voice_call and not call_id):
@@ -1571,117 +1463,74 @@ async def telnyx_ai_call_complete(
                                 sample_msg = actual_messages[0]
                                 logger.info(f"[SMS-MESSAGES] Sample message keys: {list(sample_msg.keys())}, sample: {str(sample_msg)[:500]}")
 
-                            # Guard: skip if conversation already has messages
-                            # (prevents duplicates if /sms/inbound already stored them)
-                            existing_count_result = await db.execute(
-                                select(func.count()).where(
+                            # Get next sequence number
+                            msg_result = await db.execute(
+                                select(Message).where(
                                     Message.conversation_id == sms_conversation.id
-                                )
+                                ).order_by(Message.sequence_number.desc()).limit(1)
                             )
-                            existing_msg_count = existing_count_result.scalar() or 0
-                            if existing_msg_count > 0:
-                                logger.info(
-                                    f"[SMS-MESSAGES] Conversation {sms_conversation.id} already has "
-                                    f"{existing_msg_count} messages — skipping Telnyx API message storage to avoid duplicates"
-                                )
-                                actual_messages_stored = True  # Mark as stored so fallback doesn't fire
+                            last_msg = msg_result.scalar_one_or_none()
+                            next_seq = (last_msg.sequence_number + 1) if last_msg else 1
 
-                                # Still extract assistant transcript for downstream use
-                                assistant_texts = []
-                                for msg in actual_messages:
-                                    if msg.get("role") != "assistant":
-                                        continue
-                                    content = msg.get("text", msg.get("content", ""))
-                                    if not content or not content.strip():
-                                        continue
-                                    content_stripped = content.strip()
+                            # Store each actual message individually
+                            # Filter out tool call results and API error responses
+                            for msg in actual_messages:
+                                msg_role = msg.get("role", "user")
+                                msg_content = msg.get("text", msg.get("content", ""))
+
+                                # Skip tool/function messages (these are API call results)
+                                if msg_role in ("tool", "function", "system"):
+                                    logger.debug(f"Skipping {msg_role} message from Telnyx AI conversation")
+                                    continue
+
+                                # Skip messages that look like API error responses
+                                if msg_content and msg_content.strip():
+                                    content_stripped = msg_content.strip()
+                                    # Check if content looks like a JSON error response
                                     if content_stripped.startswith("{") and (
                                         '"http_status"' in content_stripped
                                         or '"errors"' in content_stripped
                                         or '"error"' in content_stripped
+                                        or '"http_body"' in content_stripped
                                     ):
-                                        continue
-                                    assistant_texts.append(content)
-                                if assistant_texts:
-                                    actual_assistant_transcript = "\n".join(assistant_texts)
-
-                                # Check if AI already sent registration URL
-                                for msg in actual_messages:
-                                    msg_text = msg.get("text", msg.get("content", "")) or ""
-                                    if "britishswimschool.com" in msg_text and "register" in msg_text:
-                                        ai_sent_registration_url = True
-                                        break
-                            else:
-                                # No existing messages — safe to store from Telnyx API
-
-                                # Get next sequence number
-                                msg_result = await db.execute(
-                                    select(Message).where(
-                                        Message.conversation_id == sms_conversation.id
-                                    ).order_by(Message.sequence_number.desc()).limit(1)
-                                )
-                                last_msg = msg_result.scalar_one_or_none()
-                                next_seq = (last_msg.sequence_number + 1) if last_msg else 1
-
-                                # Store each actual message individually
-                                # Filter out tool call results and API error responses
-                                for msg in actual_messages:
-                                    msg_role = msg.get("role", "user")
-                                    msg_content = msg.get("text", msg.get("content", ""))
-
-                                    # Skip tool/function messages (these are API call results)
-                                    if msg_role in ("tool", "function", "system"):
-                                        logger.debug(f"Skipping {msg_role} message from Telnyx AI conversation")
+                                        logger.warning(f"Skipping API error response from Telnyx AI conversation: {content_stripped[:200]}")
                                         continue
 
-                                    # Skip messages that look like API error responses
-                                    if msg_content and msg_content.strip():
-                                        content_stripped = msg_content.strip()
-                                        # Check if content looks like a JSON error response
-                                        if content_stripped.startswith("{") and (
-                                            '"http_status"' in content_stripped
-                                            or '"errors"' in content_stripped
-                                            or '"error"' in content_stripped
-                                            or '"http_body"' in content_stripped
-                                        ):
-                                            logger.warning(f"Skipping API error response from Telnyx AI conversation: {content_stripped[:200]}")
-                                            continue
+                                    new_msg = Message(
+                                        conversation_id=sms_conversation.id,
+                                        role=msg_role,
+                                        content=msg_content,
+                                        sequence_number=next_seq,
+                                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
+                                    )
+                                    db.add(new_msg)
+                                    next_seq += 1
 
-                                        new_msg = Message(
-                                            conversation_id=sms_conversation.id,
-                                            role=msg_role,
-                                            content=msg_content,
-                                            sequence_number=next_seq,
-                                            message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
-                                        )
-                                        db.add(new_msg)
-                                        next_seq += 1
+                            actual_messages_stored = True
+                            logger.info(f"Stored {len(actual_messages)} actual SMS messages from Telnyx API: conversation_id={sms_conversation.id}")
 
-                                actual_messages_stored = True
-                                logger.info(f"Stored {len(actual_messages)} actual SMS messages from Telnyx API: conversation_id={sms_conversation.id}")
-
-                                # Build transcript from assistant messages for class level detection
-                                # The assistant messages contain specific class recommendations like "Young Adult Level 3"
-                                # Filter out error responses and tool messages
-                                assistant_texts = []
-                                for msg in actual_messages:
-                                    if msg.get("role") != "assistant":
-                                        continue
-                                    content = msg.get("text", msg.get("content", ""))
-                                    if not content or not content.strip():
-                                        continue
-                                    # Skip if it looks like an API error response
-                                    content_stripped = content.strip()
-                                    if content_stripped.startswith("{") and (
-                                        '"http_status"' in content_stripped
-                                        or '"errors"' in content_stripped
-                                        or '"error"' in content_stripped
-                                    ):
-                                        continue
-                                    assistant_texts.append(content)
-                                if assistant_texts:
-                                    actual_assistant_transcript = "\n".join(assistant_texts)
-                                    logger.info(f"Built actual assistant transcript ({len(actual_assistant_transcript)} chars) for registration link")
+                            # Build transcript from assistant messages for class level detection
+                            # The assistant messages contain specific class recommendations like "Young Adult Level 3"
+                            # Filter out error responses and tool messages
+                            assistant_texts = []
+                            for msg in actual_messages:
+                                if msg.get("role") != "assistant":
+                                    continue
+                                content = msg.get("text", msg.get("content", ""))
+                                if not content or not content.strip():
+                                    continue
+                                # Skip if it looks like an API error response
+                                content_stripped = content.strip()
+                                if content_stripped.startswith("{") and (
+                                    '"http_status"' in content_stripped
+                                    or '"errors"' in content_stripped
+                                    or '"error"' in content_stripped
+                                ):
+                                    continue
+                                assistant_texts.append(content)
+                            if assistant_texts:
+                                actual_assistant_transcript = "\n".join(assistant_texts)
+                                logger.info(f"Built actual assistant transcript ({len(actual_assistant_transcript)} chars) for registration link")
 
                             # Check if AI already sent a registration URL in the conversation
                             # This prevents our fallback from sending a duplicate
@@ -2023,51 +1872,6 @@ async def telnyx_ai_call_complete(
             if call:
                 logger.info(f"Found existing Call by phone number match: id={call.id}, call_sid={call.call_sid}")
 
-        # If we still don't have voice_model, try Telnyx APIs
-        if not voice_model and settings.telnyx_api_key:
-            from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
-            telnyx_ai_voice = TelnyxAIService(settings.telnyx_api_key)
-
-            # Strategy 1: Fetch version name via assistant_version_id (Traffic Distribution)
-            # Each traffic distribution variant is an assistant version with different voice settings.
-            # The voice_settings.voice field identifies the variant (e.g., "ElevenLabsJessica").
-            if assistant_version_id and assistant_id:
-                try:
-                    voice_model = await telnyx_ai_voice.get_assistant_version_name(
-                        assistant_id, assistant_version_id
-                    ) or ""
-                    if voice_model:
-                        logger.info(f"Got voice_model from Telnyx Versions API: {voice_model}")
-                except Exception as e:
-                    logger.warning(f"Failed to get voice_model from Versions API: {e}")
-
-            # Strategy 2: List all versions and match by version_id
-            # Useful if the single-version lookup didn't return a voice variant name
-            if not voice_model and assistant_version_id and assistant_id:
-                try:
-                    versions = await telnyx_ai_voice.list_assistant_versions(assistant_id)
-                    for v in versions:
-                        if str(v.get("id")) == str(assistant_version_id):
-                            vs = v.get("voice_settings", {}) or {}
-                            voice_model = (
-                                vs.get("voice") or vs.get("name")
-                                or v.get("description") or ""
-                            )
-                            if voice_model:
-                                logger.info(f"Got voice_model from version list: {voice_model}")
-                            break
-                except Exception as e:
-                    logger.warning(f"Failed to list versions for voice_model: {e}")
-
-            # Strategy 3: Fallback to Conversations API
-            if not voice_model and telnyx_conversation_id:
-                try:
-                    voice_model = await telnyx_ai_voice.get_conversation_voice_model(telnyx_conversation_id) or ""
-                    if voice_model:
-                        logger.info(f"Got voice_model from Telnyx Conversations API: {voice_model}")
-                except Exception as e:
-                    logger.warning(f"Failed to get voice_model from Conversations API: {e}")
-
         if call:
             # Update existing call with any new data
             logger.info(f"Found existing Call record: id={call.id}, updating with insights data")
@@ -2090,13 +1894,6 @@ async def telnyx_ai_call_complete(
             # Detect and set language if not already set
             if not call.language and to_number:
                 call.language = await _detect_language_from_phone(to_number, db)
-            # Set voice variant tracking fields
-            if assistant_id and not call.assistant_id:
-                call.assistant_id = assistant_id
-            if assistant_version_id and not call.assistant_version_id:
-                call.assistant_version_id = assistant_version_id
-            if voice_model and not call.voice_model:
-                call.voice_model = voice_model
         else:
             # Detect language from phone number routing
             detected_language = await _detect_language_from_phone(to_number, db) if to_number else None
@@ -2116,9 +1913,6 @@ async def telnyx_ai_call_complete(
                 started_at=actual_start,
                 ended_at=actual_end if actual_end != actual_start else now,
                 language=detected_language,
-                assistant_id=assistant_id or None,
-                assistant_version_id=assistant_version_id or None,
-                voice_model=voice_model or None,
             )
             db.add(call)
             await db.flush()  # Get the call ID
@@ -2219,7 +2013,6 @@ async def telnyx_ai_call_complete(
 
         # Create Lead from caller (always create new lead, link to existing contact)
         lead = None
-        contact_id = None
         if from_number:
             normalized_from = _normalize_phone(from_number)
 
@@ -2232,14 +2025,7 @@ async def telnyx_ai_call_complete(
                 "caller_email": caller_email or None,
                 "caller_intent": caller_intent or None,
                 "transcript": transcript[:2000] if transcript else None,
-                "sms_consent": sms_consent,
             }
-
-            # Build extra_data with source and conditional follow-up skip
-            lead_extra = {"source": "voice_call", "voice_calls": [call_data]}
-            if sms_consent is False or sms_consent is None:
-                lead_extra["skip_followup"] = True
-                lead_extra["skip_followup_reason"] = "no_sms_consent" if sms_consent is False else "sms_consent_not_asked"
 
             # Always create new lead for each call
             display_name = caller_name if caller_name else f"Caller {normalized_from}"
@@ -2249,7 +2035,7 @@ async def telnyx_ai_call_complete(
                 name=display_name,
                 email=caller_email or None,
                 status="new",
-                extra_data=lead_extra,
+                extra_data={"voice_calls": [call_data]},
             )
             db.add(lead)
             await db.flush()
@@ -2295,7 +2081,6 @@ async def telnyx_ai_call_complete(
         if existing_summary:
             # Update existing summary
             existing_summary.lead_id = lead_id
-            existing_summary.contact_id = contact_id
             existing_summary.intent = final_intent
             existing_summary.outcome = outcome
             existing_summary.summary_text = summary or None
@@ -2305,13 +2090,12 @@ async def telnyx_ai_call_complete(
                 "email": caller_email or None,
                 "reason": caller_intent or (summary[:200] if summary else None),
             }
-            logger.info(f"Updated existing CallSummary for call_id={call.id}, intent={final_intent}, outcome={outcome}, name={caller_name}, contact_id={contact_id}")
+            logger.info(f"Updated existing CallSummary for call_id={call.id}, intent={final_intent}, outcome={outcome}, name={caller_name}")
         else:
             # Create new summary
             call_summary = CallSummary(
                 call_id=call.id,
                 lead_id=lead_id,
-                contact_id=contact_id,
                 intent=final_intent,
                 outcome=outcome,
                 summary_text=summary or None,
@@ -2326,66 +2110,6 @@ async def telnyx_ai_call_complete(
             logger.info(f"Created CallSummary for call_id={call.id}, intent={final_intent}, outcome={outcome}, name={caller_name}")
 
         await db.commit()
-
-        # =============================================================
-        # HIGH INTENT LEAD NOTIFICATION for Telnyx voice calls
-        # =============================================================
-        # Detect enrollment intent from call summary/transcript and notify
-        # the business owner via SMS. Mirrors sms_service.py (line 609)
-        # and voice_service.py (line 1238) which handle SMS/Twilio paths.
-        try:
-            from app.domain.services.intent_detector import IntentDetector
-            from app.infrastructure.notifications import NotificationService
-
-            intent_detector = IntentDetector()
-
-            # Build text for intent analysis from summary + transcript
-            intent_message = summary or transcript or ""
-            intent_history = []
-            if summary:
-                intent_history.append(summary)
-            if caller_intent:
-                intent_history.append(caller_intent)
-            if transcript:
-                intent_history.append(transcript[:2000])
-
-            intent_result = intent_detector.detect_enrollment_intent(
-                message=intent_message,
-                conversation_history=intent_history,
-                has_phone=bool(from_number),
-                has_email=bool(caller_email),
-            )
-
-            if intent_result.is_high_intent:
-                logger.info(
-                    f"High enrollment intent detected (voice/Telnyx) - tenant_id={tenant_id}, "
-                    f"confidence={intent_result.confidence:.2f}, keywords={intent_result.keywords}"
-                )
-
-                notification_service = NotificationService(db)
-                notification_result = await notification_service.notify_high_intent_lead(
-                    tenant_id=tenant_id,
-                    customer_name=caller_name,
-                    customer_phone=from_number,
-                    customer_email=caller_email,
-                    channel="voice",
-                    message_preview=(summary or transcript or "Voice call")[:150],
-                    confidence=intent_result.confidence,
-                    keywords=intent_result.keywords,
-                    conversation_id=call.id,
-                    lead_id=lead.id if lead else None,
-                )
-                logger.info(
-                    f"Voice lead notification result - tenant_id={tenant_id}, "
-                    f"call_id={call.id}, status={notification_result.get('status')}"
-                )
-            else:
-                logger.debug(
-                    f"No high intent (voice/Telnyx) - tenant_id={tenant_id}, "
-                    f"confidence={intent_result.confidence:.2f}"
-                )
-        except Exception as e:
-            logger.error(f"Failed to check/send voice lead notification: {e}", exc_info=True)
 
         # =============================================================
         # Check voice transcript for Do Not Contact (DNC) requests
@@ -2411,113 +2135,6 @@ async def telnyx_ai_call_complete(
                     logger.info(f"DNC block via voice call - tenant_id={tenant_id}, phone={normalized_from}")
                 except Exception as e:
                     logger.warning(f"Failed to add voice caller to DNC list: {e}")
-
-        # =============================================================
-        # Auto-send booking link if caller requested escalation/callback
-        # =============================================================
-        # If the tenant's handoff_mode is "schedule_callback" and the caller
-        # asked to speak to someone, send the booking link as a post-call SMS
-        # (fallback for when the in-call send_booking_link tool couldn't resolve the phone)
-        if from_number and event_type in ("call.conversation.ended", "conversation.ended", "conversation_insight_result"):
-            try:
-                from app.persistence.models.tenant_voice_config import TenantVoiceConfig
-
-                voice_config_result = await db.execute(
-                    select(TenantVoiceConfig).where(TenantVoiceConfig.tenant_id == tenant_id)
-                )
-                voice_config = voice_config_result.scalar_one_or_none()
-
-                if voice_config and voice_config.handoff_mode == "schedule_callback":
-                    # Check if summary/transcript mentions escalation
-                    escalation_text = f"{summary or ''} {caller_intent or ''} {transcript or ''}".lower()
-                    escalation_keywords = [
-                        "speak to someone", "talk to someone", "talk to a person",
-                        "speak to a person", "speak with someone", "talk with someone",
-                        "real person", "human", "representative", "manager",
-                        "transfer", "transferred", "escalat",
-                        "call back", "callback", "call me back",
-                        "schedule a call", "schedule a time",
-                        "scheduling link", "booking link",
-                        # Spanish
-                        "hablar con alguien", "persona real", "representante",
-                        "transferir", "llamar de vuelta", "programar una llamada",
-                    ]
-                    wants_escalation = any(kw in escalation_text for kw in escalation_keywords)
-
-                    if wants_escalation:
-                        # Dedup: Check SentAsset for recent booking_link send
-                        normalized_from_booking = normalize_phone_for_dedup(from_number)
-                        booking_already_sent = False
-
-                        from app.persistence.models.sent_asset import SentAsset as BookingSentAsset
-                        cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
-                        existing_booking = await db.execute(
-                            select(BookingSentAsset.id).where(
-                                BookingSentAsset.tenant_id == tenant_id,
-                                BookingSentAsset.phone_normalized == normalized_from_booking,
-                                BookingSentAsset.asset_type == "booking_link",
-                                BookingSentAsset.sent_at >= cutoff,
-                            ).limit(1)
-                        )
-                        if existing_booking.scalar_one_or_none():
-                            booking_already_sent = True
-                            logger.info(
-                                f"[BOOKING-LINK] Skipping post-call booking link - already sent recently: "
-                                f"tenant={tenant_id}, phone={normalized_from_booking}"
-                            )
-
-                        if not booking_already_sent:
-                            # Fetch booking link URL
-                            from app.domain.services.calendar_service import CalendarService
-                            calendar_service = CalendarService(db)
-                            booking_url = await calendar_service.get_booking_link(tenant_id)
-
-                            if booking_url:
-                                # Send via tenant's SMS provider
-                                from app.infrastructure.telephony.factory import TelephonyProviderFactory
-                                factory = TelephonyProviderFactory(db)
-                                sms_provider = await factory.get_sms_provider(tenant_id)
-                                sms_config = await factory.get_config(tenant_id) if sms_provider else None
-                                from_sms_number = factory.get_sms_phone_number(sms_config) if sms_config else None
-
-                                if sms_provider and from_sms_number:
-                                    formatted_to = _normalize_phone(from_number)
-                                    sms_body = (
-                                        "Thanks for calling! Schedule a time with our team:\n\n"
-                                        f"{booking_url}\n\n"
-                                        "Pick a time that works for you and we'll be ready!"
-                                    )
-                                    sms_result = await sms_provider.send_sms(
-                                        to=formatted_to,
-                                        from_=from_sms_number,
-                                        body=sms_body,
-                                    )
-                                    logger.info(
-                                        f"[BOOKING-LINK] Post-call booking link SMS sent: "
-                                        f"tenant={tenant_id}, to={formatted_to}, msg_id={sms_result.message_id}"
-                                    )
-
-                                    # Create SentAsset dedup record
-                                    try:
-                                        booking_sent_asset = BookingSentAsset(
-                                            tenant_id=tenant_id,
-                                            phone_normalized=normalized_from_booking,
-                                            asset_type="booking_link",
-                                            conversation_id=call.id,
-                                            sent_at=datetime.now(timezone.utc),
-                                            message_id=sms_result.message_id,
-                                        )
-                                        db.add(booking_sent_asset)
-                                        await db.commit()
-                                        logger.info(f"[BOOKING-LINK] Created SentAsset dedup record: phone={normalized_from_booking}")
-                                    except Exception as dedup_err:
-                                        logger.warning(f"[BOOKING-LINK] SentAsset dedup record failed: {dedup_err}")
-                                else:
-                                    logger.warning(f"[BOOKING-LINK] No SMS provider/number for tenant {tenant_id}")
-                            else:
-                                logger.info(f"[BOOKING-LINK] No booking_link_url configured for tenant {tenant_id}")
-            except Exception as e:
-                logger.error(f"[BOOKING-LINK] Failed to send post-call booking link: {e}", exc_info=True)
 
         # =============================================================
         # Auto-send registration SMS if user requested registration info
@@ -3286,7 +2903,7 @@ async def sync_calls_to_leads(
                     name=display_name,
                     email=caller_email,
                     status="new",
-                    extra_data={"source": "voice_call", "voice_calls": [call_data]},
+                    extra_data={"voice_calls": [call_data]},
                 )
                 db.add(lead)
                 leads_created += 1
@@ -3397,19 +3014,8 @@ async def send_registration_link_tool(
         # Look up the caller's phone from our Call table using call_control_id
         # This is more reliable than expecting the AI to pass the phone number
         caller_phone = None
-        to_number = None
-
-        # Step 0: Try tenant_id from query param (set in Telnyx tool URL)
-        #    NOTE: ?tenant_id=X is the tenant_number, which may differ from tenants.id
         tenant_id = None
-        raw_tid = request.query_params.get("tenant_id") or body.get("tenant_id")
-        if raw_tid:
-            try:
-                param_value = int(raw_tid)
-                tenant_id = await _resolve_tenant_param_to_db_id(param_value, db)
-                print(f"[TOOL DEBUG] tenant_id from param: raw={param_value}, resolved={tenant_id}")
-            except (ValueError, TypeError):
-                pass
+        to_number = None
 
         if call_control_id:
             from app.persistence.models.call import Call
@@ -3419,8 +3025,7 @@ async def send_registration_link_tool(
 
             if call_record:
                 caller_phone = call_record.from_number
-                if not tenant_id:
-                    tenant_id = call_record.tenant_id
+                tenant_id = call_record.tenant_id
                 to_number = call_record.to_number
                 print(f"[TOOL DEBUG] Found call record - from={caller_phone}, tenant={tenant_id}")
             else:
@@ -3491,16 +3096,15 @@ async def send_registration_link_tool(
             tenant_id = 3
             logger.warning(f"[TOOL] Could not determine tenant, defaulting to {tenant_id}")
 
-        # Extract location, level, and class_id from body
+        # Extract location and level from body
         location = body.get("location", "")
         level = body.get("level", "")
-        class_id = body.get("class_id")
 
         # Map location name to location code
         location_code = _map_location_to_code(location)
 
         if not location_code:
-            logger.warning(f"[TOOL] Could not map location '{location}' to code for tenant {tenant_id}")
+            logger.warning(f"[TOOL] Could not map location '{location}' to code")
             return JSONResponse(content={
                 "status": "error",
                 "message": f"Unknown location: {location}"
@@ -3513,12 +3117,7 @@ async def send_registration_link_tool(
         level_name = _normalize_level_name(level) if level else None
 
         try:
-            registration_url = build_registration_url(
-                location_code,
-                level_name,
-                tenant_id=tenant_id,
-                class_id=str(class_id) if class_id else None,
-            )
+            registration_url = build_registration_url(location_code, level_name)
             logger.info(f"[TOOL] Built registration URL: {registration_url}")
         except Exception as e:
             logger.error(f"[TOOL] Failed to build URL: {e}")
@@ -3621,13 +3220,11 @@ async def send_link_tool(
         tenant_id = None
 
         # 1) Explicit tenant_id from query param or body (set in Telnyx tool URL)
-        #    NOTE: ?tenant_id=X is the tenant_number, which may differ from tenants.id
         raw_tid = params.get("tenant_id") or body.get("tenant_id")
         if raw_tid:
             try:
-                param_value = int(raw_tid)
-                tenant_id = await _resolve_tenant_param_to_db_id(param_value, db)
-                logger.info(f"[TOOL] send_link: tenant {tenant_id} from request param (raw={param_value})")
+                tenant_id = int(raw_tid)
+                logger.info(f"[TOOL] send_link: tenant {tenant_id} from request param")
             except (ValueError, TypeError):
                 pass
 
@@ -3821,31 +3418,6 @@ async def send_link_tool(
 
 
 
-async def _resolve_tenant_param_to_db_id(param_value: int, db: AsyncSession) -> int:
-    """Resolve a ?tenant_id URL param to the actual tenants.id (DB primary key).
-
-    Telnyx tool URLs use ?tenant_id=X where X is the tenant_number (admin-assigned).
-    For legacy tenants 1-3, tenant_number matches tenants.id.
-    For newer tenants (e.g. tenant 4 has tenants.id=237), they differ.
-
-    Returns the resolved tenants.id, or the original param_value as fallback.
-    """
-    from app.persistence.models.tenant import Tenant
-
-    result = await db.execute(
-        select(Tenant.id).where(Tenant.tenant_number == str(param_value))
-    )
-    row = result.scalar_one_or_none()
-    if row is not None:
-        if row != param_value:
-            logger.info(
-                f"[TOOL] Resolved tenant_number={param_value} -> tenants.id={row}"
-            )
-        return row
-    # Fallback: param might already be the actual tenants.id
-    return param_value
-
-
 async def _resolve_tool_tenant(
     params: dict, body: dict, request: Request, db: AsyncSession
 ) -> int | None:
@@ -3857,13 +3429,11 @@ async def _resolve_tool_tenant(
     3. Telnyx API fallback -> phone number -> tenant lookup
     """
     # 1) Explicit tenant_id from query param or body
-    #    NOTE: ?tenant_id=X is the tenant_number, which may differ from tenants.id
     raw_tid = params.get("tenant_id") or body.get("tenant_id")
     if raw_tid:
         try:
-            param_value = int(raw_tid)
-            tenant_id = await _resolve_tenant_param_to_db_id(param_value, db)
-            logger.info(f"[TOOL] Tenant {tenant_id} from request param (raw={param_value})")
+            tenant_id = int(raw_tid)
+            logger.info(f"[TOOL] Tenant {tenant_id} from request param")
             return tenant_id
         except (ValueError, TypeError):
             pass
@@ -4199,218 +3769,6 @@ async def book_meeting_tool(
         })
 
 
-@router.api_route("/tools/send-booking-link", methods=["GET", "POST"])
-async def send_booking_link_tool(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> JSONResponse:
-    """Webhook tool for Telnyx AI Assistant to send a calendar booking link via SMS.
-
-    Sends the tenant's booking_link_url from tenant_calendar_configs as an SMS
-    to the caller so they can self-schedule a callback.
-
-    Body params:
-        to: Caller's phone number (required)
-    """
-    try:
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-
-        params = dict(request.query_params)
-
-        # Resolve tenant
-        tenant_id = await _resolve_tool_tenant(params, body, request, db)
-        if not tenant_id:
-            logger.warning("[TOOL] send_booking_link: could not determine tenant")
-            return JSONResponse(content={
-                "status": "ok",
-                "result": "I'm sorry, I wasn't able to send the link right now. "
-                          "Please visit our website or call back to schedule.",
-            })
-
-        # Get caller phone - multi-step resolution matching send_registration_link pattern
-        call_control_id = request.headers.get("x-telnyx-call-control-id", "")
-        to_phone = None
-
-        # Step 1: Call table lookup via call_control_id (most reliable during live calls)
-        if call_control_id:
-            from app.persistence.models.call import Call as BookingCall
-            stmt = select(BookingCall).where(BookingCall.call_sid == call_control_id)
-            result = await db.execute(stmt)
-            call_record = result.scalar_one_or_none()
-            if call_record:
-                to_phone = call_record.from_number
-                if not tenant_id:
-                    tenant_id = call_record.tenant_id
-                logger.info(f"[TOOL] send_booking_link: phone from call record: {to_phone}")
-
-        # Step 2: Telnyx API fallback
-        if not to_phone and call_control_id and settings.telnyx_api_key:
-            try:
-                import httpx
-                async with httpx.AsyncClient(
-                    base_url="https://api.telnyx.com/v2",
-                    headers={"Authorization": f"Bearer {settings.telnyx_api_key}"},
-                    timeout=10.0,
-                ) as client:
-                    resp = await client.get(f"/calls/{call_control_id}")
-                    if resp.status_code == 200:
-                        call_data = resp.json().get("data", {})
-                        to_phone = call_data.get("from") or call_data.get("from_display_name")
-                        logger.info(f"[TOOL] send_booking_link: phone from Telnyx API: {to_phone}")
-            except Exception as e:
-                logger.warning(f"[TOOL] send_booking_link: Telnyx API phone lookup failed: {e}")
-
-        # Step 3: Body/query params fallback
-        if not to_phone:
-            to_phone = (
-                body.get("to")
-                or body.get("customer_phone")
-                or params.get("to")
-                or ""
-            )
-            if to_phone and to_phone.startswith("+1555"):
-                logger.info(f"[TOOL] send_booking_link: ignoring test phone: {to_phone}")
-                to_phone = None
-
-        # Step 4: Graceful fallback - post-call handler will send it
-        if not to_phone:
-            logger.info(
-                f"[TOOL] send_booking_link: no phone found - will be sent post-call. "
-                f"tenant_id={tenant_id}, call_control_id={call_control_id}"
-            )
-            return JSONResponse(content={
-                "status": "ok",
-                "result": "The booking link will be sent to your phone via text message momentarily. "
-                          "Let the caller know the text is on its way and ask if there is anything else you can help with."
-            })
-
-        logger.info(f"[TOOL] send_booking_link called - tenant_id={tenant_id}, to={to_phone}")
-
-        # Get booking link from calendar config
-        from app.domain.services.calendar_service import CalendarService
-        calendar_service = CalendarService(db)
-        booking_url = await calendar_service.get_booking_link(tenant_id)
-
-        if not booking_url:
-            logger.warning(f"[TOOL] send_booking_link: no booking_link_url for tenant {tenant_id}")
-            return JSONResponse(content={
-                "status": "ok",
-                "result": "I'm sorry, I'm not able to send a scheduling link right now. "
-                          "Please visit our website or call back to schedule.",
-            })
-
-        # Send SMS via tenant's configured provider
-        from app.infrastructure.telephony.factory import TelephonyProviderFactory
-
-        factory = TelephonyProviderFactory(db)
-        sms_provider = await factory.get_sms_provider(tenant_id)
-
-        if not sms_provider:
-            logger.error(f"[TOOL] send_booking_link: no SMS provider for tenant {tenant_id}")
-            return JSONResponse(content={
-                "status": "ok",
-                "result": "I wasn't able to send a text right now. "
-                          "You can visit our website to schedule a time with our team.",
-            })
-
-        sms_config = await factory.get_config(tenant_id)
-        from_number = factory.get_sms_phone_number(sms_config)
-
-        if not from_number:
-            logger.error(f"[TOOL] send_booking_link: no from number for tenant {tenant_id}")
-            return JSONResponse(content={
-                "status": "ok",
-                "result": "I wasn't able to send a text right now. "
-                          "You can visit our website to schedule a time with our team.",
-            })
-
-        formatted_to = _normalize_phone(to_phone)
-
-        sms_body = (
-            "Schedule a time with our team:\n\n"
-            f"{booking_url}\n\n"
-            "Pick a time that works for you and we'll be ready!"
-        )
-
-        sms_result = await sms_provider.send_sms(
-            to=formatted_to,
-            from_=from_number,
-            body=sms_body,
-        )
-
-        logger.info(
-            f"[TOOL] send_booking_link SMS sent - to={formatted_to}, from={from_number}, "
-            f"message_id={sms_result.message_id}"
-        )
-
-        # Create SentAsset dedup record
-        try:
-            from app.persistence.models.sent_asset import SentAsset
-            from datetime import timezone
-
-            phone_normalized = normalize_phone_for_dedup(formatted_to)
-            sent_asset = SentAsset(
-                tenant_id=tenant_id,
-                phone_normalized=phone_normalized,
-                asset_type="booking_link",
-                conversation_id=None,
-                sent_at=datetime.now(timezone.utc),
-                message_id=sms_result.message_id,
-            )
-            db.add(sent_asset)
-            await db.commit()
-            logger.info(f"[TOOL] Created SentAsset dedup record: phone={phone_normalized}, tenant={tenant_id}, type=booking_link")
-        except Exception as dedup_err:
-            logger.warning(f"[TOOL] Failed to create SentAsset dedup record (SMS still sent): {dedup_err}")
-
-        # Update matching lead to reflect that booking link was sent
-        try:
-            from app.persistence.models.lead import Lead as BookingLead
-            phone_for_lookup = normalize_phone_for_dedup(formatted_to)
-            stmt = (
-                select(BookingLead)
-                .where(BookingLead.tenant_id == tenant_id)
-                .where(BookingLead.phone == phone_for_lookup)
-                .order_by(BookingLead.created_at.desc())
-            )
-            result = await db.execute(stmt)
-            lead = result.scalar_one_or_none()
-            if lead:
-                extra = lead.extra_data or {}
-                extra["booking_link_sent"] = True
-                extra["booking_link_sent_at"] = datetime.now(timezone.utc).isoformat()
-                extra["booking_link_message_id"] = sms_result.message_id
-                lead.extra_data = extra
-                # Mark follow-up as handled if it was requested
-                if hasattr(lead, 'followup_status') and lead.followup_status in ('requested', 'pending', None):
-                    lead.followup_status = 'handled'
-                await db.commit()
-                logger.info(f"[TOOL] Updated lead {lead.id} with booking_link_sent=True")
-            else:
-                logger.info(f"[TOOL] No lead found for phone={phone_for_lookup}, tenant={tenant_id} to update")
-        except Exception as lead_err:
-            logger.warning(f"[TOOL] Failed to update lead with booking link status (SMS still sent): {lead_err}")
-
-        return JSONResponse(content={
-            "status": "ok",
-            "result": "I just sent you a text message with a link to schedule a time with our team. "
-                      "You can pick a time that works best for you.",
-            "message_id": sms_result.message_id,
-            "sms_sent": True,
-        })
-
-    except Exception as e:
-        logger.error(f"[TOOL] Error in send_booking_link: {e}", exc_info=True)
-        return JSONResponse(content={
-            "status": "ok",
-            "result": "I'm sorry, I wasn't able to send the scheduling link right now. "
-                      "Please visit our website or call back to schedule.",
-        })
-
-
 def _map_location_to_code(location: str) -> str | None:
     """Map a location name from conversation to a location code.
 
@@ -4427,7 +3785,6 @@ def _map_location_to_code(location: str) -> str | None:
 
     # Direct mappings
     location_map = {
-        # --- Cypress-Spring (Tenant 3) ---
         # Cypress variations
         "cypress": "LAFCypress",
         "la fitness cypress": "LAFCypress",
@@ -4443,33 +3800,6 @@ def _map_location_to_code(location: str) -> str | None:
         "24 hour spring": "24Spring",
         "24spring": "24Spring",
         "24hr spring": "24Spring",
-        # --- Atlanta (Tenant 4) ---
-        # L.A. Fitness Buckhead
-        "buckhead": "LABUCK",
-        "la fitness buckhead": "LABUCK",
-        "l.a. fitness buckhead": "LABUCK",
-        "l. a. fitness buckhead": "LABUCK",
-        "labuck": "LABUCK",
-        "lenox": "LABUCK",
-        # Onelife Fitness Dunwoody / Perimeter
-        "dunwoody": "OLDUN",
-        "onelife fitness dunwoody": "OLDUN",
-        "onelife dunwoody": "OLDUN",
-        "onelife fitness": "OLDUN",
-        "onelife": "OLDUN",
-        "perimeter": "OLDUN",
-        "perimeter sports club": "OLDUN",
-        "oldun": "OLDUN",
-        # Roswell Adult Aquatics Center
-        "roswell": "ROSAAC",
-        "roswell adult aquatics center": "ROSAAC",
-        "roswell aquatics": "ROSAAC",
-        "rosaac": "ROSAAC",
-        # 4565 Ashford Dunwoody Rd
-        "ashford dunwoody": "HISDUN",
-        "ashford": "HISDUN",
-        "4565 ashford dunwoody": "HISDUN",
-        "hisdun": "HISDUN",
     }
 
     return location_map.get(location_lower)

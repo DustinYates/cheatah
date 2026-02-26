@@ -49,6 +49,7 @@ class TenantCalendarConfig(Base):
     scheduling_preferences = Column(JSON, nullable=True, default=lambda: {
         "meeting_duration_minutes": 30,
         "buffer_minutes": 15,
+        "min_notice_hours": 2,
         "available_hours": {"start": "09:00", "end": "17:00"},
         "available_days": [0, 1, 2, 3, 4],
         "timezone": "America/New_York",
@@ -70,6 +71,7 @@ class TenantCalendarConfig(Base):
 DEFAULT_SCHEDULING_PREFERENCES = {
     "meeting_duration_minutes": 30,
     "buffer_minutes": 15,
+    "min_notice_hours": 2,
     "available_hours": {"start": "09:00", "end": "17:00"},
     "available_days": [0, 1, 2, 3, 4],
     "timezone": "America/New_York",

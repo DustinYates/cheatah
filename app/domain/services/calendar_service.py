@@ -94,6 +94,7 @@ class CalendarService:
         tz = ZoneInfo(tz_name)
         duration = prefs.get("meeting_duration_minutes", 30)
         buffer = prefs.get("buffer_minutes", 15)
+        min_notice_hours = prefs.get("min_notice_hours", 2)
         available_hours = prefs.get("available_hours", {"start": "09:00", "end": "17:00"})
         available_days = prefs.get("available_days", [0, 1, 2, 3, 4])
         max_advance = prefs.get("max_advance_days", 14)
@@ -128,9 +129,9 @@ class CalendarService:
             while slot_start + timedelta(minutes=duration) <= day_end:
                 slot_end = slot_start + timedelta(minutes=duration)
 
-                # Skip slots in the past
+                # Skip slots too soon (past or within min notice window)
                 now = datetime.now(tz)
-                if slot_start <= now:
+                if slot_start <= now + timedelta(hours=min_notice_hours):
                     slot_start = slot_end + timedelta(minutes=buffer)
                     continue
 

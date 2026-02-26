@@ -2445,7 +2445,7 @@ async def telnyx_ai_call_complete(
             )
         elif sms_already_sent_for_call:
             pass  # Already logged above
-        elif is_registration_request and from_number and tenant_id != 3:
+        elif is_registration_request and from_number:
             logger.info(
                 f"Registration request detected from Telnyx AI - "
                 f"tenant_id={tenant_id}, phone={from_number}, summary={summary[:100] if summary else 'none'}"

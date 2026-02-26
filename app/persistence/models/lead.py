@@ -28,6 +28,7 @@ class Lead(Base):
     phone = Column(String(50), nullable=True, index=True)
     name = Column(String(255), nullable=True)
     status = Column(String(50), nullable=True, default='new', index=True)
+    pipeline_stage = Column(String(50), nullable=True, default='new_lead', index=True)
     extra_data = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

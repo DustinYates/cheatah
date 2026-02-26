@@ -39,6 +39,7 @@ class LeadResponse(BaseModel):
     email: str | None
     phone: str | None
     status: str | None
+    pipeline_stage: str | None = None
     extra_data: dict | None
     created_at: str
     updated_at: str | None = None
@@ -58,8 +59,14 @@ class LeadsListResponse(BaseModel):
 
 class LeadStatusUpdate(BaseModel):
     """Lead status update request."""
-    
+
     status: str  # 'new', 'verified', 'unknown', 'dismissed'
+
+
+class LeadPipelineStageUpdate(BaseModel):
+    """Lead pipeline stage update request."""
+
+    pipeline_stage: str  # 'new_lead', 'contacted', 'interested', 'registered', 'enrolled'
 
 
 class MessageResponse(BaseModel):
@@ -167,6 +174,7 @@ async def list_leads(
                 email=lead.email,
                 phone=lead.phone,
                 status=lead.status if hasattr(lead, 'status') else None,
+                pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
                 extra_data=lead.extra_data,
                 created_at=_isoformat_utc(lead.created_at),
                 updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
@@ -219,6 +227,7 @@ async def get_lead(
         email=lead.email,
         phone=lead.phone,
         status=lead.status if hasattr(lead, 'status') else None,
+        pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
         extra_data=lead.extra_data,
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
@@ -342,6 +351,52 @@ async def update_lead_status(
         email=lead.email,
         phone=lead.phone,
         status=lead.status if hasattr(lead, 'status') else None,
+        pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
+        extra_data=lead.extra_data,
+        created_at=_isoformat_utc(lead.created_at),
+        updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
+        llm_responded=llm_responded,
+    )
+
+
+@router.put("/{lead_id}/pipeline-stage", response_model=LeadResponse)
+async def update_lead_pipeline_stage(
+    lead_id: int,
+    stage_update: LeadPipelineStageUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> LeadResponse:
+    """Update lead pipeline stage (for Kanban board)."""
+    valid_stages = ['new_lead', 'contacted', 'interested', 'registered', 'enrolled']
+    if stage_update.pipeline_stage not in valid_stages:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid pipeline stage. Must be one of: {valid_stages}",
+        )
+
+    lead_service = LeadService(db)
+    lead = await lead_service.update_pipeline_stage(
+        tenant_id, lead_id, stage_update.pipeline_stage
+    )
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found",
+        )
+
+    llm_responded = await _check_llm_responded(db, lead.conversation_id)
+
+    return LeadResponse(
+        id=lead.id,
+        tenant_id=lead.tenant_id,
+        conversation_id=lead.conversation_id,
+        name=lead.name,
+        email=lead.email,
+        phone=lead.phone,
+        status=lead.status if hasattr(lead, 'status') else None,
+        pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
         extra_data=lead.extra_data,
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
@@ -609,6 +664,7 @@ async def get_related_leads(
                 email=rel_lead.email,
                 phone=rel_lead.phone,
                 status=rel_lead.status if hasattr(rel_lead, 'status') else None,
+                pipeline_stage=rel_lead.pipeline_stage if hasattr(rel_lead, 'pipeline_stage') else None,
                 extra_data=rel_lead.extra_data,
                 created_at=_isoformat_utc(rel_lead.created_at),
                 updated_at=_isoformat_utc(rel_lead.updated_at) if rel_lead.updated_at else None,

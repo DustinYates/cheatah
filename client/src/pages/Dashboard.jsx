@@ -5,6 +5,7 @@ import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
 import LeadDetailsModal from '../components/LeadDetailsModal';
+import SendSmsModal from '../components/SendSmsModal';
 import SideDrawer from '../components/SideDrawer';
 import './Dashboard.css';
 
@@ -316,6 +317,7 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(null);
   const [selectedLead, setSelectedLead] = useState(null);
+  const [smsModalLead, setSmsModalLead] = useState(null);
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
@@ -1447,6 +1449,18 @@ export default function Dashboard() {
                             )}
                           </IconButton>
                         )}
+                        {lead.phone && (
+                          <IconButton
+                            className="icon-button--soft icon-button--info"
+                            onClick={() => setSmsModalLead(lead)}
+                            title="Send text message"
+                            ariaLabel="Send text message"
+                          >
+                            <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                              <path d="M3.505 2.365A41.369 41.369 0 019 2c1.863 0 3.697.124 5.495.365 1.247.167 2.18 1.108 2.435 2.268a4.45 4.45 0 00-.577-.025h-.002c-1.97 0-3.643.467-4.878 1.488C10.218 7.12 9.6 8.55 9.6 10.2c0 1.65.617 3.08 1.873 4.104.822.67 1.856 1.083 3.027 1.292l-2.073 2.073a.75.75 0 01-1.06 0L9 15.302l-3.088 3.088a.75.75 0 01-1.28-.53v-4.918a5.4 5.4 0 01-1.564-1.674C2.39 10.114 2 8.762 2 7.25c0-1.86.574-3.3 1.505-4.885zM16.351 6.1c-1.01 0-2.04.302-2.791.978C12.794 7.768 12.35 8.8 12.35 10.2s.444 2.432 1.21 3.122c.75.676 1.78.978 2.791.978.337 0 .663-.03.976-.088l.63.63a.5.5 0 00.854-.354v-1.462c.6-.773.939-1.735.939-2.826 0-1.4-.444-2.432-1.21-3.122-.75-.676-1.78-.978-2.79-.978z" />
+                            </svg>
+                          </IconButton>
+                        )}
                         {(!lead.status || lead.status === 'new') && (
                           <IconButton
                             className="icon-button--soft icon-button--warning"
@@ -1538,6 +1552,15 @@ export default function Dashboard() {
         <LeadDetailsModal
           lead={selectedLead}
           onClose={closeModal}
+        />
+      )}
+
+      {/* Send SMS Modal */}
+      {smsModalLead && (
+        <SendSmsModal
+          lead={smsModalLead}
+          onClose={() => setSmsModalLead(null)}
+          onSuccess={() => setSmsModalLead(null)}
         />
       )}
     </div>

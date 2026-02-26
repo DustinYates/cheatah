@@ -939,6 +939,13 @@ class ApiClient {
     });
   }
 
+  async sendManualSms(to, message) {
+    return this.request('/admin/sms/send', {
+      method: 'POST',
+      body: JSON.stringify({ to, message }),
+    });
+  }
+
   async getEmailConversations(params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/email/conversations${query ? `?${query}` : ''}`);

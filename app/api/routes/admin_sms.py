@@ -195,53 +195,61 @@ async def send_manual_sms(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     """Send manual outbound SMS (admin-initiated).
-    
+
     Args:
         sms_data: SMS send request
         admin_data: Admin user and tenant ID
         db: Database session
-        
+
     Returns:
         Send result
     """
-    from sqlalchemy import select
-    from app.infrastructure.twilio_client import TwilioSmsClient
-    from app.persistence.models.tenant_sms_config import TenantSmsConfig
-    
+    import logging
+    from app.infrastructure.telephony.factory import TelephonyProviderFactory
+
+    logger = logging.getLogger(__name__)
     current_user, tenant_id = admin_data
-    
-    # Get SMS config
-    stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
-    result = await db.execute(stmt)
-    config = result.scalar_one_or_none()
-    
-    if not config or not config.is_enabled:
+
+    # Use factory to support both Twilio and Telnyx
+    factory = TelephonyProviderFactory(db)
+    sms_config = await factory.get_config(tenant_id)
+
+    if not sms_config or not sms_config.is_enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="SMS is not enabled for this tenant",
         )
-    
-    if not config.twilio_phone_number:
+
+    from_phone = factory.get_sms_phone_number(sms_config)
+    if not from_phone:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Twilio phone number not configured",
+            detail="No SMS phone number configured for this tenant",
         )
-    
-    # Send SMS
-    twilio_client = TwilioSmsClient(
-        account_sid=config.twilio_account_sid,
-        auth_token=config.twilio_auth_token,
-    )
-    
-    send_result = twilio_client.send_sms(
+
+    sms_provider = await factory.get_sms_provider(tenant_id)
+    if not sms_provider:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SMS provider not configured for this tenant",
+        )
+
+    # Send SMS via the configured provider (Twilio or Telnyx)
+    send_result = await sms_provider.send_sms(
         to=sms_data.to,
-        from_=config.twilio_phone_number,
+        from_=from_phone,
         body=sms_data.message,
     )
-    
+
+    logger.info(
+        f"Manual SMS sent: tenant={tenant_id}, to={sms_data.to}, "
+        f"provider={send_result.provider}, message_id={send_result.message_id}"
+    )
+
     return {
         "status": "sent",
-        "message_sid": send_result.get("sid"),
-        "to": to,
+        "message_id": send_result.message_id,
+        "provider": send_result.provider,
+        "to": sms_data.to,
     }
 

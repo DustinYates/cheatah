@@ -515,7 +515,9 @@
         if (inputEl) inputEl.placeholder = settings.messages.placeholder;
 
         const sendBtn = widget.querySelector('#cc-send-button');
-        if (sendBtn) sendBtn.textContent = settings.messages.sendButtonText;
+        if (sendBtn && settings.messages.sendButtonText && settings.messages.sendButtonText.trim()) {
+          sendBtn.textContent = settings.messages.sendButtonText;
+        }
       }
 
       // Apply online status badge from copy settings
@@ -1117,7 +1119,9 @@
               placeholder="Type your message..." 
               aria-label="Message input"
             />
-            <button id="cc-send-button" aria-label="Send">Send</button>
+            <button id="cc-send-button" aria-label="Send">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
           </div>
           <div class="cc-widget-contact-form" id="cc-contact-form" style="display: none;">
             <div class="cc-contact-form-header">
@@ -1127,11 +1131,16 @@
             <input type="text" id="cc-name-input" placeholder="Name (optional)" />
             <input type="email" id="cc-email-input" placeholder="Email *" />
             <input type="tel" id="cc-phone-input" placeholder="Phone *" />
-            <p style="margin: 5px 0; font-size: 11px; color: #6b7280;">* At least one contact method required</p>
+            <p class="cc-contact-required-note">* At least one contact method required</p>
             <button id="cc-submit-contact">Submit</button>
           </div>
           <div class="cc-widget-loading" id="cc-loading" style="display: none;">
-            <span>Thinking...</span>
+            <div class="cc-loading-dots">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+          <div class="cc-widget-branding">
+            Powered by <a href="https://getconvopro.com" target="_blank" rel="noopener noreferrer" class="cc-branding-link">ConvoPro</a>
           </div>
         </div>
         <button class="cc-widget-toggle" id="cc-toggle" aria-label="Open chat">
@@ -1149,22 +1158,24 @@
       const style = document.createElement('style');
       style.textContent = `
         :root {
-          --cc-primary: #007bff;
-          --cc-secondary: #6c757d;
+          --cc-primary: #4f46e5;
+          --cc-primary-dark: #4338ca;
+          --cc-secondary: #6366f1;
           --cc-background: #ffffff;
-          --cc-text: #333333;
+          --cc-text: #1e293b;
+          --cc-text-muted: #64748b;
           --cc-button-text: #ffffff;
-          --cc-link-color: #007bff;
-          --cc-border-color: #ddd;
+          --cc-link-color: #4f46e5;
+          --cc-border-color: #e2e8f0;
           --cc-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
           --cc-font-size: 14px;
           --cc-font-weight: 400;
           --cc-line-height: 1.5;
-          --cc-border-radius: 10px;
-          --cc-box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+          --cc-border-radius: 16px;
+          --cc-box-shadow: 0 20px 60px rgba(15, 23, 42, 0.18), 0 4px 16px rgba(15, 23, 42, 0.08);
           --cc-z-index: 10000;
-          --cc-max-width: 350px;
-          --cc-max-height: 500px;
+          --cc-max-width: 380px;
+          --cc-max-height: 560px;
           --cc-opacity: 1;
         }
         #convopro-widget {
@@ -1343,14 +1354,16 @@
           animation: cc-fade-in 0.2s ease;
         }
         .cc-widget-header {
-          background: var(--cc-primary);
+          background: linear-gradient(135deg, var(--cc-primary) 0%, var(--cc-primary-dark, var(--cc-primary)) 100%);
           color: var(--cc-button-text);
-          padding: 12px 16px;
+          padding: 16px 18px 14px;
           display: flex;
           justify-content: space-between;
           align-items: center;
           gap: 8px;
-          border-bottom: 1px solid rgba(255,255,255,0.18);
+          border-bottom: none;
+          box-shadow: 0 2px 8px rgba(15, 23, 42, 0.15);
+          flex-shrink: 0;
         }
         .cc-widget-header-info {
           display: flex;
@@ -1381,7 +1394,9 @@
           gap: 2px;
         }
         .cc-widget-title {
-          font-weight: 600;
+          font-weight: 700;
+          font-size: 15px;
+          letter-spacing: -0.01em;
         }
         .cc-widget-subtitle,
         .cc-widget-response-time {
@@ -1423,17 +1438,62 @@
           padding: 15px;
           background: #f8fafc;
         }
-        .cc-message {
-          margin-bottom: 10px;
-          padding: 12px 14px;
-          border-radius: 16px;
+        .cc-message-row {
+          display: flex;
+          align-items: flex-end;
+          gap: 8px;
+          margin-bottom: 12px;
+          animation: cc-msg-in 0.2s ease;
+        }
+        .cc-message-row.user {
+          flex-direction: row-reverse;
+        }
+        .cc-msg-avatar {
+          width: 26px;
+          height: 26px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, var(--cc-primary), var(--cc-secondary, var(--cc-primary)));
+          color: #ffffff;
+          font-size: 11px;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          overflow: hidden;
+        }
+        .cc-msg-avatar img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        .cc-msg-col {
+          display: flex;
+          flex-direction: column;
           max-width: 80%;
+        }
+        .cc-msg-timestamp {
+          font-size: 10px;
+          color: var(--cc-text-muted, #94a3b8);
+          margin-top: 3px;
+          padding: 0 4px;
+        }
+        .cc-message-row.user .cc-msg-timestamp {
+          text-align: right;
+        }
+        .cc-message {
+          padding: 10px 14px;
+          border-radius: 16px;
           word-wrap: break-word;
           white-space: pre-wrap;
           overflow-wrap: anywhere;
           font-size: var(--cc-font-size);
           line-height: var(--cc-line-height);
           box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        @keyframes cc-msg-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
         /* URL Links - styled for proper wrapping without breaking */
         .cc-message-link {
@@ -1458,9 +1518,11 @@
           box-shadow: 0 10px 18px rgba(15, 23, 42, 0.16);
         }
         .cc-message.assistant {
-          background: rgba(15, 23, 42, 0.08);
+          background: #ffffff;
           color: var(--cc-text);
-          border-top-left-radius: 6px;
+          border-top-left-radius: 4px;
+          border: 1px solid var(--cc-border-color);
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
         }
         .cc-quip-message {
           background: #fef3c7 !important;
@@ -1474,9 +1536,12 @@
         }
         .cc-widget-input-container {
           padding: 12px 14px;
-          border-top: 1px solid rgba(148, 163, 184, 0.25);
+          border-top: 1px solid var(--cc-border-color);
           display: flex;
+          align-items: center;
           gap: 8px;
+          flex-shrink: 0;
+          background: var(--cc-background);
         }
         #cc-message-input {
           flex: 1;
@@ -1486,47 +1551,71 @@
           font-size: var(--cc-font-size);
           font-family: var(--cc-font-family);
           background: #ffffff;
+          color: var(--cc-text);
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        #cc-message-input:focus {
+          outline: none;
+          border-color: var(--cc-primary);
+          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+        #cc-message-input::placeholder {
+          color: var(--cc-text-muted, #94a3b8);
         }
         #cc-send-button {
-          padding: 8px 16px;
+          width: 40px;
+          height: 40px;
+          flex-shrink: 0;
           background: var(--cc-primary);
           color: var(--cc-button-text);
           border: none;
-          border-radius: 999px;
+          border-radius: 50%;
           cursor: pointer;
-          font-weight: 600;
-          font-family: var(--cc-font-family);
+          display: flex;
+          align-items: center;
+          justify-content: center;
           position: relative;
           overflow: hidden;
-          box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+          box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
         }
         #cc-send-button:hover {
-          opacity: 0.9;
+          transform: scale(1.05);
+          box-shadow: 0 6px 18px rgba(79, 70, 229, 0.4);
+        }
+        #cc-send-button:active {
+          transform: scale(0.96);
         }
         #cc-send-button:disabled {
-          background: #ccc;
+          background: #cbd5e1;
+          box-shadow: none;
           cursor: not-allowed;
+          transform: none;
         }
         .cc-widget-contact-form {
-          padding: 15px;
+          padding: 16px;
           border-top: 1px solid var(--cc-border-color);
-          background: #fff3cd;
+          background: #f8fafc;
+          flex-shrink: 0;
         }
         .cc-contact-form-header {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: space-between;
           gap: 12px;
-          margin-bottom: 12px;
+          margin-bottom: 14px;
         }
         .cc-contact-form-header p {
           margin: 0;
           font-weight: 600;
+          font-size: 13px;
+          color: var(--cc-text);
+          line-height: 1.4;
         }
         .cc-contact-close {
           background: transparent;
           border: none;
-          color: #6b7280;
+          color: var(--cc-text-muted, #94a3b8);
           font-size: 12px;
           font-weight: 600;
           cursor: pointer;
@@ -1534,53 +1623,95 @@
           border-radius: 8px;
           transition: background 0.2s ease, color 0.2s ease;
           white-space: nowrap;
+          flex-shrink: 0;
         }
         .cc-contact-close:hover {
-          background: rgba(0,0,0,0.06);
-          color: #374151;
+          background: rgba(15, 23, 42, 0.06);
+          color: var(--cc-text);
         }
         .cc-widget-contact-form input {
           width: 100%;
-          padding: 8px;
+          padding: 9px 12px;
           margin: 5px 0;
           border: 1px solid var(--cc-border-color);
-          border-radius: 5px;
+          border-radius: 10px;
           box-sizing: border-box;
           font-family: var(--cc-font-family);
+          font-size: var(--cc-font-size);
+          color: var(--cc-text);
+          background: #ffffff;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .cc-widget-contact-form input:focus {
+          outline: none;
+          border-color: var(--cc-primary);
+          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+        }
+        .cc-contact-required-note {
+          margin: 6px 0 0;
+          font-size: 11px;
+          color: var(--cc-text-muted, #94a3b8);
         }
         #cc-submit-contact {
           width: 100%;
-          padding: 10px;
-          background: #28a745;
+          padding: 11px;
+          background: var(--cc-primary);
           color: white;
           border: none;
-          border-radius: 5px;
+          border-radius: 10px;
           cursor: pointer;
-          margin-top: 10px;
+          margin-top: 12px;
           font-family: var(--cc-font-family);
+          font-size: var(--cc-font-size);
+          font-weight: 600;
+          transition: opacity 0.15s ease, transform 0.1s ease;
+        }
+        #cc-submit-contact:hover {
+          opacity: 0.92;
+        }
+        #cc-submit-contact:active {
+          transform: scale(0.99);
         }
         .cc-widget-loading {
-          padding: 10px;
-          text-align: center;
-          color: #666;
-          font-style: italic;
+          padding: 8px 16px 12px;
         }
-        .cc-typing-indicator {
+        .cc-loading-dots {
           display: inline-flex;
-          gap: 4px;
-          padding: 8px 12px;
-          background: var(--cc-background);
+          gap: 5px;
+          padding: 10px 14px;
+          background: #ffffff;
           border: 1px solid var(--cc-border-color);
-          border-radius: 10px;
-          margin-bottom: 10px;
+          border-radius: 16px;
+          border-bottom-left-radius: 4px;
         }
-        .cc-typing-indicator span {
-          width: 6px;
-          height: 6px;
-          background: var(--cc-text);
+        .cc-loading-dots span {
+          width: 7px;
+          height: 7px;
+          background: var(--cc-primary);
           border-radius: 50%;
           opacity: 0.4;
-          animation: cc-typing 1.2s infinite;
+          animation: cc-typing 1.4s infinite ease-in-out;
+        }
+        .cc-loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .cc-loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+        .cc-typing-indicator {
+          display: inline-flex;
+          gap: 5px;
+          padding: 10px 14px;
+          background: #ffffff;
+          border: 1px solid var(--cc-border-color);
+          border-radius: 16px;
+          border-bottom-left-radius: 4px;
+          margin-bottom: 12px;
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+        }
+        .cc-typing-indicator span {
+          width: 7px;
+          height: 7px;
+          background: var(--cc-primary);
+          border-radius: 50%;
+          opacity: 0.5;
+          animation: cc-typing 1.4s infinite ease-in-out;
         }
         .cc-typing-indicator span:nth-child(2) {
           animation-delay: 0.2s;
@@ -1596,6 +1727,65 @@
         .cc-widget-container.minimized .cc-widget-contact-form {
           display: none;
         }
+        /* Custom scrollbar */
+        .cc-widget-messages::-webkit-scrollbar {
+          width: 4px;
+        }
+        .cc-widget-messages::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .cc-widget-messages::-webkit-scrollbar-thumb {
+          background: rgba(15, 23, 42, 0.18);
+          border-radius: 999px;
+        }
+        .cc-widget-messages::-webkit-scrollbar-thumb:hover {
+          background: rgba(15, 23, 42, 0.32);
+        }
+        .cc-widget-messages {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(15, 23, 42, 0.18) transparent;
+        }
+        /* Branding footer */
+        .cc-widget-branding {
+          text-align: center;
+          padding: 5px 0 7px;
+          font-size: 10px;
+          color: var(--cc-text-muted, #94a3b8);
+          background: var(--cc-background);
+          border-top: 1px solid var(--cc-border-color);
+          letter-spacing: 0.02em;
+          flex-shrink: 0;
+        }
+        .cc-branding-link {
+          color: var(--cc-text-muted, #94a3b8);
+          text-decoration: none;
+          font-weight: 500;
+        }
+        .cc-branding-link:hover {
+          color: var(--cc-primary);
+          text-decoration: underline;
+        }
+        /* Mobile full-screen */
+        @media (max-width: 480px) {
+          #convopro-widget {
+            bottom: 0 !important;
+            right: 0 !important;
+            left: 0 !important;
+            width: 100%;
+          }
+          .cc-widget-container {
+            width: 100% !important;
+            max-width: 100% !important;
+            height: 92dvh;
+            max-height: 92dvh;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+            border-bottom: none;
+          }
+          #cc-message-input {
+            font-size: 16px;
+          }
+        }
         /* Accessibility classes */
         .cc-dark-mode .cc-widget-container {
           background: #1a1a1a;
@@ -1605,6 +1795,22 @@
           background: #2a2a2a;
         }
         .cc-dark-mode .cc-message.assistant {
+          background: #333;
+          color: #fff;
+          border-color: #444;
+        }
+        .cc-dark-mode .cc-loading-dots {
+          background: #333;
+          border-color: #444;
+        }
+        .cc-dark-mode .cc-widget-branding {
+          background: #1a1a1a;
+          border-color: #333;
+        }
+        .cc-dark-mode .cc-widget-contact-form {
+          background: #222;
+        }
+        .cc-dark-mode .cc-widget-contact-form input {
           background: #333;
           color: #fff;
           border-color: #444;
@@ -2186,13 +2392,140 @@
       return processed;
     },
 
+    // Render bot message text with basic markdown formatting and link support
+    renderMarkdown: function(text) {
+      var self = this;
+
+      // Step 1: Fix split URLs (reuse existing logic)
+      var processed = this.joinSplitUrls(text);
+
+      // Step 2: BSS nuclear URL cleanup (reuse existing logic)
+      var bssUrlPattern = /(https?:\/\/britishswimschool)([.\w\-\/%?&=\s]+?)(?=\s+[A-Z]|\s+Would|\s+Let|\s+I\s|\s+You|\s+If|\s+Feel|\s*$)/gi;
+      processed = processed.replace(bssUrlPattern, function(match, start, rest) {
+        return start + rest.replace(/\s+/g, '');
+      });
+
+      // Step 3: Escape HTML entities
+      var escapeHtml = function(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      };
+
+      // Step 4: Process line by line
+      var lines = processed.split('\n');
+      var outputLines = [];
+
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+
+        // Headings → bold
+        var headingMatch = line.match(/^#{1,3}\s+(.+)/);
+        if (headingMatch) {
+          outputLines.push('<strong>' + escapeHtml(headingMatch[1]) + '</strong>');
+          continue;
+        }
+
+        // Unordered list items
+        var listMatch = line.match(/^[\-\*]\s+(.+)/);
+        if (listMatch) {
+          outputLines.push('\u2022 ' + escapeHtml(listMatch[1]));
+          continue;
+        }
+
+        // Numbered list items
+        var numberedMatch = line.match(/^(\d+)\.\s+(.+)/);
+        if (numberedMatch) {
+          outputLines.push(numberedMatch[1] + '. ' + escapeHtml(numberedMatch[2]));
+          continue;
+        }
+
+        // Table rows → bullets
+        if (line.includes('|')) {
+          var cells = line.split('|').map(function(c) { return c.trim(); }).filter(Boolean);
+          if (cells.length > 1 && !cells.every(function(c) { return /^[-:]+$/.test(c); })) {
+            outputLines.push('\u2022 ' + cells.map(function(c) { return escapeHtml(c); }).join(' \u2014 '));
+            continue;
+          }
+          continue; // Skip separator rows
+        }
+
+        outputLines.push(escapeHtml(line));
+      }
+
+      // Step 5: Join and apply inline formatting
+      var html = outputLines.join('\n');
+
+      // Bold: **text** or __text__
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+
+      // Italic: *text* (not preceded/followed by *)
+      html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+
+      // Step 6: Linkify URLs
+      var urlRegex = /(https?:\/\/[^\s<>"']+)/gi;
+      html = html.replace(urlRegex, function(match) {
+        var url = match;
+        var trailing = '';
+        while (url.length > 0 && /[.,;:!?)}\]>]$/.test(url)) {
+          if (url.endsWith(')') && url.includes('(')) break;
+          trailing = url.slice(-1) + trailing;
+          url = url.slice(0, -1);
+        }
+        var cleanUrl = self.sanitizeUrl(url);
+        return '<a href="' + cleanUrl + '" target="_blank" rel="noopener noreferrer" class="cc-message-link">' + cleanUrl + '</a>' + trailing;
+      });
+
+      // Step 7: Line breaks
+      html = html.replace(/\n/g, '<br>');
+
+      return html;
+    },
+
     // Render message to DOM (without saving - used for restoration)
     renderMessage: function(text, role, scroll = true) {
       const messagesContainer = document.getElementById('cc-messages');
+
+      // Row wrapper for layout (avatar + bubble column)
+      const row = document.createElement('div');
+      row.className = `cc-message-row ${role}`;
+
+      // Inline avatar for assistant messages
+      if (role === 'assistant') {
+        const avatar = document.createElement('div');
+        avatar.className = 'cc-msg-avatar';
+        const headerAvatar = document.querySelector('.cc-widget-avatar');
+        const headerImg = headerAvatar ? headerAvatar.querySelector('img') : null;
+        if (headerImg && headerImg.src) {
+          const img = document.createElement('img');
+          img.src = headerImg.src;
+          img.alt = '';
+          avatar.appendChild(img);
+        } else {
+          const titleEl = document.querySelector('.cc-widget-title');
+          avatar.textContent = titleEl ? (titleEl.textContent || 'A').charAt(0).toUpperCase() : 'A';
+        }
+        row.appendChild(avatar);
+      }
+
+      // Column: bubble + timestamp
+      const col = document.createElement('div');
+      col.className = 'cc-msg-col';
+
       const message = document.createElement('div');
       message.className = `cc-message ${role}`;
-      message.innerHTML = this.linkifyText(text);
-      messagesContainer.appendChild(message);
+      message.innerHTML = role === 'assistant' ? this.renderMarkdown(text) : this.linkifyText(text);
+
+      const ts = document.createElement('span');
+      ts.className = 'cc-msg-timestamp';
+      ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      col.appendChild(message);
+      col.appendChild(ts);
+      row.appendChild(col);
+      messagesContainer.appendChild(row);
+
       if (scroll) {
         this.scrollMessageIntoView(messagesContainer, message, role);
       }

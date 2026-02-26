@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
+import Kanban from './pages/Kanban';
 import Prompts from './pages/Prompts';
 import Contacts from './pages/Contacts';
 import ContactDetail from './pages/ContactDetail';
@@ -69,6 +70,7 @@ function App() {
             }
           >
             <Route index element={<Dashboard />} />
+            <Route path="kanban" element={<Kanban />} />
             <Route path="contacts" element={<Contacts />} />
             <Route path="contacts/:id" element={<ContactDetail />} />
             <Route path="customers" element={<Customers />} />

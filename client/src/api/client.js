@@ -316,6 +316,13 @@ class ApiClient {
     });
   }
 
+  async updateLeadPipelineStage(leadId, pipeline_stage) {
+    return this.request(`/leads/${leadId}/pipeline-stage`, {
+      method: 'PUT',
+      body: JSON.stringify({ pipeline_stage }),
+    });
+  }
+
   async deleteLead(leadId) {
     const headers = {
       'Content-Type': 'application/json',

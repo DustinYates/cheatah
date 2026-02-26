@@ -393,6 +393,28 @@ class LeadService:
         await self.session.refresh(lead)
         return lead
 
+    async def update_pipeline_stage(
+        self, tenant_id: int, lead_id: int, pipeline_stage: str
+    ) -> Lead | None:
+        """Update lead pipeline stage (for Kanban board).
+
+        Args:
+            tenant_id: Tenant ID
+            lead_id: Lead ID
+            pipeline_stage: New stage ('new_lead', 'contacted', 'interested', 'registered', 'enrolled')
+
+        Returns:
+            Updated lead or None if not found
+        """
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            return None
+
+        lead.pipeline_stage = pipeline_stage
+        await self.session.commit()
+        await self.session.refresh(lead)
+        return lead
+
     async def bump_lead_activity(
         self,
         tenant_id: int,

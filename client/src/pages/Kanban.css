@@ -29,6 +29,26 @@
   margin-left: 8px;
 }
 
+.kanban-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+  color: #6b7280;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.kanban-settings-btn:hover {
+  color: #374151;
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
 .kanban-board {
   display: flex;
   gap: 16px;

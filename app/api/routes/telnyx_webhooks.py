@@ -500,19 +500,20 @@ async def telnyx_inbound_sms_webhook(
                 ai_msg_count = ai_msg_result.scalar() or 0
                 is_reply_to_our_message = ai_msg_count == 0
 
-            if not is_reply_to_our_message:
+            # Always process replies to existing conversations - even if Telnyx AI 
+            # is supposed to handle it, the replies might not be captured properly
+            if existing_conv and is_reply_to_our_message:
                 logger.info(
-                    f"Tenant {tenant_id} uses Telnyx AI Agent ({voice_cfg.telnyx_agent_id}) — "
-                    f"skipping /sms/inbound processing to avoid duplicate replies. "
-                    f"ai-call-complete will record the conversation."
+                    f"Tenant {tenant_id} has Telnyx AI Agent, but SMS from {from_number} "
+                    f"is a reply to existing conversation {existing_conv.id} (non-AI) — "
+                    f"processing normally"
                 )
-                return JSONResponse(content={"status": "ok"})
-
-            logger.info(
-                f"Tenant {tenant_id} has Telnyx AI Agent, but SMS from {from_number} "
-                f"is a reply to existing conversation {existing_conv.id} (non-AI) — "
-                f"processing normally"
-            )
+            elif existing_conv:
+                # Log but still process - this is the fix for missing replies
+                logger.info(
+                    f"Tenant {tenant_id} uses Telnyx AI Agent ({voice_cfg.telnyx_agent_id}), "
+                    f"but processing SMS reply to conversation {existing_conv.id} anyway to capture user response"
+                )
 
         # Queue message for async processing
         if settings.cloud_tasks_worker_url:

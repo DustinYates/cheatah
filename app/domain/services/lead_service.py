@@ -338,6 +338,16 @@ class LeadService:
             lead.phone = normalized_phone
             updated = True
             logger.info(f"Updated lead {lead_id} with phone: {normalized_phone}")
+            
+            # Trigger follow-up when phone is added to a lead that didn't have one before
+            try:
+                from app.domain.services.followup_service import FollowUpService
+                followup_service = FollowUpService(self.session)
+                task_name = await followup_service.schedule_followup(tenant_id, lead_id)
+                if task_name:
+                    logger.info(f"Scheduled follow-up for lead {lead_id} after phone update: {task_name}")
+            except Exception as e:
+                logger.error(f"Failed to schedule follow-up after phone update for lead {lead_id}: {e}")
         # For name: update if missing, OR if force_name_update is True (explicit name introduction)
         if name and (not lead.name or force_name_update):
             # Validate name before setting

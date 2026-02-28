@@ -12,6 +12,7 @@ import Contacts from './pages/Contacts';
 import ContactDetail from './pages/ContactDetail';
 import Customers from './pages/Customers';
 import CustomerDetail from './pages/CustomerDetail';
+import Connections from './pages/Connections';
 import CustomerSupportSettings from './pages/CustomerSupportSettings';
 import Calls from './pages/Calls';
 import Inbox from './pages/Inbox';
@@ -71,9 +72,13 @@ function App() {
           >
             <Route index element={<Dashboard />} />
             <Route path="kanban" element={<Kanban />} />
-            <Route path="contacts" element={<Contacts />} />
+            <Route path="connections" element={<Connections />} />
+            <Route path="connections/:id" element={<ContactDetail />} />
+            <Route path="connections/customer/:id" element={<CustomerDetail />} />
+            {/* Redirects from old routes */}
+            <Route path="contacts" element={<Navigate to="/connections" replace />} />
             <Route path="contacts/:id" element={<ContactDetail />} />
-            <Route path="customers" element={<Customers />} />
+            <Route path="customers" element={<Navigate to="/connections" replace />} />
             <Route path="customers/:id" element={<CustomerDetail />} />
             <Route path="inbox" element={<Inbox />} />
             <Route path="calls" element={<Calls />} />

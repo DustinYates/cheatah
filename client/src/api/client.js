@@ -1187,6 +1187,16 @@ class ApiClient {
     return this.request('/customers/stats');
   }
 
+  // Connections API (unified contacts + customers)
+  async getConnections(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/connections${query ? `?${query}` : ''}`);
+  }
+
+  async getConnectionStats() {
+    return this.request('/connections/stats');
+  }
+
   // Customer Support Config API
   async getCustomerSupportConfig() {
     return this.request('/customer-support/config');

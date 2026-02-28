@@ -89,9 +89,9 @@ export default function CustomerDetail() {
   return (
     <div className="customer-detail-page">
       <div className="page-header">
-        <button className="btn-back" onClick={() => navigate('/customers')}>
+        <button className="btn-back" onClick={() => navigate('/connections')}>
           <ArrowLeft size={16} />
-          <span>Back to Customers</span>
+          <span>Back to Connections</span>
         </button>
         <div className="header-actions">
           <button className="btn-icon" onClick={refetch} title="Refresh">

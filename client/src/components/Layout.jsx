@@ -91,10 +91,7 @@ export default function Layout() {
             <NavLink to="/kanban">Pipeline</NavLink>
           </li>
           <li>
-            <NavLink to="/customers">Customers</NavLink>
-          </li>
-          <li>
-            <NavLink to="/contacts">Contacts</NavLink>
+            <NavLink to="/connections">Connections</NavLink>
           </li>
           <li className="nav-section">
             <button

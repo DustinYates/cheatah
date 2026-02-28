@@ -34,6 +34,7 @@ class ContactResponse(BaseModel):
     phone: str | None
     source: str | None
     lead_id: int | None
+    pipeline_stage: str | None = None
     merged_into_contact_id: int | None
     created_at: str
     first_contacted: str | None = None
@@ -329,6 +330,7 @@ def _contact_to_response(
     customer_name: str | None = None,
     first_contacted: str | None = None,
     last_contacted: str | None = None,
+    pipeline_stage: str | None = None,
 ) -> ContactResponse:
     """Convert a Contact model to ContactResponse."""
     return ContactResponse(
@@ -340,6 +342,7 @@ def _contact_to_response(
         phone=contact.phone,
         source=contact.source,
         lead_id=contact.lead_id,
+        pipeline_stage=pipeline_stage,
         merged_into_contact_id=contact.merged_into_contact_id,
         created_at=contact.created_at.isoformat() if contact.created_at else "",
         first_contacted=first_contacted,
@@ -379,6 +382,7 @@ async def list_contacts(
     contact_ids = [c.id for c in contacts]
     timestamps_map: dict[int, tuple[str | None, str | None]] = {}
     customer_names_map: dict[str, str] = {}
+    stage_map: dict[int, str] = {}
 
     if contact_ids:
         # Get first/last contacted timestamps across all channels (messages, calls, emails)
@@ -388,6 +392,14 @@ async def list_contacts(
         phone_numbers = [c.phone for c in contacts if c.phone]
         if phone_numbers:
             customer_names_map = await _get_customer_names_by_phone(db, tenant_id, phone_numbers)
+
+        # Get pipeline stages from leads (batch query to avoid N+1)
+        lead_ids = [c.lead_id for c in contacts if c.lead_id]
+        if lead_ids:
+            lead_stages_result = await db.execute(
+                select(Lead.id, Lead.pipeline_stage).where(Lead.id.in_(lead_ids))
+            )
+            stage_map = {row.id: row.pipeline_stage for row in lead_stages_result}
 
     # For now, estimate total as we don't have a count method
     # If we get a full page, there might be more
@@ -402,6 +414,7 @@ async def list_contacts(
                 customer_name=customer_names_map.get(c.phone) if c.phone else None,
                 first_contacted=timestamps_map.get(c.id, (None, None))[0],
                 last_contacted=timestamps_map.get(c.id, (None, None))[1],
+                pipeline_stage=stage_map.get(c.lead_id) if c.lead_id else None,
             )
             for c in contacts
         ],

@@ -12,6 +12,14 @@ import { formatDateTimeParts } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
 import './Contacts.css';
 
+const PIPELINE_STAGE_LABELS = {
+  new_lead: 'New Lead',
+  contacted: 'Contacted',
+  interested: 'Interested',
+  registered: 'Registered',
+  enrolled: 'Enrolled',
+};
+
 // Format name - detect phone numbers masquerading as names
 function formatName(name) {
   if (!name) return null;
@@ -103,6 +111,9 @@ export default function Contacts() {
           break;
         case 'type':
           comparison = (!!a.customer_name ? 1 : 0) - (!!b.customer_name ? 1 : 0);
+          break;
+        case 'pipeline_stage':
+          comparison = (a.pipeline_stage || '').localeCompare(b.pipeline_stage || '');
           break;
         default: // created_at
           comparison = new Date(a.created_at || 0) - new Date(b.created_at || 0);
@@ -309,6 +320,7 @@ export default function Contacts() {
           <option value="name">Sort: Name</option>
           <option value="last_contacted">Sort: Last Contacted</option>
           <option value="type">Sort: Type</option>
+          <option value="pipeline_stage">Sort: Tag</option>
         </select>
 
         <button
@@ -396,6 +408,12 @@ export default function Contacts() {
                 >
                   Type {sortBy === 'type' && (sortDir === 'asc' ? '↑' : '↓')}
                 </th>
+                <th
+                  className={`col-tag sortable ${sortBy === 'pipeline_stage' ? 'sorted' : ''}`}
+                  onClick={() => handleSort('pipeline_stage')}
+                >
+                  Tag {sortBy === 'pipeline_stage' && (sortDir === 'asc' ? '↑' : '↓')}
+                </th>
                 <th className="col-phone">Phone</th>
                 <th
                   className={`col-added sortable ${sortBy === 'created_at' ? 'sorted' : ''}`}
@@ -442,6 +460,15 @@ export default function Contacts() {
                       >
                         {contact.customer_name ? 'Customer' : 'Lead'}
                       </span>
+                    </td>
+                    <td className="col-tag">
+                      {contact.pipeline_stage ? (
+                        <span className={`pipeline-badge stage-${contact.pipeline_stage}`}>
+                          {PIPELINE_STAGE_LABELS[contact.pipeline_stage] || contact.pipeline_stage}
+                        </span>
+                      ) : (
+                        <span className="contact-text-muted">-</span>
+                      )}
                     </td>
                     <td className="col-phone">
                       <span className="contact-phone" title={contact.phone || '-'}>

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, customers, customer_support, dashboard_analytics, dnc, drip_campaigns, email_webhooks, escalation_settings, forums, inbox, leads, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, sms_webhooks, support, telnyx_webhooks, tenant_calendar, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, user_groups, voice_ab_tests, voice_webhooks, zapier_webhooks
+from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, connections, contacts, conversations, customer_service_sms_webhooks, customer_service_voice_webhooks, customers, customer_support, dashboard_analytics, dnc, drip_campaigns, email_webhooks, escalation_settings, forums, inbox, leads, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, sms_webhooks, support, telnyx_webhooks, tenant_calendar, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, user_groups, voice_ab_tests, voice_webhooks, zapier_webhooks
 from app.api import sendgrid_email
 
 api_router = APIRouter()
@@ -58,10 +58,11 @@ api_router.include_router(tenant_widget.router, prefix="/widget", tags=["widget"
 # Tenant Calendar scheduling (Google Calendar OAuth)
 api_router.include_router(tenant_calendar.router, prefix="/calendar", tags=["calendar"])
 
-# Leads, Contacts, Customers, and Calls
+# Leads, Contacts, Customers, Connections, and Calls
 api_router.include_router(leads.router, prefix="/leads", tags=["leads"])
 api_router.include_router(contacts.router, prefix="/contacts", tags=["contacts"])
 api_router.include_router(customers.router, prefix="/customers", tags=["customers"])
+api_router.include_router(connections.router, prefix="/connections", tags=["connections"])
 api_router.include_router(calls.router, prefix="/calls", tags=["calls"])
 
 # Customer Support settings and config

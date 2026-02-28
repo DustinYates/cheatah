@@ -461,6 +461,24 @@ async def telnyx_inbound_sms_webhook(
 
         logger.info(f"Found tenant_id={tenant_id} for Telnyx number: {to_number}")
 
+        # Check if tenant uses Telnyx AI Agent — if so, the AI handles SMS
+        # responses directly and ai-call-complete records the transcript.
+        # Processing here would send a DUPLICATE reply via our Gemini LLM.
+        from app.persistence.models.tenant_voice_config import TenantVoiceConfig
+        voice_cfg_result = await db.execute(
+            select(TenantVoiceConfig).where(
+                TenantVoiceConfig.tenant_id == tenant_id
+            ).limit(1)
+        )
+        voice_cfg = voice_cfg_result.scalar_one_or_none()
+        if voice_cfg and voice_cfg.telnyx_agent_id:
+            logger.info(
+                f"Tenant {tenant_id} uses Telnyx AI Agent ({voice_cfg.telnyx_agent_id}) — "
+                f"skipping /sms/inbound processing to avoid duplicate replies. "
+                f"ai-call-complete will record the conversation."
+            )
+            return JSONResponse(content={"status": "ok"})
+
         # Queue message for async processing
         if settings.cloud_tasks_worker_url:
             cloud_tasks = CloudTasksClient()
@@ -1463,23 +1481,34 @@ async def telnyx_ai_call_complete(
                                 sample_msg = actual_messages[0]
                                 logger.info(f"[SMS-MESSAGES] Sample message keys: {list(sample_msg.keys())}, sample: {str(sample_msg)[:500]}")
 
-                            # DEDUP: Skip storing if messages already exist for this conversation.
+                            # DEDUP: Skip storing if Telnyx AI messages already exist.
                             # ai-call-complete fires multiple times (conversation.ended, insights.generated,
                             # retries) — each time it would re-insert all messages. Only store on first fire.
+                            # NOTE: Only check for telnyx_ai_assistant source messages, NOT any messages.
+                            # The conversation may already have follow-up/drip outbound messages that
+                            # should NOT prevent storing the real Telnyx AI conversation.
                             existing_count_result = await db.execute(
                                 select(func.count()).where(
-                                    Message.conversation_id == sms_conversation.id
+                                    Message.conversation_id == sms_conversation.id,
+                                    cast(Message.message_metadata["source"], String) == '"telnyx_ai_assistant"',
                                 )
                             )
-                            existing_msg_count = existing_count_result.scalar() or 0
-                            if existing_msg_count > 0:
+                            existing_telnyx_count = existing_count_result.scalar() or 0
+                            if existing_telnyx_count > 0:
                                 logger.info(
                                     f"[SMS-MESSAGES] Skipping message storage - conversation {sms_conversation.id} "
-                                    f"already has {existing_msg_count} messages (duplicate webhook fire)"
+                                    f"already has {existing_telnyx_count} telnyx_ai_assistant messages (duplicate webhook fire)"
                                 )
                                 actual_messages_stored = True  # Mark as stored so fallback doesn't run
                             else:
-                                next_seq = 1
+                                # Get next sequence number (after any existing follow-up messages)
+                                last_seq_result = await db.execute(
+                                    select(func.max(Message.sequence_number)).where(
+                                        Message.conversation_id == sms_conversation.id
+                                    )
+                                )
+                                last_seq = last_seq_result.scalar() or 0
+                                next_seq = last_seq + 1
                                 for msg in actual_messages:
                                     msg_role = msg.get("role", "user")
                                     msg_content = msg.get("text", msg.get("content", ""))

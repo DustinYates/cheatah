@@ -1294,7 +1294,7 @@ export default function Dashboard() {
               {(leadsSearch || sourceFilter !== 'all') && (
                 <span className="leads-filter-count">{filteredLeads.length} of {leads.length}</span>
               )}
-              <a className="card-link" href="/contacts">View all</a>
+              <a className="card-link" href="/connections">View all</a>
             </div>
           </div>
           {error && <div className="error">{error}</div>}

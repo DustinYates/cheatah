@@ -272,7 +272,7 @@ export default function ContactDetail() {
   if (contactError) {
     return (
       <div className="contact-detail-page">
-        <ErrorState message={contactError} onRetry={() => navigate('/contacts')} />
+        <ErrorState message={contactError} onRetry={() => navigate('/connections')} />
       </div>
     );
   }
@@ -288,9 +288,9 @@ export default function ContactDetail() {
   return (
     <div className="contact-detail-page redesigned">
       {/* Back button */}
-      <button className="back-btn" onClick={() => navigate('/contacts')}>
+      <button className="back-btn" onClick={() => navigate('/connections')}>
         <ArrowLeft size={18} />
-        Back to Contacts
+        Back to Connections
       </button>
 
       {error && <div className="error-banner">{error}</div>}

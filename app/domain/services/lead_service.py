@@ -398,6 +398,9 @@ class LeadService:
     ) -> Lead | None:
         """Update lead pipeline stage (for Kanban board).
 
+        Preserves the original updated_at so Kanban moves don't shuffle
+        the Contacts page sort order.
+
         Args:
             tenant_id: Tenant ID
             lead_id: Lead ID
@@ -410,7 +413,9 @@ class LeadService:
         if not lead:
             return None
 
+        original_updated_at = lead.updated_at
         lead.pipeline_stage = pipeline_stage
+        lead.updated_at = original_updated_at  # preserve so Contacts sort order is stable
         await self.session.commit()
         await self.session.refresh(lead)
         return lead

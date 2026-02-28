@@ -1,11 +1,11 @@
-/* Contacts Page Styles - Compact density matching Leads table */
-.contacts-page {
+/* Connections Page Styles */
+.connections-page {
   max-width: 1280px;
   margin: 0 auto;
   width: 100%;
 }
 
-.contacts-page h1 {
+.connections-page h1 {
   margin: 0;
   color: var(--color-text-primary);
   font-size: 18px;
@@ -13,13 +13,41 @@
   letter-spacing: -0.01em;
 }
 
-.contacts-page .page-header {
+.connections-page .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.page-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Stats Summary */
+.connections-stats {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.stat-total {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.stat-item {
+  font-size: 12px;
+  color: #6b7280;
+  padding: 2px 8px;
+  background: #f3f4f6;
+  border-radius: 10px;
 }
 
 .header-actions {
@@ -63,7 +91,7 @@
 }
 
 /* Filter Bar */
-.contacts-filters {
+.connections-filters {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
@@ -198,22 +226,22 @@
 }
 
 /* Table Container */
-.contacts-table-container {
+.connections-table-container {
   background: var(--color-bg-card);
   border-radius: 6px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   border: 1px solid var(--color-border);
   overflow: auto;
-  max-height: calc(100vh - 180px);
+  max-height: calc(100vh - 200px);
 }
 
-.contacts-table {
+.connections-table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.contacts-table th,
-.contacts-table td {
+.connections-table th,
+.connections-table td {
   padding: 6px 12px;
   text-align: left;
   border-bottom: 1px solid var(--color-border);
@@ -221,7 +249,7 @@
   line-height: 1.2;
 }
 
-.contacts-table th {
+.connections-table th {
   background: #fafafa;
   font-weight: 500;
   color: #94a3b8;
@@ -234,40 +262,44 @@
   z-index: 2;
 }
 
-.contacts-table th.sortable {
+.connections-table th.sortable {
   cursor: pointer;
   user-select: none;
   transition: background 0.15s;
 }
 
-.contacts-table th.sortable:hover {
+.connections-table th.sortable:hover {
   background: #f1f5f9;
 }
 
-.contacts-table th.sorted {
+.connections-table th.sorted {
   color: #374151;
   background: #f1f5f9;
 }
 
-.contacts-table td {
+.connections-table td {
   color: #1f2937;
   font-size: 13px;
 }
 
-.contacts-table tbody tr {
+.connections-table tbody tr {
   height: 44px;
   transition: background 0.1s;
 }
 
-.contacts-table tbody tr:last-child td {
+.connections-table tbody tr.clickable-row {
+  cursor: pointer;
+}
+
+.connections-table tbody tr:last-child td {
   border-bottom: none;
 }
 
-.contacts-table tbody tr:hover td {
+.connections-table tbody tr:hover td {
   background: #f8fafc;
 }
 
-.contacts-table tbody tr.selected-for-merge td {
+.connections-table tbody tr.selected-for-merge td {
   background: #eff6ff;
 }
 
@@ -290,14 +322,19 @@
   accent-color: #0284c7;
 }
 
-/* Stacked Name + Email (matches leads table pattern) */
-.contact-person {
+.td-checkbox input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
+/* Name Column */
+.connection-person {
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
 
-.contact-person__name {
+.connection-person__name {
   font-weight: 600;
   color: #0f172a;
   font-size: 13px;
@@ -307,7 +344,7 @@
   white-space: nowrap;
 }
 
-.contact-person__email {
+.connection-person__email {
   font-size: 12px;
   color: #64748b;
   overflow: hidden;
@@ -316,14 +353,14 @@
   line-height: 1.2;
 }
 
-.contact-phone {
+.connection-phone {
   font-family: var(--font-mono);
   font-size: 12px;
   color: #64748b;
   white-space: nowrap;
 }
 
-.contact-date {
+.connection-date {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
@@ -332,44 +369,52 @@
 }
 
 /* Column Widths */
-.contacts-table .col-name {
-  width: 26%;
-  min-width: 180px;
+.connections-table .col-name {
+  width: 22%;
+  min-width: 160px;
 }
 
-.contacts-table .col-type {
-  width: 80px;
+.connections-table .col-tags {
+  width: 28%;
+  min-width: 200px;
 }
 
-/* Type Badge - Lead vs Customer */
-.type-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: capitalize;
+.connections-table .col-phone {
+  width: 14%;
+  min-width: 120px;
 }
 
-.type-badge.type-customer {
-  background: #d1fae5;
-  color: #065f46;
+.connections-table .col-added {
+  width: 90px;
 }
 
-.type-badge.type-lead {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-/* Pipeline Stage Tag */
-.contacts-table .col-tag {
+.connections-table .col-last-contacted {
   width: 100px;
 }
 
+.connections-table .col-actions {
+  width: 90px;
+  text-align: center;
+}
+
+.connection-text-muted {
+  color: #d1d5db;
+  font-size: 12px;
+}
+
+/* Tags Group */
+.tag-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+/* Pipeline Stage Badges */
 .pipeline-badge {
   display: inline-block;
-  padding: 2px 10px;
-  border-radius: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -400,27 +445,47 @@
   color: #4338ca;
 }
 
-.contacts-table .col-phone {
-  width: 16%;
-  min-width: 130px;
+/* Customer Status Badges */
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
-.contacts-table .col-added {
-  width: 90px;
+.status-badge.status-active {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
 }
 
-.contacts-table .col-last-contacted {
-  width: 100px;
+.status-badge.status-inactive {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
 }
 
-.contacts-table .col-actions {
-  width: 100px;
-  text-align: center;
+.status-badge.status-suspended {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
 }
 
-.contact-text-muted {
-  color: #d1d5db;
-  font-size: 12px;
+/* Interaction Badge */
+.interaction-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: #faf5ff;
+  color: #7c3aed;
+  border: 1px solid #ddd6fe;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 /* Action Buttons */
@@ -543,7 +608,7 @@
   background: #fef2f2;
 }
 
-/* Custom Tooltips for Action Buttons */
+/* Tooltips */
 .btn-action[data-tooltip] {
   position: relative;
 }
@@ -627,11 +692,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-.contacts-page .empty-state {
+.connections-page .empty-state {
   padding: 40px 16px;
 }
 
-/* Delete Confirmation Modal */
+/* Delete Modal (reuses shared modal styles) */
 .delete-modal {
   max-width: 400px;
 }
@@ -685,7 +750,6 @@
   margin: 0;
 }
 
-/* Bulk Delete List */
 .bulk-delete-list {
   background: #f9fafb;
   border-radius: 6px;
@@ -760,28 +824,32 @@
 
 /* Responsive */
 @media (max-width: 900px) {
-  .contacts-table th.col-type,
-  .contacts-table td.col-type,
-  .contacts-table th.col-tag,
-  .contacts-table td.col-tag {
-    display: none;
+  .connections-table th.col-tags,
+  .connections-table td.col-tags {
+    min-width: 140px;
   }
 }
 
 @media (max-width: 768px) {
-  .contacts-page .page-header {
+  .connections-page .page-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .page-header-left {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 
   .search-box input {
     width: 100%;
   }
 
-  .contacts-table th.col-added,
-  .contacts-table td.col-added,
-  .contacts-table th.col-last-contacted,
-  .contacts-table td.col-last-contacted {
+  .connections-table th.col-added,
+  .connections-table td.col-added,
+  .connections-table th.col-last-contacted,
+  .connections-table td.col-last-contacted {
     display: none;
   }
 
@@ -794,6 +862,10 @@
   .bulk-actions {
     flex-wrap: wrap;
     justify-content: center;
+  }
+
+  .connections-stats {
+    flex-wrap: wrap;
   }
 }
 

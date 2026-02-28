@@ -187,7 +187,7 @@ async def list_connections(
     current_user: Annotated[User, Depends(get_current_user)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=100),
+    page_size: int = Query(50, ge=1, le=10000),
     search: str | None = Query(None),
     record_type: str | None = Query(None, description="contact, customer, or both"),
     pipeline_stage: str | None = Query(None),

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Phone, MessageSquare, Bot, Mail, Calendar, X } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Phone, MessageSquare, Bot, Mail, Calendar, X, StickyNote, Check, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
@@ -17,6 +17,10 @@ export default function LeadDetailsModal({ lead, onClose }) {
   const [expandedItems, setExpandedItems] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [notes, setNotes] = useState(lead.notes || '');
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
+  const notesRef = useRef(null);
 
   // Fetch conversation data and build timeline
   useEffect(() => {
@@ -57,6 +61,24 @@ export default function LeadDetailsModal({ lead, onClose }) {
       return next;
     });
   };
+
+  // Save notes
+  const handleSaveNotes = async () => {
+    setNotesSaving(true);
+    setNotesSaved(false);
+    try {
+      await api.updateLeadNotes(lead.id, notes || null);
+      lead.notes = notes || null;
+      setNotesSaved(true);
+      setTimeout(() => setNotesSaved(false), 2000);
+    } catch (err) {
+      console.error('Failed to save notes:', err);
+    } finally {
+      setNotesSaving(false);
+    }
+  };
+
+  const notesChanged = notes !== (lead.notes || '');
 
   // Close modal on escape key
   useEffect(() => {
@@ -152,6 +174,44 @@ export default function LeadDetailsModal({ lead, onClose }) {
               )}
             </div>
           )}
+        </div>
+
+        {/* Notes Section */}
+        <div className="notes-section">
+          <div className="notes-header">
+            <StickyNote size={14} className="notes-icon" />
+            <span className="notes-label">Notes</span>
+            <div className="notes-actions">
+              {notesSaved && (
+                <span className="notes-saved-indicator">
+                  <Check size={12} />
+                  Saved
+                </span>
+              )}
+              {notesChanged && (
+                <button
+                  className="notes-save-btn"
+                  onClick={handleSaveNotes}
+                  disabled={notesSaving}
+                >
+                  {notesSaving ? <Loader2 size={12} className="spin" /> : 'Save'}
+                </button>
+              )}
+            </div>
+          </div>
+          <textarea
+            ref={notesRef}
+            className="notes-textarea"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Add notes about this lead..."
+            rows={3}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && notesChanged) {
+                handleSaveNotes();
+              }
+            }}
+          />
         </div>
 
         {/* Timeline Body */}

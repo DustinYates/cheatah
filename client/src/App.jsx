@@ -34,6 +34,7 @@ import CampaignSettings from './pages/CampaignSettings';
 import EscalationSettings from './pages/EscalationSettings';
 import CalendarSettings from './pages/CalendarSettings';
 import DncList from './pages/DncList';
+import PipelineSettings from './pages/PipelineSettings';
 import ManageTenants from './pages/ManageTenants';
 import PromptWizard from './pages/PromptWizard';
 import PrivacyPolicy from './pages/PrivacyPolicy';
@@ -104,6 +105,7 @@ function App() {
             <Route path="settings/calendar" element={<CalendarSettings />} />
             <Route path="settings/dnc" element={<DncList />} />
             <Route path="settings/campaigns" element={<CampaignSettings />} />
+            <Route path="settings/pipeline" element={<PipelineSettings />} />
             <Route path="settings/customer-support" element={<CustomerSupportSettings />} />
             <Route path="settings/profile" element={<BusinessProfile />} />
             <Route path="settings/account" element={<AccountSettings />} />

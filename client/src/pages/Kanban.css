@@ -83,28 +83,6 @@
   text-align: center;
 }
 
-/* Stage-specific header colors */
-.kanban-column[data-stage="new_lead"] .kanban-column__count {
-  background: #dbeafe;
-  color: #1d4ed8;
-}
-.kanban-column[data-stage="contacted"] .kanban-column__count {
-  background: #fef3c7;
-  color: #b45309;
-}
-.kanban-column[data-stage="interested"] .kanban-column__count {
-  background: #fce7f3;
-  color: #be185d;
-}
-.kanban-column[data-stage="registered"] .kanban-column__count {
-  background: #d1fae5;
-  color: #047857;
-}
-.kanban-column[data-stage="enrolled"] .kanban-column__count {
-  background: #c7d2fe;
-  color: #4338ca;
-}
-
 .kanban-column__body {
   padding: 8px;
   flex: 1;

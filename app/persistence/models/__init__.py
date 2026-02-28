@@ -37,6 +37,7 @@ from app.persistence.models.service_health_incident import ServiceHealthIncident
 from app.persistence.models.drip_campaign import DripCampaign, DripCampaignStep, DripEnrollment
 from app.persistence.models.customer import Customer
 from app.persistence.models.tenant_customer_support_config import TenantCustomerSupportConfig
+from app.persistence.models.tenant_pipeline_stage import TenantPipelineStage
 from app.persistence.models.forum import (
     Forum,
     ForumCategory,
@@ -109,5 +110,7 @@ __all__ = [
     # Voice A/B testing
     "VoiceABTest",
     "VoiceABTestVariant",
+    # Pipeline stages
+    "TenantPipelineStage",
 ]
 

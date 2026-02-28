@@ -40,6 +40,7 @@ class LeadResponse(BaseModel):
     phone: str | None
     status: str | None
     pipeline_stage: str | None = None
+    notes: str | None = None
     extra_data: dict | None
     created_at: str
     updated_at: str | None = None
@@ -67,6 +68,12 @@ class LeadPipelineStageUpdate(BaseModel):
     """Lead pipeline stage update request."""
 
     pipeline_stage: str  # 'new_lead', 'contacted', 'interested', 'registered', 'enrolled'
+
+
+class LeadNotesUpdate(BaseModel):
+    """Lead notes update request."""
+
+    notes: str | None = None
 
 
 class MessageResponse(BaseModel):
@@ -175,6 +182,7 @@ async def list_leads(
                 phone=lead.phone,
                 status=lead.status if hasattr(lead, 'status') else None,
                 pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
+                notes=lead.notes if hasattr(lead, 'notes') else None,
                 extra_data=lead.extra_data,
                 created_at=_isoformat_utc(lead.created_at),
                 updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
@@ -228,6 +236,7 @@ async def get_lead(
         phone=lead.phone,
         status=lead.status if hasattr(lead, 'status') else None,
         pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
+        notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
@@ -352,6 +361,7 @@ async def update_lead_status(
         phone=lead.phone,
         status=lead.status if hasattr(lead, 'status') else None,
         pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
+        notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
@@ -368,7 +378,13 @@ async def update_lead_pipeline_stage(
     tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> LeadResponse:
     """Update lead pipeline stage (for Kanban board)."""
-    valid_stages = ['new_lead', 'contacted', 'interested', 'registered', 'enrolled']
+    from app.persistence.models.tenant_pipeline_stage import TenantPipelineStage
+    result = await db.execute(
+        select(TenantPipelineStage.key).where(TenantPipelineStage.tenant_id == tenant_id)
+    )
+    valid_stages = [row[0] for row in result]
+    if not valid_stages:
+        valid_stages = ['new_lead', 'contacted', 'interested', 'registered', 'enrolled']
     if stage_update.pipeline_stage not in valid_stages:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -397,6 +413,44 @@ async def update_lead_pipeline_stage(
         phone=lead.phone,
         status=lead.status if hasattr(lead, 'status') else None,
         pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
+        notes=lead.notes if hasattr(lead, 'notes') else None,
+        extra_data=lead.extra_data,
+        created_at=_isoformat_utc(lead.created_at),
+        updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
+        llm_responded=llm_responded,
+    )
+
+
+@router.put("/{lead_id}/notes", response_model=LeadResponse)
+async def update_lead_notes(
+    lead_id: int,
+    notes_update: LeadNotesUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> LeadResponse:
+    """Update lead notes."""
+    lead_service = LeadService(db)
+    lead = await lead_service.update_lead_notes(tenant_id, lead_id, notes_update.notes)
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found",
+        )
+
+    llm_responded = await _check_llm_responded(db, lead.conversation_id)
+
+    return LeadResponse(
+        id=lead.id,
+        tenant_id=lead.tenant_id,
+        conversation_id=lead.conversation_id,
+        name=lead.name,
+        email=lead.email,
+        phone=lead.phone,
+        status=lead.status if hasattr(lead, 'status') else None,
+        pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
+        notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,

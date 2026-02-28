@@ -399,6 +399,88 @@
   justify-content: center;
 }
 
+/* Notes icon with content indicator */
+.icon-button--has-notes {
+  color: #3b82f6 !important;
+}
+
+/* Notes popover */
+.notes-popover {
+  position: fixed;
+  z-index: 9999;
+  width: 280px;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  padding: 12px;
+}
+
+.notes-textarea {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 80px;
+  color: #1e293b;
+  background-color: #f8fafc;
+  opacity: 1;
+  transition: border-color 0.15s;
+}
+
+.notes-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  background: #fff;
+}
+
+.notes-textarea::placeholder {
+  color: #94a3b8;
+}
+
+.notes-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.notes-btn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s;
+}
+
+.notes-btn--cancel {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.notes-btn--cancel:hover {
+  background: #e2e8f0;
+}
+
+.notes-btn--save {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.notes-btn--save:hover {
+  background: #2563eb;
+}
+
+.notes-btn--save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Source badges */
 .source-badges {
   display: inline-flex;

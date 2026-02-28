@@ -10,15 +10,8 @@ import EditContactModal from '../components/EditContactModal';
 import MergeContactsModal from '../components/MergeContactsModal';
 import { formatDateTimeParts } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
+import { usePipelineStages } from '../hooks/usePipelineStages';
 import './Connections.css';
-
-const PIPELINE_STAGE_LABELS = {
-  new_lead: 'New Lead',
-  contacted: 'Contacted',
-  interested: 'Interested',
-  registered: 'Registered',
-  enrolled: 'Enrolled',
-};
 
 const CUSTOMER_STATUS_LABELS = {
   active: 'Active',
@@ -36,6 +29,7 @@ function formatName(name) {
 }
 
 export default function Connections() {
+  const { stages: pipelineStages, stageLabelMap: PIPELINE_STAGE_LABELS, stageMap } = usePipelineStages();
   const { user, selectedTenantId } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -351,8 +345,8 @@ export default function Connections() {
           aria-label="Filter by pipeline stage"
         >
           <option value="">All Stages</option>
-          {Object.entries(PIPELINE_STAGE_LABELS).map(([key, label]) => (
-            <option key={key} value={key}>{label}</option>
+          {pipelineStages.map((s) => (
+            <option key={s.key} value={s.key}>{s.label}</option>
           ))}
         </select>
 
@@ -507,7 +501,13 @@ export default function Connections() {
                     <td className="col-tags">
                       <div className="tag-group">
                         {conn.pipeline_stage && (
-                          <span className={`pipeline-badge stage-${conn.pipeline_stage}`}>
+                          <span
+                            className="pipeline-badge"
+                            style={{
+                              backgroundColor: `${stageMap[conn.pipeline_stage]?.color || '#6b7280'}20`,
+                              color: stageMap[conn.pipeline_stage]?.color || '#6b7280',
+                            }}
+                          >
                             {PIPELINE_STAGE_LABELS[conn.pipeline_stage] || conn.pipeline_stage}
                           </span>
                         )}

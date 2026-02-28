@@ -9,10 +9,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [analyticsOpen, setAnalyticsOpen] = useState(location.pathname.startsWith('/analytics'));
-  const [communicationsOpen, setCommunicationsOpen] = useState(
-    location.pathname.startsWith('/calls')
-  );
-  const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/settings'));
+const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/settings'));
   const [forumsOpen, setForumsOpen] = useState(location.pathname.startsWith('/forums'));
   const [hasForumAccess, setHasForumAccess] = useState(false);
 
@@ -95,22 +92,6 @@ export default function Layout() {
           </li>
           <li className="nav-section">
             <button
-              className={`nav-section-toggle ${communicationsOpen ? 'open' : ''}`}
-              onClick={() => setCommunicationsOpen(!communicationsOpen)}
-            >
-              Communications
-              <span className={`toggle-chevron ${communicationsOpen ? 'open' : ''}`}>&#x203A;</span>
-            </button>
-            {communicationsOpen && (
-              <ul className="nav-submenu">
-                <li>
-                  <NavLink to="/calls">Calls</NavLink>
-                </li>
-              </ul>
-            )}
-          </li>
-          <li className="nav-section">
-            <button
               className={`nav-section-toggle ${analyticsOpen ? 'open' : ''}`}
               onClick={() => setAnalyticsOpen(!analyticsOpen)}
             >
@@ -190,6 +171,9 @@ export default function Layout() {
                 </li>
                 <li>
                   <NavLink to="/settings/campaigns">Campaigns</NavLink>
+                </li>
+                <li>
+                  <NavLink to="/settings/pipeline">Pipeline</NavLink>
                 </li>
                 <li>
                   <NavLink to="/settings/dnc">Do Not Contact</NavLink>

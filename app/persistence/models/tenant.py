@@ -109,6 +109,12 @@ class Tenant(Base):
     customer_support_config = relationship(
         "TenantCustomerSupportConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan"
     )
+    pipeline_stages = relationship(
+        "TenantPipelineStage",
+        back_populates="tenant",
+        cascade="all, delete-orphan",
+        order_by="TenantPipelineStage.position",
+    )
 
     def __repr__(self) -> str:
         return f"<Tenant(id={self.id}, name={self.name}, subdomain={self.subdomain})>"

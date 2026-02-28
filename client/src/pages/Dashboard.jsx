@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
@@ -140,6 +141,24 @@ const DetailsIcon = () => (
     {/* Info lines */}
     <line x1="8" y1="13" x2="16" y2="13" />
     <line x1="8" y1="17" x2="14" y2="17" />
+  </svg>
+);
+
+// Notes icon SVG component (pencil on notepad)
+const NotesIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle' }}
+  >
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z" />
   </svg>
 );
 
@@ -325,6 +344,11 @@ export default function Dashboard() {
   const [calendarWeekStart, setCalendarWeekStart] = useState('');
   const [calendarWeekEnd, setCalendarWeekEnd] = useState('');
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [notesPopoverId, setNotesPopoverId] = useState(null);
+  const [notesText, setNotesText] = useState('');
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesPos, setNotesPos] = useState({ top: 0, left: 0 });
+  const notesRef = useRef(null);
   const [leadsLimit, setLeadsLimit] = useState(() => {
     const saved = localStorage.getItem('dashboard_leads_limit');
     return saved ? parseInt(saved, 10) : 50;
@@ -586,6 +610,47 @@ export default function Dashboard() {
   const handleViewDetails = (lead) => {
     setSelectedLead(lead);
   };
+
+  const handleOpenNotes = (lead, e) => {
+    if (notesPopoverId === lead.id) {
+      handleCloseNotes();
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setNotesPos({ top: rect.bottom + 4, left: rect.right - 280 });
+    setNotesPopoverId(lead.id);
+    setNotesText(lead.notes || '');
+  };
+
+  const handleCloseNotes = () => {
+    setNotesPopoverId(null);
+    setNotesText('');
+  };
+
+  const handleSaveNotes = async (leadId) => {
+    setNotesSaving(true);
+    try {
+      const updated = await api.updateLeadNotes(leadId, notesText || null);
+      setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, notes: updated.notes } : l)));
+      handleCloseNotes();
+    } catch (err) {
+      console.error('Failed to save notes:', err);
+    } finally {
+      setNotesSaving(false);
+    }
+  };
+
+  // Close notes popover on outside click
+  useEffect(() => {
+    if (!notesPopoverId) return;
+    const handleClick = (e) => {
+      if (notesRef.current && !notesRef.current.contains(e.target)) {
+        handleCloseNotes();
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [notesPopoverId]);
 
   const handleSelectLead = (leadId) => {
     setSelectedLeadIds((prev) => {
@@ -1413,7 +1478,49 @@ export default function Dashboard() {
                         >
                           <DetailsIcon />
                         </IconButton>
+                        <IconButton
+                          className={`icon-button--ghost${lead.notes ? ' icon-button--has-notes' : ''}`}
+                          onClick={(e) => handleOpenNotes(lead, e)}
+                          title={lead.notes ? 'Edit notes' : 'Add notes'}
+                          ariaLabel={lead.notes ? 'Edit notes' : 'Add notes'}
+                        >
+                          <NotesIcon />
+                        </IconButton>
                       </div>
+                      {notesPopoverId === lead.id && createPortal(
+                        <div
+                          className="notes-popover"
+                          ref={notesRef}
+                          style={{ top: notesPos.top, left: notesPos.left }}
+                        >
+                          <textarea
+                            className="notes-textarea"
+                            value={notesText}
+                            onChange={(e) => setNotesText(e.target.value)}
+                            placeholder="Add notes..."
+                            rows={4}
+                            autoFocus
+                          />
+                          <div className="notes-popover-actions">
+                            <button
+                              className="notes-btn notes-btn--cancel"
+                              onClick={handleCloseNotes}
+                              type="button"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="notes-btn notes-btn--save"
+                              onClick={() => handleSaveNotes(lead.id)}
+                              disabled={notesSaving}
+                              type="button"
+                            >
+                              {notesSaving ? 'Saving...' : 'Save'}
+                            </button>
+                          </div>
+                        </div>,
+                        document.body
+                      )}
                     </td>
                     <td className="actions-cell col-actions">
                       <div className="actions-container">

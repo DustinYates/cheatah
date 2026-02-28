@@ -316,10 +316,29 @@ class ApiClient {
     });
   }
 
+  // Pipeline Stages
+  async getPipelineStages() {
+    return this.request('/pipeline-stages');
+  }
+
+  async updatePipelineStages(stages, orphanAction = 'move_to_first') {
+    return this.request('/pipeline-stages', {
+      method: 'PUT',
+      body: JSON.stringify({ stages, orphan_action: orphanAction }),
+    });
+  }
+
   async updateLeadPipelineStage(leadId, pipeline_stage) {
     return this.request(`/leads/${leadId}/pipeline-stage`, {
       method: 'PUT',
       body: JSON.stringify({ pipeline_stage }),
+    });
+  }
+
+  async updateLeadNotes(leadId, notes) {
+    return this.request(`/leads/${leadId}/notes`, {
+      method: 'PUT',
+      body: JSON.stringify({ notes }),
     });
   }
 

@@ -420,6 +420,29 @@ class LeadService:
         await self.session.refresh(lead)
         return lead
 
+    async def update_lead_notes(
+        self, tenant_id: int, lead_id: int, notes: str | None
+    ) -> Lead | None:
+        """Update lead notes and sync to linked contact."""
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            return None
+
+        lead.notes = notes
+
+        # Sync notes to linked contact profile
+        if lead.contact_id:
+            result = await self.session.execute(
+                select(Contact).where(Contact.id == lead.contact_id)
+            )
+            contact = result.scalar_one_or_none()
+            if contact:
+                contact.notes = notes
+
+        await self.session.commit()
+        await self.session.refresh(lead)
+        return lead
+
     async def bump_lead_activity(
         self,
         tenant_id: int,

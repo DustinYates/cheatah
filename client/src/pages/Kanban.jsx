@@ -1,17 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../api/client';
+import { usePipelineStages } from '../hooks/usePipelineStages';
 import LeadDetailsModal from '../components/LeadDetailsModal';
 import SendSmsModal from '../components/SendSmsModal';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import './Kanban.css';
-
-const STAGES = [
-  { key: 'new_lead', label: 'New Lead' },
-  { key: 'contacted', label: 'Contacted' },
-  { key: 'interested', label: 'Interested' },
-  { key: 'registered', label: 'Registered' },
-  { key: 'enrolled', label: 'Enrolled' },
-];
 
 function channelIcon(channel) {
   if (!channel) return null;
@@ -51,6 +44,7 @@ function getChannel(lead) {
 }
 
 export default function Kanban() {
+  const { stages: STAGES, loading: stagesLoading, stageMap } = usePipelineStages();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -81,12 +75,18 @@ export default function Kanban() {
     fetchLeads();
   }, [fetchLeads]);
 
+  const knownKeys = new Set(STAGES.map((s) => s.key));
+  const firstKey = STAGES[0]?.key || 'new_lead';
   const groupedLeads = STAGES.reduce((acc, stage) => {
     acc[stage.key] = leads.filter(
-      (l) => (l.pipeline_stage || 'new_lead') === stage.key
+      (l) => (l.pipeline_stage || firstKey) === stage.key
     );
     return acc;
   }, {});
+  // Collect orphaned leads (pipeline_stage not in any configured stage)
+  const orphanedLeads = leads.filter(
+    (l) => l.pipeline_stage && !knownKeys.has(l.pipeline_stage)
+  );
 
   // Drag handlers
   const handleDragStart = (e, lead) => {
@@ -146,7 +146,7 @@ export default function Kanban() {
 
   const totalLeads = leads.length;
 
-  if (loading) {
+  if (loading || stagesLoading) {
     return (
       <div className="kanban-page">
         <div className="kanban-loading">Loading leads...</div>
@@ -185,7 +185,15 @@ export default function Kanban() {
             >
               <div className="kanban-column__header">
                 <span className="kanban-column__title">{stage.label}</span>
-                <span className="kanban-column__count">{stageLeads.length}</span>
+                <span
+                  className="kanban-column__count"
+                  style={{
+                    backgroundColor: `${stage.color}20`,
+                    color: stage.color,
+                  }}
+                >
+                  {stageLeads.length}
+                </span>
               </div>
               <div className="kanban-column__body">
                 {stageLeads.length === 0 ? (
@@ -227,6 +235,47 @@ export default function Kanban() {
             </div>
           );
         })}
+        {orphanedLeads.length > 0 && (
+          <div className="kanban-column" data-stage="uncategorized">
+            <div className="kanban-column__header">
+              <span className="kanban-column__title">Uncategorized</span>
+              <span className="kanban-column__count">{orphanedLeads.length}</span>
+            </div>
+            <div className="kanban-column__body">
+              {orphanedLeads.map((lead) => {
+                const channel = getChannel(lead);
+                return (
+                  <div
+                    key={lead.id}
+                    className="kanban-card"
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, lead)}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => setSelectedLead(lead)}
+                  >
+                    <div className="kanban-card__name">{lead.name}</div>
+                    <div className="kanban-card__contact">
+                      {lead.phone || lead.email}
+                    </div>
+                    <div className="kanban-card__footer">
+                      {channel ? (
+                        <span className="kanban-card__channel">
+                          {channelIcon(channel)}
+                          {channel}
+                        </span>
+                      ) : (
+                        <span />
+                      )}
+                      <span className="kanban-card__date">
+                        {formatSmartDateTime(lead.updated_at || lead.created_at)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedLead && (

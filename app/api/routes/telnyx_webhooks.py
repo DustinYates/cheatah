@@ -461,9 +461,10 @@ async def telnyx_inbound_sms_webhook(
 
         logger.info(f"Found tenant_id={tenant_id} for Telnyx number: {to_number}")
 
-        # Check if tenant uses Telnyx AI Agent — if so, the AI handles SMS
-        # responses directly and ai-call-complete records the transcript.
-        # Processing here would send a DUPLICATE reply via our Gemini LLM.
+        # Check if tenant uses Telnyx AI Agent — if so, the AI typically handles
+        # SMS responses directly and ai-call-complete records the transcript.
+        # However, auto-text/follow-up/drip SMS are sent via our regular SMS API
+        # (not the AI agent), so replies to THOSE must be processed here.
         from app.persistence.models.tenant_voice_config import TenantVoiceConfig
         voice_cfg_result = await db.execute(
             select(TenantVoiceConfig).where(
@@ -472,12 +473,46 @@ async def telnyx_inbound_sms_webhook(
         )
         voice_cfg = voice_cfg_result.scalar_one_or_none()
         if voice_cfg and voice_cfg.telnyx_agent_id:
-            logger.info(
-                f"Tenant {tenant_id} uses Telnyx AI Agent ({voice_cfg.telnyx_agent_id}) — "
-                f"skipping /sms/inbound processing to avoid duplicate replies. "
-                f"ai-call-complete will record the conversation."
+            # Check if this is a reply to an existing conversation our system
+            # created (follow-up, drip, promise fulfillment). If so, process it
+            # — the Telnyx AI Agent doesn't handle these threads.
+            from app.persistence.models.conversation import Conversation, Message
+            normalized_from = _normalize_phone(from_number)
+            existing_conv_result = await db.execute(
+                select(Conversation).where(
+                    Conversation.tenant_id == tenant_id,
+                    Conversation.phone_number == normalized_from,
+                    Conversation.channel == "sms",
+                ).order_by(Conversation.created_at.desc()).limit(1)
             )
-            return JSONResponse(content={"status": "ok"})
+            existing_conv = existing_conv_result.scalar_one_or_none()
+
+            is_reply_to_our_message = False
+            if existing_conv:
+                # If the conversation has NO Telnyx AI-sourced messages,
+                # it was created by our system (auto-text, follow-up, drip).
+                ai_msg_result = await db.execute(
+                    select(func.count()).where(
+                        Message.conversation_id == existing_conv.id,
+                        cast(Message.message_metadata["source"], String) == '"telnyx_ai_assistant"',
+                    )
+                )
+                ai_msg_count = ai_msg_result.scalar() or 0
+                is_reply_to_our_message = ai_msg_count == 0
+
+            if not is_reply_to_our_message:
+                logger.info(
+                    f"Tenant {tenant_id} uses Telnyx AI Agent ({voice_cfg.telnyx_agent_id}) — "
+                    f"skipping /sms/inbound processing to avoid duplicate replies. "
+                    f"ai-call-complete will record the conversation."
+                )
+                return JSONResponse(content={"status": "ok"})
+
+            logger.info(
+                f"Tenant {tenant_id} has Telnyx AI Agent, but SMS from {from_number} "
+                f"is a reply to existing conversation {existing_conv.id} (non-AI) — "
+                f"processing normally"
+            )
 
         # Queue message for async processing
         if settings.cloud_tasks_worker_url:

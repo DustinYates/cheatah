@@ -420,31 +420,6 @@
   white-space: nowrap;
 }
 
-.pipeline-badge.stage-new_lead {
-  background: #dbeafe;
-  color: #1d4ed8;
-}
-
-.pipeline-badge.stage-contacted {
-  background: #fef3c7;
-  color: #b45309;
-}
-
-.pipeline-badge.stage-interested {
-  background: #fce7f3;
-  color: #be185d;
-}
-
-.pipeline-badge.stage-registered {
-  background: #d1fae5;
-  color: #047857;
-}
-
-.pipeline-badge.stage-enrolled {
-  background: #c7d2fe;
-  color: #4338ca;
-}
-
 /* Customer Status Badges */
 .status-badge {
   display: inline-block;

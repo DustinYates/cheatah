@@ -76,6 +76,20 @@ class LeadNotesUpdate(BaseModel):
     notes: str | None = None
 
 
+class LeadFieldsUpdate(BaseModel):
+    """Lead fields update request (name, email, phone)."""
+
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+
+
+class LeadMergeRequest(BaseModel):
+    """Lead merge request."""
+
+    secondary_lead_id: int
+
+
 class MessageResponse(BaseModel):
     """Message response model."""
     
@@ -458,6 +472,49 @@ async def update_lead_notes(
     )
 
 
+@router.patch("/{lead_id}", response_model=LeadResponse)
+async def update_lead(
+    lead_id: int,
+    fields_update: LeadFieldsUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> LeadResponse:
+    """Update lead fields (name, email, phone)."""
+    lead_service = LeadService(db)
+    lead = await lead_service.update_lead_fields(
+        tenant_id,
+        lead_id,
+        name=fields_update.name,
+        email=fields_update.email,
+        phone=fields_update.phone,
+    )
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found",
+        )
+
+    llm_responded = await _check_llm_responded(db, lead.conversation_id)
+
+    return LeadResponse(
+        id=lead.id,
+        tenant_id=lead.tenant_id,
+        conversation_id=lead.conversation_id,
+        name=lead.name,
+        email=lead.email,
+        phone=lead.phone,
+        status=lead.status if hasattr(lead, 'status') else None,
+        pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
+        notes=lead.notes if hasattr(lead, 'notes') else None,
+        extra_data=lead.extra_data,
+        created_at=_isoformat_utc(lead.created_at),
+        updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
+        llm_responded=llm_responded,
+    )
+
+
 @router.delete("/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_lead(
     lead_id: int,
@@ -793,3 +850,52 @@ async def cleanup_test_leads(
     await db.commit()
 
     return {"deleted": count, "message": f"Deleted {count} test leads"}
+
+
+@router.post("/{lead_id}/merge", response_model=LeadResponse)
+async def merge_leads(
+    lead_id: int,
+    merge_request: LeadMergeRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> LeadResponse:
+    """Merge a secondary lead into this lead (primary).
+
+    The secondary lead will be deleted, and all its data will be merged
+    into this primary lead. A merge log entry will be created for audit.
+
+    Args:
+        lead_id: Primary lead ID (the one that survives)
+        merge_request: Contains secondary_lead_id to merge in
+
+    Returns:
+        Updated primary lead
+    """
+    lead_service = LeadService(db)
+    primary_lead = await lead_service.merge_leads(
+        tenant_id,
+        primary_lead_id=lead_id,
+        secondary_lead_id=merge_request.secondary_lead_id,
+        user_id=current_user.id,
+    )
+
+    llm_responded = await _check_llm_responded(db, primary_lead.conversation_id)
+    conv_channel = await _get_conv_channel(db, primary_lead.conversation_id)
+
+    return LeadResponse(
+        id=primary_lead.id,
+        tenant_id=primary_lead.tenant_id,
+        conversation_id=primary_lead.conversation_id,
+        name=primary_lead.name,
+        email=primary_lead.email,
+        phone=primary_lead.phone,
+        status=primary_lead.status if hasattr(primary_lead, 'status') else None,
+        pipeline_stage=primary_lead.pipeline_stage if hasattr(primary_lead, 'pipeline_stage') else None,
+        notes=primary_lead.notes if hasattr(primary_lead, 'notes') else None,
+        extra_data=primary_lead.extra_data,
+        created_at=_isoformat_utc(primary_lead.created_at),
+        updated_at=_isoformat_utc(primary_lead.updated_at) if primary_lead.updated_at else None,
+        llm_responded=llm_responded,
+        conv_channel=conv_channel,
+    )

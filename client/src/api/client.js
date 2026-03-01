@@ -408,6 +408,20 @@ class ApiClient {
     });
   }
 
+  async updateLead(leadId, data) {
+    return this.request(`/leads/${leadId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async mergeLead(primaryLeadId, secondaryLeadId) {
+    return this.request(`/leads/${primaryLeadId}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ secondary_lead_id: secondaryLeadId }),
+    });
+  }
+
   async getPromptBundles() {
     return this.request('/prompts/bundles');
   }

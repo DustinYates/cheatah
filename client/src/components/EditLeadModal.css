@@ -1,0 +1,178 @@
+/* Reuse base modal styles from EditContactModal */
+.edit-lead-modal {
+  width: 100%;
+  max-width: 500px;
+}
+
+.edit-lead-modal .modal-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.edit-lead-modal .modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.edit-lead-modal .close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all 150ms ease;
+}
+
+.edit-lead-modal .close-btn:hover:not(:disabled) {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.edit-lead-modal .close-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.edit-lead-modal .modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+.edit-lead-modal .form-section {
+  margin-bottom: 24px;
+}
+
+.edit-lead-modal .form-section h3 {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-secondary);
+}
+
+.edit-lead-modal .form-group {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.edit-lead-modal .form-group label {
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.edit-lead-modal .form-group input {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+  transition: all 150ms ease;
+}
+
+.edit-lead-modal .form-group input:hover:not(:disabled) {
+  border-color: var(--color-text-secondary);
+}
+
+.edit-lead-modal .form-group input:focus {
+  outline: none;
+  border-color: var(--color-primary, #4ade80);
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.1);
+}
+
+.edit-lead-modal .form-group input:disabled {
+  background-color: var(--color-bg-disabled);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.edit-lead-modal .error-message {
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-md);
+  color: #dc2626;
+  font-size: 14px;
+}
+
+.edit-lead-modal .modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  background-color: var(--color-bg-secondary);
+}
+
+.edit-lead-modal .btn-cancel,
+.edit-lead-modal .btn-save {
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.edit-lead-modal .btn-cancel {
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.edit-lead-modal .btn-cancel:hover:not(:disabled) {
+  background-color: var(--color-bg-hover);
+}
+
+.edit-lead-modal .btn-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.edit-lead-modal .btn-save {
+  background-color: var(--color-primary, #4ade80);
+  color: white;
+}
+
+.edit-lead-modal .btn-save:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(74, 222, 128, 0.3);
+}
+
+.edit-lead-modal .btn-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.edit-lead-modal .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

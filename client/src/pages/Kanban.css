@@ -120,7 +120,7 @@
   border-radius: 8px;
   padding: 12px;
   cursor: grab;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: box-shadow 0.15s, border-color 0.15s, background 0.15s;
   user-select: none;
 }
 
@@ -138,20 +138,103 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+.kanban-card.merge-primary {
+  border: 2px solid #3b82f6;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.kanban-card.merge-secondary {
+  border: 1px dashed #9ca3af;
+  background: #f9fafb;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.kanban-card.merge-secondary:hover {
+  background: #f3f4f6;
+  border-color: #6b7280;
+}
+
+.kanban-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 .kanban-card__name {
   font-size: 14px;
   font-weight: 600;
   color: #111827;
-  margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+}
+
+.kanban-card__actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.kanban-card:hover .kanban-card__actions {
+  opacity: 1;
+}
+
+.kanban-card__btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  border-radius: 4px;
+  transition: all 150ms ease;
+}
+
+.kanban-card__btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.kanban-card__btn--edit {
+  color: #6366f1;
+}
+
+.kanban-card__btn--edit:hover {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.kanban-card__btn--merge {
+  color: #8b5cf6;
+}
+
+.kanban-card__btn--merge:hover {
+  background: #faf5ff;
+  color: #7c3aed;
+}
+
+.kanban-card__btn--cancel-merge {
+  color: #dc2626;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.kanban-card__btn--cancel-merge:hover {
+  background: #fee2e2;
 }
 
 .kanban-card__contact {
   font-size: 12px;
   color: #6b7280;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

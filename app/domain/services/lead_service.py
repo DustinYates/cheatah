@@ -453,6 +453,50 @@ class LeadService:
         await self.session.refresh(lead)
         return lead
 
+    async def update_lead_fields(
+        self,
+        tenant_id: int,
+        lead_id: int,
+        name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+    ) -> Lead | None:
+        """Update lead fields (name, email, phone) with full overwrite.
+
+        Unlike update_lead_info(), this method overwrites existing values.
+        Phone is normalized to E.164 format.
+
+        Args:
+            tenant_id: Tenant ID
+            lead_id: Lead ID to update
+            name: New name (None to skip)
+            email: New email (None to skip)
+            phone: New phone (None to skip, will be normalized)
+
+        Returns:
+            Updated lead or None if not found
+        """
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            return None
+
+        if name is not None:
+            lead.name = name
+            logger.info(f"Updated lead {lead_id} name to: {name}")
+
+        if email is not None:
+            lead.email = email
+            logger.info(f"Updated lead {lead_id} email to: {email}")
+
+        if phone is not None:
+            normalized_phone = normalize_phone_e164(phone) if phone else None
+            lead.phone = normalized_phone
+            logger.info(f"Updated lead {lead_id} phone to: {normalized_phone}")
+
+        await self.session.commit()
+        await self.session.refresh(lead)
+        return lead
+
     async def bump_lead_activity(
         self,
         tenant_id: int,

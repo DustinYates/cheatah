@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { usePipelineStages } from '../hooks/usePipelineStages';
 import LeadDetailsModal from '../components/LeadDetailsModal';
 import SendSmsModal from '../components/SendSmsModal';
+import EditLeadModal from '../components/EditLeadModal';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import './Kanban.css';
 
@@ -52,6 +53,8 @@ export default function Kanban() {
   const [error, setError] = useState(null);
   const [selectedLead, setSelectedLead] = useState(null);
   const [smsLead, setSmsLead] = useState(null);
+  const [editLead, setEditLead] = useState(null);
+  const [mergeMode, setMergeMode] = useState(null); // { primaryId: X } when merging
   const [dragOverStage, setDragOverStage] = useState(null);
   const draggedLeadRef = useRef(null);
 
@@ -146,6 +149,55 @@ export default function Kanban() {
     }
   };
 
+  const handleEditClick = (e, lead) => {
+    e.stopPropagation();
+    setEditLead(lead);
+  };
+
+  const handleEditSuccess = async (updatedLead) => {
+    setEditLead(null);
+    // Update lead in state
+    setLeads((prev) =>
+      prev.map((l) => (l.id === updatedLead.id ? updatedLead : l))
+    );
+  };
+
+  const handleMergeClick = (e, lead) => {
+    e.stopPropagation();
+    setMergeMode({ primaryId: lead.id });
+  };
+
+  const handleMergeSecondarySelect = async (e, secondaryLead) => {
+    e.stopPropagation();
+    if (!mergeMode) return;
+
+    const primaryId = mergeMode.primaryId;
+    const secondaryId = secondaryLead.id;
+
+    // Show confirmation
+    if (
+      !window.confirm(
+        `Merge "${secondaryLead.name}" into "${
+          leads.find((l) => l.id === primaryId)?.name
+        }"?\n\nThe secondary lead will be deleted.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await api.mergeLead(primaryId, secondaryId);
+      // Remove secondary from state, refresh primary
+      setLeads((prev) => {
+        const updated = prev.filter((l) => l.id !== secondaryId);
+        return updated;
+      });
+      setMergeMode(null);
+    } catch (err) {
+      alert(`Merge failed: ${err.message}`);
+    }
+  };
+
   const totalLeads = leads.length;
 
   if (loading || stagesLoading) {
@@ -214,16 +266,90 @@ export default function Kanban() {
                 ) : (
                   stageLeads.map((lead) => {
                     const channel = getChannel(lead);
+                    const isMergeTarget = mergeMode && mergeMode.primaryId === lead.id;
+                    const isMergeSecondary = mergeMode && mergeMode.primaryId !== lead.id;
                     return (
                       <div
                         key={lead.id}
-                        className="kanban-card"
-                        draggable
+                        className={`kanban-card ${isMergeTarget ? 'merge-primary' : ''} ${
+                          isMergeSecondary ? 'merge-secondary' : ''
+                        }`}
+                        draggable={!mergeMode}
                         onDragStart={(e) => handleDragStart(e, lead)}
                         onDragEnd={handleDragEnd}
-                        onClick={() => setSelectedLead(lead)}
+                        onClick={() => {
+                          if (mergeMode && mergeMode.primaryId !== lead.id) {
+                            handleMergeSecondarySelect(
+                              { stopPropagation: () => {} },
+                              lead
+                            );
+                          } else if (!mergeMode) {
+                            setSelectedLead(lead);
+                          }
+                        }}
                       >
-                        <div className="kanban-card__name">{lead.name}</div>
+                        <div className="kanban-card__header">
+                          <div className="kanban-card__name">{lead.name}</div>
+                          {!mergeMode && (
+                            <div className="kanban-card__actions">
+                              <button
+                                className="kanban-card__btn kanban-card__btn--edit"
+                                onClick={(e) => handleEditClick(e, lead)}
+                                title="Edit lead"
+                                type="button"
+                              >
+                                <svg
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M12 20h9" />
+                                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19H4v-3L16.5 3.5z" />
+                                </svg>
+                              </button>
+                              <button
+                                className="kanban-card__btn kanban-card__btn--merge"
+                                onClick={(e) => handleMergeClick(e, lead)}
+                                title="Merge with duplicate"
+                                type="button"
+                              >
+                                <svg
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="9" cy="5" r="3" />
+                                  <circle cx="15" cy="5" r="3" />
+                                  <path d="M9 8v3m0 0v3m6-6v6" />
+                                  <path d="M9 17c-2 0-4 1-4 3v2h14v-2c0-2-2-3-4-3h-6z" />
+                                </svg>
+                              </button>
+                            </div>
+                          )}
+                          {mergeMode && mergeMode.primaryId === lead.id && (
+                            <button
+                              className="kanban-card__btn kanban-card__btn--cancel-merge"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMergeMode(null);
+                              }}
+                              title="Cancel merge"
+                              type="button"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
                         <div className="kanban-card__contact">
                           {lead.phone || lead.email}
                         </div>
@@ -257,16 +383,90 @@ export default function Kanban() {
             <div className="kanban-column__body">
               {orphanedLeads.map((lead) => {
                 const channel = getChannel(lead);
+                const isMergeTarget = mergeMode && mergeMode.primaryId === lead.id;
+                const isMergeSecondary = mergeMode && mergeMode.primaryId !== lead.id;
                 return (
                   <div
                     key={lead.id}
-                    className="kanban-card"
-                    draggable
+                    className={`kanban-card ${isMergeTarget ? 'merge-primary' : ''} ${
+                      isMergeSecondary ? 'merge-secondary' : ''
+                    }`}
+                    draggable={!mergeMode}
                     onDragStart={(e) => handleDragStart(e, lead)}
                     onDragEnd={handleDragEnd}
-                    onClick={() => setSelectedLead(lead)}
+                    onClick={() => {
+                      if (mergeMode && mergeMode.primaryId !== lead.id) {
+                        handleMergeSecondarySelect(
+                          { stopPropagation: () => {} },
+                          lead
+                        );
+                      } else if (!mergeMode) {
+                        setSelectedLead(lead);
+                      }
+                    }}
                   >
-                    <div className="kanban-card__name">{lead.name}</div>
+                    <div className="kanban-card__header">
+                      <div className="kanban-card__name">{lead.name}</div>
+                      {!mergeMode && (
+                        <div className="kanban-card__actions">
+                          <button
+                            className="kanban-card__btn kanban-card__btn--edit"
+                            onClick={(e) => handleEditClick(e, lead)}
+                            title="Edit lead"
+                            type="button"
+                          >
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19H4v-3L16.5 3.5z" />
+                            </svg>
+                          </button>
+                          <button
+                            className="kanban-card__btn kanban-card__btn--merge"
+                            onClick={(e) => handleMergeClick(e, lead)}
+                            title="Merge with duplicate"
+                            type="button"
+                          >
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <circle cx="9" cy="5" r="3" />
+                              <circle cx="15" cy="5" r="3" />
+                              <path d="M9 8v3m0 0v3m6-6v6" />
+                              <path d="M9 17c-2 0-4 1-4 3v2h14v-2c0-2-2-3-4-3h-6z" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                      {mergeMode && mergeMode.primaryId === lead.id && (
+                        <button
+                          className="kanban-card__btn kanban-card__btn--cancel-merge"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMergeMode(null);
+                          }}
+                          title="Cancel merge"
+                          type="button"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                     <div className="kanban-card__contact">
                       {lead.phone || lead.email}
                     </div>
@@ -290,6 +490,14 @@ export default function Kanban() {
           </div>
         )}
       </div>
+
+      {editLead && (
+        <EditLeadModal
+          lead={editLead}
+          onSuccess={handleEditSuccess}
+          onCancel={() => setEditLead(null)}
+        />
+      )}
 
       {selectedLead && (
         <LeadDetailsModal

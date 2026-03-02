@@ -1,4 +1,6 @@
-import { Phone, MessageSquare, Bot, Mail, ChevronDown, Volume2 } from 'lucide-react';
+import { useState } from 'react';
+import { Phone, MessageSquare, Bot, Mail, ChevronDown, Volume2, Loader2 } from 'lucide-react';
+import { api } from '../api/client';
 import { formatSmartDateTime } from '../utils/dateFormat';
 
 /**
@@ -58,22 +60,63 @@ function parseTranscript(transcript) {
  */
 function VoiceCallDetails({ details }) {
   const parsedTranscript = parseTranscript(details.transcript);
+  const [recordingUrl, setRecordingUrl] = useState(null);
+  const [recordingLoading, setRecordingLoading] = useState(false);
+  const [recordingError, setRecordingError] = useState(null);
+
+  const handlePlayRecording = async () => {
+    if (recordingUrl) return; // Already loaded
+    setRecordingLoading(true);
+    setRecordingError(null);
+    try {
+      const data = await api.getCallRecording(details.call_id);
+      setRecordingUrl(data.url);
+    } catch {
+      setRecordingError('Recording unavailable');
+    } finally {
+      setRecordingLoading(false);
+    }
+  };
+
+  const hasRecording = details.recording_url || details.call_id;
 
   return (
     <div className="timeline-details-content">
-      {details.recording_url && (
+      {hasRecording && (
         <div className="detail-section">
           <span className="detail-label">Recording</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Volume2 size={16} style={{ color: '#666' }} />
-            <audio
-              controls
-              style={{ maxWidth: '100%' }}
-              src={details.recording_url}
+          {recordingUrl ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Volume2 size={16} style={{ color: '#666', flexShrink: 0 }} />
+              <audio controls style={{ width: '100%' }} src={recordingUrl}>
+                Your browser does not support the audio element.
+              </audio>
+            </div>
+          ) : (
+            <button
+              onClick={handlePlayRecording}
+              disabled={recordingLoading}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                background: '#f3f4f6',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                cursor: recordingLoading ? 'wait' : 'pointer',
+                fontSize: '13px',
+                color: '#374151',
+              }}
             >
-              Your browser does not support the audio element.
-            </audio>
-          </div>
+              {recordingLoading ? (
+                <Loader2 size={14} className="spin" />
+              ) : (
+                <Volume2 size={14} />
+              )}
+              {recordingLoading ? 'Loading...' : recordingError || 'Play Recording'}
+            </button>
+          )}
         </div>
       )}
 

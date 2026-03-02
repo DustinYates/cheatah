@@ -132,8 +132,8 @@ app.add_middleware(RequestContextMiddleware)
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 # Include worker routes (for Cloud Tasks)
-from app.workers import sms_worker, email_worker, followup_worker, promise_worker, drip_worker
-from app.workers import health_snapshot_worker, chi_worker, burst_detection_worker, topic_worker
+from app.workers import sms_worker, email_worker, followup_worker, promise_worker, drip_worker, email_outreach_worker
+from app.workers import health_snapshot_worker, chi_worker, burst_detection_worker, topic_worker, telnyx_sync_worker
 app.include_router(sms_worker.router, prefix="/workers", tags=["workers"])
 app.include_router(followup_worker.router, prefix="/workers", tags=["workers"])
 app.include_router(promise_worker.router, prefix="/workers", tags=["workers"])
@@ -143,6 +143,8 @@ app.include_router(chi_worker.router, prefix="/workers", tags=["workers"])
 app.include_router(burst_detection_worker.router, prefix="/workers", tags=["workers"])
 app.include_router(topic_worker.router, prefix="/workers", tags=["workers"])
 app.include_router(drip_worker.router, prefix="/workers", tags=["workers"])
+app.include_router(email_outreach_worker.router, prefix="/workers", tags=["workers"])
+app.include_router(telnyx_sync_worker.router, prefix="/workers", tags=["workers"])
 
 @app.get("/health")
 async def health_check():

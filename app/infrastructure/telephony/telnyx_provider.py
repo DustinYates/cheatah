@@ -247,6 +247,47 @@ class TelnyxAIService:
             logger.warning(f"Failed to find conversation by call_control_id: {e}")
             return None
 
+    async def list_recent_conversations(self, page_size: int = 100) -> list[dict]:
+        """Fetch recent AI conversations from Telnyx API.
+
+        Returns:
+            List of conversation dicts with id, channel, metadata, created_at, etc.
+        """
+        try:
+            async with self._get_client() as client:
+                response = await client.get(
+                    "/ai/conversations", params={"page[size]": page_size}
+                )
+                response.raise_for_status()
+                data = response.json()
+                conversations = data.get("data", [])
+                logger.info(
+                    f"[TELNYX-SYNC] Fetched {len(conversations)} recent conversations"
+                )
+                return conversations
+        except httpx.HTTPError as e:
+            logger.error(f"[TELNYX-SYNC] Failed to list conversations: {e}")
+            return []
+
+    async def get_message_status(self, message_id: str) -> dict | None:
+        """Fetch delivery status for a specific message from Telnyx API.
+
+        Args:
+            message_id: The Telnyx message ID
+
+        Returns:
+            Message data dict or None if not found
+        """
+        try:
+            async with self._get_client() as client:
+                response = await client.get(f"/messages/{message_id}")
+                response.raise_for_status()
+                data = response.json()
+                return data.get("data", {})
+        except httpx.HTTPError as e:
+            logger.warning(f"[TELNYX-SYNC] Failed to get message {message_id}: {e}")
+            return None
+
     async def get_conversation_voice_model(
         self, conversation_id: str
     ) -> str | None:

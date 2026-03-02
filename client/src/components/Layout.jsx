@@ -172,6 +172,11 @@ const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/
                 <li>
                   <NavLink to="/settings/campaigns">Campaigns</NavLink>
                 </li>
+                {(selectedTenantId === 1 || user?.tenant_id === 1) && (
+                <li>
+                  <NavLink to="/settings/email-campaigns">Email Outreach</NavLink>
+                </li>
+                )}
                 <li>
                   <NavLink to="/settings/pipeline">Pipeline</NavLink>
                 </li>

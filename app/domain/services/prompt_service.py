@@ -811,6 +811,7 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
             "voice": "voice_prompt",
             "voice_es": "voice_es_prompt",
             "sms": "sms_prompt",
+            "email_outreach": "email_outreach_prompt",
         }
         prompt_key = prompt_key_map.get(channel)
         if not prompt_key:
@@ -834,6 +835,7 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
             "voice": "voice_prompt",
             "voice_es": "voice_es_prompt",
             "sms": "sms_prompt",
+            "email_outreach": "email_outreach_prompt",
         }
         prompt_key = prompt_key_map.get(channel)
         if not prompt_key:
@@ -892,13 +894,14 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         """
         config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
         if not config_record or not config_record.config_json:
-            return {"web_prompt": None, "voice_prompt": None, "voice_es_prompt": None, "sms_prompt": None}
+            return {"web_prompt": None, "voice_prompt": None, "voice_es_prompt": None, "sms_prompt": None, "email_outreach_prompt": None}
 
         return {
             "web_prompt": config_record.config_json.get("web_prompt"),
             "voice_prompt": config_record.config_json.get("voice_prompt"),
             "voice_es_prompt": config_record.config_json.get("voice_es_prompt"),
             "sms_prompt": config_record.config_json.get("sms_prompt"),
+            "email_outreach_prompt": config_record.config_json.get("email_outreach_prompt"),
         }
 
     async def get_prompt_v2_config(self, tenant_id: int) -> dict | None:
@@ -926,3 +929,49 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
         """
         config_record = await self.prompt_config_repo.get_by_tenant_id(tenant_id)
         return config_record is not None
+
+    # ── Email outreach prompt ──────────────────────────────────────
+
+    _EMAIL_OUTREACH_INSTRUCTIONS = """
+
+EMAIL OUTREACH GUIDELINES:
+- You are writing a cold outreach email to a potential customer who has NOT contacted you before.
+- Match the personality, tone, and voice from your system prompt above.
+- Keep the email SHORT: 3-5 sentences for the body, subject line under 60 characters.
+- Personalize using the recipient's name, company, and role when available.
+- Include a clear, single call-to-action (e.g., book a demo, reply to learn more).
+- Sound like a real person reaching out, NOT a marketing blast.
+- Do NOT use aggressive sales language, ALL CAPS, or fake urgency.
+- Do NOT use deceptive or misleading subject lines.
+- Do NOT include unsubscribe links — they are appended automatically.
+- Output format: Start with SUBJECT: on its own line, then BODY: on its own line followed by the HTML email body.
+- Use simple HTML for the body (paragraphs, line breaks). No complex layouts or images.
+"""
+
+    async def compose_prompt_email_outreach(
+        self, tenant_id: int, context: dict | None = None
+    ) -> str | None:
+        """Compose email outreach prompt using tenant's AI voice.
+
+        Priority:
+        1. Dedicated email_outreach_prompt from config_json
+        2. Fall back to web_prompt (captures business personality)
+
+        Args:
+            tenant_id: Tenant ID
+            context: Optional context dict
+
+        Returns:
+            Composed prompt string, or None if no prompt found
+        """
+        # Try dedicated email outreach prompt first
+        direct_prompt = await self._get_channel_prompt(tenant_id, "email_outreach_prompt")
+        if direct_prompt:
+            return direct_prompt + self._EMAIL_OUTREACH_INSTRUCTIONS
+
+        # Fall back to web_prompt (captures business personality best)
+        web_prompt = await self._get_channel_prompt(tenant_id, "web_prompt")
+        if web_prompt:
+            return web_prompt + self._EMAIL_OUTREACH_INSTRUCTIONS
+
+        return None

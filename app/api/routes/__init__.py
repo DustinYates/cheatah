@@ -95,5 +95,9 @@ api_router.include_router(voice_ab_tests.router, prefix="/voice-ab-tests", tags=
 # Drip campaign management
 api_router.include_router(drip_campaigns.router, prefix="/drip-campaigns", tags=["drip-campaigns"])
 
+# Email outreach campaigns
+from app.api.routes import email_campaigns
+api_router.include_router(email_campaigns.router, prefix="/email-campaigns", tags=["email-campaigns"])
+
 # Pipeline stage customization (Kanban board)
 api_router.include_router(pipeline_stages.router, prefix="/pipeline-stages", tags=["pipeline-stages"])

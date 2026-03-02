@@ -35,8 +35,10 @@ from app.persistence.models.communications_health_snapshot import Communications
 from app.persistence.models.anomaly_alert import AnomalyAlert
 from app.persistence.models.service_health_incident import ServiceHealthIncident
 from app.persistence.models.drip_campaign import DripCampaign, DripCampaignStep, DripEnrollment
+from app.persistence.models.email_campaign import EmailCampaign, EmailCampaignRecipient
 from app.persistence.models.customer import Customer
 from app.persistence.models.tenant_customer_support_config import TenantCustomerSupportConfig
+from app.persistence.models.telnyx_sync_result import TelnyxSyncResult
 from app.persistence.models.tenant_pipeline_stage import TenantPipelineStage
 from app.persistence.models.forum import (
     Forum,
@@ -112,5 +114,10 @@ __all__ = [
     "VoiceABTestVariant",
     # Pipeline stages
     "TenantPipelineStage",
+    # Email campaigns
+    "EmailCampaign",
+    "EmailCampaignRecipient",
+    # Telnyx sync monitoring
+    "TelnyxSyncResult",
 ]
 

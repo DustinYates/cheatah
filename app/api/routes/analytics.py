@@ -2560,3 +2560,138 @@ async def get_voice_ab_test_analytics(
         variants=variants_response,
         total_calls=total_calls,
     )
+
+
+# ── Telnyx Sync Monitor ─────────────────────────────────────────────
+
+
+class TelnyxSyncResultItem(BaseModel):
+    id: int
+    sync_type: str
+    severity: str
+    status: str
+    telnyx_conversation_id: str | None = None
+    telnyx_call_control_id: str | None = None
+    telnyx_message_id: str | None = None
+    details: dict
+    detected_at: datetime
+
+
+class TelnyxSyncSummary(BaseModel):
+    open_count: int
+    missing_calls: int
+    missing_sms: int
+    stale_deliveries: int
+    last_check_at: datetime | None = None
+
+
+class TelnyxSyncResponse(BaseModel):
+    results: list[TelnyxSyncResultItem]
+    summary: TelnyxSyncSummary
+
+
+@router.get("/telnyx-sync", response_model=TelnyxSyncResponse)
+async def get_telnyx_sync_results(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    status_filter: str | None = Query(None, alias="status", description="Filter by status: open, backfilled, dismissed"),
+    limit: int = Query(50, le=200),
+) -> TelnyxSyncResponse:
+    """View recent Telnyx sync discrepancies for this tenant."""
+    from app.persistence.models.telnyx_sync_result import TelnyxSyncResult
+
+    filters = [TelnyxSyncResult.tenant_id == tenant_id]
+    if status_filter:
+        filters.append(TelnyxSyncResult.status == status_filter)
+
+    # Fetch recent results
+    stmt = (
+        select(TelnyxSyncResult)
+        .where(and_(*filters))
+        .order_by(TelnyxSyncResult.detected_at.desc())
+        .limit(limit)
+    )
+    rows = await db.execute(stmt)
+    records = rows.scalars().all()
+
+    items = [
+        TelnyxSyncResultItem(
+            id=r.id,
+            sync_type=r.sync_type,
+            severity=r.severity,
+            status=r.status,
+            telnyx_conversation_id=r.telnyx_conversation_id,
+            telnyx_call_control_id=r.telnyx_call_control_id,
+            telnyx_message_id=r.telnyx_message_id,
+            details=r.details or {},
+            detected_at=r.detected_at,
+        )
+        for r in records
+    ]
+
+    # Summary counts
+    summary_stmt = (
+        select(
+            TelnyxSyncResult.sync_type,
+            func.count().label("cnt"),
+        )
+        .where(
+            TelnyxSyncResult.tenant_id == tenant_id,
+            TelnyxSyncResult.status == "open",
+        )
+        .group_by(TelnyxSyncResult.sync_type)
+    )
+    summary_rows = await db.execute(summary_stmt)
+    type_counts = {row.sync_type: row.cnt for row in summary_rows}
+
+    # Last check time
+    last_check_stmt = (
+        select(func.max(TelnyxSyncResult.detected_at))
+        .where(TelnyxSyncResult.tenant_id == tenant_id)
+    )
+    last_check = (await db.execute(last_check_stmt)).scalar()
+
+    open_count = sum(type_counts.values())
+
+    return TelnyxSyncResponse(
+        results=items,
+        summary=TelnyxSyncSummary(
+            open_count=open_count,
+            missing_calls=type_counts.get("missing_call", 0),
+            missing_sms=type_counts.get("missing_sms", 0),
+            stale_deliveries=type_counts.get("stale_delivery", 0),
+            last_check_at=last_check,
+        ),
+    )
+
+
+class TelnyxSyncCheckResponse(BaseModel):
+    tenant_id: int
+    total_discrepancies: int
+    missing_calls: int
+    missing_sms: int
+    stale_deliveries: int
+    errors: list[str]
+
+
+@router.post("/telnyx-sync/check", response_model=TelnyxSyncCheckResponse)
+async def trigger_telnyx_sync_check(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+    lookback_hours: int = Query(2, ge=1, le=24, description="Hours to look back"),
+) -> TelnyxSyncCheckResponse:
+    """Trigger an on-demand Telnyx sync check for this tenant."""
+    from app.domain.services.telnyx_sync_monitor import TelnyxSyncMonitorService
+
+    service = TelnyxSyncMonitorService()
+    result = await service.run_sync_check(db, tenant_id, lookback_hours)
+    await db.commit()
+
+    return TelnyxSyncCheckResponse(
+        tenant_id=result.tenant_id,
+        total_discrepancies=result.total_discrepancies,
+        missing_calls=len(result.missing_calls),
+        missing_sms=len(result.missing_sms),
+        stale_deliveries=len(result.stale_deliveries),
+        errors=result.errors,
+    )

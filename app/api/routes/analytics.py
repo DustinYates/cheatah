@@ -1723,6 +1723,12 @@ async def get_savings_analytics(
 ) -> SavingsAnalyticsResponse:
     """Get savings analytics showing cost savings from AI handling calls and messages.
 
+    IMPORTANT: All metrics are date-filtered to the specified range (or last 30 days by default).
+    If metrics appear stuck at old values, verify that:
+    1. The date range parameters are being sent from the frontend
+    2. The AnalyticsContext30d dependency is correctly parsing the date range
+    3. Database queries are applying the start_datetime and end_datetime filters
+
     Query parameters allow customizing the assumptions used in calculations:
     - sms_minutes_per_msg: Estimated minutes a human takes per SMS response (default: 1.0)
     - web_minutes_per_msg: Estimated minutes a human takes per web chat response (default: 1.0)
@@ -1800,16 +1806,23 @@ async def get_savings_analytics(
     total_onshore = round(total_hours * onshore_rate, 2)
 
     # Query 4: Sent assets / conversion tracking
+    # CRITICAL: This query MUST be date-filtered. It should only count assets sent within
+    # the specified date range (ctx.start_datetime to ctx.end_datetime).
+    # If this returns all-time values instead, check that ctx.start_datetime and ctx.end_datetime
+    # are being passed correctly from the dependency.
     conversions_stmt = (
         select(
             SentAsset.asset_type,
             func.count(SentAsset.id).label("total_sent"),
             func.count(func.distinct(SentAsset.phone_normalized)).label("unique_phones"),
         )
+        .select_from(SentAsset)
         .where(
-            SentAsset.tenant_id == ctx.tenant_id,
-            SentAsset.sent_at >= ctx.start_datetime,
-            SentAsset.sent_at <= ctx.end_datetime,
+            and_(
+                SentAsset.tenant_id == ctx.tenant_id,
+                SentAsset.sent_at >= ctx.start_datetime,
+                SentAsset.sent_at <= ctx.end_datetime,
+            )
         )
         .group_by(SentAsset.asset_type)
     )

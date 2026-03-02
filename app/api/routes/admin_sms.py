@@ -246,6 +246,62 @@ async def send_manual_sms(
         f"provider={send_result.provider}, message_id={send_result.message_id}"
     )
 
+    # Record the outbound message in the conversation timeline
+    try:
+        from app.domain.services.conversation_service import ConversationService
+        from app.persistence.repositories.conversation_repository import ConversationRepository
+        from app.core.phone import normalize_phone_for_dedup
+        from sqlalchemy import select
+
+        # Normalize recipient phone number
+        normalized_phone = normalize_phone_for_dedup(sms_data.to)
+
+        # Get or create conversation for this phone
+        conv_repo = ConversationRepository(db)
+        conversation = await conv_repo.get_by_phone_number(
+            tenant_id, normalized_phone, channel="sms"
+        )
+
+        if not conversation:
+            # Create new conversation
+            conv_service = ConversationService(db)
+            conversation = await conv_service.create_conversation(
+                tenant_id=tenant_id,
+                channel="sms",
+                external_id=None,
+            )
+            conversation.phone_number = normalized_phone
+            await db.commit()
+            await db.refresh(conversation)
+
+        conv_service = ConversationService(db)
+
+        # Add message to conversation with metadata tracking the Telnyx message ID
+        await conv_service.add_message(
+            tenant_id,
+            conversation.id,
+            "assistant",
+            sms_data.message,
+            metadata={
+                "source": "manual_send",
+                "provider": send_result.provider,
+                "telnyx_message_id": send_result.message_id,
+                "delivery_status": "sent",
+            },
+        )
+
+        logger.info(
+            f"Recorded outbound SMS message: tenant={tenant_id}, "
+            f"conversation={conversation.id}, to={normalized_phone}"
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to record outbound SMS message: tenant={tenant_id}, to={sms_data.to}, error={e}",
+            exc_info=True,
+        )
+        # Don't fail the SMS send if message recording fails
+        # The SMS was already sent successfully
+
     return {
         "status": "sent",
         "message_id": send_result.message_id,

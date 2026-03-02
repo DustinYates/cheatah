@@ -99,6 +99,7 @@ export function buildUnifiedTimeline(lead, conversationData) {
           caller_intent: call.caller_intent,
           full_summary: call.summary,
           transcript: call.transcript,
+          recording_url: call.recording_url,
         }
       });
     });

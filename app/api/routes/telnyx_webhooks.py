@@ -777,6 +777,7 @@ async def _handle_telnyx_delivery_status(
     message = result.scalar_one_or_none()
 
     if message:
+        # UPDATE existing message with delivery status
         if message.message_metadata is None:
             message.message_metadata = {}
         message.message_metadata["delivery_status"] = status
@@ -789,8 +790,97 @@ async def _handle_telnyx_delivery_status(
                 message.message_metadata["delivery_error"] = errors[0].get("detail", "Unknown error")
 
         await db.commit()
+        logger.info(f"Telnyx status update (existing message): message_id={message_id}, status={status}")
 
-    logger.info(f"Telnyx status update: message_id={message_id}, status={status}")
+    elif event_type == "message.sent":
+        # CREATE message for outbound SMS sent outside the app
+        # This happens when staff send SMS via Telnyx portal or other external tools
+        try:
+            from_number = payload.get("from", {}).get("phone_number")
+            to_list = payload.get("to", [])
+            to_number = to_list[0].get("phone_number") if to_list else None
+            text = payload.get("text", "")
+
+            if not from_number or not to_number:
+                logger.warning(
+                    f"Skipping message creation: missing phone numbers in Telnyx webhook "
+                    f"(message_id={message_id}, from={from_number}, to={to_number})"
+                )
+                return
+
+            # Determine tenant by looking up the sender phone (business number)
+            tenant_id = await _get_tenant_from_telnyx_number(from_number, db)
+
+            if not tenant_id:
+                logger.warning(
+                    f"Could not resolve tenant for Telnyx number {from_number} "
+                    f"(message_id={message_id}). Skipping message creation."
+                )
+                return
+
+            logger.info(
+                f"Creating outbound SMS message from webhook: "
+                f"tenant={tenant_id}, from={from_number}, to={to_number}, message_id={message_id}"
+            )
+
+            # Normalize recipient phone
+            normalized_to = _normalize_phone(to_number)
+
+            # Get or create conversation for this recipient using ConversationService
+            from app.domain.services.conversation_service import ConversationService
+            from app.persistence.repositories.conversation_repository import ConversationRepository
+
+            conv_repo = ConversationRepository(db)
+            conversation = await conv_repo.get_by_phone_number(
+                tenant_id, normalized_to, channel="sms"
+            )
+
+            if not conversation:
+                # Create new conversation
+                conv_service = ConversationService(db)
+                conversation = await conv_service.create_conversation(
+                    tenant_id=tenant_id,
+                    channel="sms",
+                    external_id=None,
+                )
+                conversation.phone_number = normalized_to
+                await db.commit()
+                await db.refresh(conversation)
+
+            if not conversation:
+                logger.error(
+                    f"Failed to create conversation for tenant={tenant_id}, to={normalized_to}"
+                )
+                return
+
+            # Create message record for the outbound SMS
+            conv_service = ConversationService(db)
+            await conv_service.add_message(
+                tenant_id,
+                conversation.id,
+                "assistant",  # Staff-sent message
+                text,
+                metadata={
+                    "source": "telnyx_api",
+                    "telnyx_message_id": message_id,
+                    "delivery_status": status,
+                },
+            )
+
+            logger.info(
+                f"Created outbound SMS message from webhook: "
+                f"tenant={tenant_id}, conversation={conversation.id}, message_id={message_id}"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to create message from Telnyx delivery webhook: "
+                f"message_id={message_id}, error={e}",
+                exc_info=True,
+            )
+            # Don't raise — this is a non-critical operation
+    else:
+        logger.info(f"Telnyx status update (no existing message): message_id={message_id}, status={status}")
 
 
 # =============================================================================
@@ -2075,6 +2165,7 @@ async def telnyx_ai_call_complete(
                 "caller_email": caller_email or None,
                 "caller_intent": caller_intent or None,
                 "transcript": transcript[:2000] if transcript else None,
+                "recording_url": call.recording_url,
             }
 
             # Create or update lead via LeadService (dedup by phone/email)

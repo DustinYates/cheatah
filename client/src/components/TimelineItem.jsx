@@ -1,4 +1,4 @@
-import { Phone, MessageSquare, Bot, Mail, ChevronDown } from 'lucide-react';
+import { Phone, MessageSquare, Bot, Mail, ChevronDown, Volume2 } from 'lucide-react';
 import { formatSmartDateTime } from '../utils/dateFormat';
 
 /**
@@ -61,6 +61,22 @@ function VoiceCallDetails({ details }) {
 
   return (
     <div className="timeline-details-content">
+      {details.recording_url && (
+        <div className="detail-section">
+          <span className="detail-label">Recording</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Volume2 size={16} style={{ color: '#666' }} />
+            <audio
+              controls
+              style={{ maxWidth: '100%' }}
+              src={details.recording_url}
+            >
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        </div>
+      )}
+
       {details.full_summary && (
         <div className="detail-section">
           <span className="detail-label">Summary</span>

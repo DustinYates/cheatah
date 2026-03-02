@@ -64,6 +64,13 @@ class EmailBodyParser:
         r"^number$",  # Some forms use just "Number:" for phone
     ]
 
+    ZIPCODE_LABELS = [
+        r"^zipcode$",
+        r"^zip$",
+        r"^zip\s*code$",
+        r"^postal\s*code$",
+    ]
+
     # Email validation regex
     EMAIL_PATTERN = re.compile(
         r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
@@ -218,7 +225,7 @@ class EmailBodyParser:
         
         # Known form field labels (for table format detection)
         known_labels = {
-            'name', 'email', 'phone', 'address', 'type of lessons', 
+            'name', 'email', 'phone', 'address', 'type of lessons',
             'marketing opt-in', 'location email', 'franchise code',
             'student name', 'full name', 'contact name', 'phone number',
             'telephone', 'mobile', 'cell', 'e-mail', 'email address',
@@ -230,6 +237,11 @@ class EmailBodyParser:
             'child last name', 'parent first name', 'parent last name',
             'guardian first name', 'guardian last name', 'parent name',
             'guardian name', 'parent/guardian name', 'parent / guardian name',
+            # Meta Lead Form fields
+            'zipcode', 'zip', 'zip code', 'postal code',
+            'platform', 'ad campaign', 'ad campaighn', 'created time', 'created_time',
+            'ad id', 'ad_id', 'campaign id', 'campaign_id',
+            'raw data', 'raw_data', 'ad campaign information', 'ad campaign information',
         }
         
         i = 0

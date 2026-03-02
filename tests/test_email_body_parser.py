@@ -530,3 +530,36 @@ Phone
         assert result["name"] == "John Doe"
         assert result["email"] == "john@example.com"
         assert result["phone"] == "+15551234567"
+
+    def test_meta_lead_form_extraction(self):
+        """Test parsing Meta Lead Form Ad email."""
+        body = """Ad Campaighn: Adult
+Created Time: 2026-03-01T06:05:52+0000
+Name: Derek Braxton Sr.
+Email: brax7106@gmail.com
+Phone Number: +18322663132
+Zipcode: 77068
+Platform: fb
+Ad Id: 120239040503180470
+Campaign Id: 120238945004240470"""
+
+        result = self.parser.parse(body)
+
+        # Verify primary fields extracted
+        assert result["name"] == "Derek Braxton Sr."
+        assert result["email"] == "brax7106@gmail.com"
+        assert result["phone"] == "+18322663132"
+
+        # Verify additional fields captured
+        assert "ad campaighn" in result["additional_fields"]
+        assert result["additional_fields"]["ad campaighn"] == "Adult"
+        assert "created time" in result["additional_fields"]
+        assert result["additional_fields"]["created time"] == "2026-03-01T06:05:52+0000"
+        assert "zipcode" in result["additional_fields"]
+        assert result["additional_fields"]["zipcode"] == "77068"
+        assert "platform" in result["additional_fields"]
+        assert result["additional_fields"]["platform"] == "fb"
+        assert "ad id" in result["additional_fields"]
+        assert result["additional_fields"]["ad id"] == "120239040503180470"
+        assert "campaign id" in result["additional_fields"]
+        assert result["additional_fields"]["campaign id"] == "120238945004240470"

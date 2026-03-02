@@ -352,9 +352,11 @@ async def _process_sendgrid_email(
         email_body = payload.get_body()
         parsed = body_parser.parse(email_body)
 
+        additional_fields_str = ", ".join(parsed.get("additional_fields", {}).keys()) if parsed.get("additional_fields") else "none"
         logger.info(
             f"[SENDGRID] Parsed data: name={parsed.get('name')}, "
-            f"email={parsed.get('email')}, phone={parsed.get('phone')}"
+            f"email={parsed.get('email')}, phone={parsed.get('phone')}, "
+            f"additional_fields={additional_fields_str}"
         )
 
         # Build metadata
@@ -364,8 +366,26 @@ async def _process_sendgrid_email(
             "ingestion_method": "sendgrid_inbound_parse",
             "sender_email": payload.get_sender_email(),
         }
+
+        # Extract and include Meta Lead Form fields if present
         if parsed.get("additional_fields"):
-            metadata.update(parsed["additional_fields"])
+            additional = parsed["additional_fields"]
+            metadata.update(additional)
+
+            # Extract specific Meta fields for cleaner organization
+            meta_fields = {}
+            meta_keys = [
+                "zipcode", "zip", "platform", "ad campaign", "ad campaighn",
+                "created time", "created_time", "ad id", "ad_id",
+                "campaign id", "campaign_id"
+            ]
+
+            for key in meta_keys:
+                if key in additional:
+                    meta_fields[key] = additional[key]
+
+            if meta_fields:
+                metadata["meta_lead_form"] = meta_fields
 
         # Create a conversation and store the email body so it appears in the lead timeline
         conversation_service = ConversationService(db)

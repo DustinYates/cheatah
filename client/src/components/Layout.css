@@ -153,6 +153,31 @@
   box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
+/* Settings Groups */
+.settings-group {
+  margin-bottom: var(--spacing-sm);
+}
+
+.settings-group:last-child {
+  margin-bottom: 0;
+}
+
+.settings-group-label {
+  display: block;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  padding-left: calc(var(--spacing-md) + var(--spacing-sm));
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: var(--spacing-xs);
+}
+
+.settings-group:first-child .settings-group-label {
+  margin-top: 0;
+}
+
 /* User Info */
 .user-info {
   padding: var(--spacing-xs) 0;

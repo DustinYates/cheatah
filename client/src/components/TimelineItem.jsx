@@ -69,7 +69,7 @@ function VoiceCallDetails({ details }) {
     setRecordingLoading(true);
     setRecordingError(null);
     try {
-      const data = await api.getCallRecording(details.call_id);
+      const data = await api.getCallRecordingUrl(details.call_id);
       setRecordingUrl(data.url);
     } catch {
       setRecordingError('Recording unavailable');

@@ -149,56 +149,68 @@ const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/
             </button>
             {settingsOpen && (
               <ul className="nav-submenu">
-                {user?.is_global_admin && (
+                <div className="settings-group">
+                  <span className="settings-group-label">AI & Responses</span>
+                  {user?.is_global_admin && (
+                    <li>
+                      <NavLink to="/settings/prompts">Prompt</NavLink>
+                    </li>
+                  )}
                   <li>
-                    <NavLink to="/settings/prompts">Prompt</NavLink>
+                    <NavLink to="/settings/chatbot">Chatbot</NavLink>
                   </li>
-                )}
-                <li>
-                  <NavLink to="/settings/chatbot">Chatbot</NavLink>
-                </li>
-                <li>
-                  <NavLink to="/settings/email">Email</NavLink>
-                </li>
-                <li>
-                  <NavLink to="/settings/calendar">Calendar</NavLink>
-                </li>
-                <li>
-                  <NavLink to="/settings/sms">SMS Settings</NavLink>
-                </li>
-                <li>
-                  <NavLink to="/settings/escalation">Escalations</NavLink>
-                </li>
-                <li>
-                  <NavLink to="/settings/campaigns">Campaigns</NavLink>
-                </li>
-                {(selectedTenantId === 1 || user?.tenant_id === 1) && (
-                <li>
-                  <NavLink to="/settings/email-campaigns">Email Outreach</NavLink>
-                </li>
-                )}
-                <li>
-                  <NavLink to="/settings/pipeline">Pipeline</NavLink>
-                </li>
-                <li>
-                  <NavLink to="/settings/dnc">Do Not Contact</NavLink>
-                </li>
-                {user?.is_global_admin && (
-                <li>
-                  <NavLink to="/settings/customer-support">Customer Support</NavLink>
-                </li>
-                )}
-                {user?.is_global_admin && (
+                </div>
+                <div className="settings-group">
+                  <span className="settings-group-label">Channels</span>
                   <li>
-                    <NavLink to="/settings/telephony">Telephony</NavLink>
+                    <NavLink to="/settings/email">Email</NavLink>
                   </li>
-                )}
-                <li>
-                  <NavLink to="/settings/profile">Business Profile</NavLink>
-                </li>
-                <li>
-                  <NavLink to="/settings/account">Account</NavLink>
-                </li>
+                  <li>
+                    <NavLink to="/settings/calendar">Calendar</NavLink>
+                  </li>
+                  <li>
+                    <NavLink to="/settings/sms">SMS Settings</NavLink>
+                  </li>
+                  {user?.is_global_admin && (
+                    <li>
+                      <NavLink to="/settings/telephony">Telephony</NavLink>
+                    </li>
+                  )}
+                </div>
+                <div className="settings-group">
+                  <span className="settings-group-label">Business</span>
+                  <li>
+                    <NavLink to="/settings/profile">Business Profile</NavLink>
+                  </li>
+                  <li>
+                    <NavLink to="/settings/account">Account</NavLink>
+                  </li>
+                  <li>
+                    <NavLink to="/settings/dnc">Do Not Contact</NavLink>
+                  </li>
+                  {user?.is_global_admin && (
+                    <li>
+                      <NavLink to="/settings/customer-support">Customer Support</NavLink>
+                    </li>
+                  )}
+                </div>
+                <div className="settings-group">
+                  <span className="settings-group-label">Automation</span>
+                  <li>
+                    <NavLink to="/settings/escalation">Escalations</NavLink>
+                  </li>
+                  <li>
+                    <NavLink to="/settings/campaigns">Campaigns</NavLink>
+                  </li>
+                  {(selectedTenantId === 1 || user?.tenant_id === 1) && (
+                    <li>
+                      <NavLink to="/settings/email-campaigns">Email Outreach</NavLink>
+                    </li>
+                  )}
+                  <li>
+                    <NavLink to="/settings/pipeline">Pipeline</NavLink>
+                  </li>
+                </div>
               </ul>
             )}
           </li>

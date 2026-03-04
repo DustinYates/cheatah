@@ -488,6 +488,8 @@ class TelnyxAIService:
     ) -> list[dict[str, Any]]:
         """Get messages from a conversation.
 
+        Fetches all pages of messages using pagination to avoid truncation.
+
         Args:
             conversation_id: The conversation ID
 
@@ -497,16 +499,48 @@ class TelnyxAIService:
         try:
             async with self._get_client() as client:
                 url = f"/ai/conversations/{conversation_id}/messages"
-                logger.info(f"[TELNYX-API] Fetching messages from: {url}")
-                response = await client.get(url)
-                logger.info(f"[TELNYX-API] Response status: {response.status_code}")
-                response.raise_for_status()
-                data = response.json()
-                messages = data.get("data", [])
-                logger.info(f"[TELNYX-API] Got {len(messages)} messages, response keys: {list(data.keys())}")
-                if messages:
-                    logger.info(f"[TELNYX-API] First message sample: {str(messages[0])[:300]}")
-                return messages
+                all_messages: list[dict[str, Any]] = []
+                page = 0
+                max_pages = 10  # Safety limit
+
+                while url and page < max_pages:
+                    logger.info(f"[TELNYX-API] Fetching messages from: {url} (page {page})")
+                    response = await client.get(
+                        url, params={"page[size]": 250} if page == 0 else None
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    messages = data.get("data", [])
+                    all_messages.extend(messages)
+
+                    logger.info(
+                        f"[TELNYX-API] Got {len(messages)} messages on page {page}, "
+                        f"total so far: {len(all_messages)}"
+                    )
+
+                    # Check for next page via links.next or meta
+                    next_url = None
+                    links = data.get("links", {})
+                    if links and links.get("next"):
+                        next_url = links["next"]
+                    elif data.get("meta", {}).get("next_page_url"):
+                        next_url = data["meta"]["next_page_url"]
+
+                    if next_url and messages:
+                        # Telnyx returns absolute URLs; extract relative path
+                        from urllib.parse import urlparse
+                        parsed = urlparse(next_url)
+                        url = parsed.path.replace("/v2", "", 1)
+                        if parsed.query:
+                            url += "?" + parsed.query
+                        page += 1
+                    else:
+                        url = None
+
+                if all_messages:
+                    logger.info(f"[TELNYX-API] First message sample: {str(all_messages[0])[:300]}")
+                logger.info(f"[TELNYX-API] Total messages fetched: {len(all_messages)}")
+                return all_messages
         except httpx.HTTPError as e:
             logger.warning(f"[TELNYX-API] Failed to get conversation messages: {e}, response: {getattr(e, 'response', None)}")
             return []

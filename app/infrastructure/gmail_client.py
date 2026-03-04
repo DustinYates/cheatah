@@ -200,7 +200,6 @@ class GmailClient:
                 token_uri="https://oauth2.googleapis.com/token",
                 client_id=settings.gmail_client_id,
                 client_secret=settings.gmail_client_secret,
-                scopes=self.SCOPES,
             )
 
             # Check if token needs refresh

@@ -123,7 +123,13 @@ async def sync_families_to_customers(tenant_id: int, families: list[dict]) -> tu
                     None
                 )
 
-                email = family.get("email") or family.get("email1")
+                email = (
+                    family.get("email") or
+                    family.get("email1") or
+                    family.get("eMailAddress") or
+                    family.get("email_address") or
+                    family.get("Email")
+                )
 
                 # Build account_data with available fields
                 account_data = {

@@ -165,7 +165,7 @@ class CustomerLookupService:
             tenant_id=tenant_id,
             jackrabbit_id=data.get("jackrabbit_id"),
             phone_number=normalized_phone,
-            email=data.get("email"),
+            email=data.get("email") or data.get("eMailAddress") or data.get("email1"),
             name=data.get("name"),
             customer_data=data.get("customer_data", {}),
         )

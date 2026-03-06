@@ -75,7 +75,8 @@ def transform_jackrabbit_to_account_data(customer_data: dict | None) -> dict:
         "enrollments", "classes", "enroll", "enrolled_classes",
         "balance", "amount_due", "amount_owed", "account_balance",
         "member_since", "created_date", "start_date", "join_date", "registration_date",
-        "status", "name", "email", "phone", "phone_number", "phone1",
+        "status", "name", "email", "email1", "emailaddress", "email_address",
+        "phone", "phone_number", "phone1",
         "family_name", "first_name", "last_name",
         "id", "family_id", "fam_id",
         # Address / location / students (handled above)

@@ -301,6 +301,105 @@
   line-height: 1.5;
 }
 
+/* Verified enrollments expandable row */
+.metric-row-expandable {
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px;
+  transition: background-color 0.15s;
+}
+
+.metric-row-expandable:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.expand-icon {
+  font-size: 0.65em;
+  margin-right: 6px;
+  display: inline-block;
+  width: 12px;
+}
+
+.verified-details {
+  padding: 0 8px 12px;
+  animation: fadeIn 0.15s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.verified-details-loading,
+.verified-details-empty {
+  font-size: 0.85rem;
+  color: #6b7280;
+  padding: 8px 0;
+}
+
+.verified-details-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin-top: 4px;
+}
+
+.verified-details-table th {
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  padding: 6px 8px;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.verified-details-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #4b5563;
+}
+
+.verified-details-table tr:hover td {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Export buttons */
+.export-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #e5e7eb;
+  flex-wrap: wrap;
+}
+
+.export-label {
+  font-size: 0.82rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.export-btn {
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.export-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Responsive adjustments */
 @media (max-width: 900px) {
   .savings-analytics-grid {

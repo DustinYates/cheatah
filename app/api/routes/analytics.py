@@ -5,6 +5,7 @@ from typing import Annotated
 
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import Date, Integer, String, and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1960,6 +1961,274 @@ async def get_savings_analytics(
             verified_phones=verified_phones,
         ),
         assumptions=assumptions,
+    )
+
+
+class VerifiedEnrollmentDetail(BaseModel):
+    """A single verified enrollment with detail."""
+
+    customer_id: int
+    name: str | None
+    phone: str | None
+    email: str | None
+    status: str | None
+    matched_via: str  # "phone" or "email"
+
+
+class VerifiedEnrollmentsResponse(BaseModel):
+    """Detailed list of verified enrollments."""
+
+    verified_enrollments: list[VerifiedEnrollmentDetail]
+    total: int
+
+
+@router.get("/savings/verified-enrollments", response_model=VerifiedEnrollmentsResponse)
+async def get_verified_enrollments(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> VerifiedEnrollmentsResponse:
+    """Return the detailed list of customers counted as verified enrollments."""
+    # Same engagement filters as the savings endpoint
+    has_chat_engagement = (
+        select(Message.id)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.contact_id == Contact.id,
+            Conversation.tenant_id == tenant_id,
+            Message.role == "user",
+        )
+        .correlate(Contact)
+        .exists()
+    )
+    has_call_engagement = (
+        select(Call.id)
+        .where(
+            Call.from_number == Contact.phone,
+            Call.tenant_id == tenant_id,
+            Contact.phone.isnot(None),
+            Call.duration > 0,
+        )
+        .correlate(Contact)
+        .exists()
+    )
+    _norm_contact_phone = func.right(
+        func.regexp_replace(Contact.phone, '[^0-9]', '', 'g'), 10
+    )
+    _norm_customer_phone = func.right(
+        func.regexp_replace(Customer.phone, '[^0-9]', '', 'g'), 10
+    )
+
+    # Phone-matched customers
+    phone_match = (
+        select(Contact.id)
+        .where(
+            Contact.tenant_id == tenant_id,
+            Contact.phone.isnot(None),
+            _norm_contact_phone == _norm_customer_phone,
+            Contact.deleted_at.is_(None),
+            Contact.merged_into_contact_id.is_(None),
+            has_chat_engagement | has_call_engagement,
+        )
+        .correlate(Customer)
+        .exists()
+    )
+    # Email-matched customers
+    email_match = (
+        select(Contact.id)
+        .where(
+            Contact.tenant_id == tenant_id,
+            Contact.email.isnot(None),
+            Customer.email.isnot(None),
+            func.lower(Contact.email) == func.lower(Customer.email),
+            Contact.deleted_at.is_(None),
+            Contact.merged_into_contact_id.is_(None),
+            has_chat_engagement | has_call_engagement,
+        )
+        .correlate(Customer)
+        .exists()
+    )
+
+    # Fetch customers matched by phone
+    phone_stmt = (
+        select(Customer)
+        .where(Customer.tenant_id == tenant_id, phone_match)
+    )
+    phone_result = await db.execute(phone_stmt)
+    phone_customers = {c.id: ("phone", c) for c in phone_result.scalars().all()}
+
+    # Fetch customers matched by email (that weren't already matched by phone)
+    email_stmt = (
+        select(Customer)
+        .where(
+            Customer.tenant_id == tenant_id,
+            email_match,
+            Customer.id.notin_(phone_customers.keys()) if phone_customers else True,
+        )
+    )
+    email_result = await db.execute(email_stmt)
+    email_customers = {c.id: ("email", c) for c in email_result.scalars().all()}
+
+    all_matches = {**phone_customers, **email_customers}
+    details = [
+        VerifiedEnrollmentDetail(
+            customer_id=c.id,
+            name=c.name,
+            phone=c.phone,
+            email=c.email,
+            status=c.status,
+            matched_via=via,
+        )
+        for cid, (via, c) in sorted(all_matches.items(), key=lambda x: x[1][1].name or "")
+    ]
+    return VerifiedEnrollmentsResponse(verified_enrollments=details, total=len(details))
+
+
+@router.get("/savings/export/{dataset}")
+async def export_savings_csv(
+    dataset: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> StreamingResponse:
+    """Export customers, engaged contacts, or matched records as CSV.
+
+    dataset: "customers", "contacts", or "matched"
+    """
+    import csv
+    import io
+
+    if dataset not in ("customers", "contacts", "matched"):
+        raise HTTPException(status_code=400, detail="dataset must be customers, contacts, or matched")
+
+    # Reusable engagement subqueries
+    has_chat_engagement = (
+        select(Message.id)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.contact_id == Contact.id,
+            Conversation.tenant_id == tenant_id,
+            Message.role == "user",
+        )
+        .correlate(Contact)
+        .exists()
+    )
+    has_call_engagement = (
+        select(Call.id)
+        .where(
+            Call.from_number == Contact.phone,
+            Call.tenant_id == tenant_id,
+            Contact.phone.isnot(None),
+            Call.duration > 0,
+        )
+        .correlate(Contact)
+        .exists()
+    )
+
+    if dataset == "customers":
+        stmt = (
+            select(
+                Customer.id,
+                Customer.name,
+                Customer.phone,
+                Customer.email,
+                Customer.status,
+                Customer.external_customer_id,
+            )
+            .where(Customer.tenant_id == tenant_id)
+            .order_by(Customer.name)
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
+        headers = ["id", "name", "phone", "email", "status", "external_id"]
+        filename = "customers.csv"
+
+    elif dataset == "contacts":
+        # Contacts who actually engaged (sent a message or called)
+        stmt = (
+            select(
+                Contact.id,
+                Contact.name,
+                Contact.phone,
+                Contact.email,
+                Contact.source,
+                Contact.created_at,
+            )
+            .where(
+                Contact.tenant_id == tenant_id,
+                Contact.deleted_at.is_(None),
+                Contact.merged_into_contact_id.is_(None),
+                has_chat_engagement | has_call_engagement,
+            )
+            .order_by(Contact.name)
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
+        headers = ["id", "name", "phone", "email", "source", "created_at"]
+        filename = "engaged_contacts.csv"
+
+    else:  # matched
+        _norm_contact_phone = func.right(
+            func.regexp_replace(Contact.phone, '[^0-9]', '', 'g'), 10
+        )
+        _norm_customer_phone = func.right(
+            func.regexp_replace(Customer.phone, '[^0-9]', '', 'g'), 10
+        )
+        phone_match = (
+            select(Contact.id)
+            .where(
+                Contact.tenant_id == tenant_id,
+                Contact.phone.isnot(None),
+                _norm_contact_phone == _norm_customer_phone,
+                Contact.deleted_at.is_(None),
+                Contact.merged_into_contact_id.is_(None),
+                has_chat_engagement | has_call_engagement,
+            )
+            .correlate(Customer)
+            .exists()
+        )
+        email_match = (
+            select(Contact.id)
+            .where(
+                Contact.tenant_id == tenant_id,
+                Contact.email.isnot(None),
+                Customer.email.isnot(None),
+                func.lower(Contact.email) == func.lower(Customer.email),
+                Contact.deleted_at.is_(None),
+                Contact.merged_into_contact_id.is_(None),
+                has_chat_engagement | has_call_engagement,
+            )
+            .correlate(Customer)
+            .exists()
+        )
+        stmt = (
+            select(
+                Customer.id,
+                Customer.name.label("customer_name"),
+                Customer.phone.label("customer_phone"),
+                Customer.email.label("customer_email"),
+                Customer.status,
+            )
+            .where(
+                Customer.tenant_id == tenant_id,
+                phone_match | email_match,
+            )
+            .order_by(Customer.name)
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
+        headers = ["customer_id", "customer_name", "customer_phone", "customer_email", "status"]
+        filename = "verified_matches.csv"
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow([str(v) if v is not None else "" for v in row])
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 

@@ -98,6 +98,118 @@ const persistRange = (range, timeZone, setSearchParams, replace = false) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(params));
 };
 
+function ExportButtons() {
+  const [downloading, setDownloading] = useState(null);
+
+  const download = async (dataset, label) => {
+    setDownloading(dataset);
+    try {
+      const token = localStorage.getItem('token');
+      const headers = { Authorization: `Bearer ${token}` };
+      const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+      const selectedTenant = localStorage.getItem('selectedTenantId');
+      if (userInfo?.is_global_admin && selectedTenant) {
+        headers['X-Tenant-Id'] = selectedTenant;
+      }
+      const resp = await fetch(`/api/v1/analytics/savings/export/${dataset}`, { headers });
+      if (!resp.ok) throw new Error('Export failed');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${dataset}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silently fail
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  return (
+    <div className="export-buttons">
+      <span className="export-label">Export CSV:</span>
+      <button className="export-btn" disabled={!!downloading} onClick={() => download('customers', 'Customers')}>
+        {downloading === 'customers' ? 'Downloading...' : 'All Customers'}
+      </button>
+      <button className="export-btn" disabled={!!downloading} onClick={() => download('contacts', 'Contacts')}>
+        {downloading === 'contacts' ? 'Downloading...' : 'Engaged Contacts'}
+      </button>
+      <button className="export-btn" disabled={!!downloading} onClick={() => download('matched', 'Matched')}>
+        {downloading === 'matched' ? 'Downloading...' : 'Verified Matches'}
+      </button>
+    </div>
+  );
+}
+
+function VerifiedConversionsRow({ count }) {
+  const [expanded, setExpanded] = useState(false);
+  const [details, setDetails] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggle = async () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !details) {
+      setLoading(true);
+      try {
+        const res = await api.get('/analytics/savings/verified-enrollments');
+        setDetails(res.data);
+      } catch {
+        setDetails({ verified_enrollments: [], total: 0 });
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  return (
+    <>
+      <div className="metric-row metric-row-expandable" onClick={toggle} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && toggle()}>
+        <span className="metric-label">
+          <span className="expand-icon">{expanded ? '▼' : '▶'}</span>
+          Verified Conversions
+          <span className="info-icon" data-tooltip="People who interacted with the AI and are now enrolled customers. Click to see details.">i</span>
+        </span>
+        <span className="metric-value">{formatNumber(count)}</span>
+      </div>
+      {expanded && (
+        <div className="verified-details">
+          {loading ? (
+            <div className="verified-details-loading">Loading...</div>
+          ) : details && details.verified_enrollments.length > 0 ? (
+            <table className="verified-details-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                  <th>Matched Via</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {details.verified_enrollments.map((e) => (
+                  <tr key={e.customer_id}>
+                    <td>{e.name || '—'}</td>
+                    <td>{e.phone || '—'}</td>
+                    <td>{e.email || '—'}</td>
+                    <td>{e.matched_via}</td>
+                    <td>{e.status || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="verified-details-empty">No verified enrollments found.</div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function MethodologySection({ assumptions }) {
   const [expanded, setExpanded] = useState(() => {
     const stored = localStorage.getItem(METHODOLOGY_STORAGE_KEY);
@@ -542,14 +654,9 @@ export default function SavingsAnalytics() {
                 ))}
               </>
             )}
-            <div className="metric-row">
-              <span className="metric-label">
-                Verified Conversions
-                <span className="info-icon" data-tooltip="People who interacted with the AI and are now enrolled customers.">i</span>
-              </span>
-              <span className="metric-value">{formatNumber(data.conversions.verified_enrollments || 0)}</span>
-            </div>
+            <VerifiedConversionsRow count={data.conversions.verified_enrollments || 0} />
           </div>
+          <ExportButtons />
         </section>
       </div>
 

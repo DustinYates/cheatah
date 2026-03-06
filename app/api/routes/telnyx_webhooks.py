@@ -1644,23 +1644,23 @@ async def telnyx_ai_call_complete(
                                 sample_msg = actual_messages[0]
                                 logger.info(f"[SMS-MESSAGES] Sample message keys: {list(sample_msg.keys())}, sample: {str(sample_msg)[:500]}")
 
-                            # DEDUP: Skip storing if Telnyx AI messages already exist.
+                            # DEDUP: Skip storing if messages from THIS Telnyx conversation already exist.
                             # ai-call-complete fires multiple times (conversation.ended, insights.generated,
                             # retries) — each time it would re-insert all messages. Only store on first fire.
-                            # NOTE: Only check for telnyx_ai_assistant source messages, NOT any messages.
-                            # The conversation may already have follow-up/drip outbound messages that
-                            # should NOT prevent storing the real Telnyx AI conversation.
+                            # NOTE: Dedup is per-Telnyx-conversation-ID, NOT per-DB-conversation.
+                            # A customer may have multiple Telnyx AI conversations over time (Telnyx
+                            # creates a new conversation after timeout). Each must be stored.
                             existing_count_result = await db.execute(
                                 select(func.count()).where(
                                     Message.conversation_id == sms_conversation.id,
-                                    cast(Message.message_metadata["source"], String) == '"telnyx_ai_assistant"',
+                                    cast(Message.message_metadata["telnyx_conversation_id"], String) == f'"{telnyx_conv_id}"',
                                 )
                             )
                             existing_telnyx_count = existing_count_result.scalar() or 0
                             if existing_telnyx_count > 0:
                                 logger.info(
                                     f"[SMS-MESSAGES] Skipping message storage - conversation {sms_conversation.id} "
-                                    f"already has {existing_telnyx_count} telnyx_ai_assistant messages (duplicate webhook fire)"
+                                    f"already has {existing_telnyx_count} messages from Telnyx conv {telnyx_conv_id} (duplicate webhook fire)"
                                 )
                                 actual_messages_stored = True  # Mark as stored so fallback doesn't run
                             else:
@@ -1722,7 +1722,7 @@ async def telnyx_ai_call_complete(
                                             role=msg_role,
                                             content=msg_content,
                                             sequence_number=next_seq,
-                                            message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id},
+                                            message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id, "telnyx_conversation_id": telnyx_conv_id},
                                         )
                                         db.add(new_msg)
                                         existing_contents.add(msg_content)  # Track for intra-batch dedup
@@ -1815,37 +1815,51 @@ async def telnyx_ai_call_complete(
 
                 # Fallback: store transcript/summary if we couldn't get actual messages
                 if not actual_messages_stored and (transcript or summary):
-                    logger.warning(f"[SMS-MESSAGES] Using FALLBACK - storing summary instead of actual messages. "
-                                   f"actual_messages_stored={actual_messages_stored}, has_transcript={bool(transcript)}, has_summary={bool(summary)}")
-                    # Get next sequence number
-                    msg_result = await db.execute(
-                        select(Message).where(
-                            Message.conversation_id == sms_conversation.id
-                        ).order_by(Message.sequence_number.desc()).limit(1)
-                    )
-                    last_msg = msg_result.scalar_one_or_none()
-                    next_seq = (last_msg.sequence_number + 1) if last_msg else 1
+                    # Dedup: skip if messages from THIS Telnyx conversation already exist
+                    existing_ai_count_result = await db.execute(
+                        select(func.count()).where(
+                            Message.conversation_id == sms_conversation.id,
+                            cast(Message.message_metadata["telnyx_conversation_id"], String) == f'"{telnyx_conv_id}"',
+                        )
+                    ) if telnyx_conv_id else None
+                    existing_ai_count = (existing_ai_count_result.scalar() or 0) if existing_ai_count_result else 0
+                    if existing_ai_count > 0:
+                        logger.info(
+                            f"[SMS-MESSAGES] Skipping FALLBACK - conversation {sms_conversation.id} "
+                            f"already has {existing_ai_count} messages from Telnyx conv {telnyx_conv_id} (duplicate webhook fire)"
+                        )
+                    else:
+                        logger.warning(f"[SMS-MESSAGES] Using FALLBACK - storing summary instead of actual messages. "
+                                       f"actual_messages_stored={actual_messages_stored}, has_transcript={bool(transcript)}, has_summary={bool(summary)}")
+                        # Get next sequence number
+                        msg_result = await db.execute(
+                            select(Message).where(
+                                Message.conversation_id == sms_conversation.id
+                            ).order_by(Message.sequence_number.desc()).limit(1)
+                        )
+                        last_msg = msg_result.scalar_one_or_none()
+                        next_seq = (last_msg.sequence_number + 1) if last_msg else 1
 
-                    # Add user message with transcript if available, otherwise summary
-                    user_msg = Message(
-                        conversation_id=sms_conversation.id,
-                        role="user",
-                        content=transcript or summary or "SMS interaction",
-                        sequence_number=next_seq,
-                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id, "fallback": True},
-                    )
-                    db.add(user_msg)
+                        # Add user message with transcript if available, otherwise summary
+                        user_msg = Message(
+                            conversation_id=sms_conversation.id,
+                            role="user",
+                            content=transcript or summary or "SMS interaction",
+                            sequence_number=next_seq,
+                            message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id, "fallback": True, "telnyx_conversation_id": telnyx_conv_id},
+                        )
+                        db.add(user_msg)
 
-                    # Add assistant response message
-                    assistant_msg = Message(
-                        conversation_id=sms_conversation.id,
-                        role="assistant",
-                        content=summary or "Response provided",
-                        sequence_number=next_seq + 1,
-                        message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id, "fallback": True},
-                    )
-                    db.add(assistant_msg)
-                    logger.info(f"Added SMS messages (fallback) for usage tracking: conversation_id={sms_conversation.id}")
+                        # Add assistant response message
+                        assistant_msg = Message(
+                            conversation_id=sms_conversation.id,
+                            role="assistant",
+                            content=summary or "Response provided",
+                            sequence_number=next_seq + 1,
+                            message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id, "fallback": True, "telnyx_conversation_id": telnyx_conv_id},
+                        )
+                        db.add(assistant_msg)
+                        logger.info(f"Added SMS messages (fallback) for usage tracking: conversation_id={sms_conversation.id}")
 
                 # Create or update Lead via LeadService (dedup by phone/email)
                 from app.domain.services.lead_service import LeadService

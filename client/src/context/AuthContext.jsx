@@ -71,6 +71,15 @@ export function AuthProvider({ children }) {
             } catch (err) {
               console.error('Failed to fetch tenants:', err);
             }
+            // Fetch selected tenant's timezone
+            if (savedTenant) {
+              try {
+                const smsSettings = await api.getSmsSettings();
+                setDefaultTimezone(smsSettings?.timezone || 'America/Chicago');
+              } catch (err) {
+                // Non-critical
+              }
+            }
             setProfileComplete(true);
           } else {
             // Load profile for tenant users
@@ -131,9 +140,21 @@ export function AuthProvider({ children }) {
     setProfileComplete(null);
   };
 
-  const selectTenant = (tenantId) => {
+  const selectTenant = async (tenantId) => {
     setSelectedTenantId(tenantId);
     api.setSelectedTenant(tenantId);
+
+    // Fetch selected tenant's timezone for date formatting
+    if (tenantId) {
+      try {
+        const smsSettings = await api.getSmsSettings();
+        const tz = smsSettings?.timezone || 'America/Chicago';
+        setDefaultTimezone(tz);
+      } catch (err) {
+        // Non-critical — fall back to default
+        setDefaultTimezone('America/Chicago');
+      }
+    }
   };
 
   const refreshProfile = async () => {

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { api } from '../api/client';
+import { setDefaultTimezone } from '../utils/dateFormat';
 
 const AuthContext = createContext(null);
 
@@ -45,6 +46,7 @@ export function AuthProvider({ children }) {
             role: userData.role,
             tenant_id: userData.tenant_id,
             is_global_admin: userData.is_global_admin,
+            timezone: userData.timezone || 'America/Chicago',
           };
           
           // Update localStorage userInfo to keep it in sync
@@ -56,6 +58,7 @@ export function AuthProvider({ children }) {
           }));
           
           setUser(userInfo);
+          setDefaultTimezone(userInfo.timezone);
           setMustChangePassword(userData.must_change_password || false);
 
           // Restore selected tenant for global admins
@@ -151,6 +154,9 @@ export function AuthProvider({ children }) {
   // Get effective tenant ID (selected tenant for global admin, or user's tenant)
   const effectiveTenantId = user?.is_global_admin ? selectedTenantId : user?.tenant_id;
 
+  // Tenant timezone (from /auth/me response)
+  const timezone = user?.timezone || 'America/Chicago';
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -167,6 +173,7 @@ export function AuthProvider({ children }) {
       selectTenant,
       effectiveTenantId,
       mustChangePassword,
+      timezone,
     }}>
       {children}
     </AuthContext.Provider>

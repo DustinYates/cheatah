@@ -1,7 +1,15 @@
 import { format, isToday, isYesterday, formatDistanceToNow as dateFnsDistanceToNow } from 'date-fns';
 import { toZonedTime, format as formatTz } from 'date-fns-tz';
 
-const CENTRAL_TZ = 'America/Chicago';
+let _defaultTz = 'America/Chicago';
+
+export function setDefaultTimezone(tz) {
+  if (tz) _defaultTz = tz;
+}
+
+export function getDefaultTimezone() {
+  return _defaultTz;
+}
 
 function normalizeTimestamp(dateString) {
   if (!dateString) return dateString;
@@ -16,7 +24,7 @@ function normalizeTimestamp(dateString) {
   return `${withT}Z`;
 }
 
-export function formatSmartDateTime(dateString) {
+export function formatSmartDateTime(dateString, tz = _defaultTz) {
   try {
     if (!dateString) return '—';
 
@@ -24,25 +32,25 @@ export function formatSmartDateTime(dateString) {
     const date = new Date(normalized);
     if (isNaN(date.getTime())) return '—';
 
-    const centralDate = toZonedTime(date, CENTRAL_TZ);
-    const tzAbbr = formatTz(centralDate, 'zzz', { timeZone: CENTRAL_TZ });
+    const zonedDate = toZonedTime(date, tz);
+    const tzAbbr = formatTz(zonedDate, 'zzz', { timeZone: tz });
 
-    if (isToday(centralDate)) {
-      return `Today ${format(centralDate, 'h:mm a')} ${tzAbbr}`;
+    if (isToday(zonedDate)) {
+      return `Today ${format(zonedDate, 'h:mm a')} ${tzAbbr}`;
     }
 
-    if (isYesterday(centralDate)) {
-      return `Yesterday ${format(centralDate, 'h:mm a')} ${tzAbbr}`;
+    if (isYesterday(zonedDate)) {
+      return `Yesterday ${format(zonedDate, 'h:mm a')} ${tzAbbr}`;
     }
 
-    return `${format(centralDate, 'MMM d h:mm a')} ${tzAbbr}`;
+    return `${format(zonedDate, 'MMM d h:mm a')} ${tzAbbr}`;
   } catch (error) {
     console.error('Date formatting error:', error);
     return '—';
   }
 }
 
-export function formatDateTimeParts(dateString) {
+export function formatDateTimeParts(dateString, tz = _defaultTz) {
   try {
     if (!dateString) return { date: '—', time: '—', tzAbbr: '' };
 
@@ -50,12 +58,12 @@ export function formatDateTimeParts(dateString) {
     const date = new Date(normalized);
     if (isNaN(date.getTime())) return { date: '—', time: '—', tzAbbr: '' };
 
-    const centralDate = toZonedTime(date, CENTRAL_TZ);
-    const tzAbbr = formatTz(centralDate, 'zzz', { timeZone: CENTRAL_TZ });
+    const zonedDate = toZonedTime(date, tz);
+    const tzAbbr = formatTz(zonedDate, 'zzz', { timeZone: tz });
 
     return {
-      date: format(centralDate, 'MMM d, yyyy'),
-      time: format(centralDate, 'h:mm a'),
+      date: format(zonedDate, 'MMM d, yyyy'),
+      time: format(zonedDate, 'h:mm a'),
       tzAbbr,
     };
   } catch (error) {

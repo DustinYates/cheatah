@@ -56,6 +56,7 @@ class UserInfoResponse(BaseModel):
     tenant_id: int | None = None
     is_global_admin: bool = False
     must_change_password: bool = False
+    timezone: str = "America/Chicago"
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -247,15 +248,31 @@ async def signup(
 @router.get("/me", response_model=UserInfoResponse)
 async def get_current_user_info(
     current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserInfoResponse:
     """Get current authenticated user information.
 
     Args:
         current_user: Current authenticated user
+        db: Database session
 
     Returns:
         User information including role and tenant
     """
+    timezone = "America/Chicago"
+    if current_user.tenant_id:
+        from sqlalchemy import select
+        from app.persistence.models.tenant_sms_config import TenantSmsConfig
+
+        result = await db.execute(
+            select(TenantSmsConfig.timezone).where(
+                TenantSmsConfig.tenant_id == current_user.tenant_id
+            )
+        )
+        tenant_tz = result.scalar_one_or_none()
+        if tenant_tz:
+            timezone = tenant_tz
+
     return UserInfoResponse(
         id=current_user.id,
         email=current_user.email,
@@ -263,6 +280,7 @@ async def get_current_user_info(
         tenant_id=current_user.tenant_id,
         is_global_admin=is_global_admin(current_user),
         must_change_password=current_user.must_change_password,
+        timezone=timezone,
     )
 
 

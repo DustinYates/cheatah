@@ -128,7 +128,12 @@ export function buildUnifiedTimeline(lead, conversationData) {
     // Filter out system messages (internal context like handoff context) - they're not customer-facing
     const messages = conv.messages
       .filter(msg => msg.created_at && msg.role !== 'system')
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Sort oldest first for display
+      .sort((a, b) => {
+        const timeDiff = new Date(a.created_at) - new Date(b.created_at);
+        if (timeDiff !== 0) return timeDiff;
+        // Tiebreaker: use sequence_number when timestamps are identical
+        return (a.sequence_number ?? 0) - (b.sequence_number ?? 0);
+      });
 
     if (messages.length > 0) {
       // Use the timestamp of the most recent message
@@ -152,6 +157,7 @@ export function buildUnifiedTimeline(lead, conversationData) {
             role: msg.role,
             content: msg.content,
             created_at: msg.created_at,
+            sequence_number: msg.sequence_number,
           })),
           channel: channel,
         }

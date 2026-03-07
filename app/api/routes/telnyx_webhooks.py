@@ -1644,12 +1644,13 @@ async def telnyx_ai_call_complete(
                                 sample_msg = actual_messages[0]
                                 logger.info(f"[SMS-MESSAGES] Sample message keys: {list(sample_msg.keys())}, sample: {str(sample_msg)[:500]}")
 
-                            # DEDUP: Skip storing if messages from THIS Telnyx conversation already exist.
-                            # ai-call-complete fires multiple times (conversation.ended, insights.generated,
-                            # retries) — each time it would re-insert all messages. Only store on first fire.
-                            # NOTE: Dedup is per-Telnyx-conversation-ID, NOT per-DB-conversation.
-                            # A customer may have multiple Telnyx AI conversations over time (Telnyx
-                            # creates a new conversation after timeout). Each must be stored.
+                            # DEDUP: Check if messages from THIS Telnyx conversation already exist.
+                            # Telnyx fires conversation_insight_result DURING active conversations
+                            # (not just at the end), so early fires capture only initial messages.
+                            # Later fires have more messages and must be allowed to store new ones.
+                            # Only skip entirely if we already have >= the number of API messages
+                            # (true duplicate webhook fire). Otherwise fall through to content-based
+                            # dedup which will skip existing messages and add only new ones.
                             existing_count_result = await db.execute(
                                 select(func.count()).where(
                                     Message.conversation_id == sms_conversation.id,
@@ -1657,13 +1658,34 @@ async def telnyx_ai_call_complete(
                                 )
                             )
                             existing_telnyx_count = existing_count_result.scalar() or 0
-                            if existing_telnyx_count > 0:
+
+                            # Count storable messages (exclude tool/function/system and error responses)
+                            storable_api_count = 0
+                            for _msg in actual_messages:
+                                _role = _msg.get("role", "user")
+                                if _role in ("tool", "function", "system"):
+                                    continue
+                                _content = (_msg.get("text", _msg.get("content", "")) or "").strip()
+                                if not _content:
+                                    continue
+                                if _content.startswith("{") and ('"http_status"' in _content or '"errors"' in _content or '"error"' in _content or '"http_body"' in _content):
+                                    continue
+                                storable_api_count += 1
+
+                            if existing_telnyx_count > 0 and existing_telnyx_count >= storable_api_count:
                                 logger.info(
                                     f"[SMS-MESSAGES] Skipping message storage - conversation {sms_conversation.id} "
-                                    f"already has {existing_telnyx_count} messages from Telnyx conv {telnyx_conv_id} (duplicate webhook fire)"
+                                    f"already has {existing_telnyx_count} messages from Telnyx conv {telnyx_conv_id} "
+                                    f"(API returned {storable_api_count} storable msgs — duplicate webhook fire)"
                                 )
                                 actual_messages_stored = True  # Mark as stored so fallback doesn't run
                             else:
+                                if existing_telnyx_count > 0:
+                                    logger.info(
+                                        f"[SMS-MESSAGES] Incremental update - conversation {sms_conversation.id} "
+                                        f"has {existing_telnyx_count} messages but API returned {storable_api_count} "
+                                        f"storable msgs from Telnyx conv {telnyx_conv_id} — storing new messages"
+                                    )
                                 # Get next sequence number (after any existing follow-up messages)
                                 last_seq_result = await db.execute(
                                     select(func.max(Message.sequence_number)).where(

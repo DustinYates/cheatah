@@ -159,8 +159,8 @@ export function buildUnifiedTimeline(lead, conversationData) {
     }
   });
 
-  // 3. Sort chronologically (oldest first - in order they came in)
-  timeline.sort((a, b) => a.timestamp - b.timestamp);
+  // 3. Sort reverse chronologically (most recent first)
+  timeline.sort((a, b) => b.timestamp - a.timestamp);
 
   return timeline;
 }

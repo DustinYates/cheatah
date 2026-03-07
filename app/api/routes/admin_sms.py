@@ -77,7 +77,7 @@ async def create_or_update_sms_config(
     if existing_config:
         # Update existing
         existing_config.is_enabled = config_data.is_enabled
-        existing_config.telnyx_api_key_prefix = config_data.telnyx_api_key_prefix
+        existing_config.telnyx_api_key = config_data.telnyx_api_key_prefix
         existing_config.telnyx_messaging_profile_id = config_data.telnyx_messaging_profile_id
         existing_config.telnyx_phone_number = config_data.telnyx_phone_number
         existing_config.business_hours_enabled = config_data.business_hours_enabled
@@ -95,7 +95,7 @@ async def create_or_update_sms_config(
         config = TenantSmsConfig(
             tenant_id=tenant_id,
             is_enabled=config_data.is_enabled,
-            telnyx_api_key_prefix=config_data.telnyx_api_key_prefix,
+            telnyx_api_key=config_data.telnyx_api_key_prefix,
             telnyx_messaging_profile_id=config_data.telnyx_messaging_profile_id,
             telnyx_phone_number=config_data.telnyx_phone_number,
             business_hours_enabled=config_data.business_hours_enabled,
@@ -113,7 +113,7 @@ async def create_or_update_sms_config(
         id=config.id,
         tenant_id=config.tenant_id,
         is_enabled=config.is_enabled,
-        telnyx_api_key_prefix=config.telnyx_api_key_prefix,
+        telnyx_api_key_prefix=config.telnyx_api_key[:8] + "..." if config.telnyx_api_key else None,
         telnyx_phone_number=config.telnyx_phone_number,
         business_hours_enabled=config.business_hours_enabled,
         timezone=config.timezone,
@@ -169,7 +169,7 @@ async def get_sms_config(
         id=config.id,
         tenant_id=config.tenant_id,
         is_enabled=config.is_enabled,
-        telnyx_api_key_prefix=config.telnyx_api_key_prefix,
+        telnyx_api_key_prefix=config.telnyx_api_key[:8] + "..." if config.telnyx_api_key else None,
         telnyx_phone_number=config.telnyx_phone_number,
         business_hours_enabled=config.business_hours_enabled,
         timezone=config.timezone,

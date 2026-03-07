@@ -907,6 +907,18 @@ class ApiClient {
     return response.json();
   }
 
+  async startOutlookOAuth() {
+    return this.request('/email/outlook/oauth/start', {
+      method: 'POST',
+    });
+  }
+
+  async disconnectOutlook() {
+    return this.request('/email/outlook/disconnect', {
+      method: 'DELETE',
+    });
+  }
+
   async refreshEmailWatch() {
     return this.request('/email/refresh-watch', {
       method: 'POST',

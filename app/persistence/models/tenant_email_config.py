@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class TenantEmailConfig(Base):
-    """Tenant email configuration for Gmail-based email responder."""
+    """Tenant email configuration for Gmail/Outlook-based email responder."""
 
     __tablename__ = "tenant_email_configs"
 
@@ -71,12 +71,23 @@ class TenantEmailConfig(Base):
     # Drip campaign auto-enrollment for email leads
     drip_campaign_enabled = Column(Boolean, default=False, nullable=False)
 
+    # Outlook / Microsoft 365 OAuth credentials
+    outlook_email = Column(String(255), nullable=True)  # Connected Outlook email address
+    outlook_refresh_token = Column(EncryptedText(), nullable=True)  # Encrypted
+    outlook_access_token = Column(EncryptedText(), nullable=True)  # Encrypted
+    outlook_token_expires_at = Column(DateTime, nullable=True)  # Access token expiry
+
+    # Outlook Graph subscription (webhook for new mail notifications)
+    outlook_subscription_id = Column(String(255), nullable=True)
+    outlook_subscription_expiration = Column(DateTime, nullable=True)
+    outlook_client_state = Column(EncryptedString(255), nullable=True)  # Secret for webhook verification
+
     # SendGrid Inbound Parse Configuration
     # Alternative to Gmail API - uses email forwarding instead of OAuth
     sendgrid_enabled = Column(Boolean, default=False, nullable=False)
     sendgrid_parse_address = Column(String(255), nullable=True, unique=True, index=True)
     sendgrid_webhook_secret = Column(EncryptedString(255), nullable=True)  # Encrypted
-    email_ingestion_method = Column(String(20), default="gmail", nullable=False)  # 'gmail' or 'sendgrid'
+    email_ingestion_method = Column(String(20), default="gmail", nullable=False)  # 'gmail', 'sendgrid', or 'outlook'
 
     # SendGrid Outbound Configuration (per-tenant credentials for sending emails)
     sendgrid_api_key = Column(EncryptedString(255), nullable=True)  # Encrypted
@@ -102,8 +113,11 @@ class EmailConversation(Base):
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True, index=True)
     
     # Gmail identifiers
-    gmail_thread_id = Column(String(255), nullable=False, index=True)
+    gmail_thread_id = Column(String(255), nullable=True, index=True)
     gmail_message_id = Column(String(255), nullable=True)  # Latest message ID
+
+    # Outlook identifiers
+    outlook_conversation_id = Column(String(255), nullable=True, index=True)
     
     # Email metadata
     subject = Column(String(500), nullable=True)

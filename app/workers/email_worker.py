@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.domain.services.email_service import EmailService
 from app.infrastructure.gmail_client import GmailClient
+from app.infrastructure.outlook_client import OutlookClient
 from app.persistence.database import get_db
 from app.persistence.repositories.email_repository import TenantEmailConfigRepository
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -368,4 +369,151 @@ async def process_sendgrid_email_task(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"SendGrid email processing failed: {str(e)}",
+        )
+
+
+class OutlookNotificationPayload(BaseModel):
+    """Payload for Outlook change notification processing."""
+    subscription_id: str | None = None
+    message_id: str
+    tenant_id: int
+
+
+@router.post("/process-outlook-notification")
+async def process_outlook_notification(
+    request: Request,
+    payload: OutlookNotificationPayload,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, Any]:
+    """Process Outlook change notification from Cloud Tasks.
+
+    Fetches the new message via Microsoft Graph API and processes it
+    through the standard EmailService pipeline.
+    """
+    try:
+        queue_name = request.headers.get("X-CloudTasks-QueueName")
+        task_name = request.headers.get("X-CloudTasks-TaskName")
+
+        logger.info(
+            f"Processing Outlook notification: tenant_id={payload.tenant_id}, "
+            f"message_id={payload.message_id}, queue={queue_name}, task={task_name}"
+        )
+
+        email_service = EmailService(db)
+        result = await email_service.process_outlook_notification(
+            tenant_id=payload.tenant_id,
+            message_id=payload.message_id,
+        )
+
+        return {
+            "status": "success",
+            "message_id": result.message_id if result else None,
+            "lead_captured": result.lead_captured if result else False,
+        }
+
+    except Exception as e:
+        logger.error(f"Error processing Outlook notification: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Outlook notification processing failed: {str(e)}",
+        )
+
+
+@router.post("/refresh-outlook-subscriptions")
+async def refresh_outlook_subscriptions(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, Any]:
+    """Refresh Outlook Graph subscriptions for all enabled tenants.
+
+    Outlook subscriptions expire after ~3 days. This should be called daily
+    via Cloud Scheduler.
+    """
+    try:
+        email_config_repo = TenantEmailConfigRepository(db)
+        configs = await email_config_repo.get_all_outlook_enabled()
+
+        refreshed = 0
+        failed = 0
+        recreated = 0
+
+        for config in configs:
+            try:
+                if not config.outlook_refresh_token:
+                    continue
+
+                outlook_client = OutlookClient(
+                    refresh_token=config.outlook_refresh_token,
+                    access_token=config.outlook_access_token,
+                    token_expires_at=config.outlook_token_expires_at,
+                )
+
+                if config.outlook_subscription_id:
+                    try:
+                        sub_result = await outlook_client.renew_subscription(
+                            config.outlook_subscription_id
+                        )
+                        await email_config_repo.update_outlook_subscription(
+                            tenant_id=config.tenant_id,
+                            subscription_id=sub_result["subscription_id"],
+                            expiration=sub_result["expiration"],
+                        )
+                        refreshed += 1
+                    except Exception:
+                        # Subscription may have expired — recreate it
+                        logger.warning(
+                            f"Subscription renewal failed for tenant {config.tenant_id}, recreating"
+                        )
+                        import secrets as _secrets
+                        from app.settings import settings as _settings
+
+                        webhook_base = _settings.api_base_url or ""
+                        notification_url = f"{webhook_base}/api/v1/email/outlook/webhook"
+                        client_state = _secrets.token_urlsafe(32)
+
+                        sub_result = await outlook_client.watch_mailbox(
+                            notification_url=notification_url,
+                            client_state=client_state,
+                        )
+                        await email_config_repo.update_outlook_subscription(
+                            tenant_id=config.tenant_id,
+                            subscription_id=sub_result["subscription_id"],
+                            expiration=sub_result["expiration"],
+                            client_state=client_state,
+                        )
+                        recreated += 1
+
+                # Update tokens if refreshed
+                token_info = outlook_client.get_token_info()
+                if token_info.get("access_token"):
+                    await email_config_repo.update_outlook_tokens(
+                        tenant_id=config.tenant_id,
+                        access_token=token_info["access_token"],
+                        token_expires_at=token_info["token_expires_at"],
+                        refresh_token=token_info.get("refresh_token"),
+                    )
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to refresh Outlook subscription for tenant {config.tenant_id}: {e}"
+                )
+                failed += 1
+
+        logger.info(
+            f"Outlook subscription refresh complete: refreshed={refreshed}, "
+            f"recreated={recreated}, failed={failed}"
+        )
+
+        return {
+            "status": "success",
+            "refreshed": refreshed,
+            "recreated": recreated,
+            "failed": failed,
+        }
+
+    except Exception as e:
+        logger.error(f"Error refreshing Outlook subscriptions: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Outlook subscription refresh failed: {str(e)}",
         )

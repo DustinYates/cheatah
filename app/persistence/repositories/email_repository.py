@@ -180,6 +180,68 @@ class TenantEmailConfigRepository(BaseRepository[TenantEmailConfig]):
         await self.session.commit()
         return result.rowcount > 0
 
+    async def get_by_outlook_email(self, email: str) -> TenantEmailConfig | None:
+        """Get email config by Outlook email address."""
+        stmt = select(TenantEmailConfig).where(TenantEmailConfig.outlook_email == email)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_subscription_id(self, subscription_id: str) -> TenantEmailConfig | None:
+        """Get email config by Outlook Graph subscription ID."""
+        stmt = select(TenantEmailConfig).where(
+            TenantEmailConfig.outlook_subscription_id == subscription_id
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def update_outlook_tokens(
+        self,
+        tenant_id: int,
+        access_token: str,
+        token_expires_at: datetime,
+        refresh_token: str | None = None,
+    ) -> bool:
+        """Update Outlook OAuth tokens for a tenant."""
+        update_data: dict[str, Any] = {
+            "outlook_access_token": access_token,
+            "outlook_token_expires_at": _to_naive_utc(token_expires_at),
+            "updated_at": datetime.utcnow(),
+        }
+        if refresh_token:
+            update_data["outlook_refresh_token"] = refresh_token
+        stmt = (
+            update(TenantEmailConfig)
+            .where(TenantEmailConfig.tenant_id == tenant_id)
+            .values(**update_data)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return result.rowcount > 0
+
+    async def update_outlook_subscription(
+        self,
+        tenant_id: int,
+        subscription_id: str,
+        expiration: datetime,
+        client_state: str | None = None,
+    ) -> bool:
+        """Update Outlook Graph subscription info."""
+        update_data: dict[str, Any] = {
+            "outlook_subscription_id": subscription_id,
+            "outlook_subscription_expiration": _to_naive_utc(expiration),
+            "updated_at": datetime.utcnow(),
+        }
+        if client_state is not None:
+            update_data["outlook_client_state"] = client_state
+        stmt = (
+            update(TenantEmailConfig)
+            .where(TenantEmailConfig.tenant_id == tenant_id)
+            .values(**update_data)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return result.rowcount > 0
+
     async def get_all_enabled(self) -> list[TenantEmailConfig]:
         """Get all enabled email configs (for watch refresh).
 
@@ -187,6 +249,16 @@ class TenantEmailConfigRepository(BaseRepository[TenantEmailConfig]):
             List of enabled TenantEmailConfig
         """
         stmt = select(TenantEmailConfig).where(TenantEmailConfig.is_enabled == True)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_all_outlook_enabled(self) -> list[TenantEmailConfig]:
+        """Get all enabled Outlook email configs (for subscription refresh)."""
+        stmt = select(TenantEmailConfig).where(
+            TenantEmailConfig.is_enabled == True,
+            TenantEmailConfig.email_ingestion_method == "outlook",
+            TenantEmailConfig.outlook_subscription_id.isnot(None),
+        )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -247,6 +319,19 @@ class EmailConversationRepository(BaseRepository[EmailConversation]):
         stmt = select(EmailConversation).where(
             EmailConversation.tenant_id == tenant_id,
             EmailConversation.gmail_thread_id == gmail_thread_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_outlook_conversation_id(
+        self,
+        tenant_id: int,
+        outlook_conversation_id: str,
+    ) -> EmailConversation | None:
+        """Get email conversation by Outlook conversation ID."""
+        stmt = select(EmailConversation).where(
+            EmailConversation.tenant_id == tenant_id,
+            EmailConversation.outlook_conversation_id == outlook_conversation_id,
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

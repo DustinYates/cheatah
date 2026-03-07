@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     gmail_pubsub_auth_token: str | None = None  # Shared secret for Pub/Sub push verification
     frontend_url: str | None = None  # Frontend URL for OAuth redirects
 
+    # Outlook / Microsoft 365 OAuth (for email responder)
+    outlook_client_id: str | None = None
+    outlook_client_secret: str | None = None
+    outlook_redirect_uri: str | None = None
+
     # Google Calendar OAuth (for meeting scheduling)
     # Falls back to gmail_client_id/gmail_client_secret if not set
     google_calendar_client_id: str | None = None

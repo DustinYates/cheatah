@@ -19,6 +19,7 @@ from app.domain.services.lead_service import LeadService
 from app.domain.services.prompt_service import PromptService
 from app.utils.name_validator import validate_name
 from app.infrastructure.gmail_client import GmailAPIError, GmailClient
+from app.infrastructure.outlook_client import OutlookAPIError, OutlookClient
 from app.persistence.models.conversation import Conversation
 from app.persistence.models.tenant_email_config import EmailConversation, TenantEmailConfig
 from app.persistence.repositories.email_repository import (
@@ -484,6 +485,80 @@ class EmailService:
             print(f"[EMAIL_SERVICE] GmailAPIError: {e}", flush=True)
             logger.error(f"Failed to process Gmail notification: {e}")
             return []
+
+    async def process_outlook_notification(
+        self,
+        tenant_id: int,
+        message_id: str,
+    ) -> EmailResult | None:
+        """Process Outlook change notification for a new message.
+
+        Args:
+            tenant_id: Tenant ID from webhook resolution
+            message_id: Outlook message ID from Graph notification
+
+        Returns:
+            EmailResult or None if skipped
+        """
+        logger.info(f"Processing Outlook notification: tenant_id={tenant_id}, message_id={message_id}")
+
+        email_config = await self.email_config_repo.get_by_tenant_id(tenant_id)
+        if not email_config or not email_config.is_enabled:
+            logger.info(f"Email processing disabled for tenant {tenant_id}")
+            return None
+
+        if not email_config.outlook_refresh_token:
+            logger.warning(f"No Outlook tokens for tenant {tenant_id}")
+            return None
+
+        outlook_client = OutlookClient(
+            refresh_token=email_config.outlook_refresh_token,
+            access_token=email_config.outlook_access_token,
+            token_expires_at=email_config.outlook_token_expires_at,
+        )
+
+        try:
+            message = await outlook_client.get_message(message_id)
+        except OutlookAPIError as e:
+            logger.warning(f"Outlook message {message_id} not found: {e}")
+            return None
+
+        # Update tokens if refreshed
+        token_info = outlook_client.get_token_info()
+        if token_info.get("access_token") != email_config.outlook_access_token:
+            await self.email_config_repo.update_outlook_tokens(
+                tenant_id=tenant_id,
+                access_token=token_info["access_token"],
+                token_expires_at=token_info["token_expires_at"],
+                refresh_token=token_info.get("refresh_token"),
+            )
+
+        # Skip messages sent by us
+        from_email = message.get("from_email", "") or ""
+        if from_email.lower() == (email_config.outlook_email or "").lower():
+            logger.info(f"Skipping outgoing Outlook message from {from_email}")
+            return None
+
+        subject = message.get("subject", "")
+
+        # Only process emails matching lead capture prefixes
+        if not self._should_capture_lead_from_subject(subject, email_config):
+            logger.info(f"Skipping Outlook email - subject does not match configured prefixes")
+            return None
+
+        logger.info(f"Processing Outlook inbound email: subject='{subject}', from='{message.get('from', '')}'")
+
+        # Use the provider-agnostic process_inbound_email
+        result = await self.process_inbound_email(
+            tenant_id=tenant_id,
+            from_email=message.get("from", ""),
+            to_email=message.get("to", ""),
+            subject=subject,
+            body=message.get("body", ""),
+            thread_id=message.get("thread_id", ""),
+            message_id=message_id,
+        )
+        return result
 
     async def _get_email_config(self, tenant_id: int) -> TenantEmailConfig | None:
         """Get tenant email configuration."""

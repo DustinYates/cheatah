@@ -523,7 +523,7 @@ async def telnyx_inbound_sms_webhook(
                     "tenant_id": tenant_id,
                     "phone_number": from_number,
                     "message_body": message_body,
-                    "telnyx_message_id": message_id,
+                    "external_message_id": message_id,
                     "to_number": to_number,
                     "provider": "telnyx",
                 },

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_current_tenant
 from app.infrastructure.gmail_client import GmailAuthError, GmailClient
+from app.infrastructure.outlook_client import OutlookAuthError, OutlookClient
 from app.infrastructure.pubsub import get_gmail_pubsub_topic
 from app.persistence.database import get_db
 from app.persistence.models.tenant import User
@@ -44,7 +45,10 @@ class EmailSettingsResponse(BaseModel):
     # SendGrid Inbound Parse settings
     sendgrid_enabled: bool = False
     sendgrid_parse_address: str | None = None
-    email_ingestion_method: str = "gmail"  # 'gmail' or 'sendgrid'
+    email_ingestion_method: str = "gmail"  # 'gmail', 'sendgrid', or 'outlook'
+    # Outlook settings
+    outlook_email: str | None = None
+    outlook_connected: bool = False
     # SendGrid Outbound settings
     sendgrid_outbound_configured: bool = False
     sendgrid_from_email: str | None = None
@@ -81,7 +85,8 @@ class OAuthStartResponse(BaseModel):
 class EmailConversationSummary(BaseModel):
     """Summary of an email conversation."""
     id: int
-    gmail_thread_id: str
+    gmail_thread_id: str | None = None
+    outlook_conversation_id: str | None = None
     subject: str | None
     from_email: str
     status: str
@@ -170,6 +175,8 @@ async def get_email_settings(
         sendgrid_enabled=config.sendgrid_enabled,
         sendgrid_parse_address=config.sendgrid_parse_address,
         email_ingestion_method=config.email_ingestion_method or "gmail",
+        outlook_email=config.outlook_email,
+        outlook_connected=bool(config.outlook_refresh_token),
         sendgrid_outbound_configured=outbound_configured,
         sendgrid_from_email=outbound_from_email,
         sendgrid_outbound_using_fallback=not has_tenant_api_key and has_global_fallback,
@@ -210,11 +217,11 @@ async def update_email_settings(
             drip_campaign_enabled=settings_data.drip_campaign_enabled,
         )
     else:
-        # Update existing - only allow enabling if Gmail is connected
-        if settings_data.is_enabled and not config.gmail_refresh_token:
+        # Update existing - only allow enabling if Gmail or Outlook is connected
+        if settings_data.is_enabled and not config.gmail_refresh_token and not config.outlook_refresh_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot enable email without connecting Gmail. Please connect your Gmail account first.",
+                detail="Cannot enable email without connecting an email account. Please connect Gmail or Outlook first.",
             )
         
         config = await config_repo.create_or_update(
@@ -264,6 +271,8 @@ async def update_email_settings(
         sendgrid_enabled=config.sendgrid_enabled,
         sendgrid_parse_address=config.sendgrid_parse_address,
         email_ingestion_method=config.email_ingestion_method or "gmail",
+        outlook_email=config.outlook_email,
+        outlook_connected=bool(config.outlook_refresh_token),
         sendgrid_outbound_configured=outbound_configured,
         sendgrid_from_email=outbound_from_email,
         sendgrid_outbound_using_fallback=not has_tenant_api_key and has_global_fallback,
@@ -593,6 +602,7 @@ async def list_email_conversations(
         EmailConversationSummary(
             id=conv.id,
             gmail_thread_id=conv.gmail_thread_id,
+            outlook_conversation_id=conv.outlook_conversation_id,
             subject=conv.subject,
             from_email=conv.from_email,
             status=conv.status,
@@ -997,6 +1007,211 @@ async def get_recent_messages(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to read messages: {str(e)}",
         )
+
+
+# ============================================================================
+# Outlook / Microsoft 365 OAuth Endpoints
+# ============================================================================
+
+
+@router.post("/outlook/oauth/start", response_model=OAuthStartResponse)
+async def start_outlook_oauth_flow(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OAuthStartResponse:
+    """Start Outlook OAuth flow. Returns Microsoft authorization URL."""
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    if not settings.outlook_client_id or not settings.outlook_client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Outlook integration not configured. Contact support.",
+        )
+
+    redirect_uri = settings.outlook_redirect_uri
+    if not redirect_uri:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Outlook OAuth redirect URI not configured.",
+        )
+
+    state = f"{tenant_id}:{secrets.token_urlsafe(32)}"
+
+    try:
+        authorization_url, returned_state = OutlookClient.get_authorization_url(
+            redirect_uri=redirect_uri,
+            state=state,
+        )
+        return OAuthStartResponse(
+            authorization_url=authorization_url,
+            state=state,
+        )
+    except OutlookAuthError as e:
+        logger.error(f"Outlook OAuth start failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start Outlook OAuth flow: {str(e)}",
+        )
+
+
+@router.get("/outlook/oauth/callback")
+async def outlook_oauth_callback(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    code: Annotated[str | None, Query()] = None,
+    state: Annotated[str | None, Query()] = None,
+    error: Annotated[str | None, Query()] = None,
+) -> RedirectResponse:
+    """Handle Outlook OAuth callback from Microsoft."""
+    base_url = settings.frontend_url or "https://chattercheatah-900139201687.us-central1.run.app"
+
+    if error:
+        logger.error(f"Outlook OAuth error from Microsoft: {error}")
+        return RedirectResponse(
+            url=f"{base_url}/settings/email?error=outlook_oauth_error&message={error}",
+            status_code=302,
+        )
+
+    if not code or not state:
+        logger.error("Outlook OAuth callback missing code or state")
+        return RedirectResponse(
+            url=f"{base_url}/settings/email?error=missing_parameters&message=OAuth callback missing code or state",
+            status_code=302,
+        )
+
+    # Parse tenant_id from state
+    try:
+        parts = state.split(":", 1)
+        tenant_id = int(parts[0])
+    except (ValueError, IndexError):
+        logger.error(f"Invalid Outlook OAuth state: {state}")
+        return RedirectResponse(
+            url=f"{base_url}/settings/email?error=invalid_state",
+            status_code=302,
+        )
+
+    redirect_uri = settings.outlook_redirect_uri
+    if not redirect_uri:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Outlook OAuth redirect URI not configured.",
+        )
+
+    try:
+        # Exchange code for tokens
+        token_data = await OutlookClient.exchange_code_for_tokens(
+            code=code,
+            redirect_uri=redirect_uri,
+        )
+
+        # Store tokens and set ingestion method to outlook
+        config_repo = TenantEmailConfigRepository(db)
+        await config_repo.create_or_update(
+            tenant_id=tenant_id,
+            outlook_email=token_data["email"],
+            outlook_refresh_token=token_data["refresh_token"],
+            outlook_access_token=token_data["access_token"],
+            outlook_token_expires_at=token_data["token_expires_at"],
+            email_ingestion_method="outlook",
+            is_enabled=True,
+        )
+
+        # Create Graph subscription for inbox notifications
+        webhook_base = settings.api_base_url or base_url
+        notification_url = f"{webhook_base}/api/v1/email/outlook/webhook"
+        client_state = secrets.token_urlsafe(32)
+
+        try:
+            outlook_client = OutlookClient(
+                refresh_token=token_data["refresh_token"],
+                access_token=token_data["access_token"],
+                token_expires_at=token_data["token_expires_at"],
+            )
+            sub_result = await outlook_client.watch_mailbox(
+                notification_url=notification_url,
+                client_state=client_state,
+            )
+            await config_repo.update_outlook_subscription(
+                tenant_id=tenant_id,
+                subscription_id=sub_result["subscription_id"],
+                expiration=sub_result["expiration"],
+                client_state=client_state,
+            )
+        except Exception as e:
+            logger.error(f"Failed to create Outlook subscription: {e}")
+            # Continue — subscription can be created later
+
+        logger.info(f"Outlook connected for tenant {tenant_id}: {token_data['email']}")
+        return RedirectResponse(
+            url=f"{base_url}/settings/email?outlook_connected=true&email={token_data['email']}",
+            status_code=302,
+        )
+
+    except OutlookAuthError as e:
+        logger.error(f"Outlook OAuth callback failed: {e}")
+        return RedirectResponse(
+            url=f"{base_url}/settings/email?error={str(e)}",
+            status_code=302,
+        )
+
+
+@router.delete("/outlook/disconnect")
+async def disconnect_outlook(
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int | None, Depends(get_current_tenant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    """Disconnect Outlook account from tenant."""
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+
+    config_repo = TenantEmailConfigRepository(db)
+    config = await config_repo.get_by_tenant_id(tenant_id)
+
+    if not config:
+        return {"status": "ok", "message": "No Outlook connected"}
+
+    # Delete Graph subscription
+    if config.outlook_refresh_token and config.outlook_subscription_id:
+        try:
+            outlook_client = OutlookClient(
+                refresh_token=config.outlook_refresh_token,
+                access_token=config.outlook_access_token,
+                token_expires_at=config.outlook_token_expires_at,
+            )
+            await outlook_client.stop_watch(config.outlook_subscription_id)
+        except Exception as e:
+            logger.warning(f"Failed to delete Outlook subscription: {e}")
+
+    # Clear Outlook tokens
+    await config_repo.create_or_update(
+        tenant_id=tenant_id,
+        outlook_email=None,
+        outlook_refresh_token=None,
+        outlook_access_token=None,
+        outlook_token_expires_at=None,
+        outlook_subscription_id=None,
+        outlook_subscription_expiration=None,
+        outlook_client_state=None,
+    )
+
+    # If ingestion method was outlook, disable email
+    if config.email_ingestion_method == "outlook":
+        await config_repo.create_or_update(
+            tenant_id=tenant_id,
+            is_enabled=False,
+            email_ingestion_method="gmail",
+        )
+
+    logger.info(f"Outlook disconnected for tenant {tenant_id}")
+    return {"status": "ok", "message": "Outlook disconnected successfully"}
 
 
 def _get_gmail_forwarding_instructions(parse_address: str, prefixes: list[str] | None) -> str:

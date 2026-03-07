@@ -184,6 +184,87 @@ async def test_gmail_webhook(
         )
 
 
+@router.post("/outlook/webhook", response_model=None)
+async def outlook_change_notification(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Handle Microsoft Graph change notifications for Outlook mail.
+
+    Handles two types of requests:
+    1. Subscription validation: Microsoft sends ?validationToken=... that must be echoed as text/plain
+    2. Change notifications: POST with JSON body containing changed resources
+    """
+    # Step 1: Handle subscription validation handshake
+    validation_token = request.query_params.get("validationToken")
+    if validation_token:
+        logger.info("[OUTLOOK_WEBHOOK] Subscription validation request received")
+        return Response(content=validation_token, media_type="text/plain")
+
+    try:
+        body = await request.json()
+        notifications = body.get("value", [])
+        logger.info(f"[OUTLOOK_WEBHOOK] Received {len(notifications)} change notification(s)")
+
+        from app.persistence.repositories.email_repository import TenantEmailConfigRepository
+
+        for notification in notifications:
+            change_type = notification.get("changeType")
+            if change_type != "created":
+                continue
+
+            subscription_id = notification.get("subscriptionId")
+            client_state = notification.get("clientState")
+            resource = notification.get("resource", "")
+
+            # Extract message ID from resource path
+            # Format: "Users/{user-id}/Messages/{message-id}" or "me/mailFolders('Inbox')/messages/{id}"
+            message_id = resource.split("/")[-1] if resource else None
+
+            if not subscription_id or not message_id:
+                logger.warning(f"[OUTLOOK_WEBHOOK] Missing subscription_id or message_id in notification")
+                continue
+
+            # Verify client_state against stored secret
+            config_repo = TenantEmailConfigRepository(db)
+            config = await config_repo.get_by_subscription_id(subscription_id)
+            if not config:
+                logger.warning(f"[OUTLOOK_WEBHOOK] Unknown subscription_id: {subscription_id}")
+                continue
+
+            if config.outlook_client_state and config.outlook_client_state != client_state:
+                logger.warning(f"[OUTLOOK_WEBHOOK] Client state mismatch for tenant {config.tenant_id}")
+                continue
+
+            # Queue for async processing via Cloud Tasks
+            if settings.cloud_tasks_email_worker_url:
+                cloud_tasks = CloudTasksClient()
+                await cloud_tasks.create_task_async(
+                    payload={
+                        "subscription_id": subscription_id,
+                        "message_id": message_id,
+                        "tenant_id": config.tenant_id,
+                    },
+                    url=f"{settings.cloud_tasks_email_worker_url}/process-outlook-notification",
+                )
+                logger.info(f"[OUTLOOK_WEBHOOK] Queued notification for tenant {config.tenant_id}")
+            else:
+                # Fallback: process synchronously
+                logger.warning("[OUTLOOK_WEBHOOK] No Cloud Tasks URL, processing synchronously")
+                email_service = EmailService(db)
+                await email_service.process_outlook_notification(
+                    tenant_id=config.tenant_id,
+                    message_id=message_id,
+                )
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        logger.error(f"[OUTLOOK_WEBHOOK] Error processing notification: {e}", exc_info=True)
+        # Return 202 to prevent Microsoft retries for processing errors
+        return {"status": "accepted"}
+
+
 @router.get("/health")
 async def email_webhook_health() -> dict[str, str]:
     """Health check for email webhook endpoint.

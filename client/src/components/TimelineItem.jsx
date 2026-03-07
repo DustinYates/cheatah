@@ -181,7 +181,7 @@ function formatMessageTime(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' +
-    d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+    d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
 }
 
 /**
@@ -195,7 +195,7 @@ function MessageDetails({ details }) {
       <div className="timeline-details-content">
         <div className="detail-section">
           <div className="conversation-messages">
-            {details.messages.map((msg, idx) => (
+            {[...details.messages].reverse().map((msg, idx) => (
               <div key={idx} className={`conversation-message ${msg.role}`}>
                 <div className="conversation-message-header">
                   <span className="conversation-message-role">

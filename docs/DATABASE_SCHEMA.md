@@ -48,9 +48,9 @@
 
 | Table | Description |
 |-------|-------------|
-| `tenant_sms_configs` | SMS/Twilio configuration per tenant |
+| `tenant_sms_configs` | SMS/Telnyx configuration per tenant |
 | `tenant_email_configs` | Email/Gmail configuration per tenant |
-| `tenant_voice_configs` | Voice/Telnyx configuration per tenant |
+| `tenant_voice_configs` | Voice configuration per tenant |
 | `tenant_customer_service_configs` | Customer service integration settings |
 
 ## Business Profile & Scraping

@@ -505,9 +505,7 @@ class TelnyxAIService:
 
                 while url and page < max_pages:
                     logger.info(f"[TELNYX-API] Fetching messages from: {url} (page {page})")
-                    response = await client.get(
-                        url, params={"page[size]": 250} if page == 0 else None
-                    )
+                    response = await client.get(url)
                     response.raise_for_status()
                     data = response.json()
                     messages = data.get("data", [])

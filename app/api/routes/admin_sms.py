@@ -17,9 +17,9 @@ class SmsConfigCreate(BaseModel):
     """SMS configuration creation request."""
     
     is_enabled: bool = False
-    twilio_account_sid: str | None = None
-    twilio_auth_token: str | None = None
-    twilio_phone_number: str | None = None
+    telnyx_api_key_prefix: str | None = None
+    telnyx_messaging_profile_id: str | None = None
+    telnyx_phone_number: str | None = None
     business_hours_enabled: bool = False
     timezone: str = "UTC"
     business_hours: dict | None = None  # {"monday": {"start": "09:00", "end": "17:00"}, ...}
@@ -34,8 +34,8 @@ class SmsConfigResponse(BaseModel):
     id: int
     tenant_id: int
     is_enabled: bool
-    twilio_account_sid: str | None = None
-    twilio_phone_number: str | None
+    telnyx_api_key_prefix: str | None = None
+    telnyx_phone_number: str | None
     business_hours_enabled: bool
     timezone: str
     business_hours: dict | None
@@ -77,9 +77,9 @@ async def create_or_update_sms_config(
     if existing_config:
         # Update existing
         existing_config.is_enabled = config_data.is_enabled
-        existing_config.twilio_account_sid = config_data.twilio_account_sid
-        existing_config.twilio_auth_token = config_data.twilio_auth_token
-        existing_config.twilio_phone_number = config_data.twilio_phone_number
+        existing_config.telnyx_api_key_prefix = config_data.telnyx_api_key_prefix
+        existing_config.telnyx_messaging_profile_id = config_data.telnyx_messaging_profile_id
+        existing_config.telnyx_phone_number = config_data.telnyx_phone_number
         existing_config.business_hours_enabled = config_data.business_hours_enabled
         existing_config.timezone = config_data.timezone
         existing_config.business_hours = config_data.business_hours
@@ -95,9 +95,9 @@ async def create_or_update_sms_config(
         config = TenantSmsConfig(
             tenant_id=tenant_id,
             is_enabled=config_data.is_enabled,
-            twilio_account_sid=config_data.twilio_account_sid,
-            twilio_auth_token=config_data.twilio_auth_token,
-            twilio_phone_number=config_data.twilio_phone_number,
+            telnyx_api_key_prefix=config_data.telnyx_api_key_prefix,
+            telnyx_messaging_profile_id=config_data.telnyx_messaging_profile_id,
+            telnyx_phone_number=config_data.telnyx_phone_number,
             business_hours_enabled=config_data.business_hours_enabled,
             timezone=config_data.timezone,
             business_hours=config_data.business_hours,
@@ -113,8 +113,8 @@ async def create_or_update_sms_config(
         id=config.id,
         tenant_id=config.tenant_id,
         is_enabled=config.is_enabled,
-        twilio_account_sid=config.twilio_account_sid,
-        twilio_phone_number=config.twilio_phone_number,
+        telnyx_api_key_prefix=config.telnyx_api_key_prefix,
+        telnyx_phone_number=config.telnyx_phone_number,
         business_hours_enabled=config.business_hours_enabled,
         timezone=config.timezone,
         business_hours=config.business_hours,
@@ -154,8 +154,8 @@ async def get_sms_config(
             id=0,
             tenant_id=tenant_id,
             is_enabled=False,
-            twilio_account_sid=None,
-            twilio_phone_number=None,
+            telnyx_api_key_prefix=None,
+            telnyx_phone_number=None,
             business_hours_enabled=False,
             timezone="UTC",
             business_hours=None,
@@ -169,8 +169,8 @@ async def get_sms_config(
         id=config.id,
         tenant_id=config.tenant_id,
         is_enabled=config.is_enabled,
-        twilio_account_sid=config.twilio_account_sid,
-        twilio_phone_number=config.twilio_phone_number,
+        telnyx_api_key_prefix=config.telnyx_api_key_prefix,
+        telnyx_phone_number=config.telnyx_phone_number,
         business_hours_enabled=config.business_hours_enabled,
         timezone=config.timezone,
         business_hours=config.business_hours,
@@ -210,7 +210,7 @@ async def send_manual_sms(
     logger = logging.getLogger(__name__)
     current_user, tenant_id = admin_data
 
-    # Use factory to support both Twilio and Telnyx
+    # Use factory to get the configured SMS provider
     factory = TelephonyProviderFactory(db)
     sms_config = await factory.get_config(tenant_id)
 
@@ -234,7 +234,7 @@ async def send_manual_sms(
             detail="SMS provider not configured for this tenant",
         )
 
-    # Send SMS via the configured provider (Twilio or Telnyx)
+    # Send SMS via the configured provider
     send_result = await sms_provider.send_sms(
         to=sms_data.to,
         from_=from_phone,

@@ -35,9 +35,6 @@ Conventions:
 | `CLOUD_TASKS_LOCATION` | Global | Cloud Tasks location | `app/infrastructure/cloud_tasks.py` | Env | `us-central1` |
 | `CLOUD_TASKS_WORKER_URL` | Global | Worker URL for SMS jobs | `app/api/routes/sms_webhooks.py` | Env | `https://<service>/workers/sms` |
 | `CLOUD_TASKS_EMAIL_WORKER_URL` | Global | Worker URL for email jobs | `app/api/routes/email_webhooks.py` | Env | `https://<service>/workers/email` |
-| `TWILIO_ACCOUNT_SID` | Global | Default Twilio SID (fallback) | `app/infrastructure/twilio_client.py` | Secret Manager / Env | `ACxxxxxxxx` |
-| `TWILIO_AUTH_TOKEN` | Global | Default Twilio token (fallback) | `app/infrastructure/twilio_client.py` | Secret Manager / Env | `<redacted>` |
-| `TWILIO_WEBHOOK_URL_BASE` | Global | Base URL for Twilio callbacks | `app/api/routes/voice_webhooks.py` | Env | `https://<service>.run.app` |
 | `GMAIL_CLIENT_ID` | Global | Gmail OAuth client id | `app/infrastructure/gmail_client.py` | Secret Manager / Env | `<redacted>.apps.googleusercontent.com` |
 | `GMAIL_CLIENT_SECRET` | Global | Gmail OAuth client secret | `app/infrastructure/gmail_client.py` | Secret Manager / Env | `<redacted>` |
 | `GMAIL_OAUTH_REDIRECT_URI` | Global | OAuth redirect/callback URI | `app/api/routes/tenant_email.py` | Env | `https://<service>/api/v1/email/oauth/callback` |
@@ -68,7 +65,7 @@ Conventions:
 | `users.role` | Per-tenant/global | Authorization role | `app/api/deps.py` | DB | `tenant_admin` |
 | `tenant_business_profiles.*` | Per-tenant | Shared business facts | profile/voice services | DB | `business_name="Example Customer"` |
 | `prompt_bundles.*` + `prompt_sections.*` | Global + per-tenant | Prompt system base + overlays | `app/domain/services/prompt_service.py` | DB | (varies) |
-| `tenant_sms_configs.*` | Per-tenant | SMS settings & Telnyx/Twilio mapping | SMS webhook + services | DB | `telnyx_phone_number="+15555550123"` |
+| `tenant_sms_configs.*` | Per-tenant | SMS settings & Telnyx mapping | SMS webhook + services | DB | `telnyx_phone_number="+15555550123"` |
 | `tenant_voice_configs.*` | Per-tenant | Voice greeting/handoff/escalation | voice webhook + services | DB | `handoff_mode="take_message"` |
 | `tenant_email_configs.*` | Per-tenant | Gmail OAuth tokens/settings/watch | email services | DB | `gmail_email="ops@exampleco.test"` |
 | `email_conversations.*` | Per-tenant | Gmail thread → internal conversation mapping | email services | DB | `gmail_thread_id="18c..."` |
@@ -77,6 +74,6 @@ Conventions:
 
 ## Notes / gaps to track
 
-- Per-tenant secrets stored in DB today include Telnyx/Twilio API keys and Gmail refresh tokens; plan to encrypt at rest or move to a dedicated secret store.
+- Per-tenant secrets stored in DB today include Telnyx API keys and Gmail refresh tokens; plan to encrypt at rest or move to a dedicated secret store.
 - CORS is currently `*` (not environment-configurable yet).
 - The public chat endpoint accepts a raw `tenant_id`; consider adding a tenant public token or signed embed key.

@@ -343,6 +343,66 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class DynamicCORSMiddleware(BaseHTTPMiddleware):
+    """Path-aware CORS middleware.
+
+    Allows wildcard origins for public endpoints (chat widget, webhooks)
+    and restricts all other endpoints to the app's own origin.
+    """
+
+    # Paths that need wildcard CORS (embedded widget + external webhooks)
+    OPEN_CORS_PREFIXES = (
+        "/api/v1/chat/",
+        "/api/v1/widget/",
+        "/api/v1/telnyx/",
+        "/api/v1/sms/",
+        "/api/v1/voice/",
+        "/api/v1/email/",
+        "/api/v1/sendgrid/",
+        "/api/v1/zapier/",
+        "/health",
+    )
+
+    # TODO(issue-2): Move this hardcoded app origin to configuration and support
+    # multiple frontend origins. The current single-origin assumption can break
+    # dashboard/admin API usage from localhost, a separate frontend host, or a custom domain.
+    APP_ORIGIN = "https://chattercheatah-900139201687.us-central1.run.app"
+
+    ALLOWED_HEADERS = "Authorization, Content-Type, X-Tenant-Id, Idempotency-Key, X-Widget-Api-Key"
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        path = str(request.url.path)
+        origin = request.headers.get("origin", "")
+        is_open = any(path.startswith(p) for p in self.OPEN_CORS_PREFIXES)
+
+        # Handle preflight OPTIONS requests
+        if request.method == "OPTIONS":
+            allowed_origin = "*" if is_open else (origin if origin == self.APP_ORIGIN else self.APP_ORIGIN)
+            return Response(
+                status_code=204,
+                headers={
+                    "Access-Control-Allow-Origin": allowed_origin,
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                    "Access-Control-Allow-Headers": self.ALLOWED_HEADERS,
+                    "Access-Control-Max-Age": "86400",
+                },
+            )
+
+        response = await call_next(request)
+
+        if is_open:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        elif origin == self.APP_ORIGIN:
+            response.headers["Access-Control-Allow-Origin"] = self.APP_ORIGIN
+        else:
+            # For non-open paths from other origins, set own origin (browser will block)
+            response.headers["Access-Control-Allow-Origin"] = self.APP_ORIGIN
+
+        response.headers["Access-Control-Allow-Headers"] = self.ALLOWED_HEADERS
+
+        return response
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Middleware for adding security headers to all responses."""
 
@@ -375,5 +435,28 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Referrer policy - send origin only
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
-        return response
+        # Cache-Control: prevent sensitive responses from being cached
+        # (Fixes: "Storable and Cacheable Content" + "Re-examine Cache-control Directives")
+        path = str(request.url.path)
+        if not any(static in path for static in ["/static", "/assets"]):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
 
+        # Permissions-Policy: restrict browser feature access
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=(), "
+            "payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+        )
+
+        # Content-Security-Policy
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self' https:; "
+            "frame-ancestors 'self'"
+        )
+
+        return response

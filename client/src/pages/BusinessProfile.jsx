@@ -9,26 +9,16 @@ const defaultFormData = {
   business_name: '',
   website_url: '',
   phone_number: '',
-  twilio_phone: '',
   email: '',
 };
 
 // Helper to get the active SMS phone number from telephony config
 const getActiveSmsPhone = (telephonyConfig) => {
-  if (!telephonyConfig) return { phone: '', provider: 'twilio', label: 'SMS Phone Number' };
+  if (!telephonyConfig) return { phone: '', label: 'SMS Phone Number' };
 
-  const provider = telephonyConfig.provider || 'twilio';
-  if (provider === 'telnyx') {
-    return {
-      phone: telephonyConfig.telnyx_phone_number || '',
-      provider: 'telnyx',
-      label: 'Telnyx Phone Number'
-    };
-  }
   return {
-    phone: telephonyConfig.twilio_phone_number || '',
-    provider: 'twilio',
-    label: 'Twilio Phone Number'
+    phone: telephonyConfig.telnyx_phone_number || '',
+    label: 'Telnyx Phone Number'
   };
 };
 
@@ -121,7 +111,6 @@ export default function BusinessProfile() {
         business_name: profile.business_name || '',
         website_url: profile.website_url || '',
         phone_number: profile.phone_number || '',
-        twilio_phone: profile.twilio_phone || '',
         email: profile.email || '',
       });
     }
@@ -260,18 +249,18 @@ export default function BusinessProfile() {
         </div>
 
         <div className="form-group">
-          <label htmlFor="twilio_phone">{getActiveSmsPhone(telephonyConfig).label}</label>
+          <label htmlFor="sms_phone">{getActiveSmsPhone(telephonyConfig).label}</label>
           <input
             type="tel"
-            id="twilio_phone"
-            name="twilio_phone"
-            value={getActiveSmsPhone(telephonyConfig).phone || formData.twilio_phone}
+            id="sms_phone"
+            name="sms_phone"
+            value={getActiveSmsPhone(telephonyConfig).phone}
             readOnly
             placeholder="Not configured"
             className="readonly-input"
           />
           <small>
-            Your {getActiveSmsPhone(telephonyConfig).provider === 'telnyx' ? 'Telnyx' : 'Twilio'} number for SMS communications.
+            Your Telnyx number for SMS communications.
             {user?.is_global_admin && <> <a href="/telephony-settings">Configure in Telephony Settings</a></>}
           </small>
         </div>

@@ -1,4 +1,4 @@
-"""Tenant-facing SMS endpoints (no Twilio credentials exposed)."""
+"""Tenant-facing SMS endpoints."""
 
 from typing import Annotated
 
@@ -60,7 +60,7 @@ def normalize_subject_templates(raw_templates: dict | None) -> dict[str, Subject
 class SmsSettingsResponse(BaseModel):
     """SMS settings visible to tenant."""
     is_enabled: bool
-    phone_number: str | None  # Assigned Twilio number (read-only)
+    phone_number: str | None  # Assigned phone number (read-only)
     auto_reply_enabled: bool
     auto_reply_message: str | None
     initial_outreach_message: str | None
@@ -177,7 +177,7 @@ async def get_sms_settings(
 
     return SmsSettingsResponse(
         is_enabled=config.is_enabled,
-        phone_number=config.twilio_phone_number or config.telnyx_phone_number,  # Read-only, assigned by admin
+        phone_number=config.telnyx_phone_number,
         auto_reply_enabled=config.auto_reply_outside_hours,
         auto_reply_message=config.auto_reply_message,
         initial_outreach_message=settings_json.get("initial_outreach_message"),
@@ -263,16 +263,16 @@ async def update_sms_settings(
             timezone=settings_data.timezone,
             business_hours=settings_data.business_hours,
             settings=new_settings,
-            twilio_phone_number=phone_number_to_update,  # Admin can set phone on creation
+            telnyx_phone_number=phone_number_to_update,
         )
         db.add(config)
     else:
         # Update phone number if admin provided one
         if phone_number_to_update is not None:
-            config.twilio_phone_number = phone_number_to_update
+            config.telnyx_phone_number = phone_number_to_update
 
         # Only allow enabling if phone number is assigned (or being assigned now)
-        has_phone = config.twilio_phone_number or config.telnyx_phone_number or phone_number_to_update
+        has_phone = config.telnyx_phone_number or phone_number_to_update
         if settings_data.is_enabled and not has_phone:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -298,7 +298,7 @@ async def update_sms_settings(
 
     return SmsSettingsResponse(
         is_enabled=config.is_enabled,
-        phone_number=config.twilio_phone_number or config.telnyx_phone_number,
+        phone_number=config.telnyx_phone_number,
         auto_reply_enabled=config.auto_reply_outside_hours,
         auto_reply_message=config.auto_reply_message,
         initial_outreach_message=settings_json.get("initial_outreach_message"),
@@ -346,7 +346,7 @@ async def initiate_outreach(
             error="SMS is not enabled. Please enable SMS in settings.",
         )
     
-    if not config.twilio_phone_number:
+    if not config.telnyx_phone_number:
         return InitiateOutreachResponse(
             success=False,
             error="No phone number assigned. Contact support to get a number assigned.",
@@ -395,21 +395,24 @@ async def initiate_outreach(
             else "Hi! Thanks for reaching out. I'm an AI assistant and happy to help answer your questions. What can I help you with today?"
         )
     
-    # Send via Twilio
+    # Send via SMS provider
     try:
-        from app.infrastructure.twilio_client import TwilioSmsClient
-        
-        # Use global Twilio credentials (operator's account)
-        twilio_client = TwilioSmsClient(
-            account_sid=settings.twilio_account_sid,
-            auth_token=settings.twilio_auth_token,
-        )
-        
-        send_result = twilio_client.send_sms(
+        from app.infrastructure.telephony.factory import TelephonyProviderFactory
+
+        factory = TelephonyProviderFactory(db)
+        sms_provider = await factory.get_sms_provider(tenant_id)
+        if not sms_provider:
+            return InitiateOutreachResponse(
+                success=False,
+                error="SMS provider not configured for this tenant.",
+            )
+
+        provider_result = await sms_provider.send_sms(
             to=phone,
-            from_=config.twilio_phone_number,
+            from_=config.telnyx_phone_number,
             body=message_text,
         )
+        send_result = {"sid": provider_result.message_id}
         
         # Store the outgoing message in conversation
         outgoing_message = Message(
@@ -417,7 +420,7 @@ async def initiate_outreach(
             role="assistant",
             content=message_text,
             message_metadata={
-                "twilio_message_sid": send_result.get("sid"),
+                "external_message_id": send_result.get("sid"),
                 "outreach_initiated_by": current_user.email,
             },
         )

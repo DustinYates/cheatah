@@ -47,7 +47,6 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | REDIS_ENABLED | Enable Redis caching | `false` |
 | CHAT_MAX_TOKENS | Max tokens for LLM responses | `8000` |
 | GCS_WIDGET_ASSETS_BUCKET | GCS bucket for widget assets | `chattercheetah-widget-assets` |
-| TWILIO_WEBHOOK_URL_BASE | Base URL for Twilio webhooks | `https://SERVICE-URL` |
 | CLOUD_TASKS_WORKER_URL | URL for Cloud Tasks worker | `https://SERVICE-URL/workers` |
 | GMAIL_OAUTH_REDIRECT_URI | Gmail OAuth callback URL | `https://SERVICE-URL/api/v1/email/oauth/callback` |
 | GMAIL_PUBSUB_TOPIC | Pub/Sub topic for Gmail notifications | `projects/PROJECT/topics/gmail-push-notifications` |

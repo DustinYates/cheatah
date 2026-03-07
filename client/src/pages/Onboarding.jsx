@@ -16,7 +16,6 @@ export default function Onboarding() {
     business_name: '',
     website_url: '',
     phone_number: '',
-    twilio_phone: '',
     email: '',
   });
 
@@ -78,7 +77,6 @@ export default function Onboarding() {
         business_name: profile.business_name || '',
         website_url: profile.website_url || '',
         phone_number: profile.phone_number || '',
-        twilio_phone: profile.twilio_phone || '',
         email: profile.email || '',
       });
       if (profile.profile_complete) {

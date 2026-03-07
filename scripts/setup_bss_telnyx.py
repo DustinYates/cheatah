@@ -69,7 +69,7 @@ async def setup_telnyx_config():
             if existing_config:
                 print(f"\n⚠️  SMS config already exists for this tenant")
                 print(f"   Current provider: {existing_config.provider}")
-                print(f"   Current phone: {existing_config.telnyx_phone_number or existing_config.twilio_phone_number}")
+                print(f"   Current phone: {existing_config.telnyx_phone_number}")
                 print(f"   Is enabled: {existing_config.is_enabled}")
 
                 response = input("\nUpdate existing config? (y/n): ")

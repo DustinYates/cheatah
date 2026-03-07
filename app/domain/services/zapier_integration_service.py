@@ -386,7 +386,7 @@ class ZapierIntegrationService:
 
     def _get_callback_url(self) -> str:
         """Get the callback URL for Zapier responses."""
-        base_url = settings.api_base_url or settings.twilio_webhook_url_base or ""
+        base_url = settings.api_base_url or ""
         return f"{base_url}{settings.api_v1_prefix}/zapier/callback"
 
     def _verify_callback_signature(

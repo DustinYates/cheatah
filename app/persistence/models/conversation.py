@@ -75,7 +75,7 @@ class Message(Base):
     role = Column(String(50), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
     sequence_number = Column(Integer, nullable=False, index=True)
-    message_metadata = Column("metadata", JSON, nullable=True)  # For audit trail (Twilio SID, delivery status, etc.)
+    message_metadata = Column("metadata", JSON, nullable=True)  # For audit trail (message ID, delivery status, etc.)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

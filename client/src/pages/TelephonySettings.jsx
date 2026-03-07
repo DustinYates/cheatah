@@ -90,13 +90,9 @@ export default function TelephonySettings() {
   const [config, setConfig] = useState({
     id: 0,
     tenant_id: 0,
-    provider: 'twilio',
+    provider: 'telnyx',
     sms_enabled: false,
     voice_enabled: false,
-    // Twilio
-    twilio_account_sid: '',
-    has_twilio_auth_token: false,
-    twilio_phone_number: '',
     // Telnyx
     telnyx_api_key_prefix: '',
     telnyx_messaging_profile_id: '',
@@ -107,13 +103,9 @@ export default function TelephonySettings() {
   });
 
   const [formData, setFormData] = useState({
-    provider: 'twilio',
+    provider: 'telnyx',
     sms_enabled: false,
     voice_enabled: false,
-    // Twilio
-    twilio_account_sid: '',
-    twilio_auth_token: '',
-    twilio_phone_number: '',
     // Telnyx
     telnyx_api_key: '',
     telnyx_messaging_profile_id: '',
@@ -131,9 +123,6 @@ export default function TelephonySettings() {
   const [copiedUrl, setCopiedUrl] = useState(null);
   const [isEditingCredentials, setIsEditingCredentials] = useState(false);
   const [credentialDrafts, setCredentialDrafts] = useState({
-    twilio_account_sid: '',
-    twilio_auth_token: '',
-    twilio_phone_number: '',
     telnyx_api_key: '',
     telnyx_messaging_profile_id: '',
     telnyx_connection_id: '',
@@ -172,16 +161,8 @@ export default function TelephonySettings() {
     };
   }, []);
 
-  useEffect(() => {
-    clearAllReveals();
-    resetCredentialDrafts();
-  }, [formData.provider]);
-
   const resetCredentialDrafts = () => {
     setCredentialDrafts({
-      twilio_account_sid: '',
-      twilio_auth_token: '',
-      twilio_phone_number: '',
       telnyx_api_key: '',
       telnyx_messaging_profile_id: '',
       telnyx_connection_id: '',
@@ -192,11 +173,9 @@ export default function TelephonySettings() {
   const applyConfigToFormData = (data) => {
     setFormData(prev => ({
       ...prev,
-      provider: data.provider || 'twilio',
+      provider: 'telnyx',
       sms_enabled: data.sms_enabled || false,
       voice_enabled: data.voice_enabled || false,
-      twilio_account_sid: data.twilio_account_sid || '',
-      twilio_phone_number: data.twilio_phone_number || '',
       telnyx_messaging_profile_id: data.telnyx_messaging_profile_id || '',
       telnyx_connection_id: data.telnyx_connection_id || '',
       telnyx_phone_number: data.telnyx_phone_number || '',
@@ -233,7 +212,6 @@ export default function TelephonySettings() {
       setMessage({ type: 'success', text: 'Configuration saved successfully!' });
       setFormData(prev => ({
         ...prev,
-        twilio_auth_token: '',
         telnyx_api_key: '',
       }));
       resetCredentialDrafts();
@@ -250,14 +228,8 @@ export default function TelephonySettings() {
     setMessage({ type: '', text: '' });
     const effectiveData = getEffectiveFormData();
 
-    const payload = { provider: formData.provider };
-
-    if (formData.provider === 'twilio') {
-      payload.twilio_account_sid = effectiveData.twilio_account_sid;
-      payload.twilio_auth_token = effectiveData.twilio_auth_token;
-    } else if (formData.provider === 'telnyx') {
-      payload.telnyx_api_key = effectiveData.telnyx_api_key;
-    }
+    const payload = { provider: 'telnyx' };
+    payload.telnyx_api_key = effectiveData.telnyx_api_key;
 
     try {
       const data = await api.validateTelephonyCredentials(payload);
@@ -325,7 +297,7 @@ export default function TelephonySettings() {
     setRevealingFields(prev => ({ ...prev, [field]: true }));
     try {
       let value = null;
-      if (field === 'telnyx_api_key' || field === 'twilio_auth_token') {
+      if (field === 'telnyx_api_key') {
         const data = await api.revealTelephonyCredential(field);
         value = data.value;
       } else {
@@ -362,19 +334,11 @@ export default function TelephonySettings() {
 
   const getWebhookUrls = () => {
     const baseUrl = window.location.origin;
-    if (formData.provider === 'telnyx') {
-      return {
-        smsInbound: `${baseUrl}/api/v1/telnyx/sms/inbound`,
-        smsStatus: `${baseUrl}/api/v1/telnyx/sms/status`,
-        voiceInbound: `${baseUrl}/api/v1/voice/telnyx/inbound`,
-        voiceStatus: `${baseUrl}/api/v1/voice/telnyx/status`,
-      };
-    }
     return {
-      smsInbound: `${baseUrl}/api/v1/sms/inbound`,
-      smsStatus: `${baseUrl}/api/v1/sms/status`,
-      voiceInbound: `${baseUrl}/api/v1/voice/inbound`,
-      voiceStatus: `${baseUrl}/api/v1/voice/status`,
+      smsInbound: `${baseUrl}/api/v1/telnyx/sms/inbound`,
+      smsStatus: `${baseUrl}/api/v1/telnyx/sms/status`,
+      voiceInbound: `${baseUrl}/api/v1/voice/telnyx/inbound`,
+      voiceStatus: `${baseUrl}/api/v1/voice/telnyx/status`,
     };
   };
 
@@ -390,12 +354,7 @@ export default function TelephonySettings() {
 
   // Status badge helper
   const getCredentialStatus = () => {
-    if (formData.provider === 'twilio') {
-      return config.has_twilio_auth_token ? 'configured' : null;
-    } else if (formData.provider === 'telnyx') {
-      return config.telnyx_api_key_prefix ? 'configured' : null;
-    }
-    return null;
+    return config.telnyx_api_key_prefix ? 'configured' : null;
   };
 
   const needsTenant = isGlobalAdmin && !selectedTenantId;
@@ -475,24 +434,6 @@ export default function TelephonySettings() {
       configured: Boolean(config.telnyx_phone_number),
     },
   ];
-  const twilioCredentials = [
-    {
-      field: 'twilio_account_sid',
-      label: 'Account SID',
-      configured: Boolean(config.twilio_account_sid),
-    },
-    {
-      field: 'twilio_auth_token',
-      label: 'Auth Token',
-      configured: Boolean(config.has_twilio_auth_token),
-    },
-    {
-      field: 'twilio_phone_number',
-      label: 'SMS Phone Number',
-      configured: Boolean(config.twilio_phone_number),
-    },
-  ];
-
   return (
     <div className="telephony-container">
       <h1>Telephony Settings</h1>
@@ -503,38 +444,8 @@ export default function TelephonySettings() {
       )}
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-      {/* Provider & Features Section */}
-      <CollapsibleSection title="Provider & Features" defaultOpen={true}>
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ fontSize: '0.85rem', fontWeight: 500, color: '#666', marginBottom: '8px', display: 'block' }}>
-            Select Provider
-          </label>
-          <div className="provider-radio-row">
-            <label className="provider-radio-option">
-              <input
-                type="radio"
-                name="provider"
-                value="twilio"
-                checked={formData.provider === 'twilio'}
-                onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-              />
-              <span className="provider-name">Twilio</span>
-              <span className="provider-desc">- SMS & Voice</span>
-            </label>
-            <label className="provider-radio-option">
-              <input
-                type="radio"
-                name="provider"
-                value="telnyx"
-                checked={formData.provider === 'telnyx'}
-                onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-              />
-              <span className="provider-name">Telnyx</span>
-              <span className="provider-desc">- SMS & Voice</span>
-            </label>
-          </div>
-        </div>
-
+      {/* Features Section */}
+      <CollapsibleSection title="Features" defaultOpen={true}>
         <div>
           <label style={{ fontSize: '0.85rem', fontWeight: 500, color: '#666', marginBottom: '8px', display: 'block' }}>
             Enabled Features
@@ -587,25 +498,7 @@ export default function TelephonySettings() {
           )}
         </div>
 
-        {!isEditingCredentials && formData.provider === 'twilio' && (
-          <div className="credentials-locked">
-            {twilioCredentials.map(credential => (
-              <CredentialField
-                key={credential.field}
-                label={credential.label}
-                field={credential.field}
-                configured={credential.configured}
-                revealedValue={revealedCredentials[credential.field]}
-                isAdmin={isAdmin}
-                onReveal={handleRevealCredential}
-                onCopy={handleCopyCredential}
-                isRevealing={Boolean(revealingFields[credential.field])}
-              />
-            ))}
-          </div>
-        )}
-
-        {!isEditingCredentials && formData.provider === 'telnyx' && (
+        {!isEditingCredentials && (
           <div className="credentials-locked">
             {telnyxCredentials.map(credential => (
               <CredentialField
@@ -623,48 +516,7 @@ export default function TelephonySettings() {
           </div>
         )}
 
-        {isEditingCredentials && formData.provider === 'twilio' && (
-          <div className="credentials-inline">
-            <p className="help-text">Enter new values to rotate credentials.</p>
-            <div className="credentials-row">
-              <div className="form-group">
-                <label>Account SID</label>
-                <input
-                  type="text"
-                  value={credentialDrafts.twilio_account_sid}
-                  onChange={(e) => setCredentialDrafts({ ...credentialDrafts, twilio_account_sid: e.target.value })}
-                />
-              </div>
-              <div className="form-group">
-                <label>Auth Token</label>
-                <input
-                  type="password"
-                  value={credentialDrafts.twilio_auth_token}
-                  onChange={(e) => setCredentialDrafts({ ...credentialDrafts, twilio_auth_token: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="form-group">
-              <label>SMS Phone Number</label>
-              <input
-                type="tel"
-                value={credentialDrafts.twilio_phone_number}
-                onChange={(e) => setCredentialDrafts({ ...credentialDrafts, twilio_phone_number: e.target.value })}
-              />
-            </div>
-            <div className="btn-row">
-              <button
-                className="btn btn-secondary"
-                onClick={validateCredentials}
-                disabled={validating || !getEffectiveFormData().twilio_account_sid || !getEffectiveFormData().twilio_auth_token}
-              >
-                {validating ? 'Testing...' : 'Test Credentials'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {isEditingCredentials && formData.provider === 'telnyx' && (
+        {isEditingCredentials && (
           <div className="credentials-inline">
             <p className="help-text">Enter new values to rotate credentials.</p>
             <div className="credentials-row">
@@ -736,7 +588,7 @@ export default function TelephonySettings() {
       {/* Webhooks Section */}
       <CollapsibleSection title="Webhook URLs" defaultOpen={false}>
         <p className="help-text" style={{ marginTop: 0, marginBottom: '12px' }}>
-          Configure these URLs in your {formData.provider === 'telnyx' ? 'Telnyx' : 'Twilio'} dashboard
+          Configure these URLs in your Telnyx dashboard
         </p>
         <div className="webhook-grid">
           <div className="webhook-item">

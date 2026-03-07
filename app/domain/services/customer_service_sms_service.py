@@ -50,7 +50,7 @@ class CustomerServiceSmsService:
         tenant_id: int,
         phone_number: str,
         message_body: str,
-        twilio_message_sid: str | None = None,
+        external_message_id: str | None = None,
     ) -> CustomerServiceSmsResult:
         """Process inbound SMS through customer service flow.
 
@@ -64,7 +64,7 @@ class CustomerServiceSmsService:
             tenant_id: Tenant ID
             phone_number: Sender phone number
             message_body: Message text
-            twilio_message_sid: Twilio message SID
+            external_message_id: External message ID
 
         Returns:
             CustomerServiceSmsResult with response
@@ -81,7 +81,7 @@ class CustomerServiceSmsService:
                 tenant_id=tenant_id,
                 phone_number=phone_number,
                 message_body=message_body,
-                twilio_message_sid=twilio_message_sid,
+                external_message_id=external_message_id,
             )
             return CustomerServiceSmsResult(
                 response_message=sms_result.response_message,
@@ -98,7 +98,7 @@ class CustomerServiceSmsService:
                 tenant_id=tenant_id,
                 phone_number=phone_number,
                 message_body=message_body,
-                twilio_message_sid=twilio_message_sid,
+                external_message_id=external_message_id,
             )
             return CustomerServiceSmsResult(
                 response_message=sms_result.response_message,
@@ -134,7 +134,7 @@ class CustomerServiceSmsService:
         )
 
         # Store user message
-        await self._add_message(conversation, "user", message_body, twilio_message_sid)
+        await self._add_message(conversation, "user", message_body, external_message_id)
 
         # Look up customer in Jackrabbit
         lookup_result = await self.lookup_service.lookup_by_phone(
@@ -158,7 +158,7 @@ class CustomerServiceSmsService:
                     tenant_id=tenant_id,
                     phone_number=phone_number,
                     message_body=message_body,
-                    twilio_message_sid=twilio_message_sid,
+                    external_message_id=external_message_id,
                 )
                 return CustomerServiceSmsResult(
                     response_message=sms_result.response_message,
@@ -263,7 +263,7 @@ class CustomerServiceSmsService:
         conversation: Conversation,
         role: str,
         content: str,
-        twilio_sid: str | None = None,
+        message_sid: str | None = None,
     ) -> Message:
         """Add message to conversation.
 
@@ -271,7 +271,7 @@ class CustomerServiceSmsService:
             conversation: Conversation
             role: Message role (user/assistant)
             content: Message content
-            twilio_sid: Optional Twilio message SID
+            message_sid: Optional external message ID
 
         Returns:
             Created message
@@ -284,7 +284,7 @@ class CustomerServiceSmsService:
             role=role,
             content=content,
             sequence_number=sequence,
-            metadata={"twilio_message_sid": twilio_sid} if twilio_sid else None,
+            metadata={"external_message_id": message_sid} if message_sid else None,
         )
         self.session.add(message)
         await self.session.commit()
@@ -316,7 +316,7 @@ class CustomerServiceSmsService:
             if not config:
                 return None
 
-            from_number = config.twilio_phone_number or config.telnyx_phone_number
+            from_number = config.telnyx_phone_number
             if not from_number:
                 logger.error(f"No phone number configured for tenant {tenant_id}")
                 return None

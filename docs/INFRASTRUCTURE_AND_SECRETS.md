@@ -27,7 +27,7 @@
 
 ### Field Encryption (Database Credentials)
 
-Tenant API credentials (Twilio tokens, Telnyx keys, Gmail OAuth tokens, etc.) are encrypted at rest in the database using Fernet symmetric encryption.
+Tenant API credentials (Telnyx keys, Gmail OAuth tokens, etc.) are encrypted at rest in the database using Fernet symmetric encryption.
 
 **Generate a new encryption key:**
 ```bash
@@ -40,7 +40,6 @@ echo -n "YOUR_GENERATED_KEY" | gcloud secrets create field-encryption-key --data
 ```
 
 **Encrypted fields:**
-- `tenant_sms_configs.twilio_auth_token`
 - `tenant_sms_configs.telnyx_api_key`
 - `tenant_email_configs.gmail_refresh_token`
 - `tenant_email_configs.gmail_access_token`
@@ -133,9 +132,9 @@ echo -n "YOUR_GENERATED_KEY" | gcloud secrets create field-encryption-key --data
 
 ---
 
-## 4. Telephony & Messaging (Telnyx / Twilio)
+## 4. Telephony & Messaging (Telnyx)
 
-### Telnyx (Primary - Voice + SMS)
+### Telnyx (Voice + SMS)
 
 | Setting | Location | Description |
 |---------|----------|-------------|
@@ -172,20 +171,10 @@ echo -n "YOUR_GENERATED_KEY" | gcloud secrets create field-encryption-key --data
 | **send_registration_link** | `/api/v1/telnyx/tools/send-link` | SMS Jackrabbit registration link to caller |
 | **get_classes** | `/api/v1/telnyx/tools/get-classes` | Proxy to Jackrabbit OpeningsJson API (filters/trims response) |
 
-### Twilio (Legacy/Alternative)
-
-| Setting | Location | Description |
-|---------|----------|-------------|
-| **Account SID** | `tenant_sms_configs.twilio_account_sid` | Per-tenant |
-| **Auth Token** | `tenant_sms_configs.twilio_auth_token` | Per-tenant |
-| **Phone Number** | `tenant_sms_configs.twilio_phone_number` | Per-tenant |
-| **Webhook Base URL** | `TWILIO_WEBHOOK_URL_BASE` env var | Global |
-
 ### Tenant → Phone Number Routing
 
 ```
 tenant_sms_configs.telnyx_phone_number → Tenant ID lookup
-tenant_sms_configs.twilio_phone_number → Tenant ID lookup
 ```
 
 ---
@@ -302,8 +291,6 @@ tenant_sms_configs.twilio_phone_number → Tenant ID lookup
 | `/api/v1/telnyx/sms/status` | Telnyx | SMS delivery status |
 | `/api/v1/telnyx/ai-call-complete` | Telnyx | Voice call ended |
 | `/api/v1/telnyx/call-progress` | Telnyx | Call state updates |
-| `/api/v1/sms/inbound` | Twilio | SMS messages |
-| `/api/v1/sms/status` | Twilio | SMS status |
 | `/api/v1/email/pubsub` | Google Pub/Sub | Gmail notifications |
 | `/api/v1/zapier/callback` | Zapier | CRM responses |
 | `/api/v1/telnyx/tools/send-link` | Telnyx AI Agent | Send registration link via SMS |
@@ -316,7 +303,6 @@ tenant_sms_configs.twilio_phone_number → Tenant ID lookup
 | Provider | Header | Method |
 |----------|--------|--------|
 | Telnyx | `telnyx-signature-ed25519` | ED25519 |
-| Twilio | `X-Twilio-Signature` | HMAC-SHA1 |
 | Zapier | `X-Zapier-Signature` | HMAC |
 
 ### Event Types Handled
@@ -376,7 +362,7 @@ tenant_sms_configs.twilio_phone_number → Tenant ID lookup
 
 | Resource | Storage |
 |----------|---------|
-| API Keys (Telnyx/Twilio) | `tenant_sms_configs` table |
+| API Keys (Telnyx) | `tenant_sms_configs` table |
 | Phone Numbers | `tenant_sms_configs` table |
 | Webhooks | Derived from phone number lookup |
 | Business Profile | `tenant_business_profiles` table |

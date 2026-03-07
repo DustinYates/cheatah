@@ -1,4 +1,4 @@
-"""SMS service for processing SMS messages via Twilio."""
+"""SMS service for processing SMS messages."""
 
 import json
 import logging
@@ -64,7 +64,7 @@ class SmsService:
         tenant_id: int,
         phone_number: str,
         message_body: str,
-        twilio_message_sid: str | None = None,
+        external_message_id: str | None = None,
     ) -> SmsResult:
         """Process an inbound SMS message.
 
@@ -72,7 +72,7 @@ class SmsService:
             tenant_id: Tenant ID
             phone_number: Sender phone number
             message_body: Message text
-            twilio_message_sid: Twilio message SID (for audit trail)
+            external_message_id: External message ID (for audit trail)
 
         Returns:
             SmsResult with response and metadata
@@ -193,10 +193,10 @@ class SmsService:
             tenant_id, conversation.id, "user", message_body
         )
 
-        # Add Twilio metadata to message
-        if twilio_message_sid:
+        # Add message metadata for audit trail
+        if external_message_id:
             user_message.message_metadata = {
-                "twilio_message_sid": twilio_message_sid,
+                "external_message_id": external_message_id,
                 "phone_number": phone_number,
             }
             await self.session.commit()
@@ -359,7 +359,7 @@ class SmsService:
             tenant_id, conversation.id, "assistant", formatted_response
         )
 
-        # Get SMS provider via factory (Twilio or Telnyx based on config)
+        # Get SMS provider via factory
         factory = TelephonyProviderFactory(self.session)
         sms_provider = await factory.get_sms_provider(tenant_id)
 
@@ -382,10 +382,10 @@ class SmsService:
         # Get webhook base URL from settings
         from app.settings import settings
         status_callback_url = None
-        if settings.twilio_webhook_url_base:
+        if settings.api_base_url:
             # Use provider-specific webhook path
             webhook_prefix = factory.get_webhook_path_prefix(sms_config)
-            status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1{webhook_prefix}/sms/status"
+            status_callback_url = f"{settings.api_base_url}/api/v1{webhook_prefix}/sms/status"
 
         # Check for SMS burst/spam pattern before sending
         try:

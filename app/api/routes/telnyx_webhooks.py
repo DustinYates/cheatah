@@ -537,7 +537,7 @@ async def telnyx_inbound_sms_webhook(
                 tenant_id=tenant_id,
                 phone_number=from_number,
                 message_body=message_body,
-                twilio_message_sid=message_id,  # Re-using param name for Telnyx message ID
+                external_message_id=message_id,
             )
             logger.info(f"SMS processed for tenant_id={tenant_id}, response_sent={bool(result.message_sid)}")
 
@@ -739,6 +739,25 @@ async def _get_tenant_from_assistant_id(
 
     logger.warning(f"No tenant found for assistant_id {assistant_id}")
     return None
+
+
+async def _get_telnyx_api_key_for_tenant(
+    tenant_id: int | None,
+    db: AsyncSession,
+) -> str | None:
+    """Resolve the Telnyx API key for a tenant.
+
+    Prefer the tenant-scoped key because SMS/voice webhooks are multi-tenant.
+    Fall back to the global key for older environments that still rely on it.
+    """
+    if tenant_id:
+        stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
+        result = await db.execute(stmt)
+        tenant_config = result.scalar_one_or_none()
+        if tenant_config and tenant_config.telnyx_api_key:
+            return tenant_config.telnyx_api_key
+
+    return settings.telnyx_api_key
 
 
 async def _handle_telnyx_delivery_status(
@@ -1621,18 +1640,25 @@ async def telnyx_ai_call_complete(
                 logger.info(f"[SMS-MESSAGES] Attempting to fetch actual messages")
                 logger.info(f"[SMS-MESSAGES] conversation dict: {json.dumps(conversation)[:500] if conversation else 'empty'}")
                 logger.info(f"[SMS-MESSAGES] payload keys: {list(payload.keys()) if isinstance(payload, dict) else 'not dict'}")
-                logger.info(f"[SMS-MESSAGES] telnyx_conv_id={telnyx_conv_id}, call_id={call_id}, has_api_key={bool(settings.telnyx_api_key)}")
+                telnyx_api_key_for_messages = await _get_telnyx_api_key_for_tenant(
+                    tenant_id,
+                    db,
+                )
+                logger.info(
+                    f"[SMS-MESSAGES] telnyx_conv_id={telnyx_conv_id}, call_id={call_id}, "
+                    f"has_api_key={bool(telnyx_api_key_for_messages)}"
+                )
 
                 if not telnyx_conv_id:
                     logger.warning(f"[SMS-MESSAGES] No conversation ID available - cannot fetch actual messages. "
                                    f"Checked: conversation.id, payload.conversation_id, data.conversation_id, body.conversation_id, metadata.conversation_id, call_id")
-                elif not settings.telnyx_api_key:
+                elif not telnyx_api_key_for_messages:
                     logger.warning(f"[SMS-MESSAGES] No Telnyx API key configured - cannot fetch actual messages")
 
-                if telnyx_conv_id and settings.telnyx_api_key:
+                if telnyx_conv_id and telnyx_api_key_for_messages:
                     try:
                         from app.infrastructure.telephony.telnyx_provider import TelnyxAIService
-                        sms_telnyx_ai = TelnyxAIService(settings.telnyx_api_key)
+                        sms_telnyx_ai = TelnyxAIService(telnyx_api_key_for_messages)
 
                         logger.info(f"[SMS-MESSAGES] Fetching actual SMS messages from Telnyx for conv_id={telnyx_conv_id}")
                         actual_messages = await sms_telnyx_ai.get_conversation_messages(telnyx_conv_id)
@@ -2161,18 +2187,10 @@ async def telnyx_ai_call_complete(
 
         # If duration is still 0, try to calculate from Telnyx API conversation timestamps
         # Use tenant's Telnyx API key if global one not available
-        telnyx_api_key_for_duration = settings.telnyx_api_key
-        if not telnyx_api_key_for_duration and tenant_id:
-            # Fetch tenant's Telnyx API key from config
-            try:
-                tenant_config_stmt = select(TenantSmsConfig).where(TenantSmsConfig.tenant_id == tenant_id)
-                tenant_config_result = await db.execute(tenant_config_stmt)
-                tenant_config = tenant_config_result.scalar_one_or_none()
-                if tenant_config and tenant_config.telnyx_api_key:
-                    telnyx_api_key_for_duration = tenant_config.telnyx_api_key
-                    logger.info(f"Using tenant {tenant_id}'s Telnyx API key for duration calculation")
-            except Exception as e:
-                logger.warning(f"Failed to fetch tenant Telnyx API key: {e}")
+        telnyx_api_key_for_duration = await _get_telnyx_api_key_for_tenant(
+            tenant_id,
+            db,
+        )
 
         if (not call.duration or call.duration == 0) and call_id and telnyx_api_key_for_duration:
             try:

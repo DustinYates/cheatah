@@ -37,7 +37,7 @@ class BusinessProfileRepository(BaseRepository[TenantBusinessProfile]):
         business_name: str | None = None,
         website_url: str | None = None,
         phone_number: str | None = None,
-        twilio_phone: str | None = None,
+        sms_phone: str | None = None,
         email: str | None = None,
     ) -> TenantBusinessProfile | None:
         """Update business profile for a tenant."""
@@ -51,8 +51,8 @@ class BusinessProfileRepository(BaseRepository[TenantBusinessProfile]):
             profile.website_url = website_url
         if phone_number is not None:
             profile.phone_number = phone_number
-        if twilio_phone is not None:
-            profile.twilio_phone = twilio_phone
+        if sms_phone is not None:
+            profile.sms_phone = sms_phone
         if email is not None:
             profile.email = email
         

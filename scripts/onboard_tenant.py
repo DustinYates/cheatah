@@ -156,11 +156,10 @@ async def onboard_tenant():
                 website_url = get_optional_input("Website URL")
                 phone_number = get_optional_input("Phone number (e.g., +15555550123)")
                 business_email = get_optional_input("Business email", admin_email)
-                twilio_phone = get_optional_input("Twilio phone number (optional)")
-                
+
                 # Create profile
                 profile = await profile_repo.create_for_tenant(tenant.id)
-                
+
                 # Update with provided values
                 await profile_repo.update_profile(
                     tenant_id=tenant.id,
@@ -168,7 +167,6 @@ async def onboard_tenant():
                     website_url=website_url if website_url else None,
                     phone_number=phone_number if phone_number else None,
                     email=business_email if business_email else None,
-                    twilio_phone=twilio_phone if twilio_phone else None,
                 )
                 print(f"✓ Created business profile")
             else:

@@ -563,7 +563,7 @@ async def trigger_followup(
     """Trigger an immediate follow-up SMS for a lead.
 
     Sends a follow-up SMS to the lead using the configured telephony provider
-    (Twilio or Telnyx) and the Gemini LLM for intelligent responses.
+    and the Gemini LLM for intelligent responses.
 
     The lead must:
     - Have a phone number

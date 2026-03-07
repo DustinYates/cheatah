@@ -123,7 +123,7 @@ curl -X PUT "https://chattercheatah-900139201687.us-central1.run.app/api/v1/admi
 | `routing_rules.enable_voice` | Enable Voice channel | `true` |
 | `routing_rules.fallback_to_lead_capture` | Route unknown callers to lead capture | `true` |
 
-## Step 4: Configure Twilio Webhooks
+## Step 4: Configure Telnyx Webhooks
 
 Point your customer service phone numbers to the new webhooks:
 
@@ -137,7 +137,7 @@ POST https://chattercheatah-900139201687.us-central1.run.app/api/v1/customer-ser
 POST https://chattercheatah-900139201687.us-central1.run.app/api/v1/customer-service/voice/inbound
 ```
 
-You can configure these in the Twilio Console or via API.
+You can configure these in the Telnyx Portal.
 
 ## Step 5: Test the Integration
 
@@ -161,8 +161,8 @@ curl "https://chattercheatah-900139201687.us-central1.run.app/api/v1/admin/custo
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /api/v1/customer-service/sms/inbound` | Twilio SMS webhook |
-| `POST /api/v1/customer-service/voice/inbound` | Twilio Voice webhook |
+| `POST /api/v1/customer-service/sms/inbound` | Telnyx SMS webhook |
+| `POST /api/v1/customer-service/voice/inbound` | Telnyx Voice webhook |
 | `POST /api/v1/customer-service/voice/gather` | Voice speech input |
 | `POST /api/v1/zapier/callback` | Zapier response callback |
 | `POST /api/v1/zapier/customer-update` | Cache invalidation |
@@ -179,7 +179,7 @@ curl "https://chattercheatah-900139201687.us-central1.run.app/api/v1/admin/custo
 ## Flow Diagram
 
 ```
-1. Customer texts/calls → Twilio webhook
+1. Customer texts/calls → Telnyx webhook
                               ↓
 2. Check if customer service enabled
                               ↓
@@ -210,7 +210,7 @@ curl "https://chattercheatah-900139201687.us-central1.run.app/api/v1/admin/custo
 
 ### Customer not being recognized
 
-1. Check if the phone number format matches between Twilio and Jackrabbit
+1. Check if the phone number format matches (E.164) between Telnyx and Jackrabbit
 2. Verify the Zapier webhook is configured correctly
 3. Check `zapier_requests` table for failed lookups:
    ```sql

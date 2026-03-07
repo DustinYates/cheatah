@@ -184,7 +184,6 @@ async def add_tenant(
                     website_url=website_url,
                     phone_number=phone_number,
                     email=business_email or email,
-                    twilio_phone=None,
                 )
                 print(f"✓ Created business profile")
 

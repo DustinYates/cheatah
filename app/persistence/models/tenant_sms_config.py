@@ -24,13 +24,8 @@ class TenantSmsConfig(Base):
     # Enable/disable
     is_enabled = Column(Boolean, default=False, nullable=False)
 
-    # Provider selection (twilio or telnyx)
-    provider = Column(String(20), default="twilio", nullable=False)
-
-    # Twilio configuration
-    twilio_account_sid = Column(String(255), nullable=True)
-    twilio_auth_token = Column(EncryptedString(255), nullable=True)  # Encrypted
-    twilio_phone_number = Column(String(50), nullable=True)  # Tenant's Twilio phone number
+    # Provider selection
+    provider = Column(String(20), default="telnyx", nullable=False)
 
     # Telnyx configuration
     telnyx_api_key = Column(EncryptedString(255), nullable=True)  # Encrypted

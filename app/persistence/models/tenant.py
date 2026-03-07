@@ -131,8 +131,8 @@ class TenantBusinessProfile(Base):
     business_name = Column(String(255), nullable=True)
     website_url = Column(Text, nullable=True)
     phone_number = Column(String(50), nullable=True)
-    twilio_phone = Column(String(50), nullable=True)
-    twilio_voice_phone = Column(String(50), nullable=True)
+    sms_phone = Column(String(50), nullable=True)
+    voice_phone = Column(String(50), nullable=True)
     email = Column(String(255), nullable=True)
     
     profile_complete = Column(Boolean, default=False, nullable=False)

@@ -54,7 +54,7 @@ class CustomerServiceVoiceService:
 
         Args:
             tenant_id: Tenant ID
-            call_sid: Twilio call SID
+            call_sid: Call SID
             from_number: Caller phone number
 
         Returns:
@@ -144,7 +144,7 @@ class CustomerServiceVoiceService:
 
         Args:
             tenant_id: Tenant ID
-            call_sid: Twilio call SID
+            call_sid: Call SID
             from_number: Caller phone number
             conversation_id: Conversation ID
             transcribed_text: Transcribed speech

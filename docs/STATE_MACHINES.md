@@ -6,7 +6,7 @@ This document contains state machine diagrams for all stateful components in the
 
 ## 1. Call State Machine
 
-Voice calls progress through these states based on Twilio webhook callbacks.
+Voice calls progress through these states based on Telnyx webhook callbacks.
 
 ```mermaid
 stateDiagram-v2
@@ -30,7 +30,7 @@ stateDiagram-v2
     canceled --> [*]
 ```
 
-**Transitions triggered by:** Twilio `CallStatus` webhook at `/voice/status`
+**Transitions triggered by:** Telnyx call event webhooks at `/telnyx/call-progress` and `/telnyx/ai-call-complete`
 
 **Key fields:**
 - `started_at` - Set when entering `in_progress`
@@ -116,13 +116,13 @@ stateDiagram-v2
 
 ## 5. SMS Delivery State Machine
 
-Tracks outbound SMS delivery status via Twilio callbacks.
+Tracks outbound SMS delivery status via Telnyx callbacks.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> queued: SMS sent to Twilio
+    [*] --> queued: SMS sent to Telnyx
 
-    queued --> sent: Twilio sends to carrier
+    queued --> sent: Telnyx sends to carrier
     queued --> failed: Send error
 
     sent --> delivered: Carrier confirms
@@ -133,7 +133,7 @@ stateDiagram-v2
 ```
 
 **Stored in:** `Message.message_metadata` JSON field
-- `twilio_message_sid`
+- `message_id` (Telnyx message ID)
 - `delivery_status`
 - `status_updated_at`
 
@@ -313,11 +313,11 @@ stateDiagram-v2
 
 | Component | States | Primary Trigger |
 |-----------|--------|-----------------|
-| Call | initiated → ringing → in_progress → completed/failed/busy/no_answer/canceled | Twilio webhooks |
+| Call | initiated → ringing → in_progress → completed/failed/busy/no_answer/canceled | Telnyx webhooks |
 | Escalation | pending → notified → resolved/cancelled | Intent detection, keywords |
 | Lead | new → verified → Contact | Info capture, auto-conversion |
 | SMS Opt-In | opted_out ↔ opted_in | Keywords, manual, API |
-| SMS Delivery | queued → sent → delivered/failed | Twilio status callbacks |
+| SMS Delivery | queued → sent → delivered/failed | Telnyx status callbacks |
 | Prompt Bundle | draft → testing → production | Manual promotion |
 | Email Conversation | active → escalated → resolved/spam | Gmail events, triggers |
 | Zapier Request | pending → completed/timeout/error | Webhook responses |

@@ -89,11 +89,7 @@ async def diagnose_and_fix():
                 print(f"  Voice Enabled: {config.voice_enabled}")
                 print(f"  Voice Phone: {config.voice_phone_number or 'NOT SET'}")
 
-                if config.provider == "twilio":
-                    print(f"  Twilio SID: {config.twilio_account_sid[:8] + '...' if config.twilio_account_sid else 'NOT SET'}")
-                    print(f"  Twilio Phone: {config.twilio_phone_number or 'NOT SET'}")
-                    print(f"  Has Auth Token: {bool(config.twilio_auth_token)}")
-                elif config.provider == "telnyx":
+                if config.provider == "telnyx":
                     print(f"  Telnyx API Key: {config.telnyx_api_key[:8] + '...' if config.telnyx_api_key else 'NOT SET'}")
                     print(f"  Telnyx Connection ID: {config.telnyx_connection_id or 'NOT SET'}")
                     print(f"  Telnyx Phone: {config.telnyx_phone_number or 'NOT SET'}")
@@ -153,17 +149,7 @@ async def diagnose_and_fix():
                 t3_config.provider = t1_config.provider
                 changes.append(f"provider: → {t1_config.provider}")
 
-            if t1_config.provider == "twilio":
-                if not t3_config.twilio_account_sid:
-                    t3_config.twilio_account_sid = t1_config.twilio_account_sid
-                    changes.append("twilio_account_sid: copied")
-                if not t3_config.twilio_auth_token:
-                    t3_config.twilio_auth_token = t1_config.twilio_auth_token
-                    changes.append("twilio_auth_token: copied")
-                if not t3_config.twilio_phone_number:
-                    t3_config.twilio_phone_number = t1_config.twilio_phone_number
-                    changes.append(f"twilio_phone_number: → {t1_config.twilio_phone_number}")
-            elif t1_config.provider == "telnyx":
+            if t1_config.provider == "telnyx":
                 if not t3_config.telnyx_api_key:
                     t3_config.telnyx_api_key = t1_config.telnyx_api_key
                     changes.append("telnyx_api_key: copied")
@@ -193,9 +179,6 @@ async def diagnose_and_fix():
                 is_enabled=t1_config.is_enabled,
                 voice_enabled=True,
                 voice_phone_number=t1_config.voice_phone_number,
-                twilio_account_sid=t1_config.twilio_account_sid,
-                twilio_auth_token=t1_config.twilio_auth_token,
-                twilio_phone_number=t1_config.twilio_phone_number,
                 telnyx_api_key=t1_config.telnyx_api_key,
                 telnyx_messaging_profile_id=t1_config.telnyx_messaging_profile_id,
                 telnyx_connection_id=t1_config.telnyx_connection_id,

@@ -88,11 +88,6 @@ class Settings(BaseSettings):
     # Telnyx (Voice AI)
     telnyx_api_key: str | None = None  # Global Telnyx API key for AI conversation fetching
 
-    # Twilio (SMS)
-    twilio_account_sid: str | None = None
-    twilio_auth_token: str | None = None
-    twilio_webhook_url_base: str | None = None  # Base URL for webhook endpoints
-
     # Cloud Tasks
     cloud_tasks_queue_name: str = "sms-processing"
     cloud_tasks_location: str = "us-central1"

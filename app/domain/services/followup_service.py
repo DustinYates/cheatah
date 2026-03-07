@@ -230,7 +230,7 @@ class FollowUpService:
             return None, "SMS is disabled. Enable it in Settings > SMS."
 
         if not self._has_sms_phone_number(config):
-            provider = config.provider or "twilio"
+            provider = config.provider or "telnyx"
             logger.warning(f"No SMS phone number configured for tenant {tenant_id} (provider: {provider})")
             return None, f"No {provider.title()} phone number assigned. Contact support to assign a number."
 
@@ -288,7 +288,4 @@ class FollowUpService:
         Returns:
             True if a phone number is configured for the active provider
         """
-        if config.provider == "telnyx":
-            return bool(config.telnyx_phone_number)
-        # Default to Twilio
-        return bool(config.twilio_phone_number)
+        return bool(config.telnyx_phone_number)

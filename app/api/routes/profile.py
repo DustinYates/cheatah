@@ -27,7 +27,7 @@ class BusinessProfileResponse(BaseModel):
     business_name: str | None
     website_url: str | None
     phone_number: str | None
-    twilio_phone: str | None
+    sms_phone: str | None
     email: str | None
     profile_complete: bool
     last_scraped_at: datetime | None = None
@@ -43,7 +43,7 @@ class BusinessProfileUpdate(BaseModel):
     business_name: str | None = None
     website_url: str | None = None
     phone_number: str | None = None
-    twilio_phone: str | None = None
+    sms_phone: str | None = None
     email: str | None = None
 
 
@@ -117,7 +117,7 @@ async def get_business_profile(
         business_name=profile.business_name,
         website_url=profile.website_url,
         phone_number=profile.phone_number,
-        twilio_phone=profile.twilio_phone,
+        sms_phone=profile.sms_phone,
         email=profile.email,
         profile_complete=profile.profile_complete,
         last_scraped_at=profile.last_scraped_at,
@@ -156,7 +156,7 @@ async def update_business_profile(
         business_name=profile_data.business_name,
         website_url=profile_data.website_url,
         phone_number=profile_data.phone_number,
-        twilio_phone=profile_data.twilio_phone,
+        sms_phone=profile_data.sms_phone,
         email=profile_data.email,
     )
 
@@ -180,7 +180,7 @@ async def update_business_profile(
         business_name=profile.business_name,
         website_url=profile.website_url,
         phone_number=profile.phone_number,
-        twilio_phone=profile.twilio_phone,
+        sms_phone=profile.sms_phone,
         email=profile.email,
         profile_complete=profile.profile_complete,
         last_scraped_at=profile.last_scraped_at,

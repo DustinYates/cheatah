@@ -40,10 +40,7 @@ async def check_followup_config(tenant_id: int = 3):
         print(f"✅ SMS Enabled: {config.is_enabled}")
         print(f"✅ Provider: {config.provider}")
 
-        if config.provider == "telnyx":
-            print(f"✅ Phone Number: {config.telnyx_phone_number or '❌ NOT SET'}")
-        else:
-            print(f"✅ Phone Number: {config.twilio_phone_number or '❌ NOT SET'}")
+        print(f"✅ Phone Number: {config.telnyx_phone_number or '❌ NOT SET'}")
 
         print(f"\n{'─'*60}\n")
 
@@ -81,10 +78,8 @@ async def check_followup_config(tenant_id: int = 3):
             issues.append("Email is not in allowed follow-up sources")
         if not worker_url:
             issues.append("CLOUD_TASKS_WORKER_URL environment variable not set")
-        if config.provider == "telnyx" and not config.telnyx_phone_number:
+        if not config.telnyx_phone_number:
             issues.append("Telnyx phone number not configured")
-        elif config.provider != "telnyx" and not config.twilio_phone_number:
-            issues.append("Twilio phone number not configured")
 
         if issues:
             print("⚠️  ISSUES FOUND:\n")

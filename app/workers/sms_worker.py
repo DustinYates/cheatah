@@ -21,7 +21,7 @@ class SmsTaskPayload(BaseModel):
     tenant_id: int
     phone_number: str
     message_body: str
-    twilio_message_sid: str | None = None
+    external_message_id: str | None = None
     to_number: str | None = None
 
 
@@ -52,7 +52,7 @@ async def process_sms_task(
             tenant_id=payload.tenant_id,
             phone_number=payload.phone_number,
             message_body=payload.message_body,
-            twilio_message_sid=payload.twilio_message_sid,
+            external_message_id=payload.external_message_id,
         )
         
         logger.info(

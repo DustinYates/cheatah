@@ -39,7 +39,7 @@ All markdown files updated for accuracy:
 - Removed Cursor/Replit references (they are not part of this stack)
 - Fixed naming: ChatterCheetah (not ChatterCheatah)
 - Updated Cloud SQL references to Supabase (our actual database)
-- Updated Telnyx as primary SMS/Voice provider (Twilio is legacy only)
+- Updated Telnyx as SMS/Voice provider
 
 ---
 

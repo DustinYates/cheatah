@@ -9,12 +9,12 @@ from sentry_sdk.integrations.httpx import HttpxIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import logging
 
 from app.api.middleware import (
+    DynamicCORSMiddleware,
     IdempotencyMiddleware,
     TenantRateLimitMiddleware,
     SecurityHeadersMiddleware,
@@ -44,7 +44,7 @@ if settings.sentry_dsn:
             FastApiIntegration(transaction_style="endpoint"),
             # SQLAlchemy for database error tracking
             SqlalchemyIntegration(),
-            # HTTPX for external API call tracking (Gemini, Twilio, etc.)
+            # HTTPX for external API call tracking (Gemini, Telnyx, etc.)
             HttpxIntegration(),
             # Logging integration to capture log messages as breadcrumbs
             LoggingIntegration(
@@ -101,19 +101,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure allowed CORS origins
-# The chat widget is embedded on customer websites, so we need to allow all origins
-# for widget endpoints. Authentication is handled via API key, not CORS.
-ALLOWED_ORIGINS = ["*"]
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=False,  # Must be False when allow_origins=["*"]
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Tenant-Id", "Idempotency-Key", "X-Widget-Api-Key"],
-)
+# Add path-aware CORS middleware (replaces wildcard CORSMiddleware)
+# Only chat widget and webhook endpoints allow wildcard origins.
+# All other endpoints are restricted to the app's own origin.
+app.add_middleware(DynamicCORSMiddleware)
 
 # Add idempotency middleware
 app.add_middleware(IdempotencyMiddleware)

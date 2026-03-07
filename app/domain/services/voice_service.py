@@ -230,10 +230,10 @@ class VoiceService:
         
         Args:
             tenant_id: Tenant ID
-            call_sid: Twilio call SID
+            call_sid: Call SID
             conversation_id: Conversation ID
             transcribed_text: Transcribed speech from caller
-            
+
         Returns:
             VoiceResult with response and metadata including latency metrics
         """
@@ -325,10 +325,10 @@ class VoiceService:
         
         Args:
             tenant_id: Tenant ID
-            call_sid: Twilio call SID
+            call_sid: Call SID
             conversation_id: Conversation ID
             transcribed_text: Transcribed speech from caller
-            
+
         Yields:
             StreamingVoiceChunk with text chunk, intent, and completion status
         """
@@ -1364,9 +1364,9 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
 
     async def _get_conversation_for_call(self, call_sid: str) -> Conversation | None:
         """Get conversation associated with a call.
-        
+
         Args:
-            call_sid: Twilio call SID
+            call_sid: Call SID
             
         Returns:
             Conversation or None

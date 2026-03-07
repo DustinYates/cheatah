@@ -24,8 +24,7 @@ This document outlines the steps required to fully configure a new tenant in Cha
 **This is critical for SMS follow-ups to work.**
 
 1. Go to **Settings > Telephony**
-2. Select provider (Telnyx or Twilio)
-3. Enter credentials:
+2. Enter credentials:
 
 ### For Telnyx:
 - **API Key**: Get from https://portal.telnyx.com > API Keys
@@ -33,12 +32,7 @@ This document outlines the steps required to fully configure a new tenant in Cha
 - **Messaging Profile ID**: From Telnyx Mission Control > Messaging > Messaging Profiles
 - **SMS Phone Number**: The Telnyx number assigned to this tenant (e.g., +12817679141 for BSS)
 
-### For Twilio:
-- **Account SID**: From Twilio Console
-- **Auth Token**: From Twilio Console
-- **SMS Phone Number**: The Twilio number assigned to this tenant
-
-4. Enable SMS toggle
+3. Enable SMS toggle
 5. Click "Test Credentials" to verify
 6. Save Configuration
 
@@ -95,7 +89,7 @@ These are set in `scripts/deploy-cloud-run.sh`:
 | Variable | Description |
 |----------|-------------|
 | `CLOUD_TASKS_WORKER_URL` | URL for the follow-up worker endpoint |
-| `TWILIO_WEBHOOK_URL_BASE` | Base URL for Twilio/Telnyx webhooks |
+| `API_BASE_URL` | Base URL for Telnyx webhooks |
 | `GEMINI_API_KEY` | Google AI API key (stored as secret) |
 | `DATABASE_URL` | PostgreSQL connection string (stored as secret) |
 

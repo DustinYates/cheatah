@@ -231,9 +231,9 @@ class DripCampaignService:
 
         # Build status callback URL
         status_callback_url = None
-        if settings.twilio_webhook_url_base:
+        if settings.api_base_url:
             webhook_prefix = factory.get_webhook_path_prefix(sms_config)
-            status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1/sms{webhook_prefix}/status"
+            status_callback_url = f"{settings.api_base_url}/api/v1/sms{webhook_prefix}/status"
 
         # Send SMS
         send_result = await sms_provider.send_sms(
@@ -523,9 +523,9 @@ class DripCampaignService:
             return False
 
         status_callback_url = None
-        if settings.twilio_webhook_url_base:
+        if settings.api_base_url:
             webhook_prefix = factory.get_webhook_path_prefix(sms_config)
-            status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1/sms{webhook_prefix}/status"
+            status_callback_url = f"{settings.api_base_url}/api/v1/sms{webhook_prefix}/status"
 
         try:
             await sms_provider.send_sms(

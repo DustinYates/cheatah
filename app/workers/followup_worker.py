@@ -62,7 +62,7 @@ async def process_followup_task(
             logger.info(f"Follow-up already sent for lead {payload.lead_id}")
             return {"status": "skipped", "reason": "already_sent"}
 
-        # Get SMS provider using factory (supports Twilio and Telnyx)
+        # Get SMS provider using factory
         factory = TelephonyProviderFactory(db)
         sms_config = await factory.get_config(payload.tenant_id)
 
@@ -151,11 +151,11 @@ async def process_followup_task(
 
         # Build status callback URL based on provider
         status_callback_url = None
-        if settings.twilio_webhook_url_base:
+        if settings.api_base_url:
             webhook_prefix = factory.get_webhook_path_prefix(sms_config)
-            status_callback_url = f"{settings.twilio_webhook_url_base}/api/v1/sms{webhook_prefix}/status"
+            status_callback_url = f"{settings.api_base_url}/api/v1/sms{webhook_prefix}/status"
 
-        # Send SMS via the configured provider (Twilio or Telnyx)
+        # Send SMS via the configured provider
         send_result = await sms_provider.send_sms(
             to=payload.phone_number,
             from_=from_phone,

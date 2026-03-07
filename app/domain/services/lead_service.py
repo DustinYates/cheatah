@@ -77,7 +77,7 @@ def _lead_qualifies_for_auto_conversion(lead: Lead) -> bool:
 
 
 class LeadService:
-    """Service for lead management (schema + state only, no Twilio/Zapier logic)."""
+    """Service for lead management (schema + state only, no telephony/Zapier logic)."""
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize lead service."""

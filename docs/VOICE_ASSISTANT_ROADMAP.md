@@ -1,8 +1,8 @@
-# Voice Calls Roadmap for Chatter Cheetah (Twilio, 1 number per tenant)
+# Voice Calls Roadmap for Chatter Cheetah (Telnyx, 1 number per tenant)
 
 ## Guiding Recommendations (Baked into Phases)
 
-- Start with Twilio-native voice loop (fastest to ship, lowest engineering risk).
+- Use Telnyx AI Assistant for voice (production-ready, per-tenant AI agents).
 - Optimize for latency + short turns (voice UX fails when responses are long).
 - Default to persist summaries, not full transcripts (store recordings separately with access controls).
 - Build handoff + business-hours routing early (non-negotiable for real tenants).
@@ -12,22 +12,22 @@
 
 ## Phase 0 — Telephony Foundation (Numbers, Routing, Logging)
 
-**Goal**: Every tenant can forward calls to their dedicated Twilio number; calls are logged reliably.
+**Goal**: Every tenant can forward calls to their dedicated Telnyx number; calls are logged reliably.
 
 ### Build
 
-- Provision one Twilio number per tenant (store mapping).
-- Twilio inbound webhook → your FastAPI (Cloud Run).
+- Provision one Telnyx number per tenant (store mapping).
+- Telnyx inbound webhook → your FastAPI (Cloud Run).
 - Business-hours routing:
   - open: AI answers (placeholder message in Phase 0 is fine)
   - closed: voicemail or "leave details" capture
-- Call recording ON (Twilio recording enabled per call).
+- Call recording ON (Telnyx recording enabled per call).
 - Minimal DB:
   - `calls` table: `tenant_id`, `call_sid`, `from/to`, `start/end`, `status`, `duration`, `recording_sid/url` placeholder.
 
 ### Exit Criteria
 
-- Tenant forwards their business number → Twilio tenant number.
+- Tenant forwards their business number → Telnyx tenant number.
 - Inbound calls create a `calls` row and recording metadata.
 
 ---
@@ -38,7 +38,7 @@
 
 ### Build
 
-- Use Twilio-native voice assistant flow (e.g., Twilio ConversationRelay / equivalent Twilio conversational pattern).
+- Use Telnyx AI Assistant for voice conversations.
 - Core intents (minimum):
   - pricing/info, hours/location, booking request, support request, wrong number/spam
 - Structured capture:
@@ -80,7 +80,7 @@
 - Better call outcomes tracking:
   - `outcome` enum: `lead_created`, `booked_requested`, `transferred`, `voicemail`, `dismissed`
 - Reliability:
-  - retries/idempotency for Twilio webhooks
+  - retries/idempotency for Telnyx webhooks
   - rate limits / abuse controls
 
 ### Exit Criteria
@@ -106,7 +106,7 @@
   - pronunciation dictionary (business name, staff names)
 - Optional premium voice path:
   - ElevenLabs as a configurable TTS provider only after you have stable call flows
-  - A/B compare: Twilio-native TTS vs ElevenLabs on real calls
+  - A/B compare: Telnyx TTS vs ElevenLabs on real calls
   - Keep as "feature flag" per tenant/tier
 
 ### Exit Criteria

@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.telephony.base import SmsProviderProtocol, VoiceProviderProtocol
-from app.infrastructure.telephony.twilio_provider import TwilioSmsProvider, TwilioVoiceProvider
 from app.infrastructure.telephony.telnyx_provider import TelnyxSmsProvider, TelnyxVoiceProvider
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
 
@@ -42,22 +41,13 @@ class TelephonyProviderFactory:
         if not config or not config.is_enabled:
             return None
 
-        if config.provider == "telnyx":
-            if not config.telnyx_api_key:
-                logger.warning(f"Tenant {tenant_id} has Telnyx provider but no API key")
-                return None
-            return TelnyxSmsProvider(
-                api_key=config.telnyx_api_key,
-                messaging_profile_id=config.telnyx_messaging_profile_id,
-            )
-        else:  # Default to Twilio
-            if not config.twilio_account_sid or not config.twilio_auth_token:
-                logger.warning(f"Tenant {tenant_id} has Twilio provider but missing credentials")
-                return None
-            return TwilioSmsProvider(
-                account_sid=config.twilio_account_sid,
-                auth_token=config.twilio_auth_token,
-            )
+        if not config.telnyx_api_key:
+            logger.warning(f"Tenant {tenant_id} has no Telnyx API key configured")
+            return None
+        return TelnyxSmsProvider(
+            api_key=config.telnyx_api_key,
+            messaging_profile_id=config.telnyx_messaging_profile_id,
+        )
 
     async def get_voice_provider(self, tenant_id: int) -> VoiceProviderProtocol | None:
         """Get Voice provider for tenant.
@@ -72,22 +62,13 @@ class TelephonyProviderFactory:
         if not config or not config.voice_enabled:
             return None
 
-        if config.provider == "telnyx":
-            if not config.telnyx_api_key:
-                logger.warning(f"Tenant {tenant_id} has Telnyx provider but no API key")
-                return None
-            return TelnyxVoiceProvider(
-                api_key=config.telnyx_api_key,
-                connection_id=config.telnyx_connection_id,
-            )
-        else:  # Default to Twilio
-            if not config.twilio_account_sid or not config.twilio_auth_token:
-                logger.warning(f"Tenant {tenant_id} has Twilio provider but missing credentials")
-                return None
-            return TwilioVoiceProvider(
-                account_sid=config.twilio_account_sid,
-                auth_token=config.twilio_auth_token,
-            )
+        if not config.telnyx_api_key:
+            logger.warning(f"Tenant {tenant_id} has no Telnyx API key configured")
+            return None
+        return TelnyxVoiceProvider(
+            api_key=config.telnyx_api_key,
+            connection_id=config.telnyx_connection_id,
+        )
 
     async def get_config(self, tenant_id: int) -> TenantSmsConfig | None:
         """Get telephony config for tenant (public method).
@@ -130,9 +111,7 @@ class TelephonyProviderFactory:
         Returns:
             SMS phone number or None
         """
-        if config.provider == "telnyx":
-            return config.telnyx_phone_number
-        return config.twilio_phone_number
+        return config.telnyx_phone_number
 
     def get_voice_phone_number(self, config: TenantSmsConfig) -> str | None:
         """Get voice phone number based on provider.
@@ -154,9 +133,7 @@ class TelephonyProviderFactory:
         Returns:
             Path prefix for webhooks (e.g., '/telnyx' or '')
         """
-        if config.provider == "telnyx":
-            return "/telnyx"
-        return ""
+        return "/telnyx"
 
     def clear_cache(self, tenant_id: int | None = None) -> None:
         """Clear config cache.
@@ -173,26 +150,19 @@ class TelephonyProviderFactory:
 async def get_tenant_by_phone_number(
     session: AsyncSession,
     phone_number: str,
-    provider: str = "twilio",
 ) -> int | None:
     """Look up tenant ID by phone number.
 
     Args:
         session: Database session
         phone_number: Phone number to look up
-        provider: Provider type ('twilio' or 'telnyx')
 
     Returns:
         Tenant ID or None if not found
     """
-    if provider == "telnyx":
-        stmt = select(TenantSmsConfig.tenant_id).where(
-            TenantSmsConfig.telnyx_phone_number == phone_number
-        )
-    else:
-        stmt = select(TenantSmsConfig.tenant_id).where(
-            TenantSmsConfig.twilio_phone_number == phone_number
-        )
+    stmt = select(TenantSmsConfig.tenant_id).where(
+        TenantSmsConfig.telnyx_phone_number == phone_number
+    )
 
     result = await session.execute(stmt)
     row = result.scalar_one_or_none()

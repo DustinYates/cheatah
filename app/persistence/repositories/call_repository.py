@@ -15,10 +15,10 @@ class CallRepository(BaseRepository[Call]):
         super().__init__(Call, session)
 
     async def get_by_call_sid(self, call_sid: str) -> Call | None:
-        """Get call by Twilio call SID.
-        
+        """Get call by call SID.
+
         Args:
-            call_sid: Twilio call SID
+            call_sid: Call SID
             
         Returns:
             Call entity or None if not found

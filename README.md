@@ -142,7 +142,7 @@ uv run alembic upgrade head
 - Backend: `chattercheatah` → https://chattercheatah-900139201687.us-central1.run.app
 - Frontend: `chattercheatah-frontend` → https://chattercheatah-frontend-900139201687.us-central1.run.app
 
-> **IMPORTANT:** Always use the canonical URL format `https://chattercheatah-900139201687.us-central1.run.app` for all integrations including Cloud Tasks, Twilio/Telnyx webhooks, and SendGrid callbacks. Do NOT use auto-generated Cloud Run URLs like `*-iyv6z6wp7a-uc.a.run.app` as they may point to old/stale deployments.
+> **IMPORTANT:** Always use the canonical URL format `https://chattercheatah-900139201687.us-central1.run.app` for all integrations including Cloud Tasks, Telnyx webhooks, and SendGrid callbacks. Do NOT use auto-generated Cloud Run URLs like `*-iyv6z6wp7a-uc.a.run.app` as they may point to old/stale deployments.
 
 **Database:**
 - Supabase PostgreSQL

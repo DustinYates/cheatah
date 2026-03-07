@@ -367,16 +367,16 @@
                         </div>
                     </div>
                     <div class="form-group">
-                        <label>Twilio Account SID</label>
-                        <input type="text" id="twilioAccountSid" placeholder="AC...">
+                        <label>Telnyx API Key</label>
+                        <input type="password" id="telnyxApiKey" placeholder="KEY...">
                     </div>
                     <div class="form-group">
-                        <label>Twilio Auth Token</label>
-                        <input type="password" id="twilioAuthToken" placeholder="Auth token">
+                        <label>Telnyx Messaging Profile ID</label>
+                        <input type="text" id="telnyxMessagingProfileId" placeholder="UUID">
                     </div>
                     <div class="form-group">
-                        <label>Twilio Phone Number</label>
-                        <input type="text" id="twilioPhoneNumber" placeholder="+1234567890">
+                        <label>Telnyx Phone Number</label>
+                        <input type="text" id="telnyxPhoneNumber" placeholder="+1234567890">
                     </div>
                     <div class="form-group">
                         <div class="checkbox-group">
@@ -636,9 +636,9 @@
                 if (response.ok) {
                     const config = await response.json();
                     document.getElementById('isEnabled').checked = config.is_enabled || false;
-                    document.getElementById('twilioAccountSid').value = config.twilio_account_sid || '';
-                    document.getElementById('twilioAuthToken').value = ''; // Never show existing token
-                    document.getElementById('twilioPhoneNumber').value = config.twilio_phone_number || '';
+                    document.getElementById('telnyxApiKey').value = ''; // Never show existing key
+                    document.getElementById('telnyxMessagingProfileId').value = config.telnyx_messaging_profile_id || '';
+                    document.getElementById('telnyxPhoneNumber').value = config.telnyx_phone_number || '';
                     document.getElementById('businessHoursEnabled').checked = config.business_hours_enabled || false;
                     document.getElementById('timezone').value = config.timezone || 'UTC';
                     document.getElementById('autoReplyOutsideHours').checked = config.auto_reply_outside_hours || false;
@@ -658,9 +658,9 @@
 
             const config = {
                 is_enabled: document.getElementById('isEnabled').checked,
-                twilio_account_sid: document.getElementById('twilioAccountSid').value,
-                twilio_auth_token: document.getElementById('twilioAuthToken').value || undefined,
-                twilio_phone_number: document.getElementById('twilioPhoneNumber').value,
+                telnyx_api_key: document.getElementById('telnyxApiKey').value || undefined,
+                telnyx_messaging_profile_id: document.getElementById('telnyxMessagingProfileId').value,
+                telnyx_phone_number: document.getElementById('telnyxPhoneNumber').value,
                 business_hours_enabled: document.getElementById('businessHoursEnabled').checked,
                 timezone: document.getElementById('timezone').value,
                 auto_reply_outside_hours: document.getElementById('autoReplyOutsideHours').checked,

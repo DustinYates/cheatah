@@ -144,7 +144,7 @@ class HandoffService:
         """Record that a handoff was attempted.
         
         Args:
-            call_sid: Twilio call SID
+            call_sid: Call SID
             handoff_number: Number transferred to (if applicable)
             reason: Reason for handoff
         """
@@ -279,7 +279,7 @@ class HandoffService:
         """Execute the handoff based on the decision.
         
         Args:
-            call_sid: Twilio call SID
+            call_sid: Call SID
             decision: Handoff decision with mode and details
             tenant_id: Tenant ID
             

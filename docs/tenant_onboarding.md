@@ -231,8 +231,7 @@ DATABASE_URL=postgresql+asyncpg://chattercheatah:dev_password@localhost:5432/cha
 
 Inbound webhooks map tenant by:
 
-1) `TenantSmsConfig.telnyx_phone_number == To`, else
-2) `TenantSmsConfig.twilio_phone_number == To` (legacy)
+1) `TenantSmsConfig.telnyx_phone_number == To`
 
 **Provisioning steps**
 
@@ -332,8 +331,8 @@ Create two tenants (e.g., `1042` and `2048`) and run:
    - [ ] Attempt to fetch that lead while authenticated as tenant 2048 → expect 404/not found
 
 4. **Channel routing**
-   - [ ] SMS inbound routes to correct tenant based on `To` and/or `AccountSid`
-   - [ ] Voice inbound routes to correct tenant based on `To`
+   - [ ] SMS inbound routes to correct tenant based on `To` number
+   - [ ] Voice inbound routes to correct tenant based on `To` number
    - [ ] Email Pub/Sub routes to correct tenant based on connected `gmail_email`
 
 ---
@@ -423,6 +422,6 @@ Safe to share:
 
 Never share:
 
-- OAuth refresh tokens, Telnyx/Twilio auth tokens, JWT secret keys, API keys
+- OAuth refresh tokens, Telnyx auth tokens, JWT secret keys, API keys
 - `Authorization: Bearer ...` headers
 

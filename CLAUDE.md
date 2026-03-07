@@ -11,7 +11,7 @@ ChatterCheetah (ConvoPro) is a multi-tenant AI customer communication platform d
 - **Database:** Supabase PostgreSQL (asyncpg driver)
 - **Cache:** Redis (Upstash, optional — `REDIS_ENABLED` flag)
 - **LLM:** Google Gemini (`google-genai` SDK)
-- **SMS/Voice:** Telnyx (primary), Twilio (legacy)
+- **SMS/Voice:** Telnyx
 - **Email:** Gmail API (OAuth) + SendGrid (outbound)
 - **Infra:** GCP Cloud Run, Cloud Tasks, Artifact Registry, Secret Manager
 - **Package Manager:** uv (Python), npm (frontend)
@@ -85,8 +85,7 @@ app/
 
 All routes are included via `app/api/routes/__init__.py`. Key prefixes:
 - `/telnyx` — Telnyx webhooks (voice AI, SMS, tool endpoints)
-- `/sms` — Twilio SMS webhooks
-- `/voice` — Twilio voice webhooks
+- `/sms` — SMS admin endpoints
 - `/admin` — Admin dashboard endpoints
 - `/tenants` — Tenant management
 - `/chat` — Web chat widget API
@@ -109,7 +108,7 @@ The telnyx router is at `prefix="/telnyx"`, so routes defined as `@router.post("
 ### Per-Tenant Config Tables
 
 Each tenant has 1:1 config rows:
-- `tenant_sms_configs` — Telnyx/Twilio phone, API keys, messaging profile
+- `tenant_sms_configs` — Telnyx phone, API keys, messaging profile
 - `tenant_voice_configs` — Telnyx agent ID, handoff mode, transfer number
 - `tenant_email_configs` — Gmail OAuth, SendGrid settings
 - `tenant_calendar_configs` — Google Calendar OAuth, scheduling preferences
@@ -168,23 +167,18 @@ Production secrets are in GCP Secret Manager, mounted as env vars in Cloud Run.
      - Get Classes → `POST /api/v1/telnyx/tools/get-classes`
 - **Signature verification:** `telnyx-signature-ed25519` (ED25519), `telnyx-timestamp` (must be within 5 min)
 
-#### 2. Twilio (Legacy/Alternative)
-- **Config table:** `tenant_sms_configs`
-- **Keys needed:** `twilio_account_sid`, `twilio_auth_token`, `twilio_phone_number`
-- **Webhook URLs:** `/api/v1/sms/inbound`, `/api/v1/sms/status`, `/api/v1/voice/inbound`
-
-#### 3. Gmail (OAuth Email)
+#### 2. Gmail (OAuth Email)
 - **Config table:** `tenant_email_configs`
 - **Keys stored:** `gmail_email`, `gmail_refresh_token`, `gmail_access_token`
 - **Setup:** Tenant clicks "Connect Gmail" in settings → OAuth flow → tokens stored automatically. Pub/Sub watch auto-renews every 7 days.
 - **Webhook:** Gmail push notifications arrive at `POST /api/v1/email/pubsub` via Google Pub/Sub
 
-#### 4. SendGrid (Outbound + Inbound Parse Email)
+#### 3. SendGrid (Outbound + Inbound Parse Email)
 - **Config table:** `tenant_email_configs`
 - **Keys needed:** `sendgrid_api_key`, `sendgrid_from_email`, `sendgrid_parse_address`, `sendgrid_webhook_secret`
 - **Webhook:** Inbound email → `POST /api/v1/sendgrid/inbound`
 
-#### 5. Zapier + Jackrabbit (Customer Service CRM)
+#### 4. Zapier + Jackrabbit (Customer Service CRM)
 - **Config table:** `tenant_customer_service_configs`
 - **Keys needed:** `zapier_webhook_url`, `zapier_callback_secret`, `jackrabbit_api_key_1`, `jackrabbit_api_key_2`
 - **Setup:**
@@ -193,7 +187,7 @@ Production secrets are in GCP Secret Manager, mounted as env vars in Cloud Run.
   3. Store webhook URLs and callback secret in config
 - **Callback webhooks:** `/api/v1/zapier/callback`, `/api/v1/zapier/customer-update`
 
-#### 6. Business Profile + Widget
+#### 5. Business Profile + Widget
 - **Config tables:** `tenant_business_profiles`, `tenant_widget_configs`
 - **Data:** business name, website URL, phone, email, widget styling/customization
 - **Widget assets:** stored in GCS at `tenants/{tenant_id}/widget-assets/`
@@ -229,9 +223,6 @@ Production secrets are in GCP Secret Manager, mounted as env vars in Cloud Run.
 | `/api/v1/telnyx/call-progress` | Telnyx | Call state updates |
 | `/api/v1/telnyx/tools/send-link` | Telnyx AI Agent | Send SMS registration link |
 | `/api/v1/telnyx/tools/get-classes` | Telnyx AI Agent | Jackrabbit class proxy |
-| `/api/v1/sms/inbound` | Twilio | Inbound SMS |
-| `/api/v1/sms/status` | Twilio | SMS delivery status |
-| `/api/v1/voice/inbound` | Twilio | Inbound voice call |
 | `/api/v1/email/pubsub` | Google Pub/Sub | Gmail push notifications |
 | `/api/v1/sendgrid/inbound` | SendGrid | Inbound email parse |
 | `/api/v1/zapier/callback` | Zapier | Async lookup callback |
@@ -246,7 +237,7 @@ Production secrets are in GCP Secret Manager, mounted as env vars in Cloud Run.
 5. Set up Zapier + Jackrabbit integration (if applicable)
 6. Configure `tenant_widget_configs` for chat widget styling
 7. Connect Google Calendar via Settings → Calendar (optional)
-8. Optional: SendGrid for outbound email, Twilio as SMS/voice fallback
+8. Optional: SendGrid for outbound email
 9. **Verify chat demo** — Go to Settings → Chatbot and test the preview widget. Confirm it uses the correct tenant's prompt (not another tenant's data). Check that the `tenant_prompt_configs` row is `is_active=true`.
 
 ## Workflow Orchestration

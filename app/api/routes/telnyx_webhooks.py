@@ -1765,6 +1765,15 @@ async def telnyx_ai_call_complete(
                                             )
                                             continue
 
+                                        # Use the message's original timestamp from Telnyx if available
+                                        msg_created_at = None
+                                        telnyx_ts = msg.get("created_at") or msg.get("sent_at")
+                                        if telnyx_ts:
+                                            try:
+                                                msg_created_at = datetime.fromisoformat(telnyx_ts.replace("Z", "+00:00")).replace(tzinfo=None)
+                                            except (ValueError, AttributeError):
+                                                pass
+
                                         new_msg = Message(
                                             conversation_id=sms_conversation.id,
                                             role=msg_role,
@@ -1772,6 +1781,8 @@ async def telnyx_ai_call_complete(
                                             sequence_number=next_seq,
                                             message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id, "telnyx_conversation_id": telnyx_conv_id},
                                         )
+                                        if msg_created_at:
+                                            new_msg.created_at = msg_created_at
                                         db.add(new_msg)
                                         existing_contents.add(msg_content)  # Track for intra-batch dedup
                                         next_seq += 1

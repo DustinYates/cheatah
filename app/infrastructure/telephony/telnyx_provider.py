@@ -516,21 +516,40 @@ class TelnyxAIService:
                         f"total so far: {len(all_messages)}"
                     )
 
-                    # Check for next page via links.next or meta
-                    next_url = None
+                    # Log response structure for pagination debugging
+                    response_keys = list(data.keys())
+                    meta = data.get("meta", {})
                     links = data.get("links", {})
+                    logger.info(
+                        f"[TELNYX-API] Response keys: {response_keys}, "
+                        f"meta: {meta}, links: {links}"
+                    )
+
+                    # Check for next page via multiple pagination strategies
+                    next_url = None
+
+                    # Strategy 1: links.next
                     if links and links.get("next"):
                         next_url = links["next"]
-                    elif data.get("meta", {}).get("next_page_url"):
-                        next_url = data["meta"]["next_page_url"]
+                    # Strategy 2: meta.next_page_url
+                    elif meta.get("next_page_url"):
+                        next_url = meta["next_page_url"]
+                    # Strategy 3: If we got a full page of results, try next page number
+                    # (Telnyx AI API may not return pagination links but still has more data)
+                    elif len(messages) >= 20 and page < max_pages - 1:
+                        next_url = f"/ai/conversations/{conversation_id}/messages?page[number]={page + 2}"
+                        logger.info(f"[TELNYX-API] No pagination link found but got {len(messages)} msgs, trying next page")
 
                     if next_url and messages:
-                        # Telnyx returns absolute URLs; extract relative path
-                        from urllib.parse import urlparse
-                        parsed = urlparse(next_url)
-                        url = parsed.path.replace("/v2", "", 1)
-                        if parsed.query:
-                            url += "?" + parsed.query
+                        if next_url.startswith("http"):
+                            # Telnyx returns absolute URLs; extract relative path
+                            from urllib.parse import urlparse
+                            parsed = urlparse(next_url)
+                            url = parsed.path.replace("/v2", "", 1)
+                            if parsed.query:
+                                url += "?" + parsed.query
+                        else:
+                            url = next_url
                         page += 1
                     else:
                         url = None

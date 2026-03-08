@@ -352,7 +352,7 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
 
     # Paths that need wildcard CORS (embedded widget + external webhooks)
     OPEN_CORS_PREFIXES = (
-        "/api/v1/chat/",
+        "/api/v1/chat",
         "/api/v1/widget/",
         "/api/v1/telnyx/",
         "/api/v1/sms/",

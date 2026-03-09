@@ -2039,8 +2039,10 @@ async def telnyx_ai_call_complete(
                 # Only trust ai_sent_registration_url (actual Telnyx message check), not
                 # link_already_sent_sms (summary text match). The AI often says "I sent the link"
                 # in the summary but didn't actually send a URL via SMS.
-                # POST-CALL SMS DISABLED for tenant 3 per user request (2026-02-06)
-                if False and is_registration_request_sms and normalized_from and not ai_sent_registration_url and tenant_id == 3:
+                # Post-call SMS backup: sends registration link if tool endpoint
+                # couldn't resolve the caller's phone during the conversation.
+                # Dedup via SentAsset DB + Redis prevents double-sends if tool already sent.
+                if is_registration_request_sms and normalized_from and not ai_sent_registration_url:
                     # IMMEDIATE SMS SEND: Send registration link right away
                     # Use consistent phone normalization for dedup keys (last 10 digits)
                     normalized_for_dedup = normalize_phone_for_dedup(from_number)
@@ -3241,6 +3243,7 @@ class SendRegistrationLinkRequest(BaseModel):
     """
     location: str | None = None  # "Cypress", "Langham Creek", or "Spring"
     level: str | None = None  # "Adult Level 3", "Tadpole", etc.
+    phone: str | None = None  # Caller phone via {{telnyx_end_user_target}}
 
 
 @router.post("/tools/send-registration-link")
@@ -3278,16 +3281,30 @@ async def send_registration_link_tool(
 
         print(f"[TOOL DEBUG] Body: {body}")
 
-        # Get call_control_id from Telnyx header
+        # --- Tenant resolution: query param first (same pattern as send_link) ---
+        tenant_id = None
+        params = dict(request.query_params)
+        raw_tid = params.get("tenant_id") or body.get("tenant_id")
+        if raw_tid:
+            try:
+                tenant_id = int(raw_tid)
+                print(f"[TOOL DEBUG] Tenant from query/body param: {tenant_id}")
+            except (ValueError, TypeError):
+                pass
+
+        # --- Phone resolution ---
+        caller_phone = None
+        to_number = None
         call_control_id = request.headers.get("x-telnyx-call-control-id", "")
 
-        # Look up the caller's phone from our Call table using call_control_id
-        # This is more reliable than expecting the AI to pass the phone number
-        caller_phone = None
-        tenant_id = None
-        to_number = None
+        # Step 1: Body "phone" field (populated by {{telnyx_end_user_target}} in Telnyx portal)
+        body_phone = body.get("phone") or body.get("caller_phone") or body.get("from") or ""
+        if body_phone and not body_phone.startswith("+1555"):
+            caller_phone = body_phone
+            print(f"[TOOL DEBUG] Phone from body: {caller_phone}")
 
-        if call_control_id:
+        # Step 2: Call record lookup (voice calls only)
+        if not caller_phone and call_control_id:
             from app.persistence.models.call import Call
             stmt = select(Call).where(Call.call_sid == call_control_id)
             result = await db.execute(stmt)
@@ -3295,12 +3312,13 @@ async def send_registration_link_tool(
 
             if call_record:
                 caller_phone = call_record.from_number
-                tenant_id = call_record.tenant_id
+                if not tenant_id:
+                    tenant_id = call_record.tenant_id
                 to_number = call_record.to_number
                 print(f"[TOOL DEBUG] Found call record - from={caller_phone}, tenant={tenant_id}")
             else:
                 print(f"[TOOL DEBUG] No call record found for call_control_id={call_control_id}")
-                # Fallback: query Telnyx API to get caller phone from call_control_id
+                # Step 3: Telnyx API fallback for voice calls
                 if settings.telnyx_api_key:
                     try:
                         import httpx
@@ -3320,18 +3338,10 @@ async def send_registration_link_tool(
                     except Exception as e:
                         print(f"[TOOL DEBUG] Telnyx API call lookup error: {e}")
 
-        # Fallback: check body for phone number (from AI parameter)
-        if not caller_phone:
-            caller_phone = body.get("caller_phone", "") or body.get("from", "")
-            # Filter out test/placeholder numbers
-            if caller_phone and caller_phone.startswith("+1555"):
-                print(f"[TOOL DEBUG] Ignoring test phone number: {caller_phone}")
-                caller_phone = None
-
         logger.info(
             f"[TOOL] send_registration_link called - "
             f"call_control_id={call_control_id}, caller={caller_phone}, "
-            f"location={body.get('location')}, level={body.get('level')}"
+            f"tenant_id={tenant_id}, location={body.get('location')}, level={body.get('level')}"
         )
 
         if not caller_phone:
@@ -3347,11 +3357,10 @@ async def send_registration_link_tool(
                           "Let the caller know the text is on its way and ask if there is anything else you can help with."
             })
 
-        # Look up tenant by the Telnyx number if not already found
+        # --- Tenant resolution fallbacks (if not already set from query param) ---
         if not tenant_id and to_number:
             tenant_id = await _get_tenant_from_telnyx_number(to_number, db)
 
-        # Fallback: try assistant_id from headers or body
         if not tenant_id:
             assistant_id = (
                 request.headers.get("x-telnyx-assistant-id") or
@@ -4227,21 +4236,31 @@ def _map_location_to_code(location: str) -> str | None:
 
     # Direct mappings
     location_map = {
-        # Cypress variations
+        # Cypress-Spring variations (tenant 3)
         "cypress": "LAFCypress",
         "la fitness cypress": "LAFCypress",
         "lafcypress": "LAFCypress",
-        # Langham Creek variations
         "langham creek": "LALANG",
         "langham": "LALANG",
         "la fitness langham creek": "LALANG",
         "lalang": "LALANG",
-        # Spring variations
         "spring": "24Spring",
         "24 hour fitness spring": "24Spring",
         "24 hour spring": "24Spring",
         "24spring": "24Spring",
         "24hr spring": "24Spring",
+        # Atlanta variations (tenant 4)
+        "buckhead": "LABUCK",
+        "la fitness buckhead": "LABUCK",
+        "labuck": "LABUCK",
+        "old dunwoody": "OLDUN",
+        "dunwoody": "OLDUN",
+        "oldun": "OLDUN",
+        "roswell": "ROSAAC",
+        "roswell aquatic": "ROSAAC",
+        "rosaac": "ROSAAC",
+        "historic dunwoody": "HISDUN",
+        "hisdun": "HISDUN",
     }
 
     return location_map.get(location_lower)

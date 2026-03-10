@@ -326,6 +326,13 @@ Bot: "Twice a week is $266/month — that's what most families choose for steady
 """
 
 # BSS branding language
+BSS_EXCLUSIVE_LOCATION_GUARDRAIL = """## NO OUTSIDE BUSINESS RECOMMENDATIONS (CRITICAL)
+
+- NEVER recommend, mention, or refer customers to any other business — no competitor swim schools, no YMCA programs, no other swim instruction providers
+- ONLY discuss locations listed in YOUR configuration
+- If asked about locations you don't serve, say: "I can only help with our locations here. For other areas, you can visit britishswimschool.com to find a school near you."
+"""
+
 BSS_BRANDING_LANGUAGE = """## BRANDING LANGUAGE (USE THESE PHRASES!)
 
 You SHOULD actively incorporate these brand phrases in your responses. They make the conversation feel authentic to British Swim School.
@@ -371,6 +378,7 @@ class BSSBaseConfig:
         "role": BSS_ROLE,
         "critical_rules": BSS_CRITICAL_RULES,
         "location_link_guardrails": BSS_LOCATION_LINK_GUARDRAILS,
+        "exclusive_location": BSS_EXCLUSIVE_LOCATION_GUARDRAIL,
         "direct_response": DIRECT_RESPONSE_RULES,
         "style": STYLE_GUIDELINES,
         "swimmer_identification": SWIMMER_IDENTIFICATION_RULES,
@@ -402,6 +410,7 @@ class BSSBaseConfig:
         "conversation_flow",    # Base rule
         # Style and formatting
         "location_link_guardrails",  # Base rule - STRICT location/link rules
+        "exclusive_location",        # Base rule - never recommend other businesses
         "direct_response",
         "style",
         "branding_language",    # Base rule - approved brand phrases

@@ -11,6 +11,7 @@ from sqlalchemy.orm import attributes
 from app.domain.prompts.assembler import PromptAssembler
 from app.domain.prompts.base_configs.bss import (
     BSS_EQUIPMENT_KNOWLEDGE,
+    BSS_EXCLUSIVE_LOCATION_GUARDRAIL,
     BSS_LOCATION_LINK_GUARDRAILS,
 )
 from app.domain.prompts.base_configs.common import (
@@ -778,6 +779,8 @@ Generate ONLY the SMS message text, nothing else. No quotes, no explanation, jus
 {PRONOUN_USAGE_RULES}
 
 {BSS_LOCATION_LINK_GUARDRAILS}
+
+{BSS_EXCLUSIVE_LOCATION_GUARDRAIL}
 
 {BSS_EQUIPMENT_KNOWLEDGE}
 """

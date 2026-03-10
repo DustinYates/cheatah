@@ -2048,19 +2048,38 @@ async def telnyx_ai_call_complete(
                     normalized_for_dedup = normalize_phone_for_dedup(from_number)
                     redis_dedup_key_sms = f"registration_sms:{tenant_id}:{normalized_for_dedup}"
 
-                    # DATABASE-BASED DEDUP: Check if SMS was already sent recently
+                    # DEDUP LAYER 1: Check SentAsset table (shared with tool endpoints)
+                    # The send_registration_link and send_link tools write SentAsset
+                    # records when they send. Check here to avoid double-sending.
                     db_sms_already_sent = False
-                    if lead:
+                    try:
+                        from app.persistence.models.sent_asset import SentAsset
+                        cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=3)
+                        existing_send = await db.execute(
+                            select(SentAsset.id).where(
+                                SentAsset.tenant_id == tenant_id,
+                                SentAsset.phone_normalized == normalized_for_dedup,
+                                SentAsset.asset_type == "registration_link",
+                                SentAsset.sent_at >= cutoff_time,
+                            ).limit(1)
+                        )
+                        if existing_send.scalar_one_or_none():
+                            db_sms_already_sent = True
+                            logger.info(f"[SMS] SentAsset dedup - tool already sent to {normalized_for_dedup}")
+                    except Exception as e:
+                        logger.warning(f"[SMS] SentAsset dedup check failed: {e}")
+
+                    # DEDUP LAYER 2: Check lead.extra_data (backup dedup from this path)
+                    if not db_sms_already_sent and lead:
                         await db.refresh(lead)
                         lead_extra = lead.extra_data or {}
                         last_sms_sent = lead_extra.get("sms_registration_sent_at")
                         if last_sms_sent:
                             try:
                                 last_sent_time = datetime.fromisoformat(last_sms_sent.replace("Z", "+00:00"))
-                                # Skip if SMS was sent within the last 3 minutes
                                 if (datetime.utcnow().replace(tzinfo=None) - last_sent_time.replace(tzinfo=None)).total_seconds() < 180:
                                     db_sms_already_sent = True
-                                    logger.info(f"[SMS] DB dedup - skipping, sent at {last_sms_sent}")
+                                    logger.info(f"[SMS] lead.extra_data dedup - skipping, sent at {last_sms_sent}")
                             except Exception as parse_err:
                                 logger.warning(f"[SMS] Failed to parse last_sms_sent: {parse_err}")
 

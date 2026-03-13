@@ -149,6 +149,11 @@ export default function Kanban() {
     }
   };
 
+  const handleSmsClick = (e, lead) => {
+    e.stopPropagation();
+    setSmsLead(lead);
+  };
+
   const handleEditClick = (e, lead) => {
     e.stopPropagation();
     setEditLead(lead);
@@ -292,6 +297,27 @@ export default function Kanban() {
                           <div className="kanban-card__name">{lead.name}</div>
                           {!mergeMode && (
                             <div className="kanban-card__actions">
+                              {lead.phone && (
+                                <button
+                                  className="kanban-card__btn kanban-card__btn--sms"
+                                  onClick={(e) => handleSmsClick(e, lead)}
+                                  title="Send text message"
+                                  type="button"
+                                >
+                                  <svg
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                                  </svg>
+                                </button>
+                              )}
                               <button
                                 className="kanban-card__btn kanban-card__btn--edit"
                                 onClick={(e) => handleEditClick(e, lead)}
@@ -409,6 +435,27 @@ export default function Kanban() {
                       <div className="kanban-card__name">{lead.name}</div>
                       {!mergeMode && (
                         <div className="kanban-card__actions">
+                          {lead.phone && (
+                            <button
+                              className="kanban-card__btn kanban-card__btn--sms"
+                              onClick={(e) => handleSmsClick(e, lead)}
+                              title="Send text message"
+                              type="button"
+                            >
+                              <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                              </svg>
+                            </button>
+                          )}
                           <button
                             className="kanban-card__btn kanban-card__btn--edit"
                             onClick={(e) => handleEditClick(e, lead)}

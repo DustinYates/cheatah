@@ -221,6 +221,15 @@
   color: #7c3aed;
 }
 
+.kanban-card__btn--sms {
+  color: #10b981;
+}
+
+.kanban-card__btn--sms:hover {
+  background: #ecfdf5;
+  color: #059669;
+}
+
 .kanban-card__btn--cancel-merge {
   color: #dc2626;
   font-weight: 600;

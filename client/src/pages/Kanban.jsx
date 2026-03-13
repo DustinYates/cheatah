@@ -8,6 +8,142 @@ import EditLeadModal from '../components/EditLeadModal';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import './Kanban.css';
 
+function CalendarWeekView() {
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarTasks, setCalendarTasks] = useState([]);
+  const [weekStart, setWeekStart] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchCalendar() {
+      try {
+        const [calResult, tasksResult] = await Promise.allSettled([
+          api.getCalendarEvents(0),
+          api.getUpcomingTasks(7),
+        ]);
+        if (calResult.status === 'fulfilled') {
+          const data = calResult.value;
+          setCalendarEvents(data.events || []);
+          setWeekStart(data.week_start || '');
+        }
+        if (tasksResult.status === 'fulfilled') {
+          setCalendarTasks(tasksResult.value || []);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchCalendar();
+  }, []);
+
+  // Build week days — use API week_start if available, otherwise compute from today (Mon-Sun)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const days = [];
+  if (weekStart) {
+    const start = new Date(weekStart + 'T00:00:00');
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(start);
+      day.setDate(start.getDate() + i);
+      days.push(day);
+    }
+  } else if (!loading) {
+    // Fallback: compute current week Mon-Sun
+    const dow = today.getDay(); // 0=Sun
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - ((dow + 6) % 7));
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(monday);
+      day.setDate(monday.getDate() + i);
+      days.push(day);
+    }
+  }
+
+  const displayStart = days[0];
+  const displayEnd = days[6];
+
+  return (
+    <div className="kanban-calendar-card">
+      <div className="kanban-calendar-header">
+        <h2>This Week</h2>
+        {displayStart && (
+          <span className="kanban-calendar-range">
+            {displayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            {' \u2013 '}
+            {displayEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          </span>
+        )}
+      </div>
+      {loading ? (
+        <div className="kanban-calendar-empty">Loading...</div>
+      ) : (
+        <div className="kanban-calendar-grid">
+          {days.map((day) => {
+            const dayStr = day.toISOString().split('T')[0];
+            const isToday = day.getTime() === today.getTime();
+            const dayEvents = calendarEvents.filter((evt) => (evt.start || '').split('T')[0] === dayStr);
+            const dayTasks = calendarTasks.filter((t) => (t.due_date || '').split('T')[0] === dayStr);
+            const hasContent = dayEvents.length > 0 || dayTasks.length > 0;
+
+            return (
+              <div key={dayStr} className={`kanban-cal-day ${isToday ? 'kanban-cal-day--today' : ''}`}>
+                <div className="kanban-cal-day-header">
+                  <span className="kanban-cal-day-name">
+                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                  </span>
+                  <span className={`kanban-cal-day-num ${isToday ? 'kanban-cal-day-num--today' : ''}`}>
+                    {day.getDate()}
+                  </span>
+                </div>
+                <div className="kanban-cal-day-events">
+                  {!hasContent ? (
+                    <span className="kanban-cal-no-events">-</span>
+                  ) : (
+                    <>
+                      {dayEvents.map((evt) => {
+                        const startTime = evt.all_day
+                          ? 'All day'
+                          : new Date(evt.start).toLocaleTimeString('en-US', {
+                              hour: 'numeric', minute: '2-digit', hour12: true,
+                            });
+                        return (
+                          <div key={evt.id} className="kanban-cal-event" title={`${evt.summary}\n${startTime}`}>
+                            <span className="kanban-cal-event-time">{startTime}</span>
+                            <span className="kanban-cal-event-title">{evt.summary}</span>
+                          </div>
+                        );
+                      })}
+                      {dayTasks.map((t) => {
+                        const taskOverdue = new Date(t.due_date) < new Date();
+                        return (
+                          <div
+                            key={`task-${t.id}`}
+                            className={`kanban-cal-task ${taskOverdue ? 'kanban-cal-task--overdue' : ''}`}
+                            title={`Task: ${t.title}${t.lead_name ? ` (${t.lead_name})` : ''}`}
+                          >
+                            <span className="kanban-cal-task-icon">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="9 11 12 14 22 4" />
+                                <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                              </svg>
+                            </span>
+                            <span className="kanban-cal-task-title">{t.title}</span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function channelIcon(channel) {
   if (!channel) return null;
   const c = channel.toLowerCase();
@@ -240,6 +376,8 @@ export default function Kanban() {
           </svg>
         </button>
       </div>
+
+      <CalendarWeekView />
 
       <div className="kanban-board">
         {STAGES.map((stage) => {

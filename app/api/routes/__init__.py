@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, connections, contacts, conversations, customers, customer_support, dashboard_analytics, dnc, drip_campaigns, email_webhooks, escalation_settings, forums, inbox, leads, pipeline_stages, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, support, telnyx_webhooks, tenant_calendar, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, user_groups, voice_ab_tests, zapier_webhooks
+from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, calls, chat, connections, contacts, conversations, customers, customer_support, dashboard_analytics, dnc, drip_campaigns, email_webhooks, escalation_settings, forums, inbox, leads, lead_tasks, pipeline_stages, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, support, telnyx_webhooks, tenant_calendar, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, user_groups, voice_ab_tests, zapier_webhooks
 from app.api import sendgrid_email
 
 api_router = APIRouter()
@@ -56,6 +56,7 @@ api_router.include_router(tenant_calendar.router, prefix="/calendar", tags=["cal
 
 # Leads, Contacts, Customers, Connections, and Calls
 api_router.include_router(leads.router, prefix="/leads", tags=["leads"])
+api_router.include_router(lead_tasks.router, tags=["lead-tasks"])
 api_router.include_router(contacts.router, prefix="/contacts", tags=["contacts"])
 api_router.include_router(customers.router, prefix="/customers", tags=["customers"])
 api_router.include_router(connections.router, prefix="/connections", tags=["connections"])

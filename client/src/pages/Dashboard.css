@@ -1534,6 +1534,53 @@
   text-overflow: ellipsis;
 }
 
+/* Calendar Tasks */
+.calendar-task {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: #fef2f2;
+  border-left: 3px solid #f87171;
+  border-radius: 4px;
+  cursor: default;
+  overflow: hidden;
+}
+
+.calendar-task:hover {
+  background: #fee2e2;
+}
+
+.calendar-task--overdue {
+  background: #fee2e2;
+  border-left-color: #ef4444;
+}
+
+.calendar-task--overdue .calendar-task-title {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.calendar-task-icon {
+  color: #f87171;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.calendar-task--overdue .calendar-task-icon {
+  color: #ef4444;
+}
+
+.calendar-task-title {
+  font-size: 11px;
+  color: #991b1b;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Responsive: stack days on small screens */
 @media (max-width: 768px) {
   .calendar-week-grid {

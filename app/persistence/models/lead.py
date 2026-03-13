@@ -40,6 +40,7 @@ class Lead(Base):
     contact = relationship("Contact", back_populates="leads", foreign_keys=[contact_id])
     call_summaries = relationship("CallSummary", back_populates="lead")
     email_conversations = relationship("EmailConversation", back_populates="lead")
+    tasks = relationship("LeadTask", back_populates="lead", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Lead(id={self.id}, tenant_id={self.tenant_id}, email={self.email}, phone={self.phone}, status={self.status})>"

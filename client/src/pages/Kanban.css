@@ -249,6 +249,25 @@
   text-overflow: ellipsis;
 }
 
+.kanban-card__tasks {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0 2px;
+  color: #ef4444;
+}
+
+.kanban-card__task-text {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.kanban-card__task-text--overdue {
+  color: #ef4444;
+  font-weight: 600;
+}
+
 .kanban-card__footer {
   display: flex;
   align-items: center;

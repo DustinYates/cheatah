@@ -379,6 +379,30 @@ export default function Kanban() {
                         <div className="kanban-card__contact">
                           {lead.phone || lead.email}
                         </div>
+                        {lead.pending_task_count > 0 && (
+                          <div className="kanban-card__tasks">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="9 11 12 14 22 4" />
+                              <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                            </svg>
+                            <span className={`kanban-card__task-text ${lead.next_task_due && new Date(lead.next_task_due) < new Date() ? 'kanban-card__task-text--overdue' : ''}`}>
+                              {lead.pending_task_count} task{lead.pending_task_count > 1 ? 's' : ''}
+                              {lead.next_task_due && (() => {
+                                const due = new Date(lead.next_task_due);
+                                const today = new Date();
+                                today.setHours(0,0,0,0);
+                                const dueDay = new Date(due);
+                                dueDay.setHours(0,0,0,0);
+                                if (dueDay.getTime() === today.getTime()) return ' · Today';
+                                if (due < today) return ' · Overdue';
+                                const tomorrow = new Date(today);
+                                tomorrow.setDate(tomorrow.getDate() + 1);
+                                if (dueDay.getTime() === tomorrow.getTime()) return ' · Tomorrow';
+                                return ` · ${due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+                              })()}
+                            </span>
+                          </div>
+                        )}
                         <div className="kanban-card__footer">
                           {channel ? (
                             <span className="kanban-card__channel">

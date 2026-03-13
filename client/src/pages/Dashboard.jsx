@@ -344,6 +344,7 @@ export default function Dashboard() {
   const [calendarWeekStart, setCalendarWeekStart] = useState('');
   const [calendarWeekEnd, setCalendarWeekEnd] = useState('');
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarTasks, setCalendarTasks] = useState([]);
   const [notesPopoverId, setNotesPopoverId] = useState(null);
   const [notesText, setNotesText] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
@@ -462,10 +463,11 @@ export default function Dashboard() {
     setCallsLoading(true);
     setError('');
     try {
-      const [leadsResult, callsResult, calendarResult] = await Promise.allSettled([
+      const [leadsResult, callsResult, calendarResult, tasksResult] = await Promise.allSettled([
         api.getLeads({ limit: leadsLimit }),
         api.getCalls({ page: 1, page_size: 5 }),
         api.getCalendarEvents(0),
+        api.getUpcomingTasks(7),
       ]);
 
       if (leadsResult.status === 'fulfilled') {
@@ -495,6 +497,12 @@ export default function Dashboard() {
         setCalendarWeekEnd(calData.week_end || '');
       } else {
         setCalendarEvents([]);
+      }
+
+      if (tasksResult.status === 'fulfilled') {
+        setCalendarTasks(tasksResult.value || []);
+      } else {
+        setCalendarTasks([]);
       }
     } catch (err) {
       setError('Failed to load dashboard data');
@@ -1267,6 +1275,11 @@ export default function Dashboard() {
                     const evtDate = (evt.start || '').split('T')[0];
                     return evtDate === dayStr;
                   });
+                  const dayTasks = calendarTasks.filter((t) => {
+                    const taskDate = (t.due_date || '').split('T')[0];
+                    return taskDate === dayStr;
+                  });
+                  const hasContent = dayEvents.length > 0 || dayTasks.length > 0;
 
                   return (
                     <div key={dayStr} className={`calendar-day-col ${isToday ? 'calendar-day-col--today' : ''}`}>
@@ -1279,10 +1292,11 @@ export default function Dashboard() {
                         </span>
                       </div>
                       <div className="calendar-day-events">
-                        {dayEvents.length === 0 ? (
+                        {!hasContent ? (
                           <span className="calendar-no-events">No events</span>
                         ) : (
-                          dayEvents.map((evt) => {
+                          <>
+                          {dayEvents.map((evt) => {
                             const startTime = evt.all_day
                               ? 'All day'
                               : new Date(evt.start).toLocaleTimeString('en-US', {
@@ -1300,7 +1314,26 @@ export default function Dashboard() {
                                 <span className="calendar-event-title">{evt.summary}</span>
                               </div>
                             );
-                          })
+                          })}
+                          {dayTasks.map((t) => {
+                            const taskOverdue = new Date(t.due_date) < new Date();
+                            return (
+                              <div
+                                key={`task-${t.id}`}
+                                className={`calendar-task ${taskOverdue ? 'calendar-task--overdue' : ''}`}
+                                title={`Task: ${t.title}${t.lead_name ? ` (${t.lead_name})` : ''}`}
+                              >
+                                <span className="calendar-task-icon">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="9 11 12 14 22 4" />
+                                    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                                  </svg>
+                                </span>
+                                <span className="calendar-task-title">{t.title}</span>
+                              </div>
+                            );
+                          })}
+                          </>
                         )}
                       </div>
                     </div>

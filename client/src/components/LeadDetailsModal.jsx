@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Phone, MessageSquare, Bot, Mail, Calendar, X, StickyNote, Check, Loader2 } from 'lucide-react';
+import { Phone, MessageSquare, Bot, Mail, Calendar, X, StickyNote, Check, Loader2, ListTodo, Trash2, Plus, Send } from 'lucide-react';
 import { api } from '../api/client';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
 import { buildUnifiedTimeline, getTimelineSources } from '../utils/timelineTransform';
 import TimelineItem from './TimelineItem';
+import SendSmsModal from './SendSmsModal';
 import LoadingState from './ui/LoadingState';
 import './LeadDetailsModal.css';
 
@@ -22,6 +23,15 @@ export default function LeadDetailsModal({ lead, onClose }) {
   const [notesSaved, setNotesSaved] = useState(false);
   const notesRef = useRef(null);
 
+  // SMS modal state
+  const [showSmsModal, setShowSmsModal] = useState(false);
+
+  // Tasks state
+  const [tasks, setTasks] = useState([]);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [taskAdding, setTaskAdding] = useState(false);
+
   // Fetch conversation data and build timeline
   useEffect(() => {
     const fetchTimelineData = async () => {
@@ -35,6 +45,14 @@ export default function LeadDetailsModal({ lead, onClose }) {
         // Build unified timeline
         const timelineData = buildUnifiedTimeline(lead, conversationData);
         setTimeline(timelineData);
+
+        // Fetch tasks
+        try {
+          const tasksData = await api.getLeadTasks(lead.id);
+          setTasks(tasksData || []);
+        } catch (taskErr) {
+          console.warn('Failed to load tasks:', taskErr);
+        }
       } catch (err) {
         console.error('Failed to load timeline:', err);
         setError('Failed to load interaction timeline');
@@ -79,6 +97,74 @@ export default function LeadDetailsModal({ lead, onClose }) {
   };
 
   const notesChanged = notes !== (lead.notes || '');
+
+  // Task handlers
+  const handleAddTask = async () => {
+    if (!newTaskTitle.trim()) return;
+    setTaskAdding(true);
+    try {
+      const task = await api.createLeadTask(lead.id, {
+        title: newTaskTitle.trim(),
+        due_date: newTaskDueDate || null,
+      });
+      setTasks((prev) => [...prev, task]);
+      setNewTaskTitle('');
+      setNewTaskDueDate('');
+    } catch (err) {
+      console.error('Failed to create task:', err);
+    } finally {
+      setTaskAdding(false);
+    }
+  };
+
+  const handleToggleTask = async (task) => {
+    const updated = { is_completed: !task.is_completed };
+    // Optimistic update
+    setTasks((prev) =>
+      prev.map((t) => (t.id === task.id ? { ...t, ...updated } : t))
+    );
+    try {
+      await api.updateLeadTask(lead.id, task.id, updated);
+    } catch (err) {
+      // Revert
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? task : t))
+      );
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    try {
+      await api.deleteLeadTask(lead.id, taskId);
+    } catch (err) {
+      // Refetch on error
+      const tasksData = await api.getLeadTasks(lead.id);
+      setTasks(tasksData || []);
+    }
+  };
+
+  const isOverdue = (dueDateStr) => {
+    if (!dueDateStr) return false;
+    const due = new Date(dueDateStr);
+    const now = new Date();
+    return due < now;
+  };
+
+  const formatDueDate = (dueDateStr) => {
+    if (!dueDateStr) return '';
+    const due = new Date(dueDateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dueDay = new Date(due);
+    dueDay.setHours(0, 0, 0, 0);
+
+    if (dueDay.getTime() === today.getTime()) return 'Today';
+    if (dueDay.getTime() === tomorrow.getTime()) return 'Tomorrow';
+    return due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
 
   // Close modal on escape key
   useEffect(() => {
@@ -134,6 +220,17 @@ export default function LeadDetailsModal({ lead, onClose }) {
               <Phone size={14} className="summary-icon" />
               <span className="summary-label">Phone</span>
               <span className="summary-value">{formatPhone(lead.phone)}</span>
+              {lead.phone && (
+                <button
+                  className="summary-sms-btn"
+                  onClick={() => setShowSmsModal(true)}
+                  title="Send SMS"
+                  type="button"
+                >
+                  <Send size={11} />
+                  <span>Text</span>
+                </button>
+              )}
             </div>
 
             <div className="summary-item">
@@ -214,6 +311,82 @@ export default function LeadDetailsModal({ lead, onClose }) {
           />
         </div>
 
+        {/* Tasks Section */}
+        <div className="tasks-section">
+          <div className="tasks-header">
+            <ListTodo size={14} className="tasks-icon" />
+            <span className="tasks-label">Tasks</span>
+            <span className="tasks-count">
+              {tasks.filter((t) => !t.is_completed).length}
+            </span>
+          </div>
+
+          {/* Task list */}
+          {tasks.length > 0 && (
+            <div className="tasks-list">
+              {tasks.map((task) => (
+                <div
+                  key={task.id}
+                  className={`task-item ${task.is_completed ? 'task-item--completed' : ''}`}
+                >
+                  <label className="task-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={task.is_completed}
+                      onChange={() => handleToggleTask(task)}
+                      className="task-checkbox"
+                    />
+                    <span className="task-title">{task.title}</span>
+                  </label>
+                  {task.due_date && !task.is_completed && (
+                    <span
+                      className={`task-due ${isOverdue(task.due_date) ? 'task-due--overdue' : ''}`}
+                    >
+                      {formatDueDate(task.due_date)}
+                    </span>
+                  )}
+                  <button
+                    className="task-delete-btn"
+                    onClick={() => handleDeleteTask(task.id)}
+                    title="Delete task"
+                    type="button"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add task form */}
+          <div className="task-add-form">
+            <input
+              type="text"
+              className="task-add-input"
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              placeholder="Add a task..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newTaskTitle.trim()) handleAddTask();
+              }}
+            />
+            <input
+              type="date"
+              className="task-add-date"
+              value={newTaskDueDate}
+              onChange={(e) => setNewTaskDueDate(e.target.value)}
+            />
+            <button
+              className="task-add-btn"
+              onClick={handleAddTask}
+              disabled={!newTaskTitle.trim() || taskAdding}
+              type="button"
+            >
+              {taskAdding ? <Loader2 size={12} className="spin" /> : <Plus size={14} />}
+            </button>
+          </div>
+        </div>
+
         {/* Timeline Body */}
         <div className="timeline-body">
           {loading ? (
@@ -247,6 +420,26 @@ export default function LeadDetailsModal({ lead, onClose }) {
           )}
         </div>
       </div>
+      {/* SMS Modal */}
+      {showSmsModal && (
+        <SendSmsModal
+          lead={lead}
+          onClose={() => setShowSmsModal(false)}
+          onSuccess={() => {
+            // Refresh timeline to show the sent message
+            const refresh = async () => {
+              try {
+                const conversationData = await api.getLeadConversation(lead.id);
+                const timelineData = buildUnifiedTimeline(lead, conversationData);
+                setTimeline(timelineData);
+              } catch (err) {
+                console.warn('Failed to refresh timeline after SMS send:', err);
+              }
+            };
+            refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

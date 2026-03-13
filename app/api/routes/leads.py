@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.api.deps import get_current_user, require_tenant_context
 from app.domain.services.lead_service import LeadService
@@ -15,6 +15,7 @@ from app.domain.services.conversation_service import ConversationService
 from app.domain.services.followup_service import FollowUpService
 from app.persistence.database import get_db
 from app.persistence.models.conversation import Message
+from app.persistence.models.lead_task import LeadTask
 from app.persistence.models.tenant import User
 
 router = APIRouter()
@@ -46,6 +47,8 @@ class LeadResponse(BaseModel):
     updated_at: str | None = None
     llm_responded: bool | None = None  # True if assistant responded, False if not, None if no conversation
     conv_channel: str | None = None  # Conversation channel (sms, email, web, voice, etc.)
+    pending_task_count: int = 0
+    next_task_due: str | None = None  # ISO date of earliest pending task due date
 
     class Config:
         from_attributes = True
@@ -169,6 +172,27 @@ async def list_leads(
     if status:
         leads = [l for l in leads if l.status == status]
 
+    # Batch fetch pending task counts + earliest due date per lead
+    lead_ids = [l.id for l in leads]
+    task_counts = {}
+    task_next_due = {}
+    if lead_ids:
+        task_result = await db.execute(
+            select(
+                LeadTask.lead_id,
+                func.count(LeadTask.id).label("cnt"),
+                func.min(LeadTask.due_date).label("next_due"),
+            )
+            .where(
+                LeadTask.lead_id.in_(lead_ids),
+                LeadTask.is_completed == False,
+            )
+            .group_by(LeadTask.lead_id)
+        )
+        for row in task_result.all():
+            task_counts[row.lead_id] = row.cnt
+            task_next_due[row.lead_id] = row.next_due
+
     # Build response with llm_responded field and conv_channel
     lead_responses = []
     for lead in leads:
@@ -202,6 +226,8 @@ async def list_leads(
                 updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
                 llm_responded=llm_responded,
                 conv_channel=conv_channel,
+                pending_task_count=task_counts.get(lead.id, 0),
+                next_task_due=_isoformat_utc(task_next_due.get(lead.id)),
             )
         )
 

@@ -10,6 +10,7 @@ from app.persistence.models.lead_merge_log import LeadMergeLog
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.escalation import Escalation
 from app.persistence.models.lead import Lead
+from app.persistence.models.lead_task import LeadTask
 from app.persistence.models.notification import Notification, NotificationPriority, NotificationType
 from app.persistence.models.prompt import PromptBundle, PromptSection
 from app.persistence.models.sms_opt_in import SmsOptIn
@@ -64,6 +65,7 @@ __all__ = [
     "Conversation",
     "Message",
     "Lead",
+    "LeadTask",
     "Contact",
     "ContactAlias",
     "ContactMergeLog",

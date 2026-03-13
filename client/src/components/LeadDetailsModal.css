@@ -151,6 +151,29 @@
   word-break: break-word;
 }
 
+/* SMS Button in Summary */
+.summary-sms-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: #10b981;
+  background: #ecfdf5;
+  border: 1px solid #d1fae5;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.summary-sms-btn:hover {
+  background: #d1fae5;
+  border-color: #a7f3d0;
+}
+
 /* Source Pills */
 .summary-sources {
   display: flex;
@@ -294,6 +317,200 @@
 
 .spin {
   animation: spin 0.8s linear infinite;
+}
+
+/* ===================================
+   Tasks Section
+   =================================== */
+
+.tasks-section {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background: white;
+  flex-shrink: 0;
+}
+
+.tasks-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tasks-icon {
+  color: var(--color-text-muted, #64748b);
+  flex-shrink: 0;
+}
+
+.tasks-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.tasks-count {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #6366f1;
+  background: #eef2ff;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 2px;
+}
+
+.tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.1s ease;
+}
+
+.task-item:hover {
+  background: #f8fafc;
+}
+
+.task-item:hover .task-delete-btn {
+  opacity: 1;
+}
+
+.task-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.task-checkbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #6366f1;
+  flex-shrink: 0;
+}
+
+.task-title {
+  font-size: 0.75rem;
+  color: var(--color-text-primary, #1e293b);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-item--completed .task-title {
+  text-decoration: line-through;
+  color: var(--color-text-muted, #94a3b8);
+}
+
+.task-due {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--color-text-muted, #64748b);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.task-due--overdue {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.task-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted, #94a3b8);
+  padding: 2px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s ease, color 0.1s ease;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.task-delete-btn:hover {
+  color: #ef4444;
+}
+
+.task-add-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.task-add-input {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 0.75rem;
+  font-family: inherit;
+  color: var(--color-text-primary, #1e293b);
+  background: #f8fafc;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.task-add-input:focus {
+  border-color: #6366f1;
+}
+
+.task-add-input::placeholder {
+  color: #94a3b8;
+}
+
+.task-add-date {
+  padding: 4px 6px;
+  font-size: 0.6875rem;
+  font-family: inherit;
+  color: var(--color-text-muted, #64748b);
+  background: #f8fafc;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 4px;
+  outline: none;
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.task-add-date:focus {
+  border-color: #6366f1;
+}
+
+.task-add-btn {
+  padding: 4px 8px;
+  background: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.task-add-btn:hover {
+  background: #4f46e5;
+}
+
+.task-add-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ===================================

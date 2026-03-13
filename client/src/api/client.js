@@ -342,6 +342,36 @@ class ApiClient {
     });
   }
 
+  // --- Lead Tasks ---
+
+  async getLeadTasks(leadId) {
+    return this.request(`/leads/${leadId}/tasks`);
+  }
+
+  async createLeadTask(leadId, data) {
+    return this.request(`/leads/${leadId}/tasks`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLeadTask(leadId, taskId, data) {
+    return this.request(`/leads/${leadId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLeadTask(leadId, taskId) {
+    return this.request(`/leads/${leadId}/tasks/${taskId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getUpcomingTasks(days = 7) {
+    return this.request(`/tasks/upcoming?days=${days}`);
+  }
+
   async deleteLead(leadId) {
     const headers = {
       'Content-Type': 'application/json',

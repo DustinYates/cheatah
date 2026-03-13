@@ -4280,6 +4280,16 @@ def _map_location_to_code(location: str) -> str | None:
         "rosaac": "ROSAAC",
         "historic dunwoody": "HISDUN",
         "hisdun": "HISDUN",
+        # Raleigh variations (tenant 5)
+        "celebration at six forks": "CELBRN",
+        "celebration six forks": "CELBRN",
+        "six forks": "CELBRN",
+        "celbrn": "CELBRN",
+        "celebration": "CELBRN",
+        "clarion pointe wake forest": "CPWAKE",
+        "clarion pointe": "CPWAKE",
+        "wake forest": "CPWAKE",
+        "cpwake": "CPWAKE",
     }
 
     return location_map.get(location_lower)

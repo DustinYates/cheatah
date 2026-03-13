@@ -72,6 +72,18 @@ LOCATION_NAME_TO_CODE = {
     "ashford dunwoody": "HISDUN",
     "ashford": "HISDUN",
     "hisdun": "HISDUN",
+    # --- Raleigh (Tenant 5) ---
+    # Celebration at Six Forks
+    "celebration at six forks": "CELBRN",
+    "celebration six forks": "CELBRN",
+    "six forks": "CELBRN",
+    "celbrn": "CELBRN",
+    "celebration": "CELBRN",
+    # Clarion Pointe Wake Forest
+    "clarion pointe wake forest": "CPWAKE",
+    "clarion pointe": "CPWAKE",
+    "wake forest": "CPWAKE",
+    "cpwake": "CPWAKE",
 }
 
 # Map level names (as mentioned in conversation) to standard level names

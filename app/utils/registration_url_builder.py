@@ -17,6 +17,10 @@ FRANCHISE_CONFIG: dict[str, dict] = {
         "base_url": "https://britishswimschool.com/atlanta/register/",
         "location_codes": frozenset({"LABUCK", "OLDUN", "ROSAAC", "HISDUN"}),
     },
+    "raleigh": {
+        "base_url": "https://britishswimschool.com/raleigh/register/",
+        "location_codes": frozenset({"CELBRN", "CPWAKE"}),
+    },
 }
 
 # Map tenant_id → franchise slug
@@ -26,6 +30,8 @@ TENANT_TO_FRANCHISE: dict[int, str] = {
     3: "cypress-spring",
     4: "atlanta",       # tenant_number
     237: "atlanta",     # tenants.id (DB PK)
+    5: "raleigh",       # tenant_number
+    330: "raleigh",     # tenants.id (DB PK)
 }
 
 # Legacy constants (kept for backward-compat with imports elsewhere)

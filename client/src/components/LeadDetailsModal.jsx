@@ -220,17 +220,6 @@ export default function LeadDetailsModal({ lead, onClose }) {
               <Phone size={14} className="summary-icon" />
               <span className="summary-label">Phone</span>
               <span className="summary-value">{formatPhone(lead.phone)}</span>
-              {lead.phone && (
-                <button
-                  className="summary-sms-btn"
-                  onClick={() => setShowSmsModal(true)}
-                  title="Send SMS"
-                  type="button"
-                >
-                  <Send size={11} />
-                  <span>Text</span>
-                </button>
-              )}
             </div>
 
             <div className="summary-item">
@@ -407,6 +396,18 @@ export default function LeadDetailsModal({ lead, onClose }) {
             </div>
           ) : (
             <div className="timeline-container">
+              {lead.phone && (
+                <div className="timeline-sms-action">
+                  <button
+                    className="timeline-sms-btn"
+                    onClick={() => setShowSmsModal(true)}
+                    title="Send SMS"
+                    type="button"
+                  >
+                    <Send size={14} />
+                  </button>
+                </div>
+              )}
               {timeline.map((item, index) => (
                 <TimelineItem
                   key={item.id}

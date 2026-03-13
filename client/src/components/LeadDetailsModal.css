@@ -151,29 +151,6 @@
   word-break: break-word;
 }
 
-/* SMS Button in Summary */
-.summary-sms-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  font-size: 0.625rem;
-  font-weight: 500;
-  color: #10b981;
-  background: #ecfdf5;
-  border: 1px solid #d1fae5;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-  flex-shrink: 0;
-  margin-left: 2px;
-}
-
-.summary-sms-btn:hover {
-  background: #d1fae5;
-  border-color: #a7f3d0;
-}
-
 /* Source Pills */
 .summary-sources {
   display: flex;
@@ -591,6 +568,38 @@
 .timeline-container {
   max-width: 600px;
   margin: 0 auto;
+  position: relative;
+}
+
+/* SMS reply button positioned to the left of timeline icons */
+.timeline-sms-action {
+  position: absolute;
+  left: -40px;
+  top: 2px;
+}
+
+.timeline-sms-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #10b981;
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, transform 0.15s ease;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+}
+
+.timeline-sms-btn:hover {
+  background: #059669;
+  transform: scale(1.08);
+}
+
+.timeline-sms-btn:active {
+  transform: scale(0.96);
 }
 
 .timeline-item {

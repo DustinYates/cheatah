@@ -2035,7 +2035,7 @@ async def telnyx_ai_call_complete(
                 name=display_name,
                 email=caller_email or None,
                 status="new",
-                extra_data={"voice_calls": [call_data]},
+                extra_data={"source": "voice_call", "voice_calls": [call_data]},
             )
             db.add(lead)
             await db.flush()
@@ -2050,6 +2050,18 @@ async def telnyx_ai_call_complete(
                 name=caller_name,
             )
             logger.info(f"Created new Lead from AI call: phone={normalized_from}, name={caller_name}, email={caller_email}, contact_id={contact_id}")
+
+            # Schedule follow-up SMS for voice call leads
+            try:
+                from app.domain.services.followup_service import FollowUpService
+                followup_service = FollowUpService(db)
+                task_name = await followup_service.schedule_followup(tenant_id, lead.id)
+                if task_name:
+                    logger.info(f"Scheduled follow-up for voice call lead {lead.id}: {task_name}")
+                else:
+                    logger.info(f"Follow-up not scheduled for voice call lead {lead.id} (conditions not met)")
+            except Exception as e:
+                logger.error(f"Failed to schedule follow-up for voice call lead {lead.id}: {e}", exc_info=True)
 
             lead_id = lead.id if lead else None
         else:
@@ -2903,7 +2915,7 @@ async def sync_calls_to_leads(
                     name=display_name,
                     email=caller_email,
                     status="new",
-                    extra_data={"voice_calls": [call_data]},
+                    extra_data={"source": "voice_call", "voice_calls": [call_data]},
                 )
                 db.add(lead)
                 leads_created += 1

@@ -1009,6 +1009,14 @@ class ApiClient {
     });
   }
 
+  // DNC (Do Not Contact) methods
+  async blockContact({ phone, email, reason }) {
+    return this.request('/dnc/block', {
+      method: 'POST',
+      body: JSON.stringify({ phone, email, reason }),
+    });
+  }
+
   // SMS settings methods (tenant-facing)
   async getSmsSettings() {
     return this.request('/sms/settings');

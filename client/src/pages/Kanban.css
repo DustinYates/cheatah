@@ -221,6 +221,15 @@
   color: #7c3aed;
 }
 
+.kanban-card__btn--optout {
+  color: #ef4444;
+}
+
+.kanban-card__btn--optout:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
 .kanban-card__btn--sms {
   color: #10b981;
 }

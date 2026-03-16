@@ -316,6 +316,24 @@ export default function Kanban() {
     );
   };
 
+  const handleOptOut = async (e, lead) => {
+    e.stopPropagation();
+    if (!window.confirm(`Add "${lead.name}" to Do Not Contact list?\n\nThis will block all future communications.`)) {
+      return;
+    }
+    try {
+      await api.blockContact({
+        phone: lead.phone || undefined,
+        email: lead.email || undefined,
+        reason: 'Manual opt-out from pipeline',
+      });
+      // Remove from kanban view
+      setLeads((prev) => prev.filter((l) => l.id !== lead.id));
+    } catch (err) {
+      alert(`Failed to opt out: ${err.message}`);
+    }
+  };
+
   const handleMergeClick = (e, lead) => {
     e.stopPropagation();
     setMergeMode({ primaryId: lead.id });
@@ -511,6 +529,26 @@ export default function Kanban() {
                                   <path d="M9 17c-2 0-4 1-4 3v2h14v-2c0-2-2-3-4-3h-6z" />
                                 </svg>
                               </button>
+                              <button
+                                className="kanban-card__btn kanban-card__btn--optout"
+                                onClick={(e) => handleOptOut(e, lead)}
+                                title="Do not contact"
+                                type="button"
+                              >
+                                <svg
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="12" cy="12" r="10" />
+                                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                                </svg>
+                              </button>
                             </div>
                           )}
                           {mergeMode && mergeMode.primaryId === lead.id && (
@@ -671,6 +709,26 @@ export default function Kanban() {
                               <circle cx="15" cy="5" r="3" />
                               <path d="M9 8v3m0 0v3m6-6v6" />
                               <path d="M9 17c-2 0-4 1-4 3v2h14v-2c0-2-2-3-4-3h-6z" />
+                            </svg>
+                          </button>
+                          <button
+                            className="kanban-card__btn kanban-card__btn--optout"
+                            onClick={(e) => handleOptOut(e, lead)}
+                            title="Do not contact"
+                            type="button"
+                          >
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <circle cx="12" cy="12" r="10" />
+                              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
                             </svg>
                           </button>
                         </div>

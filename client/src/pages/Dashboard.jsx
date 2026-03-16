@@ -7,6 +7,7 @@ import { formatSmartDateTime } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
 import LeadDetailsModal from '../components/LeadDetailsModal';
 import SendSmsModal from '../components/SendSmsModal';
+import EditLeadModal from '../components/EditLeadModal';
 import SideDrawer from '../components/SideDrawer';
 import './Dashboard.css';
 
@@ -337,6 +338,7 @@ export default function Dashboard() {
   const [actionLoading, setActionLoading] = useState(null);
   const [selectedLead, setSelectedLead] = useState(null);
   const [smsModalLead, setSmsModalLead] = useState(null);
+  const [editModalLead, setEditModalLead] = useState(null);
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
@@ -1619,6 +1621,16 @@ export default function Dashboard() {
                           </IconButton>
                         )}
                         <IconButton
+                          className="icon-button--soft"
+                          onClick={() => setEditModalLead(lead)}
+                          title="Edit lead"
+                          ariaLabel="Edit lead"
+                        >
+                          <svg className="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                          </svg>
+                        </IconButton>
+                        <IconButton
                           className="icon-button--soft icon-button--danger"
                           onClick={() => handleDelete(lead.id, lead.name)}
                           disabled={actionLoading === lead.id}
@@ -1692,6 +1704,20 @@ export default function Dashboard() {
         <LeadDetailsModal
           lead={selectedLead}
           onClose={closeModal}
+        />
+      )}
+
+      {/* Edit Lead Modal */}
+      {editModalLead && (
+        <EditLeadModal
+          lead={editModalLead}
+          onCancel={() => setEditModalLead(null)}
+          onSuccess={(updatedLead) => {
+            setLeads((prev) =>
+              prev.map((l) => (l.id === updatedLead.id ? { ...l, ...updatedLead } : l))
+            );
+            setEditModalLead(null);
+          }}
         />
       )}
 

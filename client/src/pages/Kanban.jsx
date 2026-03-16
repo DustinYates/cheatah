@@ -216,12 +216,25 @@ export default function Kanban() {
     fetchLeads();
   }, [fetchLeads]);
 
+  // Hide "Test calls" column (enrolled stage used for internal testing)
+  const HIDDEN_STAGES = new Set(['enrolled']);
+  const visibleStages = STAGES.filter((s) => !HIDDEN_STAGES.has(s.key));
   const knownKeys = new Set(STAGES.map((s) => s.key));
   const firstKey = STAGES[0]?.key || 'new_lead';
-  const groupedLeads = STAGES.reduce((acc, stage) => {
-    acc[stage.key] = leads.filter(
-      (l) => (l.pipeline_stage || firstKey) === stage.key
-    );
+  // Hide leads older than 15 days in these stages
+  const AGE_HIDDEN_STAGES = new Set(['registered', 'lost_opportunity']);
+  const fifteenDaysAgo = new Date();
+  fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+
+  const groupedLeads = visibleStages.reduce((acc, stage) => {
+    acc[stage.key] = leads.filter((l) => {
+      if ((l.pipeline_stage || firstKey) !== stage.key) return false;
+      if (AGE_HIDDEN_STAGES.has(stage.key)) {
+        const leadDate = new Date(l.updated_at || l.created_at);
+        if (leadDate < fifteenDaysAgo) return false;
+      }
+      return true;
+    });
     return acc;
   }, {});
   // Collect orphaned leads (pipeline_stage not in any configured stage)
@@ -339,7 +352,7 @@ export default function Kanban() {
     }
   };
 
-  const totalLeads = leads.length;
+  const totalLeads = Object.values(groupedLeads).reduce((sum, arr) => sum + arr.length, 0) + orphanedLeads.length;
 
   if (loading || stagesLoading) {
     return (
@@ -380,7 +393,7 @@ export default function Kanban() {
       <CalendarWeekView />
 
       <div className="kanban-board">
-        {STAGES.map((stage) => {
+        {visibleStages.map((stage) => {
           const stageLeads = groupedLeads[stage.key] || [];
           return (
             <div

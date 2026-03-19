@@ -1335,6 +1335,9 @@
           opacity: 1;
         }
         .cc-widget-container {
+          position: absolute;
+          bottom: 0;
+          right: 0;
           width: var(--cc-max-width);
           height: var(--cc-max-height);
           background: var(--cc-background);

@@ -172,9 +172,11 @@
       var data = JSON.stringify(payload);
 
       // Use sendBeacon for reliability (especially on page unload)
+      // Note: sendBeacon with application/json Blob triggers CORS preflight.
+      // Use text/plain to avoid preflight (server accepts both).
       if (navigator.sendBeacon) {
         try {
-          navigator.sendBeacon(url, new Blob([data], { type: 'application/json' }));
+          navigator.sendBeacon(url, new Blob([data], { type: 'text/plain' }));
         } catch (e) {
           // Fall back to fetch
           this.sendAnalyticsFetch(url, data, events);
@@ -821,7 +823,7 @@
         return;
       }
 
-      toggle.style.display = 'none';
+      toggle.classList.add('cc-hidden');
 
       if (motion.launcherVisibility === 'delay') {
         clearTimeout(this.entryTimeout);
@@ -890,7 +892,7 @@
         return;
       }
 
-      if (toggle.style.display === 'none') {
+      if (toggle.classList.contains('cc-hidden')) {
         toggle.classList.remove('cc-attention');
         toggle.removeAttribute('data-attention');
         return;
@@ -937,7 +939,7 @@
       const rules = this.settings?.rules || {};
       if (!toggle || this.isOpen) return;
 
-      toggle.style.display = 'flex';
+      toggle.classList.remove('cc-hidden');
       if (entryAnimation && entryAnimation !== 'none') {
         if (!rules.animateOncePerSession || !this.getSessionFlag('entry_played')) {
           toggle.classList.add('cc-launcher-entry');
@@ -1059,7 +1061,16 @@
     playTone: function(frequency, duration) {
       const volume = this.soundSettings?.volume ?? 0.2;
       try {
-        const context = new (window.AudioContext || window.webkitAudioContext)();
+        // Reuse a single AudioContext (creating one per tone is expensive
+        // and triggers browser autoplay warnings on page load)
+        if (!this._audioContext) {
+          this._audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        var context = this._audioContext;
+        // AudioContext may be suspended until a user gesture
+        if (context.state === 'suspended') {
+          context.resume();
+        }
         const oscillator = context.createOscillator();
         const gainNode = context.createGain();
         oscillator.type = 'sine';
@@ -1070,7 +1081,6 @@
         oscillator.start();
         setTimeout(() => {
           oscillator.stop();
-          context.close();
         }, duration * 1000);
       } catch (err) {
         // Ignore audio errors (autoplay restrictions, unsupported devices)
@@ -1101,7 +1111,7 @@
       const widget = document.createElement('div');
       widget.id = 'convopro-widget';
       widget.innerHTML = `
-        <div class="cc-widget-container" style="display: none;">
+        <div class="cc-widget-container cc-hidden">
           <div class="cc-widget-header">
             <div class="cc-widget-header-info">
               <div class="cc-widget-header-text">
@@ -1332,6 +1342,20 @@
           display: flex;
           flex-direction: column;
           overflow: hidden;
+          transform-origin: bottom right;
+          transition: transform 0.2s ease, opacity 0.2s ease, visibility 0.2s;
+        }
+        .cc-widget-container.cc-hidden {
+          transform: scale(0);
+          opacity: 0;
+          visibility: hidden;
+          pointer-events: none;
+        }
+        .cc-widget-toggle.cc-hidden {
+          transform: scale(0);
+          opacity: 0;
+          visibility: hidden;
+          pointer-events: none;
         }
         .cc-widget-container.cc-open-animate[data-open-animation="slide-up"] {
           animation: cc-slide-up 0.25s ease;
@@ -1999,8 +2023,8 @@
       if (this.isOpen) {
         this.closeWidget();
       } else {
-        container.style.display = 'flex';
-        toggle.style.display = 'none';
+        container.classList.remove('cc-hidden');
+        toggle.classList.add('cc-hidden');
         this.isOpen = true;
         this.isMinimized = false;
         this.saveSession(); // Persist open state
@@ -2059,8 +2083,8 @@
         this.trackEvent('auto_open_dismiss', {});
       }
 
-      container.style.display = 'none';
-      toggle.style.display = 'block';
+      container.classList.add('cc-hidden');
+      toggle.classList.remove('cc-hidden');
       this.isOpen = false;
       this.wasAutoOpened = false;
       this.saveSession(); // Persist closed state
@@ -2554,7 +2578,7 @@
 
       // Create full chat widget structure (same as primary but blue)
       secondary.innerHTML = `
-        <div class="cc-widget-container cc-secondary-container" style="display: none; --cc-primary: ${bgColor};">
+        <div class="cc-widget-container cc-secondary-container cc-hidden" style="--cc-primary: ${bgColor};">
           <div class="cc-widget-header" style="background: ${bgColor};">
             <div class="cc-widget-header-info">
               <div class="cc-widget-header-text">
@@ -2655,10 +2679,10 @@
       }
 
       if (container) {
-        container.style.display = this.secondaryOpen ? 'flex' : 'none';
+        this.secondaryOpen ? container.classList.remove('cc-hidden') : container.classList.add('cc-hidden');
       }
       if (toggle) {
-        toggle.style.display = this.secondaryOpen ? 'none' : 'flex';
+        this.secondaryOpen ? toggle.classList.add('cc-hidden') : toggle.classList.remove('cc-hidden');
       }
     },
 

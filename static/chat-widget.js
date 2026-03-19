@@ -172,11 +172,9 @@
       var data = JSON.stringify(payload);
 
       // Use sendBeacon for reliability (especially on page unload)
-      // Note: sendBeacon with application/json Blob triggers CORS preflight.
-      // Use text/plain to avoid preflight (server accepts both).
       if (navigator.sendBeacon) {
         try {
-          navigator.sendBeacon(url, new Blob([data], { type: 'text/plain' }));
+          navigator.sendBeacon(url, new Blob([data], { type: 'application/json' }));
         } catch (e) {
           // Fall back to fetch
           this.sendAnalyticsFetch(url, data, events);
@@ -366,9 +364,8 @@
           this.userMessageCount = this.messages.filter(function(m) { return m.role === 'user'; }).length;
         }
 
-        // Restore open/closed state (desktop only — on mobile, avoid restoring
-        // an open widget that would block page interaction)
-        if (storedIsOpen === 'true' && !this.isMobile()) {
+        // Restore open/closed state
+        if (storedIsOpen === 'true') {
           this.toggleWidget();
         }
 
@@ -532,9 +529,7 @@
 
       // Apply behavior
       if (settings.behavior) {
-        // Auto-open is desktop-only: on mobile the widget covers most of the screen
-        // and blocks page interaction. Mobile users open manually via the toggle.
-        if (settings.behavior.openBehavior === 'auto' && !this.isMobile()) {
+        if (settings.behavior.openBehavior === 'auto') {
           const delaySeconds = Math.max(0, settings.behavior.autoOpenDelay || 0);
           clearTimeout(this.autoOpenTimeout);
           this.autoOpenTimeout = setTimeout(() => {
@@ -823,7 +818,7 @@
         return;
       }
 
-      toggle.classList.add('cc-hidden');
+      toggle.style.display = 'none';
 
       if (motion.launcherVisibility === 'delay') {
         clearTimeout(this.entryTimeout);
@@ -892,7 +887,7 @@
         return;
       }
 
-      if (toggle.classList.contains('cc-hidden')) {
+      if (toggle.style.display === 'none') {
         toggle.classList.remove('cc-attention');
         toggle.removeAttribute('data-attention');
         return;
@@ -939,7 +934,7 @@
       const rules = this.settings?.rules || {};
       if (!toggle || this.isOpen) return;
 
-      toggle.classList.remove('cc-hidden');
+      toggle.style.display = 'flex';
       if (entryAnimation && entryAnimation !== 'none') {
         if (!rules.animateOncePerSession || !this.getSessionFlag('entry_played')) {
           toggle.classList.add('cc-launcher-entry');
@@ -1061,16 +1056,7 @@
     playTone: function(frequency, duration) {
       const volume = this.soundSettings?.volume ?? 0.2;
       try {
-        // Reuse a single AudioContext (creating one per tone is expensive
-        // and triggers browser autoplay warnings on page load)
-        if (!this._audioContext) {
-          this._audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        var context = this._audioContext;
-        // AudioContext may be suspended until a user gesture
-        if (context.state === 'suspended') {
-          context.resume();
-        }
+        const context = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = context.createOscillator();
         const gainNode = context.createGain();
         oscillator.type = 'sine';
@@ -1081,6 +1067,7 @@
         oscillator.start();
         setTimeout(() => {
           oscillator.stop();
+          context.close();
         }, duration * 1000);
       } catch (err) {
         // Ignore audio errors (autoplay restrictions, unsupported devices)
@@ -1111,7 +1098,7 @@
       const widget = document.createElement('div');
       widget.id = 'convopro-widget';
       widget.innerHTML = `
-        <div class="cc-widget-container cc-hidden">
+        <div class="cc-widget-container" style="display: none;">
           <div class="cc-widget-header">
             <div class="cc-widget-header-info">
               <div class="cc-widget-header-text">
@@ -1187,7 +1174,6 @@
           z-index: var(--cc-z-index);
           font-family: var(--cc-font-family);
           opacity: var(--cc-opacity);
-          pointer-events: none;
         }
         .cc-widget-toggle {
           width: 60px;
@@ -1206,7 +1192,6 @@
           justify-content: center;
           position: relative;
           overflow: visible;
-          pointer-events: auto;
         }
         .cc-widget-toggle:hover {
           transform: none;
@@ -1344,21 +1329,6 @@
           display: flex;
           flex-direction: column;
           overflow: hidden;
-          transform-origin: bottom right;
-          transition: transform 0.2s ease, opacity 0.2s ease, visibility 0.2s;
-          pointer-events: auto;
-        }
-        .cc-widget-container.cc-hidden {
-          transform: scale(0);
-          opacity: 0;
-          visibility: hidden;
-          pointer-events: none;
-        }
-        .cc-widget-toggle.cc-hidden {
-          transform: scale(0);
-          opacity: 0;
-          visibility: hidden;
-          pointer-events: none;
         }
         .cc-widget-container.cc-open-animate[data-open-animation="slide-up"] {
           animation: cc-slide-up 0.25s ease;
@@ -2026,8 +1996,8 @@
       if (this.isOpen) {
         this.closeWidget();
       } else {
-        container.classList.remove('cc-hidden');
-        toggle.classList.add('cc-hidden');
+        container.style.display = 'flex';
+        toggle.style.display = 'none';
         this.isOpen = true;
         this.isMinimized = false;
         this.saveSession(); // Persist open state
@@ -2086,8 +2056,8 @@
         this.trackEvent('auto_open_dismiss', {});
       }
 
-      container.classList.add('cc-hidden');
-      toggle.classList.remove('cc-hidden');
+      container.style.display = 'none';
+      toggle.style.display = 'block';
       this.isOpen = false;
       this.wasAutoOpened = false;
       this.saveSession(); // Persist closed state
@@ -2581,7 +2551,7 @@
 
       // Create full chat widget structure (same as primary but blue)
       secondary.innerHTML = `
-        <div class="cc-widget-container cc-secondary-container cc-hidden" style="--cc-primary: ${bgColor};">
+        <div class="cc-widget-container cc-secondary-container" style="display: none; --cc-primary: ${bgColor};">
           <div class="cc-widget-header" style="background: ${bgColor};">
             <div class="cc-widget-header-info">
               <div class="cc-widget-header-text">
@@ -2682,10 +2652,10 @@
       }
 
       if (container) {
-        this.secondaryOpen ? container.classList.remove('cc-hidden') : container.classList.add('cc-hidden');
+        container.style.display = this.secondaryOpen ? 'flex' : 'none';
       }
       if (toggle) {
-        this.secondaryOpen ? toggle.classList.add('cc-hidden') : toggle.classList.remove('cc-hidden');
+        toggle.style.display = this.secondaryOpen ? 'none' : 'flex';
       }
     },
 

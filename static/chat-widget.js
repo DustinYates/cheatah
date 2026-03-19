@@ -1184,6 +1184,7 @@
           z-index: var(--cc-z-index);
           font-family: var(--cc-font-family);
           opacity: var(--cc-opacity);
+          pointer-events: none;
         }
         .cc-widget-toggle {
           width: 60px;
@@ -1202,6 +1203,7 @@
           justify-content: center;
           position: relative;
           overflow: visible;
+          pointer-events: auto;
         }
         .cc-widget-toggle:hover {
           transform: none;
@@ -1341,6 +1343,7 @@
           overflow: hidden;
           transform-origin: bottom right;
           transition: transform 0.2s ease, opacity 0.2s ease, visibility 0.2s;
+          pointer-events: auto;
         }
         .cc-widget-container.cc-hidden {
           transform: scale(0);

@@ -366,8 +366,9 @@
           this.userMessageCount = this.messages.filter(function(m) { return m.role === 'user'; }).length;
         }
 
-        // Restore open/closed state
-        if (storedIsOpen === 'true') {
+        // Restore open/closed state (desktop only — on mobile, avoid restoring
+        // an open widget that would block page interaction)
+        if (storedIsOpen === 'true' && !this.isMobile()) {
           this.toggleWidget();
         }
 
@@ -531,7 +532,9 @@
 
       // Apply behavior
       if (settings.behavior) {
-        if (settings.behavior.openBehavior === 'auto') {
+        // Auto-open is desktop-only: on mobile the widget covers most of the screen
+        // and blocks page interaction. Mobile users open manually via the toggle.
+        if (settings.behavior.openBehavior === 'auto' && !this.isMobile()) {
           const delaySeconds = Math.max(0, settings.behavior.autoOpenDelay || 0);
           clearTimeout(this.autoOpenTimeout);
           this.autoOpenTimeout = setTimeout(() => {

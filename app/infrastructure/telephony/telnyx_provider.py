@@ -79,10 +79,30 @@ class TelnyxSmsProvider(SmsProviderProtocol):
             f"Sending SMS via Telnyx: to={to}, from={from_}, body_len={len(body)}, profile={self.messaging_profile_id}"
         )
 
-        async with self._get_client() as client:
-            response = await client.post("/messages", json=payload)
-            response.raise_for_status()
-            data = response.json()
+        import asyncio
+
+        max_retries = 3
+        last_exc = None
+        for attempt in range(max_retries):
+            try:
+                async with self._get_client() as client:
+                    response = await client.post("/messages", json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                break
+            except httpx.HTTPStatusError as e:
+                last_exc = e
+                if e.response.status_code >= 500 and attempt < max_retries - 1:
+                    wait = 2 ** attempt  # 1s, 2s
+                    logger.warning(
+                        f"Telnyx API returned {e.response.status_code}, retrying in {wait}s "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    raise
+        else:
+            raise last_exc  # type: ignore[misc]
 
         message_data = data.get("data", {})
         to_info = message_data.get("to", [{}])

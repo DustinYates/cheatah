@@ -28,6 +28,9 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
     textareaRef.current?.focus();
   }, []);
 
+  const BATCH_SIZE = 500;
+  const [progress, setProgress] = useState(null);
+
   const handleSend = async (e) => {
     e.preventDefault();
     if (!message.trim() || loading || recipientCount === 0) return;
@@ -39,12 +42,27 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
     setLoading(true);
     setError('');
     setResult(null);
+    setProgress(null);
 
     try {
       const phones = leads.filter((l) => l.phone).map((l) => l.phone);
-      const res = await api.sendBulkSms(phones, message.trim());
-      setResult(res);
-      if (res.sent > 0) {
+      const totalBatches = Math.ceil(phones.length / BATCH_SIZE);
+      const totals = { sent: 0, failed: 0, errors: [] };
+
+      for (let i = 0; i < totalBatches; i++) {
+        const batch = phones.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
+        if (totalBatches > 1) {
+          setProgress({ current: i + 1, total: totalBatches, sent: totals.sent });
+        }
+        const res = await api.sendBulkSms(batch, message.trim());
+        totals.sent += res.sent || 0;
+        totals.failed += res.failed || 0;
+        if (res.errors) totals.errors.push(...res.errors);
+      }
+
+      setResult(totals);
+      setProgress(null);
+      if (totals.sent > 0) {
         setTimeout(() => {
           onSuccess?.();
           onClose();
@@ -54,6 +72,7 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
       setError(err.message || 'Failed to send bulk SMS');
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   };
 
@@ -71,6 +90,11 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
         <form onSubmit={handleSend}>
           <div className="modal-body">
             {error && <div className="error-message">{error}</div>}
+            {progress && (
+              <div className="info-message">
+                Sending batch {progress.current} of {progress.total}... ({progress.sent} sent so far)
+              </div>
+            )}
             {result && (
               <div className={result.failed > 0 ? 'error-message' : 'success-message'}>
                 Sent: {result.sent}{result.failed > 0 ? `, Failed: ${result.failed}` : ''}
@@ -118,7 +142,9 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
               className="btn-send"
               disabled={!message.trim() || loading || !!result || recipientCount === 0}
             >
-              {loading ? 'Sending...' : `Send to ${recipientCount}`}
+              {loading
+                ? (progress ? `Sending batch ${progress.current}/${progress.total}...` : 'Sending...')
+                : `Send to ${recipientCount}`}
             </button>
           </div>
         </form>

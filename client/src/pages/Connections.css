@@ -215,6 +215,17 @@
   cursor: not-allowed;
 }
 
+.btn-bulk-action.btn-mass-sms {
+  background: #059669;
+  border-color: #059669;
+  color: white;
+  font-weight: 500;
+}
+
+.btn-bulk-action.btn-mass-sms:hover {
+  background: #047857;
+}
+
 .btn-bulk-action.btn-delete {
   color: #dc2626;
   border-color: #fecaca;
@@ -223,6 +234,26 @@
 .btn-bulk-action.btn-delete:hover {
   background: #fef2f2;
   border-color: #fca5a5;
+}
+
+/* Mass Text Filtered Button */
+.btn-mass-text-filtered {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: white;
+  background: #059669;
+  border: 1px solid #059669;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-mass-text-filtered:hover {
+  background: #047857;
 }
 
 /* Table Container */

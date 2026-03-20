@@ -3216,9 +3216,29 @@ async def send_registration_link_tool(
             if td.get("zip"):
                 url_params["Zip"] = td["zip"]
             url_params["PG1Type"] = "Other"
-            if class_id:
+
+            # Pre-fill students (Jackrabbit supports S1-S5)
+            students = body.get("students") or []
+            if students and isinstance(students, list):
+                for idx, student in enumerate(students[:5]):
+                    if not isinstance(student, dict):
+                        continue
+                    n = idx + 1
+                    if student.get("first"):
+                        url_params[f"S{n}FName"] = student["first"]
+                    if student.get("last"):
+                        url_params[f"S{n}LName"] = student["last"]
+                    if student.get("gender"):
+                        url_params[f"S{n}Gender"] = student["gender"]
+                    if student.get("bdate"):
+                        url_params[f"S{n}BDate"] = student["bdate"]
+                    if student.get("class_id"):
+                        url_params[f"S{n}Class"] = str(student["class_id"])
+
+            # If no student-level class, use top-level class_id for S1Class
+            if "S1Class" not in url_params and class_id:
                 url_params["S1Class"] = str(class_id)
-            elif class_name:
+            elif "S1Class" not in url_params and class_name:
                 url_params["S1Class"] = class_name
 
             registration_url = f"https://app.jackrabbitclass.com/regv2.asp?{urlencode(url_params)}"

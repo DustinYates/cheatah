@@ -3163,7 +3163,114 @@ async def send_registration_link_tool(
             tenant_id = 3
             logger.warning(f"[TOOL] Could not determine tenant, defaulting to {tenant_id}")
 
-        # Extract location and level from body
+        # ---- Check if AI sent new-format params (class_id/org_id) ----
+        # The Telnyx AI agent now sends class_id, org_id, class_name, first_name, etc.
+        # instead of the old location/level format. Delegate to send_link logic.
+        org_id = body.get("org_id") or params.get("org_id")
+        class_id = body.get("class_id") or params.get("class_id")
+
+        if org_id or class_id:
+            # New format: build Jackrabbit URL directly (same as send_link tool)
+            logger.info(f"[TOOL] send_registration_link using send_link format - org_id={org_id}, class_id={class_id}")
+            from urllib.parse import urlencode
+
+            first_name = body.get("first_name", "")
+            last_name = body.get("last_name", "")
+            email = body.get("email", "")
+            class_name = body.get("class_name", "")
+
+            # Reverse phone lookup for accurate caller identity (Trestle IQ)
+            trestle_data: dict[str, str] | None = None
+            if caller_phone:
+                try:
+                    from app.infrastructure.trestle_client import reverse_phone_lookup
+                    trestle_data = await reverse_phone_lookup(caller_phone)
+                except Exception as e:
+                    logger.warning(f"[TOOL] send_registration_link: Trestle lookup failed: {e}")
+            td = trestle_data or {}
+
+            effective_first = td.get("first_name") or first_name
+            effective_last = td.get("last_name") or last_name
+            effective_email = td.get("email") or (_normalize_spoken_email(email) if email else "")
+
+            url_params: dict[str, str] = {"id": org_id or "545911"}
+            if class_id:
+                url_params["classid"] = str(class_id)
+            if effective_last:
+                url_params["FamName"] = effective_last
+            if effective_first:
+                url_params["MFName"] = effective_first
+            if effective_last:
+                url_params["MLName"] = effective_last
+            if effective_email:
+                url_params["MEmail"] = effective_email
+                url_params["ConfirmMEmail"] = effective_email
+            if caller_phone:
+                url_params["MCPhone"] = caller_phone
+            if td.get("address"):
+                url_params["Addr"] = td["address"]
+            if td.get("city"):
+                url_params["City"] = td["city"]
+            if td.get("state"):
+                url_params["State"] = td["state"]
+            if td.get("zip"):
+                url_params["Zip"] = td["zip"]
+            url_params["PG1Type"] = "Other"
+            if class_id:
+                url_params["S1Class"] = str(class_id)
+            elif class_name:
+                url_params["S1Class"] = class_name
+
+            registration_url = f"https://app.jackrabbitclass.com/regv2.asp?{urlencode(url_params)}"
+            logger.info(f"[TOOL] send_registration_link built URL: {registration_url}")
+
+            # Send the SMS
+            from app.persistence.repositories.tenant_config_repository import TenantConfigRepository
+            tenant_config_repo = TenantConfigRepository(db)
+            sms_config = await tenant_config_repo.get_sms_config(tenant_id)
+
+            if not sms_config or not sms_config.telnyx_phone_number:
+                logger.warning(f"[TOOL] send_registration_link: no SMS provider for tenant {tenant_id}")
+                return JSONResponse(content={
+                    "status": "error",
+                    "result": f"No SMS provider configured for tenant {tenant_id}."
+                })
+
+            from app.infrastructure.telephony.telnyx_provider import TelnyxProvider
+            sms_provider = TelnyxProvider(
+                api_key=sms_config.decrypted_api_key,
+                from_number=sms_config.telnyx_phone_number,
+                messaging_profile_id=sms_config.telnyx_messaging_profile_id,
+            )
+
+            sms_body = f"Here is your registration link:\n{registration_url}"
+            message_id = await sms_provider.send_sms(to=caller_phone, body=sms_body)
+            logger.info(f"[TOOL] send_registration_link SMS sent - to={caller_phone}, from={sms_config.telnyx_phone_number}, message_id={message_id}, url={registration_url}")
+
+            # Record in sent_assets for dedup
+            try:
+                from app.persistence.models.sent_asset import SentAsset
+                from app.core.phone import normalize_phone
+                asset = SentAsset(
+                    tenant_id=tenant_id,
+                    phone_normalized=normalize_phone(caller_phone),
+                    asset_type="registration_link",
+                    sent_at=datetime.now(timezone.utc),
+                    message_id=message_id,
+                )
+                db.add(asset)
+                await db.commit()
+            except Exception as e:
+                logger.warning(f"[TOOL] Failed to create SentAsset dedup record (SMS still sent): {e}")
+                await db.rollback()
+
+            return JSONResponse(content={
+                "status": "sent",
+                "message_id": message_id,
+                "url_sent": registration_url,
+            })
+
+        # ---- Old format: location/level ----
         location = body.get("location", "")
         level = body.get("level", "")
 
@@ -3199,29 +3306,23 @@ async def send_registration_link_tool(
 
         fulfillment_service = PromiseFulfillmentService(db)
 
-        # Create a synthetic promise for the fulfillment service
         promise = DetectedPromise(
             asset_type="registration_link",
-            confidence=1.0,  # Tool call = high confidence
+            confidence=1.0,
             original_text=f"Tool call: send registration link for {level} at {location}",
         )
 
-        # Fulfill the promise (sends SMS)
-        # Include the full URL in ai_response so fulfillment service can extract it
         result = await fulfillment_service.fulfill_promise(
             tenant_id=tenant_id,
-            conversation_id=None,  # No conversation ID for tool calls
+            conversation_id=None,
             promise=promise,
             phone=caller_phone,
-            name=None,  # Could extract from call if needed
+            name=None,
             messages=None,
             ai_response=f"Here is the registration link: {registration_url}",
         )
 
         logger.info(f"[TOOL] Registration link send result: {result}")
-
-        # TODO: Use call_control_id to inject confirmation message back into live call
-        # This would require calling Telnyx's live message injection API
 
         return JSONResponse(content={
             "status": result.get("status", "unknown"),

@@ -3178,6 +3178,10 @@ async def send_registration_link_tool(
             last_name = body.get("last_name", "")
             email = body.get("email", "")
             class_name = body.get("class_name", "")
+            address = body.get("address", "")
+            city = body.get("city", "")
+            state = body.get("state", "")
+            zip_code = body.get("zip") or body.get("zip_code", "")
 
             effective_email = _normalize_spoken_email(email) if email else ""
 
@@ -3195,6 +3199,15 @@ async def send_registration_link_tool(
                 url_params["ConfirmMEmail"] = effective_email
             if caller_phone:
                 url_params["MCPhone"] = caller_phone
+                url_params["HPPhone"] = caller_phone
+            if address:
+                url_params["Addr"] = address
+            if city:
+                url_params["City"] = city
+            if state:
+                url_params["State"] = state
+            if zip_code:
+                url_params["Zip"] = zip_code
             url_params["PG1Type"] = "Other"
 
             # Pre-fill students (Jackrabbit supports S1-S5)

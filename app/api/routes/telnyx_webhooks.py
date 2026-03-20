@@ -3224,39 +3224,47 @@ async def send_registration_link_tool(
             registration_url = f"https://app.jackrabbitclass.com/regv2.asp?{urlencode(url_params)}"
             logger.info(f"[TOOL] send_registration_link built URL: {registration_url}")
 
-            # Send the SMS
-            from app.persistence.repositories.tenant_config_repository import TenantConfigRepository
-            tenant_config_repo = TenantConfigRepository(db)
-            sms_config = await tenant_config_repo.get_sms_config(tenant_id)
+            # Send SMS via tenant's configured provider (same as send_link)
+            from app.infrastructure.telephony.factory import TelephonyProviderFactory
 
-            if not sms_config or not sms_config.telnyx_phone_number:
+            factory = TelephonyProviderFactory(db)
+            sms_provider = await factory.get_sms_provider(tenant_id)
+
+            if not sms_provider:
                 logger.warning(f"[TOOL] send_registration_link: no SMS provider for tenant {tenant_id}")
                 return JSONResponse(content={
                     "status": "error",
                     "result": f"No SMS provider configured for tenant {tenant_id}."
                 })
 
-            from app.infrastructure.telephony.telnyx_provider import TelnyxProvider
-            sms_provider = TelnyxProvider(
-                api_key=sms_config.decrypted_api_key,
-                from_number=sms_config.telnyx_phone_number,
-                messaging_profile_id=sms_config.telnyx_messaging_profile_id,
-            )
+            sms_config = await factory.get_config(tenant_id)
+            from_number = factory.get_sms_phone_number(sms_config)
 
-            sms_body = f"Here is your registration link:\n{registration_url}"
-            message_id = await sms_provider.send_sms(to=caller_phone, body=sms_body)
-            logger.info(f"[TOOL] send_registration_link SMS sent - to={caller_phone}, from={sms_config.telnyx_phone_number}, message_id={message_id}, url={registration_url}")
+            if not from_number:
+                logger.warning(f"[TOOL] send_registration_link: no from number for tenant {tenant_id}")
+                return JSONResponse(content={
+                    "status": "error",
+                    "result": "No SMS phone number configured."
+                })
+
+            formatted_to = _normalize_phone(caller_phone)
+            sms_result = await sms_provider.send_sms(
+                to=formatted_to,
+                from_=from_number,
+                body=registration_url,
+            )
+            logger.info(f"[TOOL] send_registration_link SMS sent - to={formatted_to}, from={from_number}, message_id={sms_result.message_id}, url={registration_url}")
 
             # Record in sent_assets for dedup
             try:
                 from app.persistence.models.sent_asset import SentAsset
-                from app.core.phone import normalize_phone
+                phone_normalized = normalize_phone_for_dedup(formatted_to)
                 asset = SentAsset(
                     tenant_id=tenant_id,
-                    phone_normalized=normalize_phone(caller_phone),
+                    phone_normalized=phone_normalized,
                     asset_type="registration_link",
                     sent_at=datetime.now(timezone.utc),
-                    message_id=message_id,
+                    message_id=sms_result.message_id,
                 )
                 db.add(asset)
                 await db.commit()
@@ -3266,7 +3274,7 @@ async def send_registration_link_tool(
 
             return JSONResponse(content={
                 "status": "sent",
-                "message_id": message_id,
+                "message_id": sms_result.message_id,
                 "url_sent": registration_url,
             })
 

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
+import { usePipelineStages } from '../hooks/usePipelineStages';
 import LeadDetailsModal from '../components/LeadDetailsModal';
 import SendSmsModal from '../components/SendSmsModal';
 import EditLeadModal from '../components/EditLeadModal';
@@ -329,6 +330,7 @@ const StatusBadge = ({ status, label, variant = 'pill' }) => (
 
 export default function Dashboard() {
   const { user, selectedTenantId, selectTenant } = useAuth();
+  const { stageMap, stageLabelMap } = usePipelineStages();
   const [leads, setLeads] = useState([]);
   const [calls, setCalls] = useState([]);
   const [tenantsOverview, setTenantsOverview] = useState(null);
@@ -1439,7 +1441,20 @@ export default function Dashboard() {
                     </td>
                     <td className="col-person">
                       <div className="lead-person">
-                        <span className="lead-person__name">{formatName(lead.name)}</span>
+                        <div className="lead-person__name-row">
+                          <span className="lead-person__name">{formatName(lead.name)}</span>
+                          {lead.pipeline_stage && (
+                            <span
+                              className="pipeline-badge"
+                              style={{
+                                backgroundColor: `${stageMap[lead.pipeline_stage]?.color || '#6b7280'}20`,
+                                color: stageMap[lead.pipeline_stage]?.color || '#6b7280',
+                              }}
+                            >
+                              {stageLabelMap[lead.pipeline_stage] || lead.pipeline_stage}
+                            </span>
+                          )}
+                        </div>
                         <span className="lead-person__email">{lead.email || '—'}</span>
                       </div>
                     </td>

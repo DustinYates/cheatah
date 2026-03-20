@@ -334,6 +334,13 @@
   gap: 1px;
 }
 
+.connection-person__name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .connection-person__name {
   font-weight: 600;
   color: #0f172a;
@@ -370,13 +377,8 @@
 
 /* Column Widths */
 .connections-table .col-name {
-  width: 22%;
-  min-width: 160px;
-}
-
-.connections-table .col-tags {
-  width: 28%;
-  min-width: 200px;
+  width: 40%;
+  min-width: 240px;
 }
 
 .connections-table .col-phone {
@@ -798,13 +800,6 @@
 }
 
 /* Responsive */
-@media (max-width: 900px) {
-  .connections-table th.col-tags,
-  .connections-table td.col-tags {
-    min-width: 140px;
-  }
-}
-
 @media (max-width: 768px) {
   .connections-page .page-header {
     flex-direction: column;

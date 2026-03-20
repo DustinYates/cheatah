@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Pencil, Trash2, Users, Search, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Pencil, Trash2, Users, Search, Clock, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
 import { api } from '../api/client';
 import { useFetchData } from '../hooks/useFetchData';
 import { useAuth } from '../context/AuthContext';
@@ -8,6 +8,7 @@ import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import ContactHistoryModal from '../components/ContactHistoryModal';
 import EditContactModal from '../components/EditContactModal';
 import MergeContactsModal from '../components/MergeContactsModal';
+import MassSmsModal from '../components/MassSmsModal';
 import { formatDateTimeParts } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
 import { usePipelineStages } from '../hooks/usePipelineStages';
@@ -47,6 +48,8 @@ export default function Connections() {
   const [sortDir, setSortDir] = useState('desc');
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [massSmsLeads, setMassSmsLeads] = useState(null);
+  const [tagFilter, setTagFilter] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 50;
 
@@ -85,6 +88,38 @@ export default function Connections() {
 
   const needsTenant = user?.is_global_admin && !selectedTenantId;
 
+  // Collect all unique visible tags for the tag filter dropdown
+  const allTags = useMemo(() => {
+    const tagSet = new Set();
+    connections.forEach(conn => {
+      if (conn.pipeline_stage) {
+        tagSet.add(`stage:${conn.pipeline_stage}`);
+      }
+      if (conn.has_interactions) {
+        tagSet.add('convopro');
+      }
+      if (Array.isArray(conn.tags)) {
+        conn.tags.forEach(t => tagSet.add(`tag:${t}`));
+      }
+    });
+    return Array.from(tagSet).sort();
+  }, [connections]);
+
+  const getTagLabel = (tagValue) => {
+    if (tagValue === 'convopro') return 'ConvoPro';
+    if (tagValue.startsWith('stage:')) return PIPELINE_STAGE_LABELS[tagValue.slice(6)] || tagValue.slice(6);
+    if (tagValue.startsWith('tag:')) return tagValue.slice(4);
+    return tagValue;
+  };
+
+  const matchesTag = (conn, filter) => {
+    if (!filter) return true;
+    if (filter === 'convopro') return conn.has_interactions;
+    if (filter.startsWith('stage:')) return conn.pipeline_stage === filter.slice(6);
+    if (filter.startsWith('tag:')) return Array.isArray(conn.tags) && conn.tags.includes(filter.slice(4));
+    return true;
+  };
+
   const filteredConnections = connections
     .filter(conn => {
       const matchesSearch = !search ||
@@ -100,8 +135,9 @@ export default function Connections() {
 
       const matchesStage = !stageFilter || conn.pipeline_stage === stageFilter;
       const matchesStatus = !statusFilter || conn.customer_status === statusFilter;
+      const matchesTagFilter = matchesTag(conn, tagFilter);
 
-      return matchesSearch && matchesType && matchesStage && matchesStatus;
+      return matchesSearch && matchesType && matchesStage && matchesStatus && matchesTagFilter;
     })
     .sort((a, b) => {
       let comparison = 0;
@@ -123,7 +159,7 @@ export default function Connections() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, typeFilter, stageFilter, statusFilter, sortBy, sortDir]);
+  }, [search, typeFilter, stageFilter, statusFilter, tagFilter, sortBy, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filteredConnections.length / pageSize));
   const paginatedConnections = useMemo(() => {
@@ -212,10 +248,11 @@ export default function Connections() {
     setTypeFilter('');
     setStageFilter('');
     setStatusFilter('');
+    setTagFilter('');
     setSearch('');
   };
 
-  const hasActiveFilters = typeFilter || stageFilter || statusFilter || search;
+  const hasActiveFilters = typeFilter || stageFilter || statusFilter || tagFilter || search;
 
   const handleSelectAll = () => {
     const selectableOnPage = paginatedConnections.filter(c => c.contact_id);
@@ -363,6 +400,18 @@ export default function Connections() {
         </select>
 
         <select
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          className="filter-select"
+          aria-label="Filter by tag"
+        >
+          <option value="">All Tags</option>
+          {allTags.map((t) => (
+            <option key={t} value={t}>{getTagLabel(t)}</option>
+          ))}
+        </select>
+
+        <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
           className="filter-select"
@@ -389,6 +438,28 @@ export default function Connections() {
           </button>
         )}
 
+        {hasActiveFilters && filteredConnections.some(c => c.phone) && (
+          <button
+            className="btn-mass-text-filtered"
+            onClick={() => {
+              const withPhones = filteredConnections.filter(c => c.phone);
+              if (withPhones.length === 0) {
+                alert('No filtered contacts have phone numbers.');
+                return;
+              }
+              setMassSmsLeads(filteredConnections.map(c => ({
+                ...c,
+                id: c.contact_id || c.customer_id,
+                name: formatName(c.name) || formatName(c.customer_name) || c.phone || 'Unknown',
+              })));
+            }}
+            title={`Send text to all ${filteredConnections.filter(c => c.phone).length} filtered contacts with phones`}
+          >
+            <MessageSquare size={14} />
+            Text All Filtered ({filteredConnections.filter(c => c.phone).length})
+          </button>
+        )}
+
         <span className="filter-count">
           {filteredConnections.length} of {connections.length}
         </span>
@@ -406,6 +477,20 @@ export default function Connections() {
               onClick={cancelMergeSelection}
             >
               Clear Selection
+            </button>
+            <button
+              className="btn-bulk-action btn-mass-sms"
+              onClick={() => {
+                const withPhones = selectedForMerge.filter(c => c.phone);
+                if (withPhones.length === 0) {
+                  alert('None of the selected contacts have phone numbers.');
+                  return;
+                }
+                setMassSmsLeads(selectedForMerge);
+              }}
+            >
+              <MessageSquare size={14} />
+              Send Mass Text
             </button>
             <button
               className="btn-bulk-action btn-merge"
@@ -456,7 +541,6 @@ export default function Connections() {
                 >
                   Name {sortBy === 'name' && (sortDir === 'asc' ? '\u2191' : '\u2193')}
                 </th>
-                <th className="col-tags">Tags</th>
                 <th className="col-phone">Phone</th>
                 <th
                   className={`col-added sortable ${sortBy === 'created_at' ? 'sorted' : ''}`}
@@ -494,34 +578,31 @@ export default function Connections() {
                     </td>
                     <td className="col-name">
                       <div className="connection-person">
-                        <span className="connection-person__name">{displayName}</span>
+                        <div className="connection-person__name-row">
+                          <span className="connection-person__name">{displayName}</span>
+                          <div className="tag-group">
+                            {conn.pipeline_stage && (
+                              <span
+                                className="pipeline-badge"
+                                style={{
+                                  backgroundColor: `${stageMap[conn.pipeline_stage]?.color || '#6b7280'}20`,
+                                  color: stageMap[conn.pipeline_stage]?.color || '#6b7280',
+                                }}
+                              >
+                                {PIPELINE_STAGE_LABELS[conn.pipeline_stage] || conn.pipeline_stage}
+                              </span>
+                            )}
+                            {conn.customer_status && (
+                              <span className={`status-badge status-${conn.customer_status}`}>
+                                {CUSTOMER_STATUS_LABELS[conn.customer_status] || conn.customer_status}
+                              </span>
+                            )}
+                            {conn.has_interactions && (
+                              <span className="interaction-badge">ConvoPro</span>
+                            )}
+                          </div>
+                        </div>
                         <span className="connection-person__email">{conn.email || '-'}</span>
-                      </div>
-                    </td>
-                    <td className="col-tags">
-                      <div className="tag-group">
-                        {conn.pipeline_stage && (
-                          <span
-                            className="pipeline-badge"
-                            style={{
-                              backgroundColor: `${stageMap[conn.pipeline_stage]?.color || '#6b7280'}20`,
-                              color: stageMap[conn.pipeline_stage]?.color || '#6b7280',
-                            }}
-                          >
-                            {PIPELINE_STAGE_LABELS[conn.pipeline_stage] || conn.pipeline_stage}
-                          </span>
-                        )}
-                        {conn.customer_status && (
-                          <span className={`status-badge status-${conn.customer_status}`}>
-                            {CUSTOMER_STATUS_LABELS[conn.customer_status] || conn.customer_status}
-                          </span>
-                        )}
-                        {conn.has_interactions && (
-                          <span className="interaction-badge">ConvoPro</span>
-                        )}
-                        {!conn.pipeline_stage && !conn.customer_status && !conn.has_interactions && (
-                          <span className="connection-text-muted">-</span>
-                        )}
                       </div>
                     </td>
                     <td className="col-phone">
@@ -722,6 +803,19 @@ export default function Connections() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Mass SMS Modal */}
+      {massSmsLeads && (
+        <MassSmsModal
+          leads={massSmsLeads}
+          onClose={() => setMassSmsLeads(null)}
+          onSuccess={() => {
+            setMassSmsLeads(null);
+            setSelectedForMerge([]);
+            refetch();
+          }}
+        />
       )}
 
       {/* Bulk Delete Confirmation Modal */}

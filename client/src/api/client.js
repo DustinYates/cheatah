@@ -1036,6 +1036,13 @@ class ApiClient {
     });
   }
 
+  async sendBulkSms(phones, message) {
+    return this.request('/admin/sms/send-bulk', {
+      method: 'POST',
+      body: JSON.stringify({ phones, message }),
+    });
+  }
+
   async getEmailConversations(params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/email/conversations${query ? `?${query}` : ''}`);

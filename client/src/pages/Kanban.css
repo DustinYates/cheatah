@@ -84,6 +84,24 @@
   flex-shrink: 0;
 }
 
+.kanban-column__header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kanban-column__select-all {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: #2563eb;
+}
+
+.kanban-column__select-all:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
 .kanban-column__title {
   font-size: 13px;
   font-weight: 600;
@@ -154,6 +172,20 @@
 .kanban-card.merge-secondary:hover {
   background: #f3f4f6;
   border-color: #6b7280;
+}
+
+.kanban-card--selected {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.kanban-card__checkbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #2563eb;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .kanban-card__header {
@@ -550,4 +582,122 @@
   .kanban-calendar-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Selection Action Bar */
+.kanban-selection-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #1e293b;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  z-index: 100;
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+  from { transform: translateX(-50%) translateY(20px); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+
+.kanban-selection-bar__count {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.kanban-selection-bar__btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.kanban-selection-bar__btn--sms {
+  background: #2563eb;
+  color: white;
+}
+
+.kanban-selection-bar__btn--sms:hover {
+  background: #1d4ed8;
+}
+
+.kanban-selection-bar__btn--clear {
+  background: #475569;
+  color: #e2e8f0;
+}
+
+.kanban-selection-bar__btn--clear:hover {
+  background: #64748b;
+}
+
+/* Mass SMS Modal extras */
+.mass-sms-modal {
+  max-width: 540px;
+}
+
+.mass-sms-recipients {
+  margin-bottom: 16px;
+}
+
+.mass-sms-recipients label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.mass-sms-summary {
+  font-size: 14px;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.mass-sms-count {
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.mass-sms-skipped {
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.mass-sms-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 8px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.mass-sms-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: #e0e7ff;
+  color: #3730a3;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }

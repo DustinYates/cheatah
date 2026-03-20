@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { usePipelineStages } from '../hooks/usePipelineStages';
 import LeadDetailsModal from '../components/LeadDetailsModal';
 import SendSmsModal from '../components/SendSmsModal';
+import MassSmsModal from '../components/MassSmsModal';
 import EditLeadModal from '../components/EditLeadModal';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import './Kanban.css';
@@ -192,6 +193,8 @@ export default function Kanban() {
   const [editLead, setEditLead] = useState(null);
   const [mergeMode, setMergeMode] = useState(null); // { primaryId: X } when merging
   const [dragOverStage, setDragOverStage] = useState(null);
+  const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
+  const [massSmsLeads, setMassSmsLeads] = useState(null);
   const draggedLeadRef = useRef(null);
 
   const fetchLeads = useCallback(async () => {
@@ -241,6 +244,42 @@ export default function Kanban() {
   const orphanedLeads = leads.filter(
     (l) => l.pipeline_stage && !knownKeys.has(l.pipeline_stage)
   );
+
+  // Selection handlers
+  const toggleLeadSelection = (e, leadId) => {
+    e.stopPropagation();
+    setSelectedLeadIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(leadId)) next.delete(leadId);
+      else next.add(leadId);
+      return next;
+    });
+  };
+
+  const toggleColumnSelection = (stageKey) => {
+    const stageLeads = groupedLeads[stageKey] || [];
+    const stageIds = stageLeads.map((l) => l.id);
+    const allSelected = stageIds.length > 0 && stageIds.every((id) => selectedLeadIds.has(id));
+
+    setSelectedLeadIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        stageIds.forEach((id) => next.delete(id));
+      } else {
+        stageIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedLeadIds(new Set());
+
+  const selectedLeads = leads.filter((l) => selectedLeadIds.has(l.id));
+
+  const handleMassSmsClick = () => {
+    if (selectedLeads.length === 0) return;
+    setMassSmsLeads(selectedLeads);
+  };
 
   // Drag handlers
   const handleDragStart = (e, lead) => {
@@ -423,7 +462,17 @@ export default function Kanban() {
               onDrop={(e) => handleDrop(e, stage.key)}
             >
               <div className="kanban-column__header">
-                <span className="kanban-column__title">{stage.label}</span>
+                <div className="kanban-column__header-left">
+                  <input
+                    type="checkbox"
+                    className="kanban-column__select-all"
+                    checked={stageLeads.length > 0 && stageLeads.every((l) => selectedLeadIds.has(l.id))}
+                    onChange={() => toggleColumnSelection(stage.key)}
+                    title={`Select all in ${stage.label}`}
+                    disabled={stageLeads.length === 0}
+                  />
+                  <span className="kanban-column__title">{stage.label}</span>
+                </div>
                 <span
                   className="kanban-column__count"
                   style={{
@@ -447,7 +496,7 @@ export default function Kanban() {
                         key={lead.id}
                         className={`kanban-card ${isMergeTarget ? 'merge-primary' : ''} ${
                           isMergeSecondary ? 'merge-secondary' : ''
-                        }`}
+                        } ${selectedLeadIds.has(lead.id) ? 'kanban-card--selected' : ''}`}
                         draggable={!mergeMode}
                         onDragStart={(e) => handleDragStart(e, lead)}
                         onDragEnd={handleDragEnd}
@@ -463,6 +512,13 @@ export default function Kanban() {
                         }}
                       >
                         <div className="kanban-card__header">
+                          <input
+                            type="checkbox"
+                            className="kanban-card__checkbox"
+                            checked={selectedLeadIds.has(lead.id)}
+                            onChange={(e) => toggleLeadSelection(e, lead.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
                           <div className="kanban-card__name">{lead.name}</div>
                           {!mergeMode && (
                             <div className="kanban-card__actions">
@@ -629,7 +685,7 @@ export default function Kanban() {
                     key={lead.id}
                     className={`kanban-card ${isMergeTarget ? 'merge-primary' : ''} ${
                       isMergeSecondary ? 'merge-secondary' : ''
-                    }`}
+                    } ${selectedLeadIds.has(lead.id) ? 'kanban-card--selected' : ''}`}
                     draggable={!mergeMode}
                     onDragStart={(e) => handleDragStart(e, lead)}
                     onDragEnd={handleDragEnd}
@@ -645,6 +701,13 @@ export default function Kanban() {
                     }}
                   >
                     <div className="kanban-card__header">
+                      <input
+                        type="checkbox"
+                        className="kanban-card__checkbox"
+                        checked={selectedLeadIds.has(lead.id)}
+                        onChange={(e) => toggleLeadSelection(e, lead.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
                       <div className="kanban-card__name">{lead.name}</div>
                       {!mergeMode && (
                         <div className="kanban-card__actions">
@@ -791,6 +854,42 @@ export default function Kanban() {
           lead={smsLead}
           onClose={() => setSmsLead(null)}
           onSuccess={fetchLeads}
+        />
+      )}
+
+      {selectedLeadIds.size > 0 && (
+        <div className="kanban-selection-bar">
+          <span className="kanban-selection-bar__count">
+            {selectedLeadIds.size} selected
+          </span>
+          <button
+            className="kanban-selection-bar__btn kanban-selection-bar__btn--sms"
+            onClick={handleMassSmsClick}
+            type="button"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+            </svg>
+            Send Mass Text
+          </button>
+          <button
+            className="kanban-selection-bar__btn kanban-selection-bar__btn--clear"
+            onClick={clearSelection}
+            type="button"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {massSmsLeads && (
+        <MassSmsModal
+          leads={massSmsLeads}
+          onClose={() => setMassSmsLeads(null)}
+          onSuccess={() => {
+            clearSelection();
+            fetchLeads();
+          }}
         />
       )}
     </div>

@@ -366,6 +366,13 @@
   line-height: 1.2;
 }
 
+.lead-person__name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .lead-person__email {
   font-size: 12px;
   color: #64748b;
@@ -373,6 +380,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.2;
+}
+
+/* Pipeline Stage Badges */
+.leads-table .pipeline-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  line-height: 1.4;
 }
 
 .lead-phone,

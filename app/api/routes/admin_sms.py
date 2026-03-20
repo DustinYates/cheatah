@@ -309,3 +309,96 @@ async def send_manual_sms(
         "to": sms_data.to,
     }
 
+
+class BulkSmsRequest(BaseModel):
+    """Bulk SMS send request."""
+
+    phones: list[str]
+    message: str
+
+
+@router.post("/send-bulk", response_model=dict)
+async def send_bulk_sms(
+    bulk_data: BulkSmsRequest,
+    admin_data: Annotated[tuple[User, int], Depends(require_tenant_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Send the same SMS message to multiple phone numbers."""
+    import logging
+    from app.infrastructure.telephony.factory import TelephonyProviderFactory
+    from app.domain.services.conversation_service import ConversationService
+    from app.persistence.repositories.conversation_repository import ConversationRepository
+    from app.core.phone import normalize_phone_for_dedup
+
+    logger = logging.getLogger(__name__)
+    current_user, tenant_id = admin_data
+
+    if not bulk_data.phones:
+        raise HTTPException(status_code=400, detail="No phone numbers provided")
+    if len(bulk_data.phones) > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 recipients per bulk send")
+    if not bulk_data.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    factory = TelephonyProviderFactory(db)
+    sms_config = await factory.get_config(tenant_id)
+
+    if not sms_config or not sms_config.is_enabled:
+        raise HTTPException(status_code=400, detail="SMS is not enabled for this tenant")
+
+    from_phone = factory.get_sms_phone_number(sms_config)
+    if not from_phone:
+        raise HTTPException(status_code=400, detail="No SMS phone number configured")
+
+    sms_provider = await factory.get_sms_provider(tenant_id)
+    if not sms_provider:
+        raise HTTPException(status_code=400, detail="SMS provider not configured")
+
+    results = {"sent": 0, "failed": 0, "errors": []}
+    conv_repo = ConversationRepository(db)
+    conv_service = ConversationService(db)
+
+    for phone in bulk_data.phones:
+        try:
+            send_result = await sms_provider.send_sms(
+                to=phone, from_=from_phone, body=bulk_data.message.strip(),
+            )
+            results["sent"] += 1
+
+            # Record in conversation timeline
+            try:
+                normalized = normalize_phone_for_dedup(phone)
+                conversation = await conv_repo.get_by_phone_number(
+                    tenant_id, normalized, channel="sms"
+                )
+                if not conversation:
+                    conversation = await conv_service.create_conversation(
+                        tenant_id=tenant_id, channel="sms", external_id=None,
+                    )
+                    conversation.phone_number = normalized
+                    await db.commit()
+                    await db.refresh(conversation)
+
+                await conv_service.add_message(
+                    tenant_id, conversation.id, "assistant", bulk_data.message.strip(),
+                    metadata={
+                        "source": "bulk_send",
+                        "provider": send_result.provider,
+                        "telnyx_message_id": send_result.message_id,
+                        "delivery_status": "sent",
+                    },
+                )
+            except Exception as rec_err:
+                logger.error(f"Failed to record bulk SMS message: {phone}, error={rec_err}")
+
+        except Exception as e:
+            results["failed"] += 1
+            results["errors"].append({"phone": phone, "error": str(e)})
+            logger.error(f"Bulk SMS failed: tenant={tenant_id}, to={phone}, error={e}")
+
+    logger.info(
+        f"Bulk SMS complete: tenant={tenant_id}, sent={results['sent']}, "
+        f"failed={results['failed']}, total={len(bulk_data.phones)}"
+    )
+    return results
+

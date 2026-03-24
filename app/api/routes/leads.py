@@ -14,7 +14,7 @@ from app.domain.services.lead_service import LeadService
 from app.domain.services.conversation_service import ConversationService
 from app.domain.services.followup_service import FollowUpService
 from app.persistence.database import get_db
-from app.persistence.models.conversation import Message
+from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.lead_task import LeadTask
 from app.persistence.models.tenant import User
 
@@ -193,11 +193,35 @@ async def list_leads(
             task_counts[row.lead_id] = row.cnt
             task_next_due[row.lead_id] = row.next_due
 
+    # Batch fetch llm_responded and conv_channel (avoid N+1 queries)
+    conv_ids = [l.conversation_id for l in leads if l.conversation_id]
+    llm_responded_set = set()
+    conv_channel_map = {}
+    if conv_ids:
+        # Which conversations have at least one assistant message?
+        assistant_result = await db.execute(
+            select(Message.conversation_id)
+            .where(Message.conversation_id.in_(conv_ids), Message.role == "assistant")
+            .group_by(Message.conversation_id)
+        )
+        llm_responded_set = {row[0] for row in assistant_result.all()}
+
+        # Conversation channels
+        channel_result = await db.execute(
+            select(Conversation.id, Conversation.channel)
+            .where(Conversation.id.in_(conv_ids))
+        )
+        conv_channel_map = {row[0]: row[1] for row in channel_result.all()}
+
     # Build response with llm_responded field and conv_channel
     lead_responses = []
     for lead in leads:
-        llm_responded = await _check_llm_responded(db, lead.conversation_id)
-        conv_channel = await _get_conv_channel(db, lead.conversation_id)
+        if lead.conversation_id:
+            llm_responded = lead.conversation_id in llm_responded_set
+            conv_channel = conv_channel_map.get(lead.conversation_id)
+        else:
+            llm_responded = None
+            conv_channel = None
 
         # Derive conv_channel and llm_responded from extra_data for voice leads
         # (voice calls use Call/CallSummary tables, not Conversation/Message)

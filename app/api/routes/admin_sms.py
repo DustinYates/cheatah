@@ -235,11 +235,37 @@ async def send_manual_sms(
         )
 
     # Send SMS via the configured provider
-    send_result = await sms_provider.send_sms(
-        to=sms_data.to,
-        from_=from_phone,
-        body=sms_data.message,
-    )
+    import httpx
+
+    try:
+        send_result = await sms_provider.send_sms(
+            to=sms_data.to,
+            from_=from_phone,
+            body=sms_data.message,
+        )
+    except httpx.HTTPStatusError as e:
+        status_code = e.response.status_code
+        try:
+            error_body = e.response.json()
+            detail = error_body.get("errors", [{}])[0].get("detail", "") or error_body.get("detail", "")
+        except Exception:
+            detail = e.response.text[:200] if e.response.text else ""
+
+        if status_code == 504 or status_code == 502:
+            msg = "Telnyx API is temporarily unavailable. Please try again in a moment."
+        elif status_code >= 500:
+            msg = f"Telnyx server error ({status_code}). Please try again."
+        else:
+            msg = f"Telnyx rejected the message ({status_code}): {detail}" if detail else f"Telnyx rejected the message ({status_code})"
+
+        logger.error(f"Telnyx SMS API error: tenant={tenant_id}, to={sms_data.to}, status={status_code}, detail={detail}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=msg)
+    except httpx.TimeoutException:
+        logger.error(f"Telnyx SMS timeout: tenant={tenant_id}, to={sms_data.to}")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Telnyx API timed out. Please try again.",
+        )
 
     logger.info(
         f"Manual SMS sent: tenant={tenant_id}, to={sms_data.to}, "

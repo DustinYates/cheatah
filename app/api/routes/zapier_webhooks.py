@@ -193,11 +193,17 @@ async def zapier_customer_update(
         # Treat empty string phone as None
         phone = payload.phone_number or None
 
+        resolved_email = (
+            customer_data.get("email")
+            or customer_data.get("eMailAddress")
+            or customer_data.get("email1")
+        )
+
         customer = await customer_repo.upsert(
             tenant_id=payload.tenant_id,
             jackrabbit_id=payload.jackrabbit_id,
             phone_number=phone,
-            email=customer_data.get("email"),
+            email=resolved_email,
             name=customer_data.get("name"),
             customer_data=customer_data,
         )
@@ -210,7 +216,7 @@ async def zapier_customer_update(
             external_customer_id=payload.jackrabbit_id,
             phone=phone,
             name=customer_data.get("name"),
-            email=customer_data.get("email"),
+            email=resolved_email,
             account_data=account_data,
             jackrabbit_customer_id=customer.id,
         )
@@ -285,7 +291,8 @@ async def zapier_family_sync(
         "work_phone",
     ])
     email = _find([
-        "email", "email1", "email_address", "students_email",
+        "email", "email1", "emailaddress", "email_address",
+        "students_email",
     ])
     status = _find(["status", "family_status", "account_status"])
 

@@ -89,43 +89,43 @@ async def update_current_tenant(
 
 
 def _generate_embed_code(api_base_url: str, tenant_id: int) -> str:
-    """Generate WordPress embed code HTML for a tenant."""
-    return f"""<!-- 
-Chatter Cheetah Chat Widget - WordPress Embed Code
-Add this to your WordPress footer or use a plugin like "Insert Headers and Footers"
--->
+    """Generate WordPress embed code HTML for a tenant.
 
-<!-- Load the chat widget script -->
-<script src="{api_base_url}/static/chat-widget.js"></script>
-
-<!-- Initialize the widget after page loads -->
+    Uses a lightweight inline loader (~400 bytes) that:
+    - Adds a preconnect hint to eliminate DNS+TLS latency
+    - On mobile: defers script load until user interaction or 5s timeout
+    - On desktop: loads during requestIdleCallback (after main content paints)
+    - Never blocks page rendering (no synchronous <script src>)
+    """
+    return f"""<!-- Chatter Cheetah Chat Widget -->
+<link rel="preconnect" href="{api_base_url}" crossorigin>
 <script>
-(function() {{
-  // Wait for both the page and the widget script to load
-  function initChatWidget() {{
-    if (typeof ChatterCheetah !== 'undefined') {{
-      try {{
-        ChatterCheetah.init({{
-          apiUrl: '{api_base_url}/api/v1',
-          tenantId: {tenant_id},
-          scrollBehavior: 'top'
-        }});
-        console.log('Chatter Cheetah widget initialized successfully');
-      }} catch (error) {{
-        console.error('Error initializing chat widget:', error);
+(function(){{
+  var u='{api_base_url}',done=false;
+  function load(){{
+    if(done)return;done=true;
+    var s=document.createElement('script');
+    s.src=u+'/static/chat-widget.js';
+    s.onload=function(){{
+      if(typeof ChatterCheetah!=='undefined'){{
+        ChatterCheetah.init({{apiUrl:u+'/api/v1',tenantId:{tenant_id},scrollBehavior:'top'}});
       }}
-    }} else {{
-      // Retry if script hasn't loaded yet
-      setTimeout(initChatWidget, 100);
-    }}
+    }};
+    document.head.appendChild(s);
   }}
-  
-  // Initialize when DOM is ready
-  if (document.readyState === 'loading') {{
-    document.addEventListener('DOMContentLoaded', initChatWidget);
-  }} else {{
-    // DOM already loaded
-    initChatWidget();
+  if(/Mobi|Android/i.test(navigator.userAgent)){{
+    ['scroll','touchstart','click'].forEach(function(e){{
+      window.addEventListener(e,load,{{once:true,passive:true}});
+    }});
+    setTimeout(load,5000);
+  }}else{{
+    if(document.readyState==='complete'){{
+      ('requestIdleCallback' in window)?requestIdleCallback(load):setTimeout(load,100);
+    }}else{{
+      window.addEventListener('load',function(){{
+        ('requestIdleCallback' in window)?requestIdleCallback(load):setTimeout(load,100);
+      }});
+    }}
   }}
 }})();
 </script>"""

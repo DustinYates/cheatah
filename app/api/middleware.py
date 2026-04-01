@@ -435,10 +435,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Referrer policy - send origin only
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
-        # Cache-Control: prevent sensitive responses from being cached
-        # (Fixes: "Storable and Cacheable Content" + "Re-examine Cache-control Directives")
+        # Cache-Control: set appropriate caching per path type
         path = str(request.url.path)
-        if not any(static in path for static in ["/static", "/assets"]):
+        if path.startswith("/assets/"):
+            # Vite-built assets have content hashes in filenames — cache forever
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path.startswith("/static/"):
+            # Static files (chat-widget.js etc) — cache 1h, serve stale up to 24h
+            response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
+        else:
+            # API/HTML responses — never cache
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
 

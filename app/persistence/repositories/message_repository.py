@@ -27,7 +27,7 @@ class MessageRepository(BaseRepository[Message]):
                 Message.conversation_id == conversation_id,
                 Conversation.tenant_id == tenant_id
             )
-            .order_by(Message.sequence_number)
+            .order_by(Message.created_at, Message.sequence_number)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

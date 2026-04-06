@@ -1072,7 +1072,7 @@ async def get_conversation_analytics(
             Conversation.created_at <= ctx.end_datetime,
             Message.content.isnot(None),
         )
-        .order_by(Message.conversation_id, Message.sequence_number)
+        .order_by(Message.conversation_id, Message.created_at, Message.sequence_number)
     )
     conv_messages_result = await db.execute(conv_messages_stmt)
 

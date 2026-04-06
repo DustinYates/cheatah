@@ -161,7 +161,7 @@ async def _classify_single(
             Message.conversation_id == conv_id,
             Message.role == "user",
         )
-        .order_by(Message.sequence_number)
+        .order_by(Message.created_at, Message.sequence_number)
         .limit(20)  # Cap at 20 messages to avoid processing huge conversations
     )
     msg_result = await db.execute(msg_stmt)

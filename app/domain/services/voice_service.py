@@ -1153,7 +1153,7 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
         stmt = (
             select(Message)
             .where(Message.conversation_id == conversation_id)
-            .order_by(Message.sequence_number)
+            .order_by(Message.created_at, Message.sequence_number)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

@@ -55,7 +55,8 @@ class Conversation(Base):
     contact = relationship("Contact", back_populates="conversations")
     source_conversation = relationship("Conversation", remote_side="Conversation.id", foreign_keys=[source_conversation_id])
     messages = relationship(
-        "Message", back_populates="conversation", cascade="all, delete-orphan", order_by="Message.sequence_number"
+        "Message", back_populates="conversation", cascade="all, delete-orphan",
+        order_by="Message.created_at, Message.sequence_number"
     )
     leads = relationship("Lead", back_populates="conversation")
     escalations = relationship("Escalation", back_populates="conversation")

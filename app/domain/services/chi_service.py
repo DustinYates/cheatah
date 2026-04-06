@@ -124,7 +124,7 @@ class CHIService:
             stmt = (
                 select(Message)
                 .where(Message.conversation_id == conversation.id)
-                .order_by(Message.sequence_number)
+                .order_by(Message.created_at, Message.sequence_number)
             )
             result = await self.session.execute(stmt)
             messages = list(result.scalars().all())
@@ -228,7 +228,7 @@ class CHIService:
             msg_stmt = (
                 select(Message)
                 .where(Message.conversation_id.in_(batch_ids))
-                .order_by(Message.conversation_id, Message.sequence_number)
+                .order_by(Message.conversation_id, Message.created_at, Message.sequence_number)
             )
             msg_result = await self.session.execute(msg_stmt)
             all_messages = list(msg_result.scalars().all())

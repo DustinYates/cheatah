@@ -1270,7 +1270,7 @@ async def telnyx_ai_call_complete(
                         msg_result = await db.execute(
                             select(Message).where(
                                 Message.conversation_id == voice_conv.id
-                            ).order_by(Message.sequence_number)
+                            ).order_by(Message.created_at, Message.sequence_number)
                         )
                         messages = msg_result.scalars().all()
 
@@ -1458,6 +1458,11 @@ async def telnyx_ai_call_complete(
                         logger.info(f"[SMS-MESSAGES] Telnyx API returned {len(actual_messages) if actual_messages else 0} messages")
 
                         if actual_messages:
+                            # Sort messages chronologically (Telnyx returns newest-first)
+                            actual_messages.sort(
+                                key=lambda m: m.get("created_at") or m.get("timestamp") or "",
+                            )
+
                             # Log sample message structure for debugging
                             if actual_messages:
                                 sample_msg = actual_messages[0]
@@ -1520,6 +1525,16 @@ async def telnyx_ai_call_complete(
                                     # Track this message so we don't store it twice within the same batch
                                     existing_msg_set.add(dedup_key)
 
+                                    # Preserve the original Telnyx message timestamp
+                                    msg_ts = msg.get("created_at") or msg.get("timestamp")
+                                    msg_created_at = None
+                                    if msg_ts:
+                                        try:
+                                            from dateutil import parser as date_parser
+                                            msg_created_at = date_parser.parse(str(msg_ts)).replace(tzinfo=None)
+                                        except Exception:
+                                            pass
+
                                     new_msg = Message(
                                         conversation_id=sms_conversation.id,
                                         role=msg_role,
@@ -1527,6 +1542,8 @@ async def telnyx_ai_call_complete(
                                         sequence_number=next_seq,
                                         message_metadata={"source": "telnyx_ai_assistant", "assistant_id": assistant_id, "telnyx_conversation_id": telnyx_conv_id},
                                     )
+                                    if msg_created_at:
+                                        new_msg.created_at = msg_created_at
                                     db.add(new_msg)
                                     next_seq += 1
                                     new_msg_count += 1

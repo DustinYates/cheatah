@@ -178,6 +178,18 @@ class ConversationService:
                     sender_name = contact.name
                     sender_phone = sender_phone or contact.phone
 
+            # Fallback: extract name/phone from message content (email form submissions)
+            if not sender_name and content:
+                try:
+                    from app.domain.services.email_body_parser import EmailBodyParser
+                    parsed = EmailBodyParser().parse(content)
+                    if parsed.get("name"):
+                        sender_name = parsed["name"]
+                    if not sender_phone and parsed.get("phone"):
+                        sender_phone = parsed["phone"]
+                except Exception:
+                    pass
+
             from app.infrastructure.notifications import NotificationService
             notif_service = NotificationService(self.session)
             await notif_service.notify_new_message(

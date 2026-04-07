@@ -785,6 +785,43 @@ class NotificationService:
             logger.error(f"Failed to send lead notification SMS: {e}", exc_info=True)
             return {"status": "error", "error": str(e), "to": to_number}
 
+    async def notify_new_message(
+        self,
+        tenant_id: int,
+        conversation_id: int,
+        channel: str,
+        sender_name: str | None = None,
+        sender_phone: str | None = None,
+        message_preview: str = "",
+    ) -> dict[str, Any]:
+        """Create in-app notification for a new inbound message.
+
+        Only creates in-app notifications (no email/SMS) to avoid spamming
+        tenant admins on every customer message.
+        """
+        # Build a human-readable title
+        channel_label = {"sms": "SMS", "web": "chat", "email": "email", "voice": "voice"}.get(channel, channel)
+        sender = sender_name or sender_phone or "Unknown"
+        title = f"New {channel_label} from {sender}"
+
+        preview = (message_preview[:100] + "...") if len(message_preview) > 100 else message_preview
+
+        return await self.notify_admins(
+            tenant_id=tenant_id,
+            subject=title,
+            message=preview,
+            methods=["in_app"],
+            metadata={
+                "conversation_id": conversation_id,
+                "channel": channel,
+                "sender_name": sender_name,
+                "sender_phone": sender_phone,
+            },
+            notification_type=NotificationType.NEW_MESSAGE,
+            priority=NotificationPriority.NORMAL,
+            action_url=f"/inbox?conversation={conversation_id}",
+        )
+
     async def _create_in_app_notification(
         self,
         tenant_id: int,
@@ -1006,15 +1043,17 @@ class NotificationService:
         user_id: int,
         limit: int = 50,
         include_read: bool = True,
+        since: datetime | None = None,
     ) -> list[Notification]:
         """Get notifications for a user.
-        
+
         Args:
             tenant_id: Tenant ID
             user_id: User ID
             limit: Maximum number to return
             include_read: Include read notifications
-            
+            since: Only return notifications created after this timestamp
+
         Returns:
             List of Notification objects
         """
@@ -1027,10 +1066,13 @@ class NotificationService:
             .order_by(Notification.created_at.desc())
             .limit(limit)
         )
-        
+
         if not include_read:
             stmt = stmt.where(Notification.is_read == False)
-        
+
+        if since:
+            stmt = stmt.where(Notification.created_at > since)
+
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

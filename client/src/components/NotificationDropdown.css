@@ -1,0 +1,144 @@
+.notification-dropdown {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  width: 340px;
+  max-height: 420px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  z-index: 200;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.notification-dropdown__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  flex-shrink: 0;
+}
+
+.notification-dropdown__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.notification-dropdown__mark-all {
+  background: none;
+  border: none;
+  color: #6366f1;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.notification-dropdown__mark-all:hover {
+  background: #eef2ff;
+}
+
+.notification-dropdown__list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.notification-dropdown__empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.notification-dropdown__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid #f9fafb;
+}
+
+.notification-dropdown__item:hover {
+  background: #f9fafb;
+}
+
+.notification-dropdown__item--unread {
+  background: #f0f0ff;
+}
+
+.notification-dropdown__item--unread:hover {
+  background: #e8e8ff;
+}
+
+.notification-dropdown__item-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f3f4f6;
+  color: #6b7280;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.notification-dropdown__item--unread .notification-dropdown__item-icon {
+  background: #eef2ff;
+  color: #6366f1;
+}
+
+.notification-dropdown__item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-dropdown__item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notification-dropdown__item-message {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.4;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notification-dropdown__item-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.notification-dropdown__item-time {
+  font-size: 11px;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.notification-dropdown__item-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6366f1;
+}

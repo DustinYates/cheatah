@@ -69,6 +69,7 @@ class NotificationType:
     EMAIL_PROMISE = "email_promise"
     HIGH_INTENT_LEAD = "high_intent_lead"
     BOOKING_CONFIRMED = "booking_confirmed"
+    NEW_MESSAGE = "new_message"
     # Admin alert types
     SMS_BURST = "sms_burst"
     ANOMALY_ALERT = "anomaly_alert"

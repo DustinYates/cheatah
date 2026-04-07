@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -68,7 +69,9 @@ function App() {
             path="/"
             element={
               <ProtectedRoute requireProfile>
-                <Layout />
+                <NotificationProvider>
+                  <Layout />
+                </NotificationProvider>
               </ProtectedRoute>
             }
           >

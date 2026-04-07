@@ -1,11 +1,20 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
+import { Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 import { api } from '../api/client';
+import NotificationDropdown from './NotificationDropdown';
+import MessageToast from './ui/MessageToast';
 import './Layout.css';
 
 export default function Layout() {
   const { user, logout, tenants, selectedTenantId, selectTenant } = useAuth();
+  const {
+    notifications, unreadCount, toasts,
+    dismissToast, markRead, markAllRead,
+    dropdownOpen, setDropdownOpen,
+  } = useNotifications();
   const navigate = useNavigate();
   const location = useLocation();
   const [analyticsOpen, setAnalyticsOpen] = useState(location.pathname.startsWith('/analytics'));
@@ -238,6 +247,30 @@ const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/
             </li>
           )}
         </ul>
+        <div className="notification-bell-wrapper">
+          <button
+            className="notification-bell"
+            onClick={() => setDropdownOpen(!dropdownOpen)}
+            aria-label="Notifications"
+          >
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span className="notification-badge">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
+          {dropdownOpen && (
+            <NotificationDropdown
+              notifications={notifications}
+              unreadCount={unreadCount}
+              onMarkRead={markRead}
+              onMarkAllRead={markAllRead}
+              onClose={() => setDropdownOpen(false)}
+              onNavigate={(url) => { setDropdownOpen(false); navigate(url); }}
+            />
+          )}
+        </div>
         <div className="user-info">
           <span className="user-email">{user?.email}</span>
           {user?.is_global_admin && <span className="admin-badge">Admin</span>}
@@ -256,6 +289,22 @@ const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/
           <Link to="/terms">Terms of Service</Link>
         </footer>
       </main>
+      {toasts.length > 0 && (
+        <div className="toast-container">
+          {toasts.map((notif) => (
+            <MessageToast
+              key={notif.id}
+              notification={notif}
+              onDismiss={() => dismissToast(notif.id)}
+              onClick={() => {
+                dismissToast(notif.id);
+                markRead(notif.id);
+                navigate(notif.action_url || '/inbox');
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

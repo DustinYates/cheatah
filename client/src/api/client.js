@@ -1205,6 +1205,24 @@ class ApiClient {
     });
   }
 
+  // Notifications API
+  async getNotifications(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/notifications${query ? `?${query}` : ''}`);
+  }
+
+  async getUnreadNotificationCount() {
+    return this.request('/notifications/unread-count');
+  }
+
+  async markNotificationRead(notificationId) {
+    return this.request(`/notifications/${notificationId}/read`, { method: 'POST' });
+  }
+
+  async markAllNotificationsRead() {
+    return this.request('/notifications/read-all', { method: 'POST' });
+  }
+
   // Customers API
   async getCustomers(params = {}) {
     const query = new URLSearchParams(params).toString();

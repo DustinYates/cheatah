@@ -29,6 +29,7 @@ class BusinessProfileResponse(BaseModel):
     phone_number: str | None
     sms_phone: str | None
     email: str | None
+    owner_phone: str | None = None
     profile_complete: bool
     last_scraped_at: datetime | None = None
     has_scraped_data: bool = False
@@ -45,6 +46,7 @@ class BusinessProfileUpdate(BaseModel):
     phone_number: str | None = None
     sms_phone: str | None = None
     email: str | None = None
+    owner_phone: str | None = None
 
 
 class ScrapeStatusResponse(BaseModel):
@@ -119,6 +121,7 @@ async def get_business_profile(
         phone_number=profile.phone_number,
         sms_phone=profile.sms_phone,
         email=profile.email,
+        owner_phone=profile.owner_phone,
         profile_complete=profile.profile_complete,
         last_scraped_at=profile.last_scraped_at,
         has_scraped_data=_has_scraped_data(profile),
@@ -158,6 +161,7 @@ async def update_business_profile(
         phone_number=profile_data.phone_number,
         sms_phone=profile_data.sms_phone,
         email=profile_data.email,
+        owner_phone=profile_data.owner_phone,
     )
 
     if not profile:
@@ -182,6 +186,7 @@ async def update_business_profile(
         phone_number=profile.phone_number,
         sms_phone=profile.sms_phone,
         email=profile.email,
+        owner_phone=profile.owner_phone,
         profile_complete=profile.profile_complete,
         last_scraped_at=profile.last_scraped_at,
         has_scraped_data=_has_scraped_data(profile),

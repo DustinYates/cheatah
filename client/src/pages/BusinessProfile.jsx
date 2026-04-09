@@ -10,6 +10,7 @@ const defaultFormData = {
   website_url: '',
   phone_number: '',
   email: '',
+  owner_phone: '',
 };
 
 // Helper to get the active SMS phone number from telephony config
@@ -112,6 +113,7 @@ export default function BusinessProfile() {
         website_url: profile.website_url || '',
         phone_number: profile.phone_number || '',
         email: profile.email || '',
+        owner_phone: profile.owner_phone || '',
       });
     }
   }, [profile]);
@@ -246,6 +248,19 @@ export default function BusinessProfile() {
             onChange={handleChange}
             placeholder="(555) 123-4567"
           />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="owner_phone">Your Phone Number (for notifications)</label>
+          <input
+            type="tel"
+            id="owner_phone"
+            name="owner_phone"
+            value={formData.owner_phone}
+            onChange={handleChange}
+            placeholder="(555) 987-6543"
+          />
+          <small>We'll text you here when someone reaches out to your AI agent.</small>
         </div>
 
         <div className="form-group">

@@ -1291,6 +1291,7 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
                 summary_text=summary_text,
                 intent=primary_intent,
                 outcome=outcome,
+                conversation_id=conversation.id,
             )
             
             return summary
@@ -1306,21 +1307,23 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
         summary_text: str,
         intent: str,
         outcome: str,
+        conversation_id: int | None = None,
     ) -> None:
         """Send notifications for a completed call.
-        
+
         Args:
             tenant_id: Tenant ID
             call: Call record
             summary_text: Generated summary text
             intent: Detected intent
             outcome: Call outcome
+            conversation_id: Conversation ID for dedup
         """
         try:
             # Get notification config from voice settings
             notification_config = await self.voice_config_service.get_notification_config(tenant_id)
             methods = notification_config.get("methods", ["email", "in_app"])
-            
+
             # Send call summary notification
             await self.notification_service.notify_call_summary(
                 tenant_id=tenant_id,
@@ -1332,7 +1335,7 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
                 recording_url=call.recording_url,
                 methods=methods,
             )
-            
+
             # If call was a voicemail, send additional voicemail notification
             if outcome == CallOutcome.VOICEMAIL and call.recording_url:
                 await self.notification_service.notify_voicemail(
@@ -1342,9 +1345,17 @@ Respond with ONLY the category name (e.g., "pricing_info"):"""
                     recording_url=call.recording_url,
                     methods=methods,
                 )
-            
+
+            # Notify owner that someone called
+            await self.notification_service.notify_owner_inbound_contact(
+                tenant_id=tenant_id,
+                channel="voice",
+                caller_phone=call.from_number,
+                conversation_id=conversation_id,
+            )
+
             logger.info(f"Sent notifications for call {call.id}")
-            
+
         except Exception as e:
             # Don't fail the summary generation if notifications fail
             logger.error(f"Failed to send call notifications: {e}", exc_info=True)

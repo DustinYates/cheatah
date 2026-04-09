@@ -134,6 +134,7 @@ class TenantBusinessProfile(Base):
     sms_phone = Column(String(50), nullable=True)
     voice_phone = Column(String(50), nullable=True)
     email = Column(String(255), nullable=True)
+    owner_phone = Column(String(50), nullable=True)  # Owner's personal phone for notifications
     
     profile_complete = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

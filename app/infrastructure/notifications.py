@@ -518,6 +518,115 @@ class NotificationService:
             "sms_result": result,
         }
 
+    async def notify_owner_inbound_contact(
+        self,
+        tenant_id: int,
+        channel: str,
+        caller_phone: str | None = None,
+        caller_name: str | None = None,
+        conversation_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Send SMS notification to owner when someone texts or calls.
+
+        Fires for every inbound contact (call or SMS). Deduplicates by
+        conversation_id so the owner gets one notification per conversation,
+        not per message.
+
+        Args:
+            tenant_id: Tenant ID
+            channel: "voice" or "sms"
+            caller_phone: Caller's phone number
+            caller_name: Caller's name (if known)
+            conversation_id: Conversation ID for dedup
+        """
+        # Deduplicate: one notification per conversation
+        if conversation_id:
+            existing = await self.session.execute(
+                select(Notification).where(
+                    Notification.tenant_id == tenant_id,
+                    Notification.notification_type == NotificationType.INBOUND_CONTACT,
+                    cast(Notification.extra_data["conversation_id"], String) == str(conversation_id),
+                ).limit(1)
+            )
+            if existing.scalar_one_or_none():
+                logger.debug(f"Inbound contact notification already sent for conversation {conversation_id}")
+                return {"status": "already_sent", "reason": "duplicate_conversation"}
+
+        # Get owner phone: owner_phone > lead_notification_phone > phone_number
+        from app.persistence.models.tenant import TenantBusinessProfile
+
+        stmt = select(TenantBusinessProfile).where(TenantBusinessProfile.tenant_id == tenant_id)
+        result = await self.session.execute(stmt)
+        business_profile = result.scalar_one_or_none()
+
+        owner_phone = None
+        if business_profile:
+            owner_phone = business_profile.owner_phone
+
+        if not owner_phone:
+            # Fall back to lead notification phone from SMS settings
+            lead_settings = await self._get_lead_notification_settings(tenant_id)
+            owner_phone = lead_settings.get("phone")
+
+        if not owner_phone and business_profile:
+            owner_phone = business_profile.phone_number
+
+        if not owner_phone:
+            logger.debug(f"No owner phone configured for tenant {tenant_id}, skipping inbound contact notification")
+            return {"status": "no_phone", "reason": "no_owner_phone_configured"}
+
+        # Check quiet hours
+        lead_settings = await self._get_lead_notification_settings(tenant_id)
+        if lead_settings.get("quiet_hours_enabled", True):
+            if await self._is_lead_notification_quiet_hours(tenant_id, lead_settings):
+                logger.info(f"Quiet hours active for tenant {tenant_id}, skipping inbound contact notification")
+                return {"status": "quiet_hours", "reason": "outside_notification_hours"}
+
+        # Build SMS message
+        channel_label = "call" if channel == "voice" else "text"
+        caller_label = caller_name or caller_phone or "someone"
+        message = f"New {channel_label} from {caller_label}. Someone just reached out to your AI agent."
+
+        logger.info(
+            f"Sending inbound contact notification - tenant_id={tenant_id}, "
+            f"channel={channel}, caller={caller_label}"
+        )
+
+        # Send SMS using existing infrastructure
+        sms_result = await self._send_lead_notification_sms(
+            tenant_id=tenant_id,
+            message=message,
+            lead_notification_settings={"phone": owner_phone},
+        )
+
+        # Create in-app notification record (also serves as dedup marker)
+        try:
+            notification = Notification(
+                tenant_id=tenant_id,
+                user_id=None,
+                notification_type=NotificationType.INBOUND_CONTACT,
+                title=f"New {channel_label} from {caller_label}",
+                message=message,
+                extra_data={
+                    "channel": channel,
+                    "caller_phone": caller_phone,
+                    "caller_name": caller_name,
+                    "conversation_id": conversation_id,
+                },
+                priority=NotificationPriority.NORMAL,
+                is_read=False,
+            )
+            self.session.add(notification)
+            await self.session.commit()
+        except Exception as e:
+            logger.error(f"Failed to create inbound contact notification record: {e}", exc_info=True)
+
+        return {
+            "status": sms_result.get("status", "error"),
+            "notification_type": NotificationType.INBOUND_CONTACT,
+            "sms_result": sms_result,
+        }
+
     async def notify_booking(
         self,
         tenant_id: int,

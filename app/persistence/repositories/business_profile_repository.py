@@ -39,12 +39,13 @@ class BusinessProfileRepository(BaseRepository[TenantBusinessProfile]):
         phone_number: str | None = None,
         sms_phone: str | None = None,
         email: str | None = None,
+        owner_phone: str | None = None,
     ) -> TenantBusinessProfile | None:
         """Update business profile for a tenant."""
         profile = await self.get_by_tenant_id(tenant_id)
         if not profile:
             return None
-        
+
         if business_name is not None:
             profile.business_name = business_name
         if website_url is not None:
@@ -55,6 +56,8 @@ class BusinessProfileRepository(BaseRepository[TenantBusinessProfile]):
             profile.sms_phone = sms_phone
         if email is not None:
             profile.email = email
+        if owner_phone is not None:
+            profile.owner_phone = owner_phone
         
         profile.profile_complete = True
 

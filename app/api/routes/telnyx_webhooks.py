@@ -1716,6 +1716,22 @@ async def telnyx_ai_call_complete(
                 await db.commit()
 
                 # =============================================================
+                # Owner Inbound Contact Notification for AI-handled SMS
+                # =============================================================
+                try:
+                    from app.infrastructure.notifications import NotificationService as _NotifService
+                    notif_service = _NotifService(db)
+                    await notif_service.notify_owner_inbound_contact(
+                        tenant_id=tenant_id,
+                        channel="sms",
+                        caller_phone=normalized_from,
+                        caller_name=caller_name,
+                        conversation_id=sms_conversation.id if sms_conversation else None,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send inbound contact notification for SMS: {e}", exc_info=True)
+
+                # =============================================================
                 # Email Promise Detection for Telnyx SMS
                 # =============================================================
                 # Check if the conversation summary mentions email promises

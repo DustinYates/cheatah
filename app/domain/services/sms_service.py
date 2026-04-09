@@ -331,6 +331,22 @@ class SmsService:
         )
 
         # ============================================================
+        # OWNER INBOUND CONTACT NOTIFICATION: Alert owner that
+        # someone just texted the AI agent (deduped per conversation)
+        # ============================================================
+        try:
+            from app.infrastructure.notifications import NotificationService
+            notification_service = NotificationService(self.session)
+            await notification_service.notify_owner_inbound_contact(
+                tenant_id=tenant_id,
+                channel="sms",
+                caller_phone=phone_number,
+                conversation_id=conversation.id,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send inbound contact notification: {e}", exc_info=True)
+
+        # ============================================================
         # HIGH INTENT LEAD NOTIFICATION: Check if this conversation
         # shows high enrollment intent and notify business owner
         # ============================================================

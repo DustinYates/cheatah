@@ -70,6 +70,7 @@ class NotificationType:
     HIGH_INTENT_LEAD = "high_intent_lead"
     BOOKING_CONFIRMED = "booking_confirmed"
     NEW_MESSAGE = "new_message"
+    INBOUND_CONTACT = "inbound_contact"
     # Admin alert types
     SMS_BURST = "sms_burst"
     ANOMALY_ALERT = "anomaly_alert"

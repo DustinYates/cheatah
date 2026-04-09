@@ -206,6 +206,21 @@
   flex: 1;
 }
 
+.kanban-card__unread-badge {
+  background-color: #22c55e;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+
 .kanban-card__actions {
   display: flex;
   gap: 4px;

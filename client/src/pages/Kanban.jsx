@@ -508,6 +508,10 @@ export default function Kanban() {
                             );
                           } else if (!mergeMode) {
                             setSelectedLead(lead);
+                            if (lead.unread_count > 0) {
+                              lead.unread_count = 0;
+                              api.getLead(lead.id).catch(() => {});
+                            }
                           }
                         }}
                       >
@@ -520,6 +524,9 @@ export default function Kanban() {
                             onClick={(e) => e.stopPropagation()}
                           />
                           <div className="kanban-card__name">{lead.name}</div>
+                          {lead.unread_count > 0 && (
+                            <span className="kanban-card__unread-badge">{lead.unread_count}</span>
+                          )}
                           {!mergeMode && (
                             <div className="kanban-card__actions">
                               {lead.phone && (
@@ -697,6 +704,10 @@ export default function Kanban() {
                         );
                       } else if (!mergeMode) {
                         setSelectedLead(lead);
+                        if (lead.unread_count > 0) {
+                          lead.unread_count = 0;
+                          api.getLead(lead.id).catch(() => {});
+                        }
                       }
                     }}
                   >
@@ -709,6 +720,9 @@ export default function Kanban() {
                         onClick={(e) => e.stopPropagation()}
                       />
                       <div className="kanban-card__name">{lead.name}</div>
+                      {lead.unread_count > 0 && (
+                        <span className="kanban-card__unread-badge">{lead.unread_count}</span>
+                      )}
                       {!mergeMode && (
                         <div className="kanban-card__actions">
                           {lead.phone && (

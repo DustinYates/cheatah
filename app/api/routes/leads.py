@@ -16,6 +16,7 @@ from app.domain.services.followup_service import FollowUpService
 from app.persistence.database import get_db
 from app.persistence.models.conversation import Conversation, Message
 from app.persistence.models.lead_task import LeadTask
+from app.persistence.models.notification import Notification
 from app.persistence.models.tenant import User
 
 router = APIRouter()
@@ -49,6 +50,7 @@ class LeadResponse(BaseModel):
     conv_channel: str | None = None  # Conversation channel (sms, email, web, voice, etc.)
     pending_task_count: int = 0
     next_task_due: str | None = None  # ISO date of earliest pending task due date
+    unread_count: int = 0  # Unread notification count for this lead's conversation
 
     class Config:
         from_attributes = True
@@ -214,6 +216,29 @@ async def list_leads(
         )
         conv_channel_map = {row[0]: row[1] for row in channel_result.all()}
 
+    # Batch fetch unread notification counts per conversation_id
+    unread_counts = {}
+    if conv_ids:
+        from sqlalchemy import String, cast
+        unread_result = await db.execute(
+            select(
+                cast(Notification.extra_data["conversation_id"], String).label("conv_id"),
+                func.count(Notification.id).label("cnt"),
+            )
+            .where(
+                Notification.tenant_id == tenant_id,
+                Notification.is_read == False,
+                Notification.notification_type.in_(["inbound_contact", "new_message"]),
+                Notification.extra_data["conversation_id"].isnot(None),
+            )
+            .group_by(cast(Notification.extra_data["conversation_id"], String))
+        )
+        for row in unread_result.all():
+            try:
+                unread_counts[int(row.conv_id)] = row.cnt
+            except (ValueError, TypeError):
+                pass
+
     # Build response with llm_responded field and conv_channel
     lead_responses = []
     for lead in leads:
@@ -253,6 +278,7 @@ async def list_leads(
                 conv_channel=conv_channel,
                 pending_task_count=task_counts.get(lead.id, 0),
                 next_task_due=_isoformat_utc(task_next_due.get(lead.id)),
+                unread_count=unread_counts.get(lead.conversation_id, 0) if lead.conversation_id else 0,
             )
         )
 
@@ -292,6 +318,22 @@ async def get_lead(
             if voice_calls and any(vc.get("transcript") for vc in voice_calls):
                 llm_responded = True
 
+    # Mark unread notifications as read for this lead's conversation
+    if lead.conversation_id:
+        from sqlalchemy import String, cast, update
+        from datetime import datetime as dt
+        await db.execute(
+            update(Notification)
+            .where(
+                Notification.tenant_id == tenant_id,
+                Notification.is_read == False,
+                Notification.notification_type.in_(["inbound_contact", "new_message"]),
+                cast(Notification.extra_data["conversation_id"], String) == str(lead.conversation_id),
+            )
+            .values(is_read=True, read_at=dt.utcnow())
+        )
+        await db.commit()
+
     return LeadResponse(
         id=lead.id,
         tenant_id=lead.tenant_id,
@@ -307,6 +349,7 @@ async def get_lead(
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
         conv_channel=conv_channel,
+        unread_count=0,  # Just viewed, so 0
     )
 
 

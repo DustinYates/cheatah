@@ -219,23 +219,25 @@ async def list_leads(
     # Batch fetch unread notification counts per conversation_id
     unread_counts = {}
     if conv_ids:
-        from sqlalchemy import String, cast
+        from sqlalchemy import String, cast, literal_column
+        conv_id_expr = cast(Notification.extra_data["conversation_id"], String)
         unread_result = await db.execute(
             select(
-                cast(Notification.extra_data["conversation_id"], String).label("conv_id"),
+                conv_id_expr.label("conv_id"),
                 func.count(Notification.id).label("cnt"),
             )
             .where(
                 Notification.tenant_id == tenant_id,
                 Notification.is_read == False,
                 Notification.notification_type.in_(["inbound_contact", "new_message"]),
-                Notification.extra_data["conversation_id"].isnot(None),
+                conv_id_expr.isnot(None),
+                conv_id_expr != "null",
             )
-            .group_by(cast(Notification.extra_data["conversation_id"], String))
+            .group_by(conv_id_expr)
         )
         for row in unread_result.all():
             try:
-                unread_counts[int(row.conv_id)] = row.cnt
+                unread_counts[int(row.conv_id.strip('"'))] = row.cnt
             except (ValueError, TypeError):
                 pass
 

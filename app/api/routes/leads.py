@@ -95,11 +95,12 @@ class LeadMergeRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     """Message response model."""
-    
+
     id: int
     role: str
     content: str
     created_at: str
+    sequence_number: int | None = None
 
     class Config:
         from_attributes = True
@@ -380,6 +381,7 @@ async def get_lead_conversation(
                         role=msg.role,
                         content=msg.content,
                         created_at=_isoformat_utc(msg.created_at),
+                        sequence_number=msg.sequence_number,
                     )
                     for msg in conv.messages
                 ],

@@ -195,7 +195,7 @@ function MessageDetails({ details }) {
       <div className="timeline-details-content">
         <div className="detail-section">
           <div className="conversation-messages">
-            {[...details.messages].reverse().map((msg, idx) => (
+            {details.messages.map((msg, idx) => (
               <div key={idx} className={`conversation-message ${msg.role}`}>
                 <div className="conversation-message-header">
                   <span className="conversation-message-role">

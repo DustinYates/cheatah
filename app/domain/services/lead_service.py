@@ -430,6 +430,48 @@ class LeadService:
         await self.session.refresh(lead)
         return lead
 
+    async def add_custom_tag(
+        self, tenant_id: int, lead_id: int, tag: str
+    ) -> Lead | None:
+        """Append a custom tag to a lead (dedup, trimmed, max 32 chars)."""
+        value = (tag or "").strip()
+        if not value:
+            return None
+        value = value[:32]
+
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            return None
+
+        current = list(lead.custom_tags or [])
+        if not any(existing.lower() == value.lower() for existing in current if isinstance(existing, str)):
+            current.append(value)
+        lead.custom_tags = current
+        await self.session.commit()
+        await self.session.refresh(lead)
+        return lead
+
+    async def remove_custom_tag(
+        self, tenant_id: int, lead_id: int, tag: str
+    ) -> Lead | None:
+        """Remove a custom tag from a lead (case-insensitive match)."""
+        target = (tag or "").strip().lower()
+        if not target:
+            return None
+
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            return None
+
+        current = [
+            t for t in (lead.custom_tags or [])
+            if not (isinstance(t, str) and t.strip().lower() == target)
+        ]
+        lead.custom_tags = current
+        await self.session.commit()
+        await self.session.refresh(lead)
+        return lead
+
     async def update_lead_notes(
         self, tenant_id: int, lead_id: int, notes: str | None
     ) -> Lead | None:

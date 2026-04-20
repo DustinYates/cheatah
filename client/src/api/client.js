@@ -342,6 +342,19 @@ class ApiClient {
     });
   }
 
+  async addLeadTag(leadId, tag) {
+    return this.request(`/leads/${leadId}/tags`, {
+      method: 'POST',
+      body: JSON.stringify({ tag }),
+    });
+  }
+
+  async removeLeadTag(leadId, tag) {
+    return this.request(`/leads/${leadId}/tags/${encodeURIComponent(tag)}`, {
+      method: 'DELETE',
+    });
+  }
+
   // --- Lead Tasks ---
 
   async getLeadTasks(leadId) {

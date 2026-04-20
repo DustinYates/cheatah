@@ -31,6 +31,7 @@ class Lead(Base):
     pipeline_stage = Column(String(50), nullable=True, default='new_lead', index=True)
     notes = Column(Text, nullable=True)
     extra_data = Column(JSON, nullable=True)
+    custom_tags = Column(JSON, nullable=True, default=list)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

@@ -4,13 +4,14 @@ from typing import Annotated
 from datetime import timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy import select, func
 
 from app.api.deps import get_current_user, require_tenant_context
 from app.domain.services.lead_service import LeadService
+from app.domain.services.lead_tagger import derive_tags
 from app.domain.services.conversation_service import ConversationService
 from app.domain.services.followup_service import FollowUpService
 from app.persistence.database import get_db
@@ -51,6 +52,13 @@ class LeadResponse(BaseModel):
     pending_task_count: int = 0
     next_task_due: str | None = None  # ISO date of earliest pending task due date
     unread_count: int = 0  # Unread notification count for this lead's conversation
+
+    custom_tags: list[str] = []
+
+    @computed_field
+    @property
+    def tags(self) -> list[dict]:
+        return derive_tags(self.extra_data, self.custom_tags)
 
     class Config:
         from_attributes = True
@@ -93,6 +101,12 @@ class LeadMergeRequest(BaseModel):
     """Lead merge request."""
 
     secondary_lead_id: int
+
+
+class LeadTagAdd(BaseModel):
+    """Request body to add a custom tag to a lead."""
+
+    tag: str
 
 
 class MessageResponse(BaseModel):
@@ -274,6 +288,7 @@ async def list_leads(
                 pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
                 notes=lead.notes if hasattr(lead, 'notes') else None,
                 extra_data=lead.extra_data,
+                custom_tags=list(lead.custom_tags or []),
                 created_at=_isoformat_utc(lead.created_at),
                 updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
                 llm_responded=llm_responded,
@@ -347,6 +362,7 @@ async def get_lead(
         pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
+        custom_tags=list(lead.custom_tags or []),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -474,6 +490,7 @@ async def update_lead_status(
         pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
+        custom_tags=list(lead.custom_tags or []),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -526,6 +543,7 @@ async def update_lead_pipeline_stage(
         pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
+        custom_tags=list(lead.custom_tags or []),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -563,6 +581,73 @@ async def update_lead_notes(
         pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
+        custom_tags=list(lead.custom_tags or []),
+        created_at=_isoformat_utc(lead.created_at),
+        updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
+        llm_responded=llm_responded,
+    )
+
+
+@router.post("/{lead_id}/tags", response_model=LeadResponse)
+async def add_lead_tag(
+    lead_id: int,
+    payload: LeadTagAdd,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> LeadResponse:
+    """Add a custom tag to a lead."""
+    lead_service = LeadService(db)
+    lead = await lead_service.add_custom_tag(tenant_id, lead_id, payload.tag)
+    if not lead:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+
+    llm_responded = await _check_llm_responded(db, lead.conversation_id)
+    return LeadResponse(
+        id=lead.id,
+        tenant_id=lead.tenant_id,
+        conversation_id=lead.conversation_id,
+        name=lead.name,
+        email=lead.email,
+        phone=lead.phone,
+        status=lead.status if hasattr(lead, 'status') else None,
+        pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
+        notes=lead.notes if hasattr(lead, 'notes') else None,
+        extra_data=lead.extra_data,
+        custom_tags=list(lead.custom_tags or []),
+        created_at=_isoformat_utc(lead.created_at),
+        updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
+        llm_responded=llm_responded,
+    )
+
+
+@router.delete("/{lead_id}/tags/{tag}", response_model=LeadResponse)
+async def remove_lead_tag(
+    lead_id: int,
+    tag: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> LeadResponse:
+    """Remove a custom tag from a lead."""
+    lead_service = LeadService(db)
+    lead = await lead_service.remove_custom_tag(tenant_id, lead_id, tag)
+    if not lead:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+
+    llm_responded = await _check_llm_responded(db, lead.conversation_id)
+    return LeadResponse(
+        id=lead.id,
+        tenant_id=lead.tenant_id,
+        conversation_id=lead.conversation_id,
+        name=lead.name,
+        email=lead.email,
+        phone=lead.phone,
+        status=lead.status if hasattr(lead, 'status') else None,
+        pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
+        notes=lead.notes if hasattr(lead, 'notes') else None,
+        extra_data=lead.extra_data,
+        custom_tags=list(lead.custom_tags or []),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -606,6 +691,7 @@ async def update_lead(
         pipeline_stage=lead.pipeline_stage if hasattr(lead, 'pipeline_stage') else None,
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
+        custom_tags=list(lead.custom_tags or []),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -874,6 +960,7 @@ async def get_related_leads(
                 status=rel_lead.status if hasattr(rel_lead, 'status') else None,
                 pipeline_stage=rel_lead.pipeline_stage if hasattr(rel_lead, 'pipeline_stage') else None,
                 extra_data=rel_lead.extra_data,
+                custom_tags=list(rel_lead.custom_tags or []),
                 created_at=_isoformat_utc(rel_lead.created_at),
                 updated_at=_isoformat_utc(rel_lead.updated_at) if rel_lead.updated_at else None,
                 llm_responded=llm_responded,
@@ -991,6 +1078,7 @@ async def merge_leads(
         pipeline_stage=primary_lead.pipeline_stage if hasattr(primary_lead, 'pipeline_stage') else None,
         notes=primary_lead.notes if hasattr(primary_lead, 'notes') else None,
         extra_data=primary_lead.extra_data,
+        custom_tags=list(primary_lead.custom_tags or []),
         created_at=_isoformat_utc(primary_lead.created_at),
         updated_at=_isoformat_utc(primary_lead.updated_at) if primary_lead.updated_at else None,
         llm_responded=llm_responded,

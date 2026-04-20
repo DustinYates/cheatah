@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Phone, MessageSquare, Bot, Mail, Calendar, X, StickyNote, Check, Loader2, ListTodo, Trash2, Plus, Send } from 'lucide-react';
+import { Phone, MessageSquare, Bot, Mail, Calendar, X, StickyNote, Check, Loader2, ListTodo, Trash2, Plus, Send, User, MapPin, Waves, GraduationCap, Megaphone, Sparkles, BarChart3 } from 'lucide-react';
 import { api } from '../api/client';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
@@ -8,6 +8,17 @@ import TimelineItem from './TimelineItem';
 import SendSmsModal from './SendSmsModal';
 import LoadingState from './ui/LoadingState';
 import './LeadDetailsModal.css';
+
+const TAG_ICONS = {
+  audience: User,
+  zip: MapPin,
+  location: Waves,
+  class: GraduationCap,
+  lesson_type: GraduationCap,
+  source: Megaphone,
+  heard_via: Sparkles,
+  utm: BarChart3,
+};
 
 /**
  * LeadDetailsModal Component
@@ -22,6 +33,12 @@ export default function LeadDetailsModal({ lead, onClose }) {
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
   const notesRef = useRef(null);
+
+  // Tag state
+  const [tagList, setTagList] = useState(Array.isArray(lead.tags) ? lead.tags : []);
+  const [customTags, setCustomTags] = useState(Array.isArray(lead.custom_tags) ? lead.custom_tags : []);
+  const [newTag, setNewTag] = useState('');
+  const [tagSaving, setTagSaving] = useState(false);
 
   // SMS modal state
   const [showSmsModal, setShowSmsModal] = useState(false);
@@ -97,6 +114,40 @@ export default function LeadDetailsModal({ lead, onClose }) {
   };
 
   const notesChanged = notes !== (lead.notes || '');
+
+  const handleAddTag = async () => {
+    const value = newTag.trim();
+    if (!value || tagSaving) return;
+    setTagSaving(true);
+    try {
+      const updated = await api.addLeadTag(lead.id, value);
+      setTagList(Array.isArray(updated.tags) ? updated.tags : tagList);
+      setCustomTags(Array.isArray(updated.custom_tags) ? updated.custom_tags : customTags);
+      lead.tags = updated.tags;
+      lead.custom_tags = updated.custom_tags;
+      setNewTag('');
+    } catch (err) {
+      console.error('Failed to add tag:', err);
+    } finally {
+      setTagSaving(false);
+    }
+  };
+
+  const handleRemoveTag = async (tagValue) => {
+    if (tagSaving) return;
+    setTagSaving(true);
+    try {
+      const updated = await api.removeLeadTag(lead.id, tagValue);
+      setTagList(Array.isArray(updated.tags) ? updated.tags : tagList);
+      setCustomTags(Array.isArray(updated.custom_tags) ? updated.custom_tags : customTags);
+      lead.tags = updated.tags;
+      lead.custom_tags = updated.custom_tags;
+    } catch (err) {
+      console.error('Failed to remove tag:', err);
+    } finally {
+      setTagSaving(false);
+    }
+  };
 
   // Task handlers
   const handleAddTask = async () => {
@@ -260,6 +311,50 @@ export default function LeadDetailsModal({ lead, onClose }) {
               )}
             </div>
           )}
+
+          <div className="lead-tags">
+            {tagList.map((tag, idx) => {
+              const Icon = TAG_ICONS[tag.category] || Sparkles;
+              return (
+                <span
+                  key={`${tag.category}-${idx}-${tag.value}`}
+                  className={`lead-tag lead-tag--${tag.category}${tag.editable ? ' lead-tag--editable' : ''}`}
+                  title={`${tag.label}: ${tag.value}`}
+                >
+                  <Icon size={12} className="lead-tag__icon" strokeWidth={2.25} />
+                  <span className="lead-tag__value">{tag.value}</span>
+                  {tag.editable && (
+                    <button
+                      type="button"
+                      className="lead-tag__remove"
+                      onClick={() => handleRemoveTag(tag.value)}
+                      disabled={tagSaving}
+                      aria-label={`Remove ${tag.value}`}
+                    >
+                      <X size={10} strokeWidth={2.5} />
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+            <form
+              className="lead-tag-add"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleAddTag();
+              }}
+            >
+              <input
+                type="text"
+                className="lead-tag-add__input"
+                placeholder="+ Add tag"
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                maxLength={32}
+                disabled={tagSaving}
+              />
+            </form>
+          </div>
         </div>
 
         {/* Notes Section */}

@@ -621,6 +621,10 @@ export default function Dashboard() {
 
   const handleViewDetails = (lead) => {
     setSelectedLead(lead);
+    if (lead.unread_count > 0) {
+      lead.unread_count = 0;
+      api.getLead(lead.id).catch(() => {});
+    }
   };
 
   const handleOpenNotes = (lead, e) => {
@@ -1443,6 +1447,9 @@ export default function Dashboard() {
                       <div className="lead-person">
                         <div className="lead-person__name-row">
                           <span className="lead-person__name">{formatName(lead.name)}</span>
+                          {lead.unread_count > 0 && (
+                            <span className="lead-person__unread-badge">{lead.unread_count}</span>
+                          )}
                           {lead.pipeline_stage && (
                             <span
                               className="pipeline-badge"

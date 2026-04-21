@@ -1712,6 +1712,93 @@ DEFAULT_WEB_MINUTES_PER_MESSAGE = 1.0
 DEFAULT_INCLUDE_WEB_CHAT_IN_TOTAL = False
 
 
+async def _fetch_verified_customers(
+    db: AsyncSession, tenant_id: int
+) -> list[tuple[Customer, str]]:
+    """Return verified-enrollment customers paired with how they matched.
+
+    A customer is "verified" when their phone or email matches a Contact
+    (for the same tenant) who has actually engaged with the bot — sent a
+    user-role chat message or completed a call with non-zero duration.
+    Contacts that only received drip/follow-up sends don't count.
+
+    Returns a list of (Customer, matched_via) where matched_via is
+    "phone" or "email". Phone match wins if both apply.
+    """
+    has_chat_engagement = (
+        select(Message.id)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.contact_id == Contact.id,
+            Conversation.tenant_id == tenant_id,
+            Message.role == "user",
+        )
+        .correlate(Contact)
+        .exists()
+    )
+    has_call_engagement = (
+        select(Call.id)
+        .where(
+            Call.from_number == Contact.phone,
+            Call.tenant_id == tenant_id,
+            Contact.phone.isnot(None),
+            Call.duration > 0,
+        )
+        .correlate(Contact)
+        .exists()
+    )
+    _norm_contact_phone = func.right(
+        func.regexp_replace(Contact.phone, '[^0-9]', '', 'g'), 10
+    )
+    _norm_customer_phone = func.right(
+        func.regexp_replace(Customer.phone, '[^0-9]', '', 'g'), 10
+    )
+    phone_match = (
+        select(Contact.id)
+        .where(
+            Contact.tenant_id == tenant_id,
+            Contact.phone.isnot(None),
+            _norm_contact_phone == _norm_customer_phone,
+            Contact.deleted_at.is_(None),
+            Contact.merged_into_contact_id.is_(None),
+            has_chat_engagement | has_call_engagement,
+        )
+        .correlate(Customer)
+        .exists()
+    )
+    email_match = (
+        select(Contact.id)
+        .where(
+            Contact.tenant_id == tenant_id,
+            Contact.email.isnot(None),
+            Customer.email.isnot(None),
+            func.lower(Contact.email) == func.lower(Customer.email),
+            Contact.deleted_at.is_(None),
+            Contact.merged_into_contact_id.is_(None),
+            has_chat_engagement | has_call_engagement,
+        )
+        .correlate(Customer)
+        .exists()
+    )
+    phone_stmt = select(Customer).where(
+        Customer.tenant_id == tenant_id, phone_match
+    )
+    phone_result = await db.execute(phone_stmt)
+    phone_customers = {c.id: c for c in phone_result.scalars().all()}
+
+    email_stmt = select(Customer).where(
+        Customer.tenant_id == tenant_id,
+        email_match,
+        Customer.id.notin_(phone_customers.keys()) if phone_customers else True,
+    )
+    email_result = await db.execute(email_stmt)
+    email_customers = {c.id: c for c in email_result.scalars().all()}
+
+    return [(c, "phone") for c in phone_customers.values()] + [
+        (c, "email") for c in email_customers.values()
+    ]
+
+
 @router.get("/savings", response_model=SavingsAnalyticsResponse)
 async def get_savings_analytics(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -1845,76 +1932,9 @@ async def get_savings_analytics(
     # matches a contact who ACTUALLY ENGAGED with a bot (replied to chat,
     # called in, or sent an SMS). Contacts who only received auto-sent
     # drip/follow-up messages but never responded do NOT count.
-    has_chat_engagement = (
-        select(Message.id)
-        .join(Conversation, Message.conversation_id == Conversation.id)
-        .where(
-            Conversation.contact_id == Contact.id,
-            Conversation.tenant_id == ctx.tenant_id,
-            Message.role == "user",
-        )
-        .correlate(Contact)
-        .exists()
-    )
-    has_call_engagement = (
-        select(Call.id)
-        .where(
-            Call.from_number == Contact.phone,
-            Call.tenant_id == ctx.tenant_id,
-            Contact.phone.isnot(None),
-            Call.duration > 0,
-        )
-        .correlate(Contact)
-        .exists()
-    )
-    # Normalize phones to last 10 digits for comparison (handles E.164 vs display format)
-    _norm_contact_phone = func.right(
-        func.regexp_replace(Contact.phone, '[^0-9]', '', 'g'), 10
-    )
-    _norm_customer_phone = func.right(
-        func.regexp_replace(Customer.phone, '[^0-9]', '', 'g'), 10
-    )
-    contact_phone_exists = (
-        select(Contact.id)
-        .where(
-            Contact.tenant_id == ctx.tenant_id,
-            Contact.phone.isnot(None),
-            _norm_contact_phone == _norm_customer_phone,
-            Contact.deleted_at.is_(None),
-            Contact.merged_into_contact_id.is_(None),
-            has_chat_engagement | has_call_engagement,
-        )
-        .correlate(Customer)
-        .exists()
-    )
-    contact_email_exists = (
-        select(Contact.id)
-        .where(
-            Contact.tenant_id == ctx.tenant_id,
-            Contact.email.isnot(None),
-            Customer.email.isnot(None),
-            func.lower(Contact.email) == func.lower(Customer.email),
-            Contact.deleted_at.is_(None),
-            Contact.merged_into_contact_id.is_(None),
-            has_chat_engagement | has_call_engagement,
-        )
-        .correlate(Customer)
-        .exists()
-    )
-    enrollment_stmt = (
-        select(
-            func.count(func.distinct(Customer.id)).label("verified_count"),
-            func.count(func.distinct(Customer.phone)).label("verified_phones"),
-        )
-        .where(
-            Customer.tenant_id == ctx.tenant_id,
-            contact_phone_exists | contact_email_exists,
-        )
-    )
-    enrollment_result = await db.execute(enrollment_stmt)
-    enrollment_row = enrollment_result.one()
-    verified_enrollments = int(enrollment_row.verified_count or 0)
-    verified_phones = int(enrollment_row.verified_phones or 0)
+    verified_customers = await _fetch_verified_customers(db, ctx.tenant_id)
+    verified_enrollments = len(verified_customers)
+    verified_phones = len({c.phone for c, _via in verified_customers if c.phone})
 
     # Build assumptions object to return with response
     assumptions = SavingsAssumptions(
@@ -1988,87 +2008,7 @@ async def get_verified_enrollments(
     tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> VerifiedEnrollmentsResponse:
     """Return the detailed list of customers counted as verified enrollments."""
-    # Same engagement filters as the savings endpoint
-    has_chat_engagement = (
-        select(Message.id)
-        .join(Conversation, Message.conversation_id == Conversation.id)
-        .where(
-            Conversation.contact_id == Contact.id,
-            Conversation.tenant_id == tenant_id,
-            Message.role == "user",
-        )
-        .correlate(Contact)
-        .exists()
-    )
-    has_call_engagement = (
-        select(Call.id)
-        .where(
-            Call.from_number == Contact.phone,
-            Call.tenant_id == tenant_id,
-            Contact.phone.isnot(None),
-            Call.duration > 0,
-        )
-        .correlate(Contact)
-        .exists()
-    )
-    _norm_contact_phone = func.right(
-        func.regexp_replace(Contact.phone, '[^0-9]', '', 'g'), 10
-    )
-    _norm_customer_phone = func.right(
-        func.regexp_replace(Customer.phone, '[^0-9]', '', 'g'), 10
-    )
-
-    # Phone-matched customers
-    phone_match = (
-        select(Contact.id)
-        .where(
-            Contact.tenant_id == tenant_id,
-            Contact.phone.isnot(None),
-            _norm_contact_phone == _norm_customer_phone,
-            Contact.deleted_at.is_(None),
-            Contact.merged_into_contact_id.is_(None),
-            has_chat_engagement | has_call_engagement,
-        )
-        .correlate(Customer)
-        .exists()
-    )
-    # Email-matched customers
-    email_match = (
-        select(Contact.id)
-        .where(
-            Contact.tenant_id == tenant_id,
-            Contact.email.isnot(None),
-            Customer.email.isnot(None),
-            func.lower(Contact.email) == func.lower(Customer.email),
-            Contact.deleted_at.is_(None),
-            Contact.merged_into_contact_id.is_(None),
-            has_chat_engagement | has_call_engagement,
-        )
-        .correlate(Customer)
-        .exists()
-    )
-
-    # Fetch customers matched by phone
-    phone_stmt = (
-        select(Customer)
-        .where(Customer.tenant_id == tenant_id, phone_match)
-    )
-    phone_result = await db.execute(phone_stmt)
-    phone_customers = {c.id: ("phone", c) for c in phone_result.scalars().all()}
-
-    # Fetch customers matched by email (that weren't already matched by phone)
-    email_stmt = (
-        select(Customer)
-        .where(
-            Customer.tenant_id == tenant_id,
-            email_match,
-            Customer.id.notin_(phone_customers.keys()) if phone_customers else True,
-        )
-    )
-    email_result = await db.execute(email_stmt)
-    email_customers = {c.id: ("email", c) for c in email_result.scalars().all()}
-
-    all_matches = {**phone_customers, **email_customers}
+    matches = await _fetch_verified_customers(db, tenant_id)
     details = [
         VerifiedEnrollmentDetail(
             customer_id=c.id,
@@ -2078,7 +2018,7 @@ async def get_verified_enrollments(
             status=c.status,
             matched_via=via,
         )
-        for cid, (via, c) in sorted(all_matches.items(), key=lambda x: x[1][1].name or "")
+        for c, via in sorted(matches, key=lambda x: x[0].name or "")
     ]
     return VerifiedEnrollmentsResponse(verified_enrollments=details, total=len(details))
 

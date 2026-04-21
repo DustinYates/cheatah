@@ -633,27 +633,28 @@ export default function SavingsAnalytics() {
             <div className="metric-row">
               <span className="metric-label">
                 Registration Links Sent
-                <span className="info-icon" data-tooltip="Total registration links sent to prospective customers by the AI assistant.">i</span>
+                <span className="info-icon" data-tooltip="Registration links sent by the AI in this date range. Deduplicated — a repeat send to the same phone is not counted twice.">i</span>
               </span>
               <span className="metric-value">{formatNumber(data.conversions.total_links_sent)}</span>
             </div>
             <div className="metric-row">
               <span className="metric-label">
                 Unique Phone Numbers
-                <span className="info-icon" data-tooltip="Number of distinct phone numbers that received at least one registration link.">i</span>
+                <span className="info-icon" data-tooltip="Distinct phone numbers that received at least one registration link.">i</span>
               </span>
               <span className="metric-value">{formatNumber(data.conversions.unique_phones_sent)}</span>
             </div>
-            {data.conversions.by_asset_type && Object.keys(data.conversions.by_asset_type).length > 0 && (
-              <>
-                {Object.entries(data.conversions.by_asset_type).map(([type, count]) => (
-                  <div className="metric-row" key={type}>
-                    <span className="metric-label">{type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
-                    <span className="metric-value">{formatNumber(count)}</span>
-                  </div>
-                ))}
-              </>
-            )}
+            {data.conversions.by_asset_type &&
+              Object.keys(data.conversions.by_asset_type).length > 1 && (
+                <>
+                  {Object.entries(data.conversions.by_asset_type).map(([type, count]) => (
+                    <div className="metric-row" key={type}>
+                      <span className="metric-label">{type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
+                      <span className="metric-value">{formatNumber(count)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
             <VerifiedConversionsRow count={data.conversions.verified_enrollments || 0} />
           </div>
           <ExportButtons />

@@ -121,9 +121,6 @@ const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/
                 <li>
                   <NavLink to="/analytics/savings">Savings</NavLink>
                 </li>
-                <li>
-                  <NavLink to="/analytics/health">Health</NavLink>
-                </li>
 {user?.is_global_admin && (
                   <li>
                     <NavLink to="/analytics/topics">Topics</NavLink>

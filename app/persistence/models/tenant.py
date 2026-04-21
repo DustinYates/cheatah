@@ -35,6 +35,13 @@ class Tenant(Base):
     call_minutes_limit = Column(Integer, nullable=True)  # Monthly call minutes quota (null = unlimited)
     sms_limit = Column(Integer, nullable=True)  # Monthly outbound SMS quota (null = unlimited)
 
+    # Stripe billing
+    stripe_customer_id = Column(String(255), unique=True, nullable=True, index=True)
+    stripe_subscription_id = Column(String(255), nullable=True)
+    subscription_status = Column(String(50), nullable=True)  # active, trialing, past_due, canceled, disabled
+    current_plan_price_id = Column(String(255), nullable=True)
+    current_period_end = Column(DateTime, nullable=True)
+
     # Soft delete support
     deleted_at = Column(DateTime, nullable=True)
     deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True)

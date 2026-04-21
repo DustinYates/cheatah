@@ -138,6 +138,11 @@ class Settings(BaseSettings):
     admin_alert_enabled: bool = True  # Master toggle for global alerts only
     admin_alert_error_threshold: int = 3  # Number of errors before alerting for service issues
 
+    # Stripe Billing
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    stripe_portal_return_url: str = "http://localhost:5173/billing"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -19,23 +19,6 @@ export default function Layout() {
   const location = useLocation();
   const [analyticsOpen, setAnalyticsOpen] = useState(location.pathname.startsWith('/analytics'));
 const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/settings'));
-  const [forumsOpen, setForumsOpen] = useState(location.pathname.startsWith('/forums'));
-  const [hasForumAccess, setHasForumAccess] = useState(false);
-
-  // Check if user has forum access
-  useEffect(() => {
-    const checkForumAccess = async () => {
-      try {
-        const forums = await api.getMyForums();
-        setHasForumAccess(forums && forums.length > 0);
-      } catch (err) {
-        setHasForumAccess(false);
-      }
-    };
-    if (user) {
-      checkForumAccess();
-    }
-  }, [user]);
 
   const handleLogout = () => {
     logout();
@@ -140,9 +123,6 @@ const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/
             )}
           </li>
           <li>
-            <NavLink to="/billing">Billing</NavLink>
-          </li>
-          <li>
             <NavLink to="/support">Support</NavLink>
           </li>
           <li className="nav-section">
@@ -220,29 +200,14 @@ const [settingsOpen, setSettingsOpen] = useState(location.pathname.startsWith('/
               </ul>
             )}
           </li>
-          {hasForumAccess && (
-            <li className="nav-section">
-              <button
-                className={`nav-section-toggle ${forumsOpen ? 'open' : ''}`}
-                onClick={() => setForumsOpen(!forumsOpen)}
-              >
-                Forums
-                <span className={`toggle-chevron ${forumsOpen ? 'open' : ''}`}>&#x203A;</span>
-              </button>
-              {forumsOpen && (
-                <ul className="nav-submenu">
-                  <li>
-                    <NavLink to="/forums">Browse Forums</NavLink>
-                  </li>
-                </ul>
-              )}
-            </li>
-          )}
           {user?.is_global_admin && !selectedTenantId && (
             <li>
               <NavLink to="/admin/tenants">Manage Tenants</NavLink>
             </li>
           )}
+          <li>
+            <NavLink to="/billing">Billing</NavLink>
+          </li>
         </ul>
         <div className="notification-bell-wrapper">
           <button

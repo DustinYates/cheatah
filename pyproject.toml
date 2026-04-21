@@ -49,6 +49,7 @@ dependencies = [
     "httpx>=0.25.0",
     # Error Tracking
     "sentry-sdk[fastapi]>=1.39.0",
+    "stripe>=15.0.1",
 ]
 
 [project.optional-dependencies]

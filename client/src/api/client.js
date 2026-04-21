@@ -256,6 +256,27 @@ class ApiClient {
     return this.request(`/analytics/billing${query ? `?${query}` : ''}`);
   }
 
+  async getBillingPlans() {
+    return this.request('/billing/plans');
+  }
+
+  async getBillingSubscription() {
+    return this.request('/billing/subscription');
+  }
+
+  async createBillingCheckoutSession(priceId) {
+    return this.request('/billing/checkout-session', {
+      method: 'POST',
+      body: JSON.stringify({ price_id: priceId }),
+    });
+  }
+
+  async createBillingPortalSession() {
+    return this.request('/billing/portal-session', {
+      method: 'POST',
+    });
+  }
+
   // Voice A/B Test endpoints
   async getVoiceABTestAnalytics(params = {}) {
     const query = new URLSearchParams(params).toString();

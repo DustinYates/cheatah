@@ -110,6 +110,35 @@ function DailyChart({ data, dataKey, label, color, formatValue }) {
   );
 }
 
+function formatCurrency(cents) {
+  if (cents == null) return '—';
+  return `$${(cents / 100).toFixed(0)}`;
+}
+
+function formatDate(iso) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  } catch {
+    return iso;
+  }
+}
+
+function statusLabel(status) {
+  if (!status) return 'No active plan';
+  const map = {
+    active: 'Active',
+    trialing: 'Trial',
+    past_due: 'Past due',
+    canceled: 'Canceled',
+    disabled: 'Disabled',
+    incomplete: 'Incomplete',
+    incomplete_expired: 'Expired',
+    unpaid: 'Unpaid',
+  };
+  return map[status] || status;
+}
+
 export default function UsageBilling() {
   const { user, effectiveTenantId } = useAuth();
   const now = new Date();
@@ -119,7 +148,15 @@ export default function UsageBilling() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const [subscription, setSubscription] = useState(null);
+  const [plans, setPlans] = useState([]);
+  const [subLoading, setSubLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [returnNotice, setReturnNotice] = useState(null);
+
   const needsTenant = user?.is_global_admin && !effectiveTenantId;
+  const isTenantAdmin = user?.role === 'admin' || user?.role === 'tenant_admin' || user?.is_global_admin;
 
   const fetchData = useCallback(async () => {
     if (needsTenant) return;
@@ -134,6 +171,38 @@ export default function UsageBilling() {
       setLoading(false);
     }
   }, [year, month, needsTenant, effectiveTenantId]);
+
+  const fetchSubscription = useCallback(async () => {
+    if (needsTenant) return;
+    setSubLoading(true);
+    try {
+      const [sub, planList] = await Promise.all([
+        api.getBillingSubscription(),
+        api.getBillingPlans(),
+      ]);
+      setSubscription(sub);
+      setPlans(planList || []);
+    } catch (err) {
+      console.error('Failed to load billing subscription/plans', err);
+    } finally {
+      setSubLoading(false);
+    }
+  }, [needsTenant, effectiveTenantId]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get('session');
+    if (session === 'success') {
+      setReturnNotice({ type: 'success', text: 'Subscription updated. Changes may take a moment to appear.' });
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (session === 'cancel') {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSubscription();
+  }, [fetchSubscription]);
 
   useEffect(() => {
     fetchData();
@@ -160,6 +229,32 @@ export default function UsageBilling() {
   };
 
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+
+  const handleSelectPlan = async (priceId) => {
+    if (!isTenantAdmin) return;
+    setActionLoading(priceId);
+    setActionError(null);
+    try {
+      const { url } = await api.createBillingCheckoutSession(priceId);
+      window.location.href = url;
+    } catch (err) {
+      setActionError(err.message || 'Could not start checkout');
+      setActionLoading(null);
+    }
+  };
+
+  const handleManage = async () => {
+    if (!isTenantAdmin) return;
+    setActionLoading('portal');
+    setActionError(null);
+    try {
+      const { url } = await api.createBillingPortalSession();
+      window.location.href = url;
+    } catch (err) {
+      setActionError(err.message || 'Could not open billing portal');
+      setActionLoading(null);
+    }
+  };
 
   if (needsTenant) {
     return (
@@ -221,6 +316,149 @@ export default function UsageBilling() {
           </button>
         </div>
       </div>
+
+      {returnNotice && (
+        <div className={`billing-notice billing-notice-${returnNotice.type}`}>
+          {returnNotice.text}
+        </div>
+      )}
+
+      {subscription?.subscription_status === 'past_due' && (
+        <div className="billing-notice billing-notice-error">
+          <strong>Payment failed.</strong> Update your payment method to avoid service interruption.
+          {isTenantAdmin && (
+            <button className="billing-link-btn" onClick={handleManage} disabled={actionLoading === 'portal'}>
+              Update payment method
+            </button>
+          )}
+        </div>
+      )}
+
+      {actionError && (
+        <div className="billing-notice billing-notice-error">{actionError}</div>
+      )}
+
+      <div className="billing-account-cards">
+        <div className="billing-account-card">
+          <div className="billing-account-card-header">
+            <h3>Current Plan</h3>
+            {subscription?.subscription_status && (
+              <span className={`billing-status-badge billing-status-${subscription.subscription_status}`}>
+                {statusLabel(subscription.subscription_status)}
+              </span>
+            )}
+          </div>
+          {subLoading ? (
+            <p className="billing-muted">Loading…</p>
+          ) : subscription?.tier ? (
+            <>
+              <div className="billing-tier-name">{subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1)}</div>
+              {subscription.current_period_end && (
+                <p className="billing-muted">
+                  {subscription.subscription_status === 'trialing' ? 'Trial ends ' : 'Renews '}
+                  {formatDate(subscription.current_period_end)}
+                </p>
+              )}
+              {isTenantAdmin && (
+                <button
+                  className="billing-secondary-btn"
+                  onClick={handleManage}
+                  disabled={actionLoading === 'portal'}
+                >
+                  {actionLoading === 'portal' ? 'Opening…' : 'Manage subscription'}
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="billing-muted">No active subscription.</p>
+              <p className="billing-muted billing-small">Choose a plan below to get started.</p>
+            </>
+          )}
+        </div>
+
+        <div className="billing-account-card">
+          <div className="billing-account-card-header">
+            <h3>Payment Method</h3>
+          </div>
+          {subLoading ? (
+            <p className="billing-muted">Loading…</p>
+          ) : subscription?.has_payment_method ? (
+            <>
+              <div className="billing-tier-name">
+                {subscription.payment_method_brand === 'ACH' ? 'Bank account' : (subscription.payment_method_brand || 'Card')}
+                {' '}•••• {subscription.payment_method_last4}
+              </div>
+              {isTenantAdmin && (
+                <button
+                  className="billing-secondary-btn"
+                  onClick={handleManage}
+                  disabled={actionLoading === 'portal'}
+                >
+                  Manage
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="billing-muted">No payment method on file.</p>
+              {subscription?.tier && isTenantAdmin && (
+                <button
+                  className="billing-secondary-btn"
+                  onClick={handleManage}
+                  disabled={actionLoading === 'portal'}
+                >
+                  Add payment method
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {plans.length > 0 && (
+        <div className="billing-plans-section">
+          <h2 className="billing-section-title">Available Plans</h2>
+          <p className="billing-muted">ACH preferred — avoid card processing fees by paying with a bank account.</p>
+          <div className="billing-plans-grid">
+            {plans.map((plan) => {
+              const isCurrent = subscription?.current_plan_price_id === plan.price_id;
+              return (
+                <div key={plan.price_id} className={`billing-plan-card${isCurrent ? ' billing-plan-current' : ''}`}>
+                  <div className="billing-plan-name">{plan.name}</div>
+                  {plan.description && <p className="billing-plan-desc">{plan.description}</p>}
+                  <div className="billing-plan-price">
+                    {formatCurrency(plan.amount_cents)}<span className="billing-plan-interval">/mo</span>
+                  </div>
+                  <ul className="billing-plan-features">
+                    {plan.sms_limit > 0 && <li>{plan.sms_limit.toLocaleString()} SMS messages/mo</li>}
+                    {plan.sms_limit === 0 && <li>No SMS</li>}
+                    {plan.call_minutes_limit > 0 && <li>{plan.call_minutes_limit} voice minutes/mo</li>}
+                    {plan.call_minutes_limit === 0 && <li>No voice agent</li>}
+                    {plan.trial_days > 0 && <li><strong>{plan.trial_days}-day free trial</strong></li>}
+                  </ul>
+                  {isCurrent ? (
+                    <button className="billing-primary-btn" disabled>Current plan</button>
+                  ) : (
+                    <button
+                      className="billing-primary-btn"
+                      onClick={() => handleSelectPlan(plan.price_id)}
+                      disabled={!isTenantAdmin || actionLoading === plan.price_id}
+                    >
+                      {actionLoading === plan.price_id ? 'Loading…' : (subscription?.tier ? 'Switch plan' : 'Select')}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {!isTenantAdmin && (
+            <p className="billing-muted billing-small">Only tenant admins can change plans.</p>
+          )}
+        </div>
+      )}
+
+      <h2 className="billing-section-title">Usage</h2>
 
       <div className="billing-cards">
         <UsageProgressBar

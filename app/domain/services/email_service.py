@@ -275,7 +275,12 @@ class EmailService:
                         try:
                             from app.domain.services.drip_campaign_service import DripCampaignService
                             drip_service = DripCampaignService(self.session)
-                            campaign_type = drip_service.detect_campaign_type(subject, body)
+                            campaign_type = drip_service.detect_campaign_type(
+                                subject,
+                                body,
+                                lead_extra_data=lead.extra_data,
+                                custom_tags=list(lead.custom_tags or []),
+                            )
                             context_data = {
                                 "first_name": extracted_info.get("name", "").split()[0] if extracted_info.get("name") else None,
                                 "email_subject": subject,

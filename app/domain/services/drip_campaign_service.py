@@ -436,8 +436,34 @@ class DripCampaignService:
     # ── Campaign Type Detection ──────────────────────────────────────────
 
     @staticmethod
-    def detect_campaign_type(email_subject: str | None, email_body: str | None) -> str:
-        """Detect whether to use kids or adults campaign based on email content."""
+    def detect_campaign_type(
+        email_subject: str | None = None,
+        email_body: str | None = None,
+        *,
+        lead_extra_data: dict | None = None,
+        custom_tags: list[str] | None = None,
+    ) -> str:
+        """Pick the kids vs adults campaign for a lead.
+
+        Prefers the audience derived from the lead's tags/extra_data (the
+        same logic that drives the UI tag pill). Falls back to email text
+        keywords, then defaults to 'kids'.
+        """
+        from app.domain.services.lead_tagger import infer_audience
+
+        audience = infer_audience(lead_extra_data)
+        if audience == "Adult":
+            return "adults"
+        if audience in ("Child", "Child (under 3)"):
+            return "kids"
+
+        if custom_tags:
+            tag_text = " ".join(t for t in custom_tags if isinstance(t, str)).lower()
+            if "adult" in tag_text:
+                return "adults"
+            if any(kw in tag_text for kw in ("child", "kid", "under 3")):
+                return "kids"
+
         text = f"{email_subject or ''} {email_body or ''}".lower()
         adult_keywords = ["adult", "young adult", "grown up", "18+", "over 18"]
         if any(kw in text for kw in adult_keywords):

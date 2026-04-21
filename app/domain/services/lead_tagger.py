@@ -26,7 +26,7 @@ def derive_tags(
 
     tags: list[dict[str, Any]] = []
 
-    audience = _infer_audience(extra_data)
+    audience = infer_audience(extra_data)
     if audience:
         tags.append({"category": "audience", "label": "Audience", "value": audience})
 
@@ -95,7 +95,13 @@ def _first_nonempty(data: dict[str, Any], keys: list[str]) -> str | None:
     return None
 
 
-def _infer_audience(data: dict[str, Any]) -> str | None:
+def infer_audience(data: dict[str, Any] | None) -> str | None:
+    """Infer the lead's audience ('Adult', 'Child', 'Child (under 3)') from extra_data.
+
+    Returns None when nothing in extra_data indicates an audience.
+    """
+    if not isinstance(data, dict):
+        return None
     ad_title = (_first_nonempty(data, ["ad title", "ad_title", "ad name", "ad_name"]) or "").lower()
     if "adult" in ad_title:
         return "Adult"

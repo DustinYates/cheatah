@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Phone, MessageSquare, Bot, Mail, Calendar, X, StickyNote, Check, Loader2, ListTodo, Trash2, Plus, Send, User, MapPin, Waves, GraduationCap, Megaphone, Sparkles, BarChart3 } from 'lucide-react';
+import { Phone, MessageSquare, Bot, Mail, Calendar, X, StickyNote, Check, Loader2, ListTodo, Trash2, Plus, Send, User, MapPin, Waves, GraduationCap, Megaphone, Sparkles, BarChart3, ChevronDown } from 'lucide-react';
 import { api } from '../api/client';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
@@ -49,6 +49,10 @@ export default function LeadDetailsModal({ lead, onClose }) {
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
   const [taskAdding, setTaskAdding] = useState(false);
 
+  // Collapsible section state — default collapsed to give conversation more room
+  const [notesExpanded, setNotesExpanded] = useState(Boolean((lead.notes || '').trim()));
+  const [tasksExpanded, setTasksExpanded] = useState(false);
+
   // Fetch conversation data and build timeline
   useEffect(() => {
     const fetchTimelineData = async () => {
@@ -67,6 +71,9 @@ export default function LeadDetailsModal({ lead, onClose }) {
         try {
           const tasksData = await api.getLeadTasks(lead.id);
           setTasks(tasksData || []);
+          if (tasksData && tasksData.some((t) => !t.is_completed)) {
+            setTasksExpanded(true);
+          }
         } catch (taskErr) {
           console.warn('Failed to load tasks:', taskErr);
         }
@@ -358,55 +365,93 @@ export default function LeadDetailsModal({ lead, onClose }) {
         </div>
 
         {/* Notes Section */}
-        <div className="notes-section">
-          <div className="notes-header">
+        <div className={`notes-section ${notesExpanded ? 'expanded' : 'collapsed'}`}>
+          <div
+            className="notes-header section-header-toggle"
+            onClick={() => setNotesExpanded((v) => !v)}
+            role="button"
+            tabIndex={0}
+            aria-expanded={notesExpanded}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setNotesExpanded((v) => !v);
+              }
+            }}
+          >
             <StickyNote size={14} className="notes-icon" />
             <span className="notes-label">Notes</span>
-            <div className="notes-actions">
+            {!notesExpanded && (notes || '').trim() && (
+              <span className="section-preview">{notes}</span>
+            )}
+            <div className="notes-actions" onClick={(e) => e.stopPropagation()}>
               {notesSaved && (
                 <span className="notes-saved-indicator">
                   <Check size={12} />
                   Saved
                 </span>
               )}
-              {notesChanged && (
+              {notesChanged && notesExpanded && (
                 <button
                   className="notes-save-btn"
                   onClick={handleSaveNotes}
                   disabled={notesSaving}
+                  type="button"
                 >
                   {notesSaving ? <Loader2 size={12} className="spin" /> : 'Save'}
                 </button>
               )}
             </div>
+            <ChevronDown
+              size={14}
+              className={`section-chevron ${notesExpanded ? 'expanded' : ''}`}
+            />
           </div>
-          <textarea
-            ref={notesRef}
-            className="notes-textarea"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add notes about this lead..."
-            rows={3}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && notesChanged) {
-                handleSaveNotes();
-              }
-            }}
-          />
+          {notesExpanded && (
+            <textarea
+              ref={notesRef}
+              className="notes-textarea"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add notes about this lead..."
+              rows={3}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && notesChanged) {
+                  handleSaveNotes();
+                }
+              }}
+            />
+          )}
         </div>
 
         {/* Tasks Section */}
-        <div className="tasks-section">
-          <div className="tasks-header">
+        <div className={`tasks-section ${tasksExpanded ? 'expanded' : 'collapsed'}`}>
+          <div
+            className="tasks-header section-header-toggle"
+            onClick={() => setTasksExpanded((v) => !v)}
+            role="button"
+            tabIndex={0}
+            aria-expanded={tasksExpanded}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setTasksExpanded((v) => !v);
+              }
+            }}
+          >
             <ListTodo size={14} className="tasks-icon" />
             <span className="tasks-label">Tasks</span>
             <span className="tasks-count">
               {tasks.filter((t) => !t.is_completed).length}
             </span>
+            <ChevronDown
+              size={14}
+              className={`section-chevron ${tasksExpanded ? 'expanded' : ''}`}
+            />
           </div>
 
           {/* Task list */}
-          {tasks.length > 0 && (
+          {tasksExpanded && tasks.length > 0 && (
             <div className="tasks-list">
               {tasks.map((task) => (
                 <div
@@ -443,32 +488,34 @@ export default function LeadDetailsModal({ lead, onClose }) {
           )}
 
           {/* Add task form */}
-          <div className="task-add-form">
-            <input
-              type="text"
-              className="task-add-input"
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              placeholder="Add a task..."
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && newTaskTitle.trim()) handleAddTask();
-              }}
-            />
-            <input
-              type="date"
-              className="task-add-date"
-              value={newTaskDueDate}
-              onChange={(e) => setNewTaskDueDate(e.target.value)}
-            />
-            <button
-              className="task-add-btn"
-              onClick={handleAddTask}
-              disabled={!newTaskTitle.trim() || taskAdding}
-              type="button"
-            >
-              {taskAdding ? <Loader2 size={12} className="spin" /> : <Plus size={14} />}
-            </button>
-          </div>
+          {tasksExpanded && (
+            <div className="task-add-form">
+              <input
+                type="text"
+                className="task-add-input"
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                placeholder="Add a task..."
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newTaskTitle.trim()) handleAddTask();
+                }}
+              />
+              <input
+                type="date"
+                className="task-add-date"
+                value={newTaskDueDate}
+                onChange={(e) => setNewTaskDueDate(e.target.value)}
+              />
+              <button
+                className="task-add-btn"
+                onClick={handleAddTask}
+                disabled={!newTaskTitle.trim() || taskAdding}
+                type="button"
+              >
+                {taskAdding ? <Loader2 size={12} className="spin" /> : <Plus size={14} />}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Timeline Body */}

@@ -140,6 +140,22 @@ def _build_extra_data(
     elif hint == "child":
         extra["type of lessons"] = "Over 3"
 
+    # Promote qualifying-question answers to top-level keys so lead_tagger
+    # picks them up. Google sends the human label via column_name (or the
+    # snake-case-ish column_id when column_name is omitted). lead_tagger
+    # looks for keys like "how did you hear about us?", "type of lessons",
+    # "class code", "location code" — case-sensitive, so we mirror the
+    # original keys verbatim.
+    for key, value in flat.items():
+        if key in _KNOWN_COLUMN_IDS:
+            continue
+        # Skip keys that are pure column_id duplicates (uppercase).
+        if key.isupper() and "_" in key:
+            continue
+        # Don't overwrite already-set extra fields.
+        if key not in extra:
+            extra[key] = value
+
     # Drop None values to keep the JSON tidy.
     return {k: v for k, v in extra.items() if v is not None}
 

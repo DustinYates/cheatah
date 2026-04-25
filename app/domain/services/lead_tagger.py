@@ -85,8 +85,17 @@ def derive_tags(
 
 
 def _first_nonempty(data: dict[str, Any], keys: list[str]) -> str | None:
+    """Look up a value by trying the given keys, case-insensitively.
+
+    Google Ads / Zapier / chatbot extractors all spell qualifying-question
+    keys differently (Title Case, snake_case, lowercase), so we match on
+    a normalized form rather than exact bytes.
+    """
+    if not isinstance(data, dict):
+        return None
+    normalized = {str(k).strip().lower(): v for k, v in data.items()}
     for k in keys:
-        v = data.get(k)
+        v = normalized.get(k.strip().lower())
         if v is None:
             continue
         s = str(v).strip()

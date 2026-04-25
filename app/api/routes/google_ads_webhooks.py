@@ -334,18 +334,13 @@ async def google_ads_lead(
             status_code=200,
         )
 
-    # Drip enrollment — picks kids vs adults from extra_data via infer_audience.
+    # Drip enrollment — picks the best-matching campaign via audience + tag filters.
     if phone:
         try:
             drip_service = DripCampaignService(db)
-            campaign_type = DripCampaignService.detect_campaign_type(
-                lead_extra_data=extra_data,
-                custom_tags=lead.custom_tags,
-            )
-            await drip_service.enroll_lead(
+            await drip_service.enroll_lead_auto(
                 tenant_id=tenant_id,
                 lead_id=lead.id,
-                campaign_type=campaign_type,
                 context_data={
                     "first_name": name.split()[0] if name else "",
                     "source": "google_ads",

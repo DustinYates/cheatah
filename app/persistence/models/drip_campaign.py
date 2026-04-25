@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.persistence.database import Base
@@ -14,17 +15,18 @@ if TYPE_CHECKING:
 
 
 class DripCampaign(Base):
-    """Per-tenant drip campaign definition (e.g., Kids Registration, Adults Registration)."""
+    """Per-tenant drip campaign definition. Routed to leads by optional
+    audience and tag filters; tenants can define many campaigns per tenant."""
 
     __tablename__ = "drip_campaigns"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "campaign_type", name="uq_drip_campaign_tenant_type"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
-    campaign_type = Column(String(50), nullable=False)  # "kids" or "adults"
+    campaign_type = Column(String(50), nullable=False)  # legacy label ("kids"/"adults"/"custom")
+    audience_filter = Column(String(50), nullable=True)  # null/"any"/"adult"/"child"/"under_3"
+    tag_filter = Column(JSONB, nullable=True)  # list of tag values, all must match
+    priority = Column(Integer, nullable=False, default=100, server_default="100")
     is_enabled = Column(Boolean, default=False, nullable=False)
     trigger_delay_minutes = Column(Integer, default=10, nullable=False)
     response_templates = Column(JSON, nullable=True)  # Hardcoded response category templates

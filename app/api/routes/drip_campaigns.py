@@ -41,7 +41,10 @@ class DripStepResponse(BaseModel):
 
 class DripCampaignCreateRequest(BaseModel):
     name: str
-    campaign_type: str  # "kids" or "adults"
+    campaign_type: str = "custom"  # legacy label; "kids"/"adults"/"custom"
+    audience_filter: str | None = None  # null/"any"/"adult"/"child"/"under_3"
+    tag_filter: list[str] | None = None
+    priority: int = 100
     is_enabled: bool = False
     trigger_delay_minutes: int = 10
     response_templates: dict | None = None
@@ -50,6 +53,10 @@ class DripCampaignCreateRequest(BaseModel):
 
 class DripCampaignUpdateRequest(BaseModel):
     name: str | None = None
+    campaign_type: str | None = None
+    audience_filter: str | None = None
+    tag_filter: list[str] | None = None
+    priority: int | None = None
     is_enabled: bool | None = None
     trigger_delay_minutes: int | None = None
     response_templates: dict | None = None
@@ -60,6 +67,9 @@ class DripCampaignResponse(BaseModel):
     tenant_id: int
     name: str
     campaign_type: str
+    audience_filter: str | None = None
+    tag_filter: list[str] | None = None
+    priority: int = 100
     is_enabled: bool
     trigger_delay_minutes: int
     response_templates: dict | None
@@ -121,28 +131,21 @@ async def create_campaign(
     """Create a new drip campaign."""
     repo = DripCampaignRepository(db)
 
-    # Check for duplicate campaign type
-    existing = await repo.get_by_type(tenant_id, body.campaign_type)
-    if existing:
-        raise HTTPException(
-            status_code=409,
-            detail=f"A {body.campaign_type} campaign already exists for this tenant",
-        )
-
     campaign = await repo.create(
         tenant_id=tenant_id,
         name=body.name,
         campaign_type=body.campaign_type,
+        audience_filter=body.audience_filter,
+        tag_filter=body.tag_filter,
+        priority=body.priority,
         is_enabled=body.is_enabled,
         trigger_delay_minutes=body.trigger_delay_minutes,
         response_templates=body.response_templates,
     )
 
-    # Create steps
     if body.steps:
         await repo.upsert_steps(campaign.id, [s.model_dump() for s in body.steps])
 
-    # Reload with steps
     campaign = await repo.get_with_steps(tenant_id, campaign.id)
     return _campaign_to_response(campaign)
 
@@ -340,6 +343,9 @@ def _campaign_to_response(campaign) -> DripCampaignResponse:
         tenant_id=campaign.tenant_id,
         name=campaign.name,
         campaign_type=campaign.campaign_type,
+        audience_filter=campaign.audience_filter,
+        tag_filter=campaign.tag_filter or None,
+        priority=campaign.priority or 100,
         is_enabled=campaign.is_enabled,
         trigger_delay_minutes=campaign.trigger_delay_minutes,
         response_templates=campaign.response_templates,

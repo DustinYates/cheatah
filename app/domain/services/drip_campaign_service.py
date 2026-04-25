@@ -43,17 +43,33 @@ class DripCampaignService:
         campaign_type: str,
         context_data: dict | None = None,
     ) -> DripEnrollment | None:
-        """Enroll a lead in a drip campaign.
+        """Enroll a lead in a drip campaign by legacy type ('kids'/'adults').
 
-        Returns None if no matching campaign, campaign disabled, or already enrolled.
+        Returns None if no matching campaign, campaign disabled, or already
+        enrolled. Prefer enroll_lead_auto for new code paths.
         """
         campaign = await self.campaign_repo.get_by_type(tenant_id, campaign_type)
         if not campaign:
             logger.debug(f"No {campaign_type} campaign found for tenant {tenant_id}")
             return None
 
+        return await self._enroll_in_campaign(
+            tenant_id=tenant_id,
+            lead_id=lead_id,
+            campaign=campaign,
+            context_data=context_data,
+        )
+
+    async def _enroll_in_campaign(
+        self,
+        tenant_id: int,
+        lead_id: int,
+        campaign: DripCampaign,
+        context_data: dict | None = None,
+    ) -> DripEnrollment | None:
+        """Shared enrollment logic. Caller has already picked the campaign."""
         if not campaign.is_enabled:
-            logger.debug(f"Campaign {campaign.id} ({campaign_type}) is disabled for tenant {tenant_id}")
+            logger.debug(f"Campaign {campaign.id} ({campaign.name}) is disabled for tenant {tenant_id}")
             return None
 
         if not campaign.steps:
@@ -82,7 +98,6 @@ class DripCampaignService:
             )
             return None
 
-        # Create enrollment
         enrollment = DripEnrollment(
             tenant_id=tenant_id,
             campaign_id=campaign.id,
@@ -93,7 +108,6 @@ class DripCampaignService:
         )
         self.session.add(enrollment)
 
-        # Mark lead as drip enrolled (use dict() to trigger SQLAlchemy change detection)
         extra_data = dict(lead.extra_data or {})
         extra_data["drip_enrolled"] = True
         if "drip_enrollment_ids" not in extra_data:
@@ -102,13 +116,11 @@ class DripCampaignService:
         await self.session.commit()
         await self.session.refresh(enrollment)
 
-        # Update the enrollment IDs list now that we have the ID
         extra_data = dict(lead.extra_data or {})
         extra_data.setdefault("drip_enrollment_ids", []).append(enrollment.id)
         lead.extra_data = extra_data
         await self.session.commit()
 
-        # Schedule first step
         delay_minutes = campaign.trigger_delay_minutes or 10
         task_id = await self._schedule_step(enrollment, delay_minutes)
         if task_id:
@@ -117,7 +129,7 @@ class DripCampaignService:
             await self.session.commit()
 
         logger.info(
-            f"Enrolled lead {lead_id} in drip campaign {campaign.id} ({campaign_type}), "
+            f"Enrolled lead {lead_id} in drip campaign {campaign.id} ({campaign.name}), "
             f"enrollment={enrollment.id}, first step in {delay_minutes} min"
         )
         return enrollment
@@ -469,6 +481,114 @@ class DripCampaignService:
         if any(kw in text for kw in adult_keywords):
             return "adults"
         return "kids"  # Default
+
+    # ── Tag-based Campaign Routing ───────────────────────────────────────
+
+    @staticmethod
+    def _build_lead_tag_set(lead) -> set[str]:
+        """Build the lowercased set of tags for matching against a campaign's tag_filter.
+
+        Includes both auto-derived tags (audience, ZIP, location, class,
+        source/UTM) and the operator-set custom_tags.
+        """
+        from app.domain.services.lead_tagger import derive_tags
+
+        tags: set[str] = set()
+        for t in derive_tags(lead.extra_data, lead.custom_tags):
+            value = t.get("value")
+            if isinstance(value, str) and value.strip():
+                tags.add(value.strip().lower())
+        return tags
+
+    @staticmethod
+    def _audience_filter_matches(audience_filter: str | None, audience: str | None) -> bool:
+        """Check if a campaign's audience_filter accepts a lead's inferred audience.
+
+        Allowed values:
+          - None / "" / "any": match any audience (or no audience)
+          - "adult": matches "Adult"
+          - "child": matches "Child" or "Child (under 3)"
+          - "under_3": matches only "Child (under 3)"
+        """
+        if not audience_filter or audience_filter == "any":
+            return True
+
+        audience = audience or ""
+        if audience_filter == "adult":
+            return audience == "Adult"
+        if audience_filter == "child":
+            return audience in ("Child", "Child (under 3)")
+        if audience_filter == "under_3":
+            return audience == "Child (under 3)"
+        return False
+
+    async def pick_campaign_for_lead(self, tenant_id: int, lead) -> DripCampaign | None:
+        """Pick the best-matching enabled drip campaign for a lead.
+
+        Iterates all enabled campaigns sorted by priority (lower wins),
+        returns the first whose audience_filter and tag_filter both match.
+        Falls back to the legacy kids/adults campaign_type lookup so
+        existing tenants keep working without configuring new fields.
+        """
+        from app.domain.services.lead_tagger import infer_audience
+
+        audience = infer_audience(lead.extra_data if lead else None)
+        lead_tags = self._build_lead_tag_set(lead) if lead else set()
+
+        all_campaigns = await self.campaign_repo.list_with_steps(tenant_id)
+        candidates = sorted(
+            (c for c in all_campaigns if c.is_enabled and c.steps),
+            key=lambda c: (c.priority or 100, c.id),
+        )
+
+        for campaign in candidates:
+            if not self._audience_filter_matches(campaign.audience_filter, audience):
+                continue
+
+            tag_filter = campaign.tag_filter or []
+            if tag_filter:
+                required = {str(t).strip().lower() for t in tag_filter if t}
+                if not required.issubset(lead_tags):
+                    continue
+
+            return campaign
+
+        # Legacy fallback: campaigns predating the filter columns
+        legacy_type = self.detect_campaign_type(
+            lead_extra_data=lead.extra_data if lead else None,
+            custom_tags=lead.custom_tags if lead else None,
+        )
+        legacy = await self.campaign_repo.get_by_type(tenant_id, legacy_type)
+        if legacy and legacy.is_enabled and legacy.steps:
+            return legacy
+        return None
+
+    async def enroll_lead_auto(
+        self,
+        tenant_id: int,
+        lead_id: int,
+        context_data: dict | None = None,
+    ) -> DripEnrollment | None:
+        """Pick the best-matching campaign for a lead and enroll them.
+
+        Returns None if no campaign matches, lead is ineligible, or already
+        enrolled.
+        """
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            return None
+
+        campaign = await self.pick_campaign_for_lead(tenant_id, lead)
+        if not campaign:
+            logger.debug(f"No matching drip campaign for lead {lead_id}")
+            return None
+
+        return await self._enroll_in_campaign(
+            tenant_id=tenant_id,
+            lead_id=lead_id,
+            campaign=campaign,
+            context_data=context_data,
+        )
 
     # ── Private Helpers ──────────────────────────────────────────────────
 

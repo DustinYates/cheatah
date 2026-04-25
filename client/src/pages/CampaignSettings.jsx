@@ -40,6 +40,16 @@ export default function CampaignSettings() {
   const [cancellingId, setCancellingId] = useState(null);
   const [toast, setToast] = useState(null);
   const [expandedSections, setExpandedSections] = useState({});
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newCampaignDraft, setNewCampaignDraft] = useState({
+    name: '',
+    audience_filter: 'any',
+    tag_filter: '',
+    priority: 100,
+    trigger_delay_minutes: 10,
+  });
+  const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const isDirty = useMemo(() => {
     if (!originalCampaigns.length) return false;
@@ -114,6 +124,10 @@ export default function CampaignSettings() {
         // Save campaign-level settings
         const campaignPayload = {
           name: campaign.name,
+          campaign_type: campaign.campaign_type || 'custom',
+          audience_filter: campaign.audience_filter ?? null,
+          tag_filter: campaign.tag_filter ?? null,
+          priority: campaign.priority ?? 100,
           is_enabled: campaign.is_enabled,
           trigger_delay_minutes: campaign.trigger_delay_minutes,
           response_templates: campaign.response_templates,
@@ -206,6 +220,76 @@ export default function CampaignSettings() {
 
   const toggleSection = (key) => {
     setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const createCampaign = async () => {
+    if (!newCampaignDraft.name.trim()) {
+      showToast('Name is required', 'error');
+      return;
+    }
+    setCreating(true);
+    try {
+      const tagList = newCampaignDraft.tag_filter
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean);
+      const payload = {
+        name: newCampaignDraft.name.trim(),
+        campaign_type: 'custom',
+        audience_filter: newCampaignDraft.audience_filter === 'any' ? null : newCampaignDraft.audience_filter,
+        tag_filter: tagList.length ? tagList : null,
+        priority: parseInt(newCampaignDraft.priority, 10) || 100,
+        trigger_delay_minutes: parseInt(newCampaignDraft.trigger_delay_minutes, 10) || 10,
+        is_enabled: false,
+        steps: [],
+      };
+      const res = await fetch(`${API_BASE}/drip-campaigns`, {
+        method: 'POST',
+        headers: buildHeaders(true),
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to create campaign');
+      }
+      setShowCreateModal(false);
+      setNewCampaignDraft({
+        name: '',
+        audience_filter: 'any',
+        tag_filter: '',
+        priority: 100,
+        trigger_delay_minutes: 10,
+      });
+      showToast('Campaign created — add message steps and enable when ready');
+      await fetchData();
+    } catch (err) {
+      showToast(err.message || 'Failed to create campaign', 'error');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const deleteCampaign = async (campaignId, campaignName) => {
+    if (!window.confirm(`Delete "${campaignName}"? This will cancel any active enrollments.`)) {
+      return;
+    }
+    setDeletingId(campaignId);
+    try {
+      const res = await fetch(`${API_BASE}/drip-campaigns/${campaignId}`, {
+        method: 'DELETE',
+        headers: buildHeaders(),
+      });
+      if (!res.ok && res.status !== 204) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to delete campaign');
+      }
+      showToast('Campaign deleted');
+      await fetchData();
+    } catch (err) {
+      showToast(err.message || 'Failed to delete campaign', 'error');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const cancelEnrollment = async (enrollmentId) => {
@@ -312,8 +396,17 @@ export default function CampaignSettings() {
       <header className="sms-header">
         <h1 className="sms-header__title">Drip Campaigns</h1>
         <p className="sms-header__subtitle">
-          Manage automated follow-up sequences for new leads.
+          Manage automated follow-up sequences for new leads. Each campaign can target leads by audience and tags.
         </p>
+        <div style={{ marginTop: '12px' }}>
+          <button
+            type="button"
+            className="sms-btn sms-btn--primary"
+            onClick={() => setShowCreateModal(true)}
+          >
+            + New Campaign
+          </button>
+        </div>
       </header>
 
       <div className="sms-cards">
@@ -333,12 +426,21 @@ export default function CampaignSettings() {
         {campaigns.map((campaign) => (
           <section key={campaign.id} className="sms-card">
             <div className="sms-card__header">
-              <h2 className="sms-card__title">
-                {campaign.campaign_type === 'kids' ? 'Kids' : 'Adults'} Drip Campaign
-              </h2>
-              <span className={`sms-card__badge ${campaign.is_enabled ? 'sms-card__badge--new' : ''}`}>
-                {campaign.is_enabled ? 'ACTIVE' : 'OFF'}
-              </span>
+              <h2 className="sms-card__title">{campaign.name}</h2>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span className={`sms-card__badge ${campaign.is_enabled ? 'sms-card__badge--new' : ''}`}>
+                  {campaign.is_enabled ? 'ACTIVE' : 'OFF'}
+                </span>
+                <button
+                  type="button"
+                  className="sms-btn sms-btn--ghost campaign-btn--sm"
+                  onClick={() => deleteCampaign(campaign.id, campaign.name)}
+                  disabled={deletingId === campaign.id}
+                  style={{ color: '#b91c1c' }}
+                >
+                  {deletingId === campaign.id ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
             </div>
             <div className="sms-card__body">
               {/* Enable Toggle */}
@@ -352,10 +454,76 @@ export default function CampaignSettings() {
                     className="sms-toggle__input"
                   />
                   <span className="sms-toggle__switch" />
-                  <span className="sms-toggle__label">
-                    Enable {campaign.campaign_type === 'kids' ? 'Kids' : 'Adults'} Drip Campaign
-                  </span>
+                  <span className="sms-toggle__label">Enable {campaign.name}</span>
                 </label>
+              </div>
+
+              {/* Campaign Name */}
+              <div className="sms-field">
+                <label className="sms-field__label">Campaign Name</label>
+                <input
+                  type="text"
+                  className="sms-input"
+                  value={campaign.name}
+                  onChange={(e) => updateCampaign(campaign.id, 'name', e.target.value)}
+                />
+              </div>
+
+              {/* Audience Filter */}
+              <div className="sms-field">
+                <label className="sms-field__label">Audience</label>
+                <select
+                  className="sms-input"
+                  value={campaign.audience_filter || 'any'}
+                  onChange={(e) =>
+                    updateCampaign(campaign.id, 'audience_filter', e.target.value === 'any' ? null : e.target.value)
+                  }
+                >
+                  <option value="any">Any audience</option>
+                  <option value="adult">Adult</option>
+                  <option value="child">Child (any age)</option>
+                  <option value="under_3">Child — under 3</option>
+                </select>
+                <p className="sms-field__hint">
+                  Lead's audience is auto-detected from their qualifying-question answer or class type.
+                </p>
+              </div>
+
+              {/* Tag Filter */}
+              <div className="sms-field">
+                <label className="sms-field__label">Required Tags</label>
+                <input
+                  type="text"
+                  className="sms-input"
+                  value={(campaign.tag_filter || []).join(', ')}
+                  onChange={(e) => {
+                    const list = e.target.value
+                      .split(',')
+                      .map(t => t.trim())
+                      .filter(Boolean);
+                    updateCampaign(campaign.id, 'tag_filter', list.length ? list : null);
+                  }}
+                  placeholder="e.g. Meta IG, Starfish (comma-separated)"
+                />
+                <p className="sms-field__hint">
+                  Lead must have ALL listed tags. Leave blank to match any lead. Matches both auto-derived tags (location, class, source) and manual tags.
+                </p>
+              </div>
+
+              {/* Priority */}
+              <div className="sms-field">
+                <label className="sms-field__label">Priority</label>
+                <input
+                  type="number"
+                  className="sms-input sms-input--number"
+                  min="1"
+                  max="999"
+                  value={campaign.priority || 100}
+                  onChange={(e) => updateCampaign(campaign.id, 'priority', parseInt(e.target.value, 10) || 100)}
+                />
+                <p className="sms-field__hint">
+                  Lower number wins when multiple campaigns match a lead. Default is 100.
+                </p>
               </div>
 
               {/* Trigger Delay */}
@@ -605,6 +773,118 @@ export default function CampaignSettings() {
           {saving ? 'Saving...' : 'Save Settings'}
         </button>
       </div>
+
+      {/* Create Campaign Modal */}
+      {showCreateModal && (
+        <div
+          className="sms-modal-backdrop"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => !creating && setShowCreateModal(false)}
+        >
+          <div
+            className="sms-card"
+            style={{ maxWidth: '520px', width: '90%' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sms-card__header">
+              <h2 className="sms-card__title">New Drip Campaign</h2>
+            </div>
+            <div className="sms-card__body">
+              <div className="sms-field">
+                <label className="sms-field__label">Name</label>
+                <input
+                  type="text"
+                  className="sms-input"
+                  value={newCampaignDraft.name}
+                  onChange={(e) => setNewCampaignDraft(d => ({ ...d, name: e.target.value }))}
+                  placeholder="e.g. Meta IG — Adult Lessons"
+                  autoFocus
+                />
+              </div>
+
+              <div className="sms-field">
+                <label className="sms-field__label">Audience</label>
+                <select
+                  className="sms-input"
+                  value={newCampaignDraft.audience_filter}
+                  onChange={(e) => setNewCampaignDraft(d => ({ ...d, audience_filter: e.target.value }))}
+                >
+                  <option value="any">Any audience</option>
+                  <option value="adult">Adult</option>
+                  <option value="child">Child (any age)</option>
+                  <option value="under_3">Child — under 3</option>
+                </select>
+              </div>
+
+              <div className="sms-field">
+                <label className="sms-field__label">Required Tags</label>
+                <input
+                  type="text"
+                  className="sms-input"
+                  value={newCampaignDraft.tag_filter}
+                  onChange={(e) => setNewCampaignDraft(d => ({ ...d, tag_filter: e.target.value }))}
+                  placeholder="comma-separated, e.g. Meta IG, Starfish"
+                />
+              </div>
+
+              <div className="sms-field">
+                <label className="sms-field__label">Priority</label>
+                <input
+                  type="number"
+                  className="sms-input sms-input--number"
+                  min="1"
+                  max="999"
+                  value={newCampaignDraft.priority}
+                  onChange={(e) => setNewCampaignDraft(d => ({ ...d, priority: e.target.value }))}
+                />
+                <p className="sms-field__hint">Lower wins when multiple match. Default 100.</p>
+              </div>
+
+              <div className="sms-field">
+                <label className="sms-field__label">Trigger Delay (minutes)</label>
+                <input
+                  type="number"
+                  className="sms-input sms-input--number"
+                  min="0"
+                  max="1440"
+                  value={newCampaignDraft.trigger_delay_minutes}
+                  onChange={(e) => setNewCampaignDraft(d => ({ ...d, trigger_delay_minutes: e.target.value }))}
+                />
+              </div>
+
+              <p className="sms-field__hint" style={{ marginTop: '12px' }}>
+                The campaign will be created disabled with no message steps. Add steps and enable it after creating.
+              </p>
+            </div>
+            <div className="sms-actions" style={{ padding: '16px 24px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="sms-btn sms-btn--ghost"
+                onClick={() => setShowCreateModal(false)}
+                disabled={creating}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="sms-btn sms-btn--primary"
+                onClick={createCampaign}
+                disabled={creating}
+              >
+                {creating ? 'Creating...' : 'Create Campaign'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

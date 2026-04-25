@@ -275,25 +275,18 @@ class EmailService:
                         try:
                             from app.domain.services.drip_campaign_service import DripCampaignService
                             drip_service = DripCampaignService(self.session)
-                            campaign_type = drip_service.detect_campaign_type(
-                                subject,
-                                body,
-                                lead_extra_data=lead.extra_data,
-                                custom_tags=list(lead.custom_tags or []),
-                            )
                             context_data = {
                                 "first_name": extracted_info.get("name", "").split()[0] if extracted_info.get("name") else None,
                                 "email_subject": subject,
                                 "source": "email",
                             }
-                            enrollment = await drip_service.enroll_lead(
+                            enrollment = await drip_service.enroll_lead_auto(
                                 tenant_id=tenant_id,
                                 lead_id=lead.id,
-                                campaign_type=campaign_type,
                                 context_data=context_data,
                             )
                             if enrollment:
-                                logger.info(f"Lead {lead.id} enrolled in {campaign_type} drip campaign")
+                                logger.info(f"Lead {lead.id} enrolled in drip campaign {enrollment.campaign_id}")
                         except Exception as e:
                             logger.error(f"Drip enrollment failed for lead {lead.id}: {e}", exc_info=True)
                 else:

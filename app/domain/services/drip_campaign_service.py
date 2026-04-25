@@ -1,7 +1,7 @@
 """Service for managing drip campaign enrollment, step execution, and response handling."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,7 +113,7 @@ class DripCampaignService:
         task_id = await self._schedule_step(enrollment, delay_minutes)
         if task_id:
             enrollment.next_task_id = task_id
-            enrollment.next_step_at = datetime.now(timezone.utc)
+            enrollment.next_step_at = datetime.utcnow()
             await self.session.commit()
 
         logger.info(
@@ -152,7 +152,7 @@ class DripCampaignService:
         if not step:
             # No more steps — mark completed
             enrollment.status = "completed"
-            enrollment.updated_at = datetime.now(timezone.utc)
+            enrollment.updated_at = datetime.utcnow()
             await self.session.commit()
             logger.info(f"Enrollment {enrollment_id} completed (no step {next_step_num})")
             return {"status": "completed"}
@@ -266,7 +266,7 @@ class DripCampaignService:
 
         # Update enrollment
         enrollment.current_step = next_step_num
-        enrollment.updated_at = datetime.now(timezone.utc)
+        enrollment.updated_at = datetime.utcnow()
 
         # Schedule next step if there are more
         next_next_step = next(
@@ -328,7 +328,7 @@ class DripCampaignService:
             )
 
         enrollment.response_category = category
-        enrollment.updated_at = datetime.now(timezone.utc)
+        enrollment.updated_at = datetime.utcnow()
 
         template_data = response_templates.get(category, {})
         action = template_data.get("action")
@@ -394,7 +394,7 @@ class DripCampaignService:
 
         enrollment.status = "cancelled"
         enrollment.cancelled_reason = reason
-        enrollment.updated_at = datetime.now(timezone.utc)
+        enrollment.updated_at = datetime.utcnow()
         await self.session.commit()
         logger.info(f"Cancelled drip enrollment {enrollment_id}: {reason}")
         return True
@@ -427,7 +427,7 @@ class DripCampaignService:
 
         # Resume to active and advance to next step
         enrollment.status = "active"
-        enrollment.updated_at = datetime.now(timezone.utc)
+        enrollment.updated_at = datetime.utcnow()
         await self.session.commit()
 
         logger.info(f"Resuming drip enrollment {enrollment_id} after response timeout")
@@ -500,7 +500,8 @@ class DripCampaignService:
             )
 
             from datetime import timedelta
-            enrollment.next_step_at = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
+            enrollment.next_step_at = datetime.utcnow() + timedelta(seconds=delay_seconds)
+
             enrollment.next_task_id = task_name
             return task_name
         except Exception as e:

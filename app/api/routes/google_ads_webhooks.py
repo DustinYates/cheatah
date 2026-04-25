@@ -335,6 +335,7 @@ async def google_ads_lead(
                 f"google_ads_lead: drip enrollment failed for lead {lead.id}: {e}",
                 exc_info=True,
             )
+            await db.rollback()
 
     # Owner hot-lead SMS notification.
     try:
@@ -359,6 +360,7 @@ async def google_ads_lead(
             f"google_ads_lead: notification failed for lead {lead.id}: {e}",
             exc_info=True,
         )
+        await db.rollback()
 
     return JSONResponse(
         content={"status": "ok", "lead_id": lead.id},

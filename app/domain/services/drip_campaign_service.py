@@ -345,12 +345,16 @@ class DripCampaignService:
         template_data = response_templates.get(category, {})
         action = template_data.get("action")
 
-        # Handle actions
-        if action == "cancel_drip" or category == "not_interested":
+        # Hard-cancel only on explicit cancel_drip action (e.g., STOP keyword
+        # routed through this path). "not_interested" is a soft signal —
+        # treat it like other soft replies (pause + resume) per product
+        # policy: keep dripping unless they tell us to stop, sign up, or
+        # exhaust the configured steps.
+        if action == "cancel_drip":
             enrollment.status = "cancelled"
-            enrollment.cancelled_reason = "not_interested"
+            enrollment.cancelled_reason = "stop_keyword"
             await self.session.commit()
-            return {"handled": False, "reason": "not_interested_let_ai_handle"}
+            return {"handled": False, "reason": "stop_keyword_let_ai_handle"}
 
         if action == "send_registration_link" or category == "yes_link":
             # Send registration link and mark completed

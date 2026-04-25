@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.domain.services.enrollment_service import EnrollmentService
 from app.domain.services.jackrabbit_data_transformer import transform_jackrabbit_to_account_data
 from app.domain.services.zapier_integration_service import ZapierIntegrationService
 from app.persistence.repositories.customer_repository import CustomerRepository
@@ -346,7 +347,162 @@ async def zapier_family_sync(
         },
     )
 
+    # Sign-up stop condition: when a lead becomes a customer, cancel any
+    # active drip enrollments tied to the same phone so we stop nagging
+    # someone who just registered.
+    if phone:
+        try:
+            from app.domain.services.drip_campaign_service import DripCampaignService
+            from app.persistence.repositories.lead_repository import LeadRepository
+            lead_repo = LeadRepository(db)
+            leads = await lead_repo.find_leads_with_conversation_by_email_or_phone(
+                tenant_id, phone=phone
+            )
+            if leads:
+                drip_service = DripCampaignService(db)
+                total_cancelled = 0
+                for lead in leads:
+                    total_cancelled += await drip_service.cancel_all_for_lead(
+                        tenant_id, lead.id, reason="signed_up"
+                    )
+                if total_cancelled:
+                    logger.info(
+                        f"Family-sync cancelled {total_cancelled} drip enrollment(s) "
+                        f"for tenant={tenant_id}, jackrabbit_id={jackrabbit_id}, "
+                        f"phone={phone}"
+                    )
+        except Exception as e:
+            logger.error(
+                f"Failed to cancel drips on family-sync for tenant={tenant_id} "
+                f"phone={phone}: {e}",
+                exc_info=True,
+            )
+
     return JSONResponse(
         content={"status": "synced", "customer_id": customer.id},
+        status_code=200,
+    )
+
+
+@router.post("/enrollment/{tenant_id}")
+async def zapier_enrollment(
+    tenant_id: int,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Receive a Jackrabbit enrollment event from Zapier and tag the matching lead.
+
+    Tenant ID is in the URL path so Zapier's key-value editor doesn't need to handle
+    it. Field names are fuzzy-matched against common Jackrabbit/Zapier variants so
+    the same Zap template works whether Zapier mangles keys or not.
+
+    URL format: /api/v1/zapier/enrollment/{tenant_id}
+
+    On match: sets `pipeline_stage="registered"`, adds the `enrolled` custom tag,
+    appends the enrollment to `extra_data.enrollments`, and creates an in-app
+    notification for the tenant's admins. Idempotent on `enroll_id`.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        logger.warning("enrollment: could not parse JSON body")
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    if not isinstance(body, dict) or not body:
+        raise HTTPException(status_code=400, detail="Empty payload")
+
+    logger.info(f"enrollment raw payload for tenant {tenant_id}: {body}")
+
+    def _find(keys: list[str]) -> str | None:
+        body_lower = {
+            k.lower().replace(" ", "_").replace("-", "_"): v for k, v in body.items()
+        }
+        for key in keys:
+            k = key.lower().replace(" ", "_").replace("-", "_")
+            if k in body_lower:
+                val = body_lower[k]
+                if val in (None, ""):
+                    continue
+                return str(val).strip()
+        return None
+
+    enroll_id = _find([
+        "enroll_id", "enrollid", "enrollment_id", "enrollmentid",
+        "class_enroll_id", "id",
+    ])
+    family_id = _find([
+        "family_id", "familyid", "fam_id", "jackrabbit_id", "jr_id",
+    ])
+    phone = _find([
+        "phone_number", "phone", "home_phone", "homephone",
+        "cell_phone", "cellphone", "mobile",
+        "contacts_home_phone", "contacts_cell_phone", "work_phone",
+    ])
+    email = _find([
+        "email", "email1", "emailaddress", "email_address", "students_email",
+    ])
+    student_name = _find([
+        "student_name", "studentname", "student_full_name",
+        "students_first_name", "first_name",
+    ])
+    class_name = _find([
+        "class_name", "classname", "class", "class_title",
+    ])
+    enrollment_date = _find([
+        "enrollment_date", "enroll_date", "enrolldate", "date_enrolled", "start_date",
+    ])
+
+    if not phone and not email:
+        logger.warning(
+            f"enrollment: no phone or email in payload for tenant {tenant_id} "
+            f"(enroll_id={enroll_id}, family_id={family_id})"
+        )
+        # Return 200 so Zapier doesn't retry — there's nothing we can do without
+        # a phone or email to match against a lead.
+        return JSONResponse(
+            content={"status": "ignored", "reason": "no phone or email in payload"},
+            status_code=200,
+        )
+
+    enrollment_service = EnrollmentService(db)
+    result = await enrollment_service.process_enrollment(
+        tenant_id=tenant_id,
+        jackrabbit_enroll_id=enroll_id,
+        jackrabbit_family_id=family_id,
+        phone=phone,
+        email=email,
+        student_name=student_name,
+        class_name=class_name,
+        enrollment_date=enrollment_date,
+        raw_payload=body,
+    )
+
+    logger.info(
+        "Enrollment processed",
+        extra={
+            "tenant_id": tenant_id,
+            "enroll_id": enroll_id,
+            "family_id": family_id,
+            "matched": result["matched"],
+            "lead_id": result["lead_id"],
+            "already_processed": result["already_processed"],
+        },
+    )
+
+    if not result["matched"]:
+        return JSONResponse(
+            content={
+                "status": "no_lead_match",
+                "phone": phone,
+                "email": email,
+            },
+            status_code=200,
+        )
+
+    return JSONResponse(
+        content={
+            "status": "already_processed" if result["already_processed"] else "registered",
+            "lead_id": result["lead_id"],
+        },
         status_code=200,
     )

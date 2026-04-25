@@ -360,6 +360,24 @@ class ChatService:
         # Fetch live class schedule from Jackrabbit (if configured for this tenant)
         class_schedule_context = await self._get_class_schedule_context(tenant_id)
 
+        # Pull operator-visible notes/customer history if we have any
+        # contact info to look up by.
+        notes_context = None
+        try:
+            from app.domain.services.lead_context_service import LeadContextService
+            notes_context = await LeadContextService(self.session).build_context(
+                tenant_id,
+                lead_id=existing_lead.id if existing_lead else None,
+                phone=collected_phone,
+                email=collected_email,
+            )
+        except Exception as e:
+            logger.error(f"Failed to build chat notes context: {e}", exc_info=True)
+
+        combined_additional = "\n\n".join(
+            c for c in (class_schedule_context, notes_context) if c
+        ) or None
+
         # Use core chat processing logic with chat-specific prompt method
         llm_response, llm_latency_ms = await self._process_chat_core(
             tenant_id=tenant_id,
@@ -368,7 +386,7 @@ class ChatService:
             messages=messages,
             system_prompt_method=self.prompt_service.compose_prompt_chat,
             prompt_context=prompt_context,
-            additional_context=class_schedule_context,
+            additional_context=combined_additional,
         )
 
         # For tenant 3 (BSS), replace basic BSS URLs with Jackrabbit pre-filled URLs

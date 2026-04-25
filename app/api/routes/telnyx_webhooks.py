@@ -4006,6 +4006,81 @@ async def book_meeting_tool(
         })
 
 
+@router.api_route("/tools/get-customer-context", methods=["GET", "POST"])
+async def get_customer_context_tool(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Telnyx AI Assistant tool: fetch all notes & customer info for a phone.
+
+    Returns the same operator-visible notes the human team would see
+    (lead notes, custom tags, pipeline stage, open tasks, Jackrabbit
+    customer record), so the voice agent can personalize replies and
+    skip questions whose answers we already know.
+
+    Body / query params:
+        to: caller phone in E.164 (required)
+        tenant_id: tenant id (required — set in Telnyx tool URL)
+        email: optional fallback lookup if the phone has no record
+    """
+    try:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        params = dict(request.query_params)
+
+        to_phone = body.get("to") or params.get("to", "")
+        email = body.get("email") or params.get("email")
+        raw_tid = params.get("tenant_id") or body.get("tenant_id")
+
+        tenant_id: int | None = None
+        if raw_tid:
+            try:
+                tenant_id = int(raw_tid)
+            except (ValueError, TypeError):
+                pass
+
+        if not tenant_id:
+            return JSONResponse(content={
+                "status": "error",
+                "result": "Tenant not configured for this tool.",
+            })
+
+        if not to_phone and not email:
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "No customer info on file yet — proceed as a new caller.",
+            })
+
+        from app.core.phone import normalize_phone_e164
+        from app.domain.services.lead_context_service import LeadContextService
+
+        normalized = normalize_phone_e164(to_phone) if to_phone else None
+        context = await LeadContextService(db).build_context(
+            tenant_id, phone=normalized, email=email
+        )
+
+        if not context:
+            return JSONResponse(content={
+                "status": "ok",
+                "result": "No prior notes or customer record on file for this caller.",
+            })
+
+        logger.info(
+            f"[TOOL] get_customer_context: returned context for tenant={tenant_id}, "
+            f"phone={normalized}, length={len(context)}"
+        )
+        return JSONResponse(content={"status": "ok", "result": context})
+
+    except Exception as e:
+        logger.error(f"[TOOL] Error in get_customer_context: {e}", exc_info=True)
+        return JSONResponse(content={
+            "status": "error",
+            "result": "Could not retrieve customer notes — proceed without them.",
+        })
+
+
 def _map_location_to_code(location: str) -> str | None:
     """Map a location name from conversation to a location code.
 

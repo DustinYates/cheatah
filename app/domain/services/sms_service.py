@@ -278,17 +278,33 @@ class SmsService:
                 escalation_id=escalation.id,
             )
 
+        # Build the customer/lead notes context — same info the human team
+        # would see in the dashboard, surfaced to the agent so it can
+        # personalize replies without having to re-ask.
+        notes_context = None
+        try:
+            from app.domain.services.lead_context_service import LeadContextService
+            notes_context = await LeadContextService(self.session).build_context(
+                tenant_id,
+                lead_id=lead.id if lead else None,
+                phone=phone_number,
+            )
+        except Exception as e:
+            logger.error(f"Failed to build SMS notes context: {e}", exc_info=True)
+
         # Choose prompt method based on whether this is a follow-up conversation
         logger.info(f"SMS calling LLM - tenant_id={tenant_id}, is_followup={is_followup}")
         if is_followup and qualification_context:
-            # Use qualification prompt for follow-up conversations
+            combined_context = qualification_context
+            if notes_context:
+                combined_context = f"{qualification_context}\n\n{notes_context}" if isinstance(qualification_context, str) else notes_context
             llm_response, llm_latency_ms = await self.chat_service._process_chat_core(
                 tenant_id=tenant_id,
                 conversation_id=conversation.id,
                 user_message=message_body,
                 messages=messages,
                 system_prompt_method=self.prompt_service.compose_prompt_sms_qualification,
-                additional_context=qualification_context,
+                additional_context=combined_context,
             )
             # Capture/update lead from follow-up SMS conversation
             await self._capture_sms_lead(
@@ -299,14 +315,14 @@ class SmsService:
                 user_message=message_body,
             )
         else:
-            # Process with regular SMS prompt (include handoff context if available)
+            combined_context = "\n\n".join(c for c in (handoff_context, notes_context) if c) or None
             llm_response, llm_latency_ms = await self.chat_service._process_chat_core(
                 tenant_id=tenant_id,
                 conversation_id=conversation.id,
                 user_message=message_body,
                 messages=messages,
                 system_prompt_method=self.prompt_service.compose_prompt_sms,
-                additional_context=handoff_context,
+                additional_context=combined_context,
             )
 
         # Capture lead from SMS conversation (we always have phone number)

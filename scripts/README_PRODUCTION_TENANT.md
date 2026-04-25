@@ -7,11 +7,13 @@ The production database uses Cloud SQL with a Unix socket connection that only w
 If you have the Cloud SQL Proxy set up:
 
 ```bash
+# Credentials must come from environment variables or a password manager.
+# Never commit real credentials to source control.
 ./scripts/create_tenant_production_with_proxy.sh \
     --name "Fake Swim School" \
     --subdomain "fake-swim-school" \
-    --email "dustin.yates@gmail.com" \
-    --password "Hudlink2168"
+    --email "$ADMIN_EMAIL" \
+    --password "$ADMIN_PASSWORD"
 ```
 
 **Prerequisites:**
@@ -29,7 +31,7 @@ Since you can't easily connect to the production database locally, the easiest w
    ```bash
    curl -X POST "https://chattercheatah-900139201687.us-central1.run.app/api/v1/auth/login" \
      -H "Content-Type: application/json" \
-     -d '{"email":"admin@chattercheetah.com","password":"your-admin-password"}'
+     -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
    ```
 
    Then use that token to create the tenant:
@@ -52,11 +54,11 @@ Since you can't easily connect to the production database locally, the easiest w
      -H "Authorization: Bearer YOUR_ADMIN_JWT_TOKEN" \
      -H "X-Tenant-Id: 6" \
      -H "Content-Type: application/json" \
-     -d '{
-       "email": "dustin.yates@gmail.com",
-       "password": "Hudlink2168",
-       "role": "tenant_admin"
-     }'
+     -d "{
+       \"email\": \"$TENANT_ADMIN_EMAIL\",
+       \"password\": \"$TENANT_ADMIN_PASSWORD\",
+       \"role\": \"tenant_admin\"
+     }"
    ```
 
 ## Option 3: Connect via Cloud Shell

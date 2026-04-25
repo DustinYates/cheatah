@@ -1,8 +1,14 @@
 #!/bin/bash
 # Quick login script - tries local first, then production
 
-EMAIL="dustin.yates@gmail.com"
-PASSWORD="Hudlink2168"
+EMAIL="${CC_LOGIN_EMAIL:-}"
+PASSWORD="${CC_LOGIN_PASSWORD:-}"
+
+if [ -z "$EMAIL" ] || [ -z "$PASSWORD" ]; then
+  echo "Set CC_LOGIN_EMAIL and CC_LOGIN_PASSWORD in your environment before running this script."
+  echo "Never commit credentials to source control."
+  exit 2
+fi
 
 echo "Attempting login..."
 echo "Email: $EMAIL"

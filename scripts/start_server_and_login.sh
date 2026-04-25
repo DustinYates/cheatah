@@ -12,10 +12,10 @@ sleep 3
 if curl -s http://localhost:8000/health > /dev/null 2>&1; then
     echo "✓ Server is running (PID: $SERVER_PID)"
     echo ""
-    echo "Login command:"
+    echo "Login command (set CC_LOGIN_EMAIL/CC_LOGIN_PASSWORD in your shell first):"
     echo 'curl -X POST "http://localhost:8000/api/v1/auth/login" \'
     echo '  -H "Content-Type: application/json" \'
-    echo '  -d '"'"'{"email":"dustin.yates@gmail.com","password":"Hudlink2168"}'"' | python3 -m json.tool"
+    echo '  -d "{\"email\":\"$CC_LOGIN_EMAIL\",\"password\":\"$CC_LOGIN_PASSWORD\"}" | python3 -m json.tool'
     echo ""
     echo "To stop the server, run: kill $SERVER_PID"
     echo "Or find it with: ps aux | grep uvicorn"

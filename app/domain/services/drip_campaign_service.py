@@ -492,8 +492,14 @@ class DripCampaignService:
     def _build_lead_tag_set(lead) -> set[str]:
         """Build the lowercased set of tags for matching against a campaign's tag_filter.
 
-        Includes both auto-derived tags (audience, ZIP, location, class,
-        source/UTM) and the operator-set custom_tags.
+        Includes:
+          - auto-derived tags (audience, ZIP, location, class, source/UTM)
+          - operator-set custom_tags
+          - the lead's pipeline_stage rendered as a friendly label
+            (e.g. "lost_opportunity" → "lost opportunity"), so a campaign
+            with tag_filter=["Lost Opportunity"] matches leads in that
+            pipeline stage without needing a duplicate manual tag.
+          - the lead's status string, similarly rendered
         """
         from app.domain.services.lead_tagger import derive_tags
 
@@ -502,6 +508,14 @@ class DripCampaignService:
             value = t.get("value")
             if isinstance(value, str) and value.strip():
                 tags.add(value.strip().lower())
+
+        for slug in (getattr(lead, "pipeline_stage", None), getattr(lead, "status", None)):
+            if isinstance(slug, str) and slug.strip():
+                normalized = slug.strip().lower()
+                tags.add(normalized)
+                tags.add(normalized.replace("_", " "))
+                tags.add(normalized.replace("-", " "))
+
         return tags
 
     @staticmethod

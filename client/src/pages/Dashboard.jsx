@@ -1062,6 +1062,13 @@ export default function Dashboard() {
         case 'sms_ai_assistant':
         case 'sms_ai':
           return { icon: <TextBubbleIcon />, title: 'Text Message', shortLabel: 'SMS', key: 'sms' };
+        case 'google_ads':
+          return { icon: '📣', title: 'Google Ads', shortLabel: 'Ad', key: 'google_ads' };
+        case 'meta':
+        case 'facebook':
+        case 'instagram':
+        case 'meta_ads':
+          return { icon: '📣', title: 'Meta Ads', shortLabel: 'Ad', key: 'meta_ads' };
         default:
           return null;
       }

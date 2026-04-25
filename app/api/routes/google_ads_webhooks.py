@@ -243,15 +243,7 @@ async def google_ads_lead(
             detail="Invalid webhook key",
         )
 
-    # Test pings from Google Ads — return 200 without creating a lead so
-    # the UI shows green and we don't pollute the DB.
-    if body.get("is_test"):
-        logger.info(f"google_ads_lead: test ping for tenant {tenant_id}")
-        return JSONResponse(
-            content={"status": "test_received"},
-            status_code=200,
-        )
-
+    is_test = bool(body.get("is_test"))
     flat = _flatten_user_columns(body.get("user_column_data") or [])
 
     # Pull the standard contact fields.
@@ -268,11 +260,28 @@ async def google_ads_lead(
     google_lead_id = body.get("lead_id")
 
     extra_data = _build_extra_data(body, flat)
+    if is_test:
+        extra_data["is_test"] = True
 
-    # Dedup against the last 24 hours.
-    existing = await _find_recent_duplicate(
-        db, tenant_id, phone, email, google_lead_id
-    )
+    # For test pings, reuse the most recent test lead from the last hour
+    # so repeated "Send test data" clicks don't pile up dozens of rows.
+    existing: Lead | None
+    if is_test:
+        recent_cutoff = datetime.utcnow() - timedelta(hours=1)
+        stmt = select(Lead).where(
+            Lead.tenant_id == tenant_id,
+            Lead.created_at >= recent_cutoff,
+        ).order_by(Lead.created_at.desc())
+        existing = None
+        for candidate in (await db.execute(stmt)).scalars():
+            if (candidate.extra_data or {}).get("is_test"):
+                existing = candidate
+                break
+    else:
+        # Dedup real leads against the last 24 hours.
+        existing = await _find_recent_duplicate(
+            db, tenant_id, phone, email, google_lead_id
+        )
 
     if existing:
         merged = dict(existing.extra_data or {})
@@ -295,23 +304,35 @@ async def google_ads_lead(
             status_code=200,
         )
 
+    custom_tags = ["TEST"] if is_test else []
+
     lead = Lead(
         tenant_id=tenant_id,
-        name=name,
+        name=(name or "Google Ads Test") if is_test else name,
         email=email,
         phone=phone,
         status="new",
         pipeline_stage="new_lead",
         extra_data=extra_data,
+        custom_tags=custom_tags,
     )
     db.add(lead)
     await db.commit()
     await db.refresh(lead)
 
     logger.info(
-        f"google_ads_lead: created lead {lead.id} for tenant {tenant_id} "
-        f"(google_lead_id={google_lead_id}, phone={phone}, email={email})"
+        f"google_ads_lead: created {'test ' if is_test else ''}lead {lead.id} "
+        f"for tenant {tenant_id} (google_lead_id={google_lead_id}, "
+        f"phone={phone}, email={email})"
     )
+
+    # Test leads stop here — no drip, no owner SMS. Just return so Ashley
+    # sees the row in the dashboard and gets the green check in Google Ads.
+    if is_test:
+        return JSONResponse(
+            content={"status": "test_received", "lead_id": lead.id},
+            status_code=200,
+        )
 
     # Drip enrollment — picks kids vs adults from extra_data via infer_audience.
     if phone:

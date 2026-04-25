@@ -764,6 +764,128 @@ async def delete_jackrabbit_key(
     )
 
 
+# --- Google Ads webhook key ---
+
+
+class GoogleAdsKeyResponse(BaseModel):
+    """Response schema for the Google Ads webhook key."""
+    tenant_id: int
+    webhook_url: str
+    key: str | None = None  # Only returned on rotate; otherwise the masked form
+    key_masked: str | None = None
+    configured: bool
+
+
+def _build_google_ads_webhook_url(tenant_id: int) -> str:
+    from app.settings import settings
+    base = (settings.api_base_url or "").rstrip("/")
+    return f"{base}/api/v1/google-ads/lead/{tenant_id}"
+
+
+@router.get("/tenants/{tenant_id}/google-ads/key", response_model=GoogleAdsKeyResponse)
+async def get_google_ads_key(
+    tenant_id: int,
+    current_user: Annotated[User, Depends(require_global_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> GoogleAdsKeyResponse:
+    """Return the Google Ads webhook URL + masked key state for a tenant."""
+    from app.persistence.models.tenant import TenantBusinessProfile
+
+    profile = (
+        await db.execute(
+            select(TenantBusinessProfile).where(
+                TenantBusinessProfile.tenant_id == tenant_id
+            )
+        )
+    ).scalar_one_or_none()
+
+    key = profile.google_ads_webhook_key if profile else None
+    return GoogleAdsKeyResponse(
+        tenant_id=tenant_id,
+        webhook_url=_build_google_ads_webhook_url(tenant_id),
+        key_masked=_mask_key(key),
+        configured=bool(key),
+    )
+
+
+@router.post("/tenants/{tenant_id}/google-ads/rotate-key", response_model=GoogleAdsKeyResponse)
+async def rotate_google_ads_key(
+    tenant_id: int,
+    current_user: Annotated[User, Depends(require_global_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> GoogleAdsKeyResponse:
+    """Generate (or rotate) the Google Ads webhook key for a tenant.
+
+    Returns the plaintext key in the response — this is the only time it
+    will be shown. Subsequent GETs only return the masked form. Operator
+    must paste this into Google Ads UI under "Webhook integration > Key".
+    """
+    import secrets
+
+    from app.persistence.models.tenant import TenantBusinessProfile
+
+    profile = (
+        await db.execute(
+            select(TenantBusinessProfile).where(
+                TenantBusinessProfile.tenant_id == tenant_id
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant business profile not found",
+        )
+
+    # Google Ads UI caps the key at 50 chars. token_urlsafe(32) is 43 chars.
+    new_key = secrets.token_urlsafe(32)
+    profile.google_ads_webhook_key = new_key
+    await db.commit()
+
+    return GoogleAdsKeyResponse(
+        tenant_id=tenant_id,
+        webhook_url=_build_google_ads_webhook_url(tenant_id),
+        key=new_key,
+        key_masked=_mask_key(new_key),
+        configured=True,
+    )
+
+
+@router.delete("/tenants/{tenant_id}/google-ads/key")
+async def delete_google_ads_key(
+    tenant_id: int,
+    current_user: Annotated[User, Depends(require_global_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> GoogleAdsKeyResponse:
+    """Clear the Google Ads webhook key for a tenant (disables the endpoint)."""
+    from app.persistence.models.tenant import TenantBusinessProfile
+
+    profile = (
+        await db.execute(
+            select(TenantBusinessProfile).where(
+                TenantBusinessProfile.tenant_id == tenant_id
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant business profile not found",
+        )
+
+    profile.google_ads_webhook_key = None
+    await db.commit()
+
+    return GoogleAdsKeyResponse(
+        tenant_id=tenant_id,
+        webhook_url=_build_google_ads_webhook_url(tenant_id),
+        key_masked=None,
+        configured=False,
+    )
+
+
 # --- Call Duration Backfill ---
 
 

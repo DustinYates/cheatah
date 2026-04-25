@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, billing, calls, chat, connections, contacts, conversations, customers, customer_support, dashboard_analytics, dnc, drip_campaigns, email_webhooks, escalation_settings, forums, inbox, leads, lead_tasks, notifications, pipeline_stages, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, support, telnyx_webhooks, tenant_calendar, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, user_groups, voice_ab_tests, zapier_webhooks
+from app.api.routes import admin, admin_customer_service, admin_sms, admin_telephony, admin_voice, analytics, audit_logs, auth, billing, calls, chat, connections, contacts, conversations, customers, customer_support, dashboard_analytics, dnc, drip_campaigns, email_webhooks, escalation_settings, forums, google_ads_webhooks, inbox, leads, lead_tasks, notifications, pipeline_stages, profile, prompts, prompt_config, prompt_interview, sendable_assets, sendgrid_webhooks, support, telnyx_webhooks, tenant_calendar, tenant_email, tenant_setup, tenant_widget, tenants, users, tenant_sms, tenant_voice, user_groups, voice_ab_tests, zapier_webhooks
 from app.api import sendgrid_email
 
 api_router = APIRouter()
@@ -16,6 +16,7 @@ api_router.include_router(sendgrid_webhooks.router, prefix="/email/sendgrid", ta
 # Customer service webhooks (public)
 api_router.include_router(zapier_webhooks.router, prefix="/zapier", tags=["zapier"])
 api_router.include_router(telnyx_webhooks.router, prefix="/telnyx", tags=["telnyx"])
+api_router.include_router(google_ads_webhooks.router, prefix="/google-ads", tags=["google-ads"])
 
 # Protected routes (auth required)
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])

@@ -782,26 +782,42 @@ export default function CampaignSettings() {
                   <div className="campaign-steps">
                     {[...campaign.steps]
                       .sort((a, b) => a.step_number - b.step_number)
-                      .map((step) => {
+                      .map((step, idx, arr) => {
                         // Step N moves the lead from pipeline position N-1 → N.
                         // Show the transition as "From → To" using the stage labels.
+                        // Last step is special: only fires on customer match (→ enrolled),
+                        // otherwise lead lands on "missed". So the badge says "→ End of Drip".
+                        const isLastStep = idx === arr.length - 1;
                         const fromStage = pipelineStages?.[step.step_number - 1];
                         const toStage = pipelineStages?.[step.step_number];
                         let badgeLabel;
-                        if (fromStage && toStage) {
+                        let badgeColor;
+                        if (isLastStep && fromStage) {
+                          badgeLabel = `${fromStage.label} → End of Drip`;
+                          badgeColor = '#374151';
+                        } else if (fromStage && toStage) {
                           badgeLabel = `${fromStage.label} → ${toStage.label}`;
+                          badgeColor = toStage.color;
                         } else if (toStage) {
                           badgeLabel = toStage.label;
+                          badgeColor = toStage.color;
                         } else {
                           badgeLabel = `Step ${step.step_number}`;
+                          badgeColor = null;
                         }
+                        // Sample placeholder text per step position.
+                        const samplePlaceholder = isLastStep
+                          ? "Welcome {{first_name}}! Excited to have you on board — let us know if you have any questions."
+                          : step.step_number === 1
+                            ? "Hi {{first_name}}! Just following up on your interest. Happy to answer any questions whenever works for you."
+                            : "Hi {{first_name}}, circling back to see if you have any questions. Reply anytime!";
                         return (
                         <div key={step.step_number} className="campaign-step">
                           <div className="campaign-step__header">
                             <span
                               className="campaign-step__badge"
-                              style={toStage?.color ? {
-                                background: toStage.color,
+                              style={badgeColor ? {
+                                background: badgeColor,
                                 color: '#fff',
                               } : undefined}
                             >
@@ -814,9 +830,15 @@ export default function CampaignSettings() {
 
                           <div className="sms-field">
                             <label className="sms-field__label">Message Template</label>
+                            {isLastStep && (
+                              <p className="sms-field__hint" style={{ margin: '0 0 6px 0', fontStyle: 'italic' }}>
+                                Only sent if the lead has actually enrolled (customer match found). Otherwise the lead is marked "missed" and no message is sent.
+                              </p>
+                            )}
                             <textarea
                               className="sms-textarea"
                               rows={3}
+                              placeholder={samplePlaceholder}
                               value={step.message_template}
                               onChange={(e) =>
                                 updateStep(campaign.id, step.step_number, 'message_template', e.target.value)

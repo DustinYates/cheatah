@@ -150,6 +150,13 @@ class TenantBusinessProfile(Base):
         Boolean, default=False, nullable=False, server_default=text("false")
     )
 
+    # When true, drip steps advance lead.pipeline_stage and run the
+    # customer-match divert (enrolled/missed branching). Set false for tenants
+    # that don't use pipelines or don't want drips to mutate stages.
+    drip_affects_pipeline = Column(
+        Boolean, default=True, nullable=False, server_default=text("true")
+    )
+
     profile_complete = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

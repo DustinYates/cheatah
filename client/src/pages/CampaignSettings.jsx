@@ -71,6 +71,8 @@ export default function CampaignSettings() {
   });
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [dripSettings, setDripSettings] = useState({ drip_affects_pipeline: true });
+  const [savingSettings, setSavingSettings] = useState(false);
 
   // Simple/Advanced toggle — only available in the tenant-1 sandbox while we're testing.
   const effectiveTenantId = user?.is_global_admin ? selectedTenantId : user?.tenant_id;
@@ -118,10 +120,15 @@ export default function CampaignSettings() {
     try {
       const headers = buildHeaders();
 
-      const [campaignsRes, enrollmentsRes] = await Promise.all([
+      const [campaignsRes, enrollmentsRes, settingsRes] = await Promise.all([
         fetch(`${API_BASE}/drip-campaigns`, { headers }),
         fetch(`${API_BASE}/drip-campaigns/enrollments/list?status_filter=active`, { headers }),
+        fetch(`${API_BASE}/drip-campaigns/settings`, { headers }),
       ]);
+
+      if (settingsRes.ok) {
+        setDripSettings(await settingsRes.json());
+      }
 
       if (campaignsRes.ok) {
         const data = await campaignsRes.json();
@@ -353,6 +360,31 @@ export default function CampaignSettings() {
     }
   };
 
+  const updateDripSetting = async (key, value) => {
+    const previous = { ...dripSettings };
+    setDripSettings({ ...dripSettings, [key]: value });
+    setSavingSettings(true);
+    try {
+      const res = await fetch(`${API_BASE}/drip-campaigns/settings`, {
+        method: 'PUT',
+        headers: buildHeaders(true),
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to save setting');
+      }
+      const updated = await res.json();
+      setDripSettings(updated);
+      showToast('Setting saved');
+    } catch (err) {
+      setDripSettings(previous);
+      showToast(err.message || 'Failed to save setting', 'error');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   const cancelEnrollment = async (enrollmentId) => {
     setCancellingId(enrollmentId);
     try {
@@ -529,6 +561,34 @@ export default function CampaignSettings() {
       </header>
 
       <div className="sms-cards">
+        {/* ── Drip Behavior Settings ───────────────────────────────────── */}
+        <section className="sms-card">
+          <div className="sms-card__header">
+            <h2 className="sms-card__title">Drip Behavior</h2>
+          </div>
+          <div className="sms-card__body">
+            <div className="sms-field sms-field--toggle">
+              <label className="sms-toggle" htmlFor="drip-affects-pipeline">
+                <input
+                  id="drip-affects-pipeline"
+                  type="checkbox"
+                  checked={dripSettings.drip_affects_pipeline}
+                  onChange={(e) => updateDripSetting('drip_affects_pipeline', e.target.checked)}
+                  disabled={savingSettings}
+                  className="sms-toggle__input"
+                />
+                <span className="sms-toggle__switch" />
+                <span className="sms-toggle__label">
+                  Drip campaigns advance pipeline stages
+                </span>
+              </label>
+              <p className="sms-field__hint" style={{ marginTop: '8px' }}>
+                When on (default), each drip step advances the lead's pipeline stage by one position. The final step uses the customer-match rule: enrolled if matched, missed otherwise. Turn off if this tenant doesn't use a kanban pipeline or wants stages to be human-managed only.
+              </p>
+            </div>
+          </div>
+        </section>
+
         {/* ── Campaign Cards ───────────────────────────────────────────── */}
         {campaigns.length === 0 && (
           <section className="sms-card">
@@ -723,17 +783,25 @@ export default function CampaignSettings() {
                     {[...campaign.steps]
                       .sort((a, b) => a.step_number - b.step_number)
                       .map((step) => {
-                        // Step N advances the lead from pipeline position N-1 to N,
-                        // so the badge shows the destination stage label when available.
-                        const targetStage = pipelineStages?.[step.step_number];
-                        const badgeLabel = targetStage?.label || `Step ${step.step_number}`;
+                        // Step N moves the lead from pipeline position N-1 → N.
+                        // Show the transition as "From → To" using the stage labels.
+                        const fromStage = pipelineStages?.[step.step_number - 1];
+                        const toStage = pipelineStages?.[step.step_number];
+                        let badgeLabel;
+                        if (fromStage && toStage) {
+                          badgeLabel = `${fromStage.label} → ${toStage.label}`;
+                        } else if (toStage) {
+                          badgeLabel = toStage.label;
+                        } else {
+                          badgeLabel = `Step ${step.step_number}`;
+                        }
                         return (
                         <div key={step.step_number} className="campaign-step">
                           <div className="campaign-step__header">
                             <span
                               className="campaign-step__badge"
-                              style={targetStage?.color ? {
-                                background: targetStage.color,
+                              style={toStage?.color ? {
+                                background: toStage.color,
                                 color: '#fff',
                               } : undefined}
                             >

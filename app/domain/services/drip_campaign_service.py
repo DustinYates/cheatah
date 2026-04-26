@@ -177,6 +177,54 @@ class DripCampaignService:
             await self.session.commit()
             return {"status": "skipped", "reason": "no_phone"}
 
+        # Pipeline-impact gate: tenants without pipelines (or who don't want
+        # drips touching stages) can opt out via tenant_business_profiles.
+        # When off, the drip behaves as a plain N-message linear sequence —
+        # no customer-match divert, no missed-terminal, no stage updates.
+        affects_pipeline = await self._tenant_drip_affects_pipeline(tenant_id)
+
+        # Customer-match check: if the lead has become a Jackrabbit customer at
+        # any point during the drip, divert to the "enrolled" path — send the
+        # last step's template (treated as the enrolled-confirmation message)
+        # and complete the enrollment. If no match AND this is the final step,
+        # mark the lead "missed" and don't send anything.
+        if affects_pipeline:
+            from app.persistence.repositories.customer_repository import CustomerRepository
+            customer_match = await CustomerRepository(self.session).get_by_phone(tenant_id, lead.phone)
+        else:
+            customer_match = None
+        last_step = max(campaign.steps, key=lambda s: s.step_number)
+        is_last_step = step.step_number == last_step.step_number
+        enrolled_path = bool(customer_match)
+        missed_path = affects_pipeline and (not enrolled_path) and is_last_step
+
+        if missed_path:
+            # No message — final step reached without conversion.
+            try:
+                await self._set_pipeline_stage_if_exists(tenant_id, lead, "missed")
+                self._append_drip_note(lead, "drip campaign ended — lead missed (no enrollment)")
+            except Exception as e:
+                logger.error(
+                    f"Failed to mark lead {lead.id} missed for enrollment {enrollment_id}: {e}",
+                    exc_info=True,
+                )
+            enrollment.status = "completed"
+            enrollment.cancelled_reason = "missed_no_conversion"
+            enrollment.next_task_id = None
+            enrollment.next_step_at = None
+            enrollment.current_step = next_step_num
+            enrollment.updated_at = datetime.utcnow()
+            await self.session.commit()
+            logger.info(
+                f"Drip enrollment {enrollment_id}: final step reached without "
+                f"customer match — lead {lead.id} marked missed, enrollment completed."
+            )
+            return {"status": "completed", "reason": "missed"}
+
+        # If customer matched, the message we send is the LAST step's template
+        # (which is the enrolled-confirmation message by convention).
+        effective_step = last_step if enrolled_path else step
+
         # Get SMS config for quiet hours / provider
         factory = TelephonyProviderFactory(self.session)
         sms_config = await factory.get_config(tenant_id)
@@ -221,12 +269,12 @@ class DripCampaignService:
         if lead.name and "first_name" not in context:
             context["first_name"] = lead.name.split()[0] if lead.name else ""
 
-        if step.check_availability:
+        if effective_step.check_availability:
             message = await self.message_service.render_with_availability(
-                step.message_template, context, tenant_id, step.fallback_template
+                effective_step.message_template, context, tenant_id, effective_step.fallback_template
             )
         else:
-            message = self.message_service.render_template(step.message_template, context)
+            message = self.message_service.render_template(effective_step.message_template, context)
 
         if not message:
             logger.error(f"Empty message for enrollment {enrollment_id} step {next_step_num}")
@@ -276,38 +324,61 @@ class DripCampaignService:
             tenant_id, conversation.id, "assistant", message
         )
 
-        # Append a note + advance pipeline stage on the lead so the dashboard
-        # shows what was sent and the lead progresses through the kanban.
-        try:
-            await self._record_drip_send_on_lead(
-                tenant_id=tenant_id,
-                lead=lead,
-                step_number=next_step_num,
-                message=message,
-            )
-        except Exception as e:
-            logger.error(
-                f"Failed to record drip note/pipeline-advance for lead {lead.id} "
-                f"enrollment {enrollment_id}: {e}",
-                exc_info=True,
-            )
-
-        # Update enrollment
-        enrollment.current_step = next_step_num
-        enrollment.updated_at = datetime.utcnow()
-
-        # Schedule next step if there are more
-        next_next_step = next(
-            (s for s in campaign.steps if s.step_number == next_step_num + 1), None
-        )
-        if next_next_step:
-            task_id = await self._schedule_step(enrollment, next_next_step.delay_minutes)
-            enrollment.next_task_id = task_id
-        else:
-            # Last step — mark completed
+        # Branch: enrolled (customer matched) vs normal drip step.
+        if enrolled_path:
+            # Pin to the "enrolled" stage and complete the enrollment.
+            try:
+                await self._set_pipeline_stage_if_exists(tenant_id, lead, "enrolled")
+                self._append_drip_note(lead, f"drip campaign (enrolled): {message}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to set enrolled stage / note for lead {lead.id} "
+                    f"enrollment {enrollment_id}: {e}",
+                    exc_info=True,
+                )
+            enrollment.current_step = next_step_num
             enrollment.status = "completed"
+            enrollment.cancelled_reason = "customer_enrolled"
             enrollment.next_task_id = None
             enrollment.next_step_at = None
+            enrollment.updated_at = datetime.utcnow()
+        else:
+            # Normal drip: append note. Advance pipeline stage by +1 only if
+            # the tenant allows drip-driven pipeline changes.
+            try:
+                if affects_pipeline:
+                    await self._record_drip_send_on_lead(
+                        tenant_id=tenant_id,
+                        lead=lead,
+                        step_number=next_step_num,
+                        message=message,
+                    )
+                else:
+                    self._append_drip_note(
+                        lead, f"drip campaign step {next_step_num}: {message}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Failed to record drip note/pipeline-advance for lead {lead.id} "
+                    f"enrollment {enrollment_id}: {e}",
+                    exc_info=True,
+                )
+
+            enrollment.current_step = next_step_num
+            enrollment.updated_at = datetime.utcnow()
+
+            # Schedule next step if there are more
+            next_next_step = next(
+                (s for s in campaign.steps if s.step_number == next_step_num + 1), None
+            )
+            if next_next_step:
+                task_id = await self._schedule_step(enrollment, next_next_step.delay_minutes)
+                enrollment.next_task_id = task_id
+            else:
+                # Last step — mark completed
+                enrollment.status = "completed"
+                enrollment.next_task_id = None
+                enrollment.next_step_at = None
 
         await self.session.commit()
 
@@ -686,6 +757,62 @@ class DripCampaignService:
             return None
 
     # ── Private Helpers ──────────────────────────────────────────────────
+
+    async def _tenant_drip_affects_pipeline(self, tenant_id: int) -> bool:
+        """Read the per-tenant flag controlling whether drips mutate pipeline_stage.
+
+        Defaults to True on read errors / missing rows so behavior matches the
+        pre-flag baseline.
+        """
+        from app.persistence.models.tenant import TenantBusinessProfile
+
+        try:
+            result = await self.session.execute(
+                select(TenantBusinessProfile.drip_affects_pipeline).where(
+                    TenantBusinessProfile.tenant_id == tenant_id
+                )
+            )
+            value = result.scalar_one_or_none()
+            return True if value is None else bool(value)
+        except Exception as e:
+            logger.warning(
+                f"Could not read drip_affects_pipeline for tenant {tenant_id}: {e}; "
+                f"defaulting to True"
+            )
+            return True
+
+    def _append_drip_note(self, lead, body: str) -> None:
+        """Append a timestamped note line to lead.notes."""
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        new_line = f"{timestamp} - {body}"
+        existing = (lead.notes or "").rstrip()
+        lead.notes = f"{existing}\n{new_line}" if existing else new_line
+
+    async def _set_pipeline_stage_if_exists(
+        self, tenant_id: int, lead, stage_key: str
+    ) -> bool:
+        """Set lead.pipeline_stage to a specific key only if that stage exists.
+
+        Returns True if set, False if the tenant doesn't have that stage configured.
+        """
+        from app.persistence.models.tenant_pipeline_stage import TenantPipelineStage
+
+        result = await self.session.execute(
+            select(TenantPipelineStage.key).where(
+                TenantPipelineStage.tenant_id == tenant_id,
+                TenantPipelineStage.key == stage_key,
+            )
+        )
+        if result.scalar_one_or_none() is None:
+            logger.warning(
+                f"Tenant {tenant_id} has no pipeline stage '{stage_key}' — "
+                f"leaving lead {lead.id} stage unchanged."
+            )
+            return False
+        old = lead.pipeline_stage
+        lead.pipeline_stage = stage_key
+        logger.info(f"Drip set lead {lead.id} pipeline_stage: {old} → {stage_key}")
+        return True
 
     async def _record_drip_send_on_lead(
         self,

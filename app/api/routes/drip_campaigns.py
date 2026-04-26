@@ -95,6 +95,69 @@ class DripEnrollmentResponse(BaseModel):
     updated_at: str
 
 
+# ── Tenant-level drip settings ────────────────────────────────────────────
+
+class DripSettingsResponse(BaseModel):
+    drip_affects_pipeline: bool
+    auto_enroll_new_leads: bool
+
+
+class DripSettingsUpdateRequest(BaseModel):
+    drip_affects_pipeline: bool | None = None
+    auto_enroll_new_leads: bool | None = None
+
+
+@router.get("/settings")
+async def get_drip_settings(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> DripSettingsResponse:
+    """Read tenant-level drip behavior flags."""
+    from sqlalchemy import select as _select
+    from app.persistence.models.tenant import TenantBusinessProfile
+
+    result = await db.execute(
+        _select(TenantBusinessProfile).where(TenantBusinessProfile.tenant_id == tenant_id)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        # No profile row yet — return safe defaults.
+        return DripSettingsResponse(drip_affects_pipeline=True, auto_enroll_new_leads=False)
+    return DripSettingsResponse(
+        drip_affects_pipeline=bool(profile.drip_affects_pipeline),
+        auto_enroll_new_leads=bool(profile.auto_enroll_new_leads),
+    )
+
+
+@router.put("/settings")
+async def update_drip_settings(
+    body: DripSettingsUpdateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> DripSettingsResponse:
+    """Update tenant-level drip behavior flags. Only provided fields are changed."""
+    from sqlalchemy import select as _select
+    from app.persistence.models.tenant import TenantBusinessProfile
+
+    result = await db.execute(
+        _select(TenantBusinessProfile).where(TenantBusinessProfile.tenant_id == tenant_id)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Tenant business profile not found")
+
+    if body.drip_affects_pipeline is not None:
+        profile.drip_affects_pipeline = body.drip_affects_pipeline
+    if body.auto_enroll_new_leads is not None:
+        profile.auto_enroll_new_leads = body.auto_enroll_new_leads
+    await db.commit()
+    await db.refresh(profile)
+    return DripSettingsResponse(
+        drip_affects_pipeline=bool(profile.drip_affects_pipeline),
+        auto_enroll_new_leads=bool(profile.auto_enroll_new_leads),
+    )
+
+
 # ── Campaign CRUD ────────────────────────────────────────────────────────
 
 @router.get("")

@@ -3,6 +3,7 @@ import './LeadScoreBadge.css';
 const BAND_LABEL = {
   hot: 'Hot',
   warm: 'Warm',
+  cool: 'Cool',
   cold: 'Cold',
 };
 

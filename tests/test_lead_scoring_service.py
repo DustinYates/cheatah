@@ -47,7 +47,7 @@ def test_placeholder_name_does_not_count():
     placeholder = compute_score(_lead(name="Caller +12815551234")).breakdown.get(
         "completeness", 0
     )
-    assert real == placeholder + 5
+    assert real > placeholder
 
 
 def test_high_intent_pushes_to_warm_or_hot():

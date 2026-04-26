@@ -31,6 +31,12 @@
   border-color: #fde68a;
 }
 
+.lead-score-badge--cool {
+  background-color: #dbeafe;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+
 .lead-score-badge--cold {
   background-color: #f1f5f9;
   color: #64748b;

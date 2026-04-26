@@ -19,6 +19,7 @@ class EnrollmentService:
     """Match Jackrabbit enrollments to existing leads and tag as registered."""
 
     REGISTERED_TAG = "enrolled"
+    CUSTOMER_TAG = "customer"
     REGISTERED_PIPELINE_STAGE = "registered"
 
     def __init__(self, session: AsyncSession) -> None:
@@ -88,11 +89,15 @@ class EnrollmentService:
             lead.pipeline_stage = self.REGISTERED_PIPELINE_STAGE
 
         current_tags = list(lead.custom_tags or [])
-        if not any(
-            isinstance(t, str) and t.strip().lower() == self.REGISTERED_TAG
-            for t in current_tags
-        ):
-            current_tags.append(self.REGISTERED_TAG)
+        tags_changed = False
+        for tag in (self.REGISTERED_TAG, self.CUSTOMER_TAG):
+            if not any(
+                isinstance(t, str) and t.strip().lower() == tag
+                for t in current_tags
+            ):
+                current_tags.append(tag)
+                tags_changed = True
+        if tags_changed:
             lead.custom_tags = current_tags
 
         await self.session.commit()

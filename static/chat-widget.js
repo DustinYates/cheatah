@@ -507,6 +507,10 @@
         if (toggle) {
           toggle.setAttribute('data-position', settings.layout.position || 'bottom-right');
         }
+        const container = widget.querySelector('.cc-widget-container');
+        if (container) {
+          container.setAttribute('data-position', settings.layout.position || 'bottom-right');
+        }
       }
 
       // Apply messages
@@ -1350,6 +1354,19 @@
           transform-origin: bottom right;
           transition: transform 0.2s ease, opacity 0.2s ease, visibility 0.2s;
           pointer-events: auto;
+        }
+        .cc-widget-container[data-position$="left"] {
+          right: auto;
+          left: 0;
+          transform-origin: bottom left;
+        }
+        .cc-widget-container[data-position^="top"] {
+          bottom: auto;
+          top: 0;
+          transform-origin: top right;
+        }
+        .cc-widget-container[data-position="top-left"] {
+          transform-origin: top left;
         }
         .cc-widget-container.cc-hidden {
           transform: scale(0);

@@ -1548,6 +1548,36 @@ async def telnyx_ai_call_complete(
                                     next_seq += 1
                                     new_msg_count += 1
 
+                                    # Conversion tracking: when the AI inlines a
+                                    # registration URL in its reply (instead of
+                                    # invoking send_link), record it in sent_assets
+                                    # so it shows up in the dashboard.
+                                    if msg_role == "assistant" and normalized_from:
+                                        try:
+                                            from app.utils.registration_url_detector import find_registration_url
+                                            from app.persistence.models.sent_asset import SentAsset
+                                            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+                                            inline_url = find_registration_url(msg_content)
+                                            if inline_url:
+                                                phone_normalized = normalize_phone_for_dedup(normalized_from)
+                                                stmt = pg_insert(SentAsset).values(
+                                                    tenant_id=tenant_id,
+                                                    phone_normalized=phone_normalized,
+                                                    asset_type="registration_link",
+                                                    sent_at=msg_created_at or datetime.now(timezone.utc),
+                                                    conversation_id=sms_conversation.id,
+                                                ).on_conflict_do_nothing(
+                                                    constraint="uq_sent_assets_tenant_phone_asset"
+                                                )
+                                                await db.execute(stmt)
+                                                logger.info(
+                                                    f"[SENT-ASSET-INLINE] Recorded inline registration link "
+                                                    f"tenant={tenant_id} phone={phone_normalized} url={inline_url}"
+                                                )
+                                        except Exception as inline_err:
+                                            logger.warning(f"[SENT-ASSET-INLINE] Failed to record inline link: {inline_err}")
+
                             actual_messages_stored = True
                             logger.info(
                                 f"[SMS-DEDUP] Stored {new_msg_count} new SMS messages, skipped {skipped_dup_count} duplicates "

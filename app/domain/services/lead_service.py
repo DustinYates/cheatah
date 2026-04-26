@@ -145,7 +145,11 @@ class LeadService:
             logger.info(f"Found existing lead {existing_lead.id} for email={email}, phone={normalized_phone}")
             # Update existing lead with new info
             updated = False
-            if validated_name and not existing_lead.name:
+            existing_name_is_placeholder = bool(
+                existing_lead.name
+                and (existing_lead.name.startswith("Caller ") or existing_lead.name.startswith("SMS Contact "))
+            )
+            if validated_name and (not existing_lead.name or existing_name_is_placeholder):
                 existing_lead.name = validated_name
                 updated = True
             if email and not existing_lead.email:

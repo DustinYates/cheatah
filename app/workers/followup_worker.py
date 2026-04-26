@@ -198,6 +198,10 @@ def _generate_initial_message(lead: Lead, sms_config: TenantSmsConfig) -> str:
     Uses subject-specific template if available, then custom template, otherwise contextual message.
     """
     lead_name = lead.name or ""
+    # Treat placeholder names ("Caller +1...", "SMS Contact +1...") as empty
+    # so template substitutions fall back to a generic greeting instead of "Caller".
+    if lead_name.startswith("Caller ") or lead_name.startswith("SMS Contact "):
+        lead_name = ""
     first_name = lead_name.split()[0] if lead_name else ""
 
     # Check for subject-specific template first (for email leads)

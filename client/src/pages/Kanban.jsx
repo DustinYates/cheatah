@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { usePipelineStages } from '../hooks/usePipelineStages';
 import LeadDetailsModal from '../components/LeadDetailsModal';
+import LeadScoreBadge from '../components/LeadScoreBadge';
 import SendSmsModal from '../components/SendSmsModal';
 import MassSmsModal from '../components/MassSmsModal';
 import EditLeadModal from '../components/EditLeadModal';
@@ -219,9 +220,7 @@ export default function Kanban() {
     fetchLeads();
   }, [fetchLeads]);
 
-  // Hide "Test calls" column (enrolled stage used for internal testing)
-  const HIDDEN_STAGES = new Set(['enrolled']);
-  const visibleStages = STAGES.filter((s) => !HIDDEN_STAGES.has(s.key));
+  const visibleStages = STAGES;
   const knownKeys = new Set(STAGES.map((s) => s.key));
   const firstKey = STAGES[0]?.key || 'new_lead';
   // Hide leads older than 15 days in these stages
@@ -527,6 +526,8 @@ export default function Kanban() {
                           {lead.unread_count > 0 && (
                             <span className="kanban-card__unread-badge">{lead.unread_count}</span>
                           )}
+                          <LeadScoreBadge score={lead.score} band={lead.score_band} />
+
                           {!mergeMode && (
                             <div className="kanban-card__actions">
                               {lead.phone && (

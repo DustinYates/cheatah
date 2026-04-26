@@ -196,6 +196,22 @@ class EmailService:
         await self.conversation_service.add_message(
             tenant_id, conversation.id, "user", processed_body
         )
+
+        # Score signal: inbound email on an existing lead bumps engagement.
+        # New-lead capture is handled by capture_lead() further below.
+        if email_conversation.lead_id:
+            try:
+                await self.lead_service.bump_lead_activity(
+                    tenant_id,
+                    email_conversation.lead_id,
+                    signals={
+                        "inbound_message": True,
+                        "channel": "email",
+                        "replied_to_outbound": True,
+                    },
+                )
+            except Exception as e:
+                logger.error(f"Failed to record email score signal for lead {email_conversation.lead_id}: {e}")
         
         # Check for escalation keywords
         escalation = await self._check_escalation(

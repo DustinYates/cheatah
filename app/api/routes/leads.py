@@ -32,6 +32,15 @@ def _isoformat_utc(dt):
     return dt.isoformat().replace("+00:00", "Z")
 
 
+def _score_kwargs(lead) -> dict:
+    """Score fields for LeadResponse construction."""
+    return {
+        "score": getattr(lead, "score", 0) or 0,
+        "score_band": getattr(lead, "score_band", "cold") or "cold",
+        "score_updated_at": _isoformat_utc(getattr(lead, "score_updated_at", None)),
+    }
+
+
 class LeadResponse(BaseModel):
     """Lead response model."""
 
@@ -52,6 +61,9 @@ class LeadResponse(BaseModel):
     pending_task_count: int = 0
     next_task_due: str | None = None  # ISO date of earliest pending task due date
     unread_count: int = 0  # Unread notification count for this lead's conversation
+    score: int = 0
+    score_band: str = "cold"
+    score_updated_at: str | None = None
 
     custom_tags: list[str] = []
 
@@ -289,6 +301,7 @@ async def list_leads(
                 notes=lead.notes if hasattr(lead, 'notes') else None,
                 extra_data=lead.extra_data,
                 custom_tags=list(lead.custom_tags or []),
+                **_score_kwargs(lead),
                 created_at=_isoformat_utc(lead.created_at),
                 updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
                 llm_responded=llm_responded,
@@ -363,6 +376,7 @@ async def get_lead(
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
         custom_tags=list(lead.custom_tags or []),
+        **_score_kwargs(lead),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -491,6 +505,7 @@ async def update_lead_status(
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
         custom_tags=list(lead.custom_tags or []),
+        **_score_kwargs(lead),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -544,6 +559,7 @@ async def update_lead_pipeline_stage(
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
         custom_tags=list(lead.custom_tags or []),
+        **_score_kwargs(lead),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -582,6 +598,7 @@ async def update_lead_notes(
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
         custom_tags=list(lead.custom_tags or []),
+        **_score_kwargs(lead),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -615,6 +632,7 @@ async def add_lead_tag(
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
         custom_tags=list(lead.custom_tags or []),
+        **_score_kwargs(lead),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -648,6 +666,7 @@ async def remove_lead_tag(
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
         custom_tags=list(lead.custom_tags or []),
+        **_score_kwargs(lead),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -692,6 +711,7 @@ async def update_lead(
         notes=lead.notes if hasattr(lead, 'notes') else None,
         extra_data=lead.extra_data,
         custom_tags=list(lead.custom_tags or []),
+        **_score_kwargs(lead),
         created_at=_isoformat_utc(lead.created_at),
         updated_at=_isoformat_utc(lead.updated_at) if lead.updated_at else None,
         llm_responded=llm_responded,
@@ -961,6 +981,7 @@ async def get_related_leads(
                 pipeline_stage=rel_lead.pipeline_stage if hasattr(rel_lead, 'pipeline_stage') else None,
                 extra_data=rel_lead.extra_data,
                 custom_tags=list(rel_lead.custom_tags or []),
+                **_score_kwargs(rel_lead),
                 created_at=_isoformat_utc(rel_lead.created_at),
                 updated_at=_isoformat_utc(rel_lead.updated_at) if rel_lead.updated_at else None,
                 llm_responded=llm_responded,
@@ -1079,6 +1100,7 @@ async def merge_leads(
         notes=primary_lead.notes if hasattr(primary_lead, 'notes') else None,
         extra_data=primary_lead.extra_data,
         custom_tags=list(primary_lead.custom_tags or []),
+        **_score_kwargs(primary_lead),
         created_at=_isoformat_utc(primary_lead.created_at),
         updated_at=_isoformat_utc(primary_lead.updated_at) if primary_lead.updated_at else None,
         llm_responded=llm_responded,

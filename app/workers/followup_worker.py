@@ -113,21 +113,42 @@ async def process_followup_task(
                 logger.info(f"Phone {payload.phone_number} not opted in, skipping follow-up")
                 return {"status": "skipped", "reason": "not_opted_in"}
 
-        # Create new conversation for follow-up
+        # Reuse the most recent open SMS conversation for this phone if one exists
+        # within the last 7 days; otherwise create a new conversation. This prevents
+        # a parallel SMS thread when a customer has an active conversation from
+        # another channel (e.g. inbound call followup created while they're mid-SMS).
         conversation_service = ConversationService(db)
-        conversation = await conversation_service.create_conversation(
-            tenant_id=payload.tenant_id,
-            channel="sms",
-            external_id=f"followup-{payload.lead_id}",
-        )
-
-        # Update conversation with phone number
+        from app.persistence.models.conversation import Conversation
         from app.persistence.repositories.conversation_repository import ConversationRepository
-        conv_repo = ConversationRepository(db)
-        conv = await conv_repo.get_by_id(payload.tenant_id, conversation.id)
-        if conv:
-            conv.phone_number = payload.phone_number
-            await db.commit()
+
+        recent_conv_cutoff = datetime.utcnow() - timedelta(days=7)
+        existing_conv_result = await db.execute(
+            select(Conversation).where(
+                Conversation.tenant_id == payload.tenant_id,
+                Conversation.phone_number == payload.phone_number,
+                Conversation.channel == "sms",
+                Conversation.status == "open",
+                Conversation.created_at >= recent_conv_cutoff,
+            ).order_by(Conversation.created_at.desc()).limit(1)
+        )
+        conversation = existing_conv_result.scalar_one_or_none()
+
+        if conversation:
+            logger.info(
+                f"Reusing existing SMS conversation {conversation.id} for followup "
+                f"(lead {payload.lead_id}, phone {payload.phone_number})"
+            )
+        else:
+            conversation = await conversation_service.create_conversation(
+                tenant_id=payload.tenant_id,
+                channel="sms",
+                external_id=f"followup-{payload.lead_id}",
+            )
+            conv_repo = ConversationRepository(db)
+            conv = await conv_repo.get_by_id(payload.tenant_id, conversation.id)
+            if conv:
+                conv.phone_number = payload.phone_number
+                await db.commit()
 
         # Update lead with follow-up info (create new dict to trigger SQLAlchemy change detection)
         extra_data = dict(lead.extra_data or {})

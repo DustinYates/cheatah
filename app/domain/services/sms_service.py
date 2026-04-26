@@ -723,6 +723,19 @@ class SmsService:
             has_email=has_email,
         )
 
+        if lead is not None:
+            from app.domain.services.lead_scoring_service import (
+                record_signal as _record_score_signal,
+                recompute_and_persist as _recompute_score,
+            )
+            _record_score_signal(
+                lead,
+                enrollment_confidence=intent_result.confidence,
+                **({"high_intent": True} if intent_result.is_high_intent else {}),
+            )
+            await _recompute_score(self.session, lead)
+            await self.session.commit()
+
         if not intent_result.is_high_intent:
             logger.debug(
                 f"No high intent detected (SMS) - tenant_id={tenant_id}, "
@@ -959,7 +972,11 @@ Respond with ONLY valid JSON, no explanation:
 
                 from app.domain.services.lead_service import LeadService
                 lead_service = LeadService(self.session)
-                await lead_service.bump_lead_activity(tenant_id, existing_lead.id)
+                await lead_service.bump_lead_activity(
+                    tenant_id,
+                    existing_lead.id,
+                    signals={"inbound_message": True, "channel": "sms"},
+                )
             else:
                 # If this is a handoff conversation, try to reuse the chat lead
                 from app.domain.services.lead_service import LeadService
@@ -988,7 +1005,11 @@ Respond with ONLY valid JSON, no explanation:
                         from datetime import datetime
                         source_lead.updated_at = datetime.utcnow()
                         await self.session.commit()
-                        await lead_service.bump_lead_activity(tenant_id, source_lead.id)
+                        await lead_service.bump_lead_activity(
+                            tenant_id,
+                            source_lead.id,
+                            signals={"inbound_message": True, "channel": "sms"},
+                        )
                         logger.info(
                             f"Unified SMS lead with chat lead - tenant_id={tenant_id}, "
                             f"lead_id={source_lead.id}, sms_conv={conversation.id}"

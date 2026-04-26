@@ -442,7 +442,11 @@ class ChatService:
             tenant_id, conversation.id
         )
         if existing_lead:
-            await self.lead_service.bump_lead_activity(tenant_id, existing_lead.id)
+            await self.lead_service.bump_lead_activity(
+                tenant_id,
+                existing_lead.id,
+                signals={"inbound_message": True, "channel": "chat"},
+            )
 
         # Track phone BEFORE extraction to detect if it was just collected this turn
         phone_before_extraction = existing_lead.phone if existing_lead else None
@@ -1500,6 +1504,19 @@ class ChatService:
             has_phone=has_phone,
             has_email=has_email,
         )
+
+        if lead is not None:
+            from app.domain.services.lead_scoring_service import (
+                record_signal as _record_score_signal,
+                recompute_and_persist as _recompute_score,
+            )
+            _record_score_signal(
+                lead,
+                enrollment_confidence=intent_result.confidence,
+                **({"high_intent": True} if intent_result.is_high_intent else {}),
+            )
+            await _recompute_score(self.session, lead)
+            await self.session.commit()
 
         if not intent_result.is_high_intent:
             logger.debug(

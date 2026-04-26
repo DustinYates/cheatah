@@ -1745,6 +1745,21 @@ async def telnyx_ai_call_complete(
 
                 await db.commit()
 
+                # Auto-enroll into drip if tenant flag is on.
+                try:
+                    from app.domain.services.drip_campaign_service import DripCampaignService
+                    drip_service = DripCampaignService(db)
+                    await drip_service.maybe_auto_enroll(
+                        tenant_id=tenant_id,
+                        lead_id=lead.id,
+                        source="sms",
+                        extra_context={
+                            "first_name": caller_name.split()[0] if caller_name else "",
+                        },
+                    )
+                except Exception as e:
+                    logger.error(f"SMS drip auto-enroll failed for lead {lead.id}: {e}", exc_info=True)
+
                 # =============================================================
                 # Owner Inbound Contact Notification for AI-handled SMS
                 # =============================================================
@@ -2102,7 +2117,41 @@ async def telnyx_ai_call_complete(
         # Store transcript and summary in call metadata or separate table
         # For now, we'll create a lead with the information
 
-        # Create Lead from caller (always create new lead, link to existing contact)
+        # Validate caller_name against the transcript before trusting it. The Telnyx
+        # insight heuristic accepts any short text as the caller's name, so the bot's
+        # own greeting (e.g. "Hi, this is Sarah from British Swim School") yields a
+        # one-word "Sarah" insight that gets stamped onto the lead. Drop the name
+        # unless it actually appears in a user-side line, or in a self-introduction
+        # ("my name is X", "I'm X", "this is X") spoken by the user.
+        if caller_name and transcript and isinstance(transcript, str):
+            name_token = caller_name.strip().split()[0].lower() if caller_name.strip() else ""
+            if name_token:
+                user_mentions = 0
+                bot_mentions = 0
+                for raw_line in transcript.splitlines():
+                    line_lower = raw_line.lower()
+                    if name_token not in line_lower:
+                        continue
+                    if line_lower.startswith(("user:", "customer:", "caller:", "human:")):
+                        user_mentions += 1
+                    elif line_lower.startswith(("assistant:", "bot:", "agent:", "ai:")):
+                        bot_mentions += 1
+                    else:
+                        # Unprefixed line — count as user mention only if name follows
+                        # a clear self-introduction pattern.
+                        if re.search(rf"\b(my name is|i am|i'm|this is)\s+{re.escape(name_token)}\b", line_lower):
+                            user_mentions += 1
+                if user_mentions == 0 and bot_mentions > 0:
+                    logger.info(
+                        f"Rejecting caller_name '{caller_name}' — appears only in bot lines "
+                        f"({bot_mentions} bot, 0 user mentions); likely the bot's persona name"
+                    )
+                    caller_name = ""
+
+        # Dedup by phone+tenant within 30 days. Without this, a customer mid-conversation
+        # on another channel (Meta lead form / SMS / email) gets a parallel lead spawned
+        # by the inbound call, and the followup worker creates a second SMS conversation —
+        # splitting the message thread between the two leads.
         lead = None
         if from_number:
             normalized_from = _normalize_phone(from_number)
@@ -2118,18 +2167,49 @@ async def telnyx_ai_call_complete(
                 "transcript": transcript[:2000] if transcript else None,
             }
 
-            # Always create new lead for each call
-            display_name = caller_name if caller_name else f"Caller {normalized_from}"
-            lead = Lead(
-                tenant_id=tenant_id,
-                phone=normalized_from,
-                name=display_name,
-                email=caller_email or None,
-                status="new",
-                extra_data={"source": "voice_call", "voice_calls": [call_data]},
+            recent_cutoff = now - timedelta(days=30)
+            existing_lead_result = await db.execute(
+                select(Lead).where(
+                    Lead.tenant_id == tenant_id,
+                    Lead.phone == normalized_from,
+                    Lead.created_at >= recent_cutoff,
+                ).order_by(Lead.created_at.desc()).limit(1)
             )
-            db.add(lead)
-            await db.flush()
+            lead = existing_lead_result.scalar_one_or_none()
+
+            if lead:
+                extra_data = dict(lead.extra_data or {})
+                voice_calls = list(extra_data.get("voice_calls") or [])
+                voice_calls.append(call_data)
+                extra_data["voice_calls"] = voice_calls
+                lead.extra_data = extra_data
+                flag_modified(lead, "extra_data")
+
+                placeholder_prefixes = ("Caller +", "SMS Contact +")
+                if caller_name and (not lead.name or lead.name.startswith(placeholder_prefixes)):
+                    lead.name = caller_name
+                if caller_email and not lead.email:
+                    lead.email = caller_email
+                logger.info(
+                    f"Reused existing Lead {lead.id} for voice call: phone={normalized_from}, "
+                    f"voice_calls_count={len(voice_calls)}"
+                )
+            else:
+                display_name = caller_name if caller_name else f"Caller {normalized_from}"
+                lead = Lead(
+                    tenant_id=tenant_id,
+                    phone=normalized_from,
+                    name=display_name,
+                    email=caller_email or None,
+                    status="new",
+                    extra_data={"source": "voice_call", "voice_calls": [call_data]},
+                )
+                db.add(lead)
+                await db.flush()
+                logger.info(
+                    f"Created new Lead from AI call: phone={normalized_from}, "
+                    f"name={caller_name}, email={caller_email}"
+                )
 
             # Sync lead info to matching contact (find/update/create contact)
             contact_id = await _sync_lead_to_contact(
@@ -2140,7 +2220,27 @@ async def telnyx_ai_call_complete(
                 email=caller_email,
                 name=caller_name,
             )
-            logger.info(f"Created new Lead from AI call: phone={normalized_from}, name={caller_name}, email={caller_email}, contact_id={contact_id}")
+            logger.info(f"Synced lead {lead.id} to contact_id={contact_id}")
+
+            # Score signal: voice call complete adds an engagement event.
+            # Map intent to scoring categories for the intent breakdown.
+            try:
+                from app.domain.services.lead_scoring_service import (
+                    record_signal as _record_score_signal,
+                    recompute_and_persist as _recompute_score,
+                )
+                signal_kwargs: dict = {"inbound_message": True, "channel": "voice"}
+                _intent_map = {
+                    "pricing_info": "pricing",
+                    "booking_request": "scheduling",
+                }
+                mapped_intent = _intent_map.get(caller_intent or "")
+                if mapped_intent:
+                    signal_kwargs["intent"] = mapped_intent
+                _record_score_signal(lead, **signal_kwargs)
+                await _recompute_score(db, lead)
+            except Exception as e:
+                logger.error(f"Failed to record voice score signal for lead {lead.id}: {e}")
 
             # Schedule follow-up SMS for voice call leads
             try:
@@ -2153,6 +2253,21 @@ async def telnyx_ai_call_complete(
                     logger.info(f"Follow-up not scheduled for voice call lead {lead.id} (conditions not met)")
             except Exception as e:
                 logger.error(f"Failed to schedule follow-up for voice call lead {lead.id}: {e}", exc_info=True)
+
+            # Auto-enroll into drip if tenant flag is on.
+            try:
+                from app.domain.services.drip_campaign_service import DripCampaignService
+                drip_service = DripCampaignService(db)
+                await drip_service.maybe_auto_enroll(
+                    tenant_id=tenant_id,
+                    lead_id=lead.id,
+                    source="voice_call",
+                    extra_context={
+                        "first_name": caller_name.split()[0] if caller_name else "",
+                    },
+                )
+            except Exception as e:
+                logger.error(f"Voice drip auto-enroll failed for lead {lead.id}: {e}", exc_info=True)
 
             lead_id = lead.id if lead else None
         else:

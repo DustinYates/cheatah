@@ -6,6 +6,10 @@ from datetime import datetime
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.services.lead_scoring_service import (
+    record_signal,
+    recompute_and_persist,
+)
 from app.persistence.models.contact import Contact
 from app.persistence.models.lead import Lead
 from app.persistence.repositories.contact_repository import ContactRepository
@@ -55,6 +59,22 @@ def normalize_phone_e164(phone: str | None) -> str | None:
 
     logger.warning(f"Could not normalize phone number: {phone}")
     return phone  # Return original if we can't normalize (better than losing it)
+
+
+_SOURCE_TO_CHANNEL = {
+    "voice_call": "voice",
+    "sms": "sms",
+    "email": "email",
+    "chatbot": "chat",
+    "chat": "chat",
+    "web_form": "web",
+}
+
+
+def _channel_from_source(source: str | None) -> str | None:
+    if not source:
+        return None
+    return _SOURCE_TO_CHANNEL.get(source)
 
 
 def _lead_qualifies_for_auto_conversion(lead: Lead) -> bool:
@@ -222,8 +242,33 @@ class LeadService:
             print(f"[FOLLOWUP_CHECK] Conditions NOT met - phone={bool(normalized_phone)}, has_metadata={bool(metadata)}, source={metadata.get('source') if metadata else None}", flush=True)
             logger.info(f"[FOLLOWUP_CHECK] Conditions NOT met - phone={bool(normalized_phone)}, has_metadata={bool(metadata)}, source={metadata.get('source') if metadata else None}")
 
+        # Score the lead. Source channel feeds the channel-diversity signal.
+        source = (metadata or {}).get("source")
+        channel = _channel_from_source(source)
+        if channel:
+            record_signal(lead, channel=channel)
+        await recompute_and_persist(self.session, lead)
+        await self.session.commit()
+
         # Check for auto-conversion to contact
         await self._check_and_auto_convert(tenant_id, lead)
+
+        # Auto-enroll into drip if tenant has the flag on (sandbox rollout).
+        # Errors are swallowed by maybe_auto_enroll so lead creation isn't blocked.
+        try:
+            from app.domain.services.drip_campaign_service import DripCampaignService
+            drip_service = DripCampaignService(self.session)
+            extra_context: dict = {}
+            if validated_name:
+                extra_context["first_name"] = validated_name.split()[0]
+            await drip_service.maybe_auto_enroll(
+                tenant_id=tenant_id,
+                lead_id=lead.id,
+                source=(metadata or {}).get("source") or "capture_lead",
+                extra_context=extra_context or None,
+            )
+        except Exception as e:
+            logger.error(f"Auto-enroll check failed for lead {lead.id}: {e}", exc_info=True)
 
         return lead
 
@@ -548,13 +593,22 @@ class LeadService:
         tenant_id: int,
         lead_id: int,
         occurred_at: datetime | None = None,
+        signals: dict | None = None,
     ) -> Lead | None:
-        """Update lead timestamp so recent activity sorts to the top."""
+        """Update lead timestamp so recent activity sorts to the top.
+
+        Optional `signals` dict is forwarded to `record_signal()` to update
+        scoring inputs atomically with the activity bump (e.g. inbound_message=True,
+        channel="sms", drip_reply_touch=2).
+        """
         lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
         if not lead:
             return None
 
         lead.updated_at = occurred_at or datetime.utcnow()
+        if signals:
+            record_signal(lead, **signals)
+        await recompute_and_persist(self.session, lead)
         await self.session.commit()
         await self.session.refresh(lead)
         return lead

@@ -1,0 +1,38 @@
+.lead-score-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.lead-score-badge__icon {
+  font-size: 10px;
+}
+
+.lead-score-badge__num {
+  font-variant-numeric: tabular-nums;
+}
+
+.lead-score-badge--hot {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.lead-score-badge--warm {
+  background-color: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+.lead-score-badge--cold {
+  background-color: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
+}

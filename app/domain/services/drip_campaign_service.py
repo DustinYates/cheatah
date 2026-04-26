@@ -276,6 +276,22 @@ class DripCampaignService:
             tenant_id, conversation.id, "assistant", message
         )
 
+        # Append a note + advance pipeline stage on the lead so the dashboard
+        # shows what was sent and the lead progresses through the kanban.
+        try:
+            await self._record_drip_send_on_lead(
+                tenant_id=tenant_id,
+                lead=lead,
+                step_number=next_step_num,
+                message=message,
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to record drip note/pipeline-advance for lead {lead.id} "
+                f"enrollment {enrollment_id}: {e}",
+                exc_info=True,
+            )
+
         # Update enrollment
         enrollment.current_step = next_step_num
         enrollment.updated_at = datetime.utcnow()
@@ -341,6 +357,25 @@ class DripCampaignService:
 
         enrollment.response_category = category
         enrollment.updated_at = datetime.utcnow()
+
+        # Score signal: a reply at touch N where N is enrollment.current_step
+        # (the step that was last sent before this response).
+        try:
+            from app.domain.services.lead_scoring_service import (
+                record_signal as _record_score_signal,
+                recompute_and_persist as _recompute_score,
+            )
+            lead_for_score = await self.lead_repo.get_by_id(tenant_id, lead_id)
+            if lead_for_score and enrollment.current_step:
+                _record_score_signal(
+                    lead_for_score,
+                    drip_reply_touch=enrollment.current_step,
+                    replied_to_outbound=True,
+                    channel="sms",
+                )
+                await _recompute_score(self.session, lead_for_score)
+        except Exception as e:
+            logger.error(f"Failed to record drip-reply score signal for lead {lead_id}: {e}")
 
         template_data = response_templates.get(category, {})
         action = template_data.get("action")
@@ -608,7 +643,104 @@ class DripCampaignService:
             context_data=context_data,
         )
 
+    async def maybe_auto_enroll(
+        self,
+        tenant_id: int,
+        lead_id: int,
+        source: str,
+        extra_context: dict | None = None,
+    ) -> DripEnrollment | None:
+        """Enroll lead in a drip if the tenant has auto_enroll_new_leads turned on.
+
+        Gated by tenant_business_profiles.auto_enroll_new_leads (default false).
+        Idempotent — short-circuits if lead is already enrolled. Errors are
+        swallowed so lead creation is never blocked.
+        """
+        from app.persistence.models.tenant import TenantBusinessProfile
+
+        try:
+            result = await self.session.execute(
+                select(TenantBusinessProfile.auto_enroll_new_leads).where(
+                    TenantBusinessProfile.tenant_id == tenant_id
+                )
+            )
+            flag = result.scalar_one_or_none()
+            if not flag:
+                return None
+
+            context = {"source": source}
+            if extra_context:
+                context.update(extra_context)
+
+            return await self.enroll_lead_auto(
+                tenant_id=tenant_id,
+                lead_id=lead_id,
+                context_data=context,
+            )
+        except Exception as e:
+            logger.error(
+                f"maybe_auto_enroll failed for tenant={tenant_id} lead={lead_id} "
+                f"source={source}: {e}",
+                exc_info=True,
+            )
+            return None
+
     # ── Private Helpers ──────────────────────────────────────────────────
+
+    async def _record_drip_send_on_lead(
+        self,
+        tenant_id: int,
+        lead,
+        step_number: int,
+        message: str,
+    ) -> None:
+        """Append a timestamped note + advance the lead's pipeline stage.
+
+        Note format: "YYYY-MM-DD HH:MM - drip campaign step N: <message>"
+        Pipeline advance: moves to next stage by position; no-op if already at
+        the final stage or if no stages are configured.
+        """
+        from app.domain.services.lead_scoring_service import (
+            record_signal as _record_score_signal,
+            recompute_and_persist as _recompute_score,
+        )
+        from app.persistence.models.tenant_pipeline_stage import TenantPipelineStage
+
+        # 0. Record drip-send signal so scoring can decay if unanswered.
+        _record_score_signal(lead, drip_sent=True)
+
+        # 1. Append note (preserve existing).
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        new_line = f"{timestamp} - drip campaign step {step_number}: {message}"
+        existing = (lead.notes or "").rstrip()
+        lead.notes = f"{existing}\n{new_line}" if existing else new_line
+
+        await _recompute_score(self.session, lead)
+
+        # 2. Advance pipeline stage.
+        stages_result = await self.session.execute(
+            select(TenantPipelineStage)
+            .where(TenantPipelineStage.tenant_id == tenant_id)
+            .order_by(TenantPipelineStage.position)
+        )
+        stages = list(stages_result.scalars().all())
+        if not stages:
+            return
+
+        keys = [s.key for s in stages]
+        current = lead.pipeline_stage
+        if current in keys:
+            idx = keys.index(current)
+            if idx < len(keys) - 1:
+                lead.pipeline_stage = keys[idx + 1]
+                logger.info(
+                    f"Drip advanced lead {lead.id} pipeline_stage: "
+                    f"{current} → {lead.pipeline_stage}"
+                )
+        else:
+            # Lead has unknown/null stage — drop them on the first stage.
+            lead.pipeline_stage = keys[0]
+            logger.info(f"Drip set lead {lead.id} pipeline_stage to {keys[0]} (was {current!r})")
 
     async def _schedule_step(self, enrollment: DripEnrollment, delay_minutes: int) -> str | None:
         """Schedule the next drip step via Cloud Tasks."""

@@ -144,6 +144,12 @@ class TenantBusinessProfile(Base):
     owner_phone = Column(String(50), nullable=True)  # Owner's personal phone for notifications
     google_ads_webhook_key = Column(String(64), nullable=True)
 
+    # Auto-enroll every new lead into a matching drip campaign (sandbox/per-tenant rollout).
+    # Default false; flip per-tenant only when ready to test.
+    auto_enroll_new_leads = Column(
+        Boolean, default=False, nullable=False, server_default=text("false")
+    )
+
     profile_complete = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

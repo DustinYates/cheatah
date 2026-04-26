@@ -32,6 +32,9 @@ class Lead(Base):
     notes = Column(Text, nullable=True)
     extra_data = Column(JSON, nullable=True)
     custom_tags = Column(JSON, nullable=True, default=list)
+    score = Column(Integer, nullable=False, default=0)
+    score_band = Column(String(10), nullable=False, default='cold')
+    score_updated_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

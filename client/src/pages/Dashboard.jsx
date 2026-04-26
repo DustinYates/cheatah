@@ -7,6 +7,7 @@ import { formatSmartDateTime } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
 import { usePipelineStages } from '../hooks/usePipelineStages';
 import LeadDetailsModal from '../components/LeadDetailsModal';
+import LeadScoreBadge from '../components/LeadScoreBadge';
 import SendSmsModal from '../components/SendSmsModal';
 import EditLeadModal from '../components/EditLeadModal';
 import SideDrawer from '../components/SideDrawer';
@@ -1457,6 +1458,7 @@ export default function Dashboard() {
                           {lead.unread_count > 0 && (
                             <span className="lead-person__unread-badge">{lead.unread_count}</span>
                           )}
+                          <LeadScoreBadge score={lead.score} band={lead.score_band} />
                           {lead.pipeline_stage && (
                             <span
                               className="pipeline-badge"

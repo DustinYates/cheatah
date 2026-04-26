@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState, ErrorState, EmptyState } from '../components/ui';
+import { usePipelineStages } from '../hooks/usePipelineStages';
 import './CampaignSettings.css';
 
 const API_BASE = '/api/v1';
@@ -9,6 +10,21 @@ function formatDelay(minutes) {
   if (minutes < 60) return `${minutes} min`;
   if (minutes < 1440) return `${Math.round(minutes / 60)} hours`;
   return `${Math.round(minutes / 1440)} days`;
+}
+
+function toMinutes(value, unit) {
+  const n = parseInt(value, 10);
+  if (Number.isNaN(n) || n < 0) return 0;
+  if (unit === 'days') return n * 1440;
+  if (unit === 'hours') return n * 60;
+  return n;
+}
+
+function splitMinutes(minutes) {
+  const m = Number(minutes) || 0;
+  if (m > 0 && m % 1440 === 0) return { value: m / 1440, unit: 'days' };
+  if (m > 0 && m % 60 === 0) return { value: m / 60, unit: 'hours' };
+  return { value: m, unit: 'minutes' };
 }
 
 function formatDateTime(isoString) {
@@ -31,6 +47,7 @@ const STATUS_COLORS = {
 
 export default function CampaignSettings() {
   const { token, user, selectedTenantId } = useAuth();
+  const { stages: pipelineStages } = usePipelineStages();
   const [campaigns, setCampaigns] = useState([]);
   const [originalCampaigns, setOriginalCampaigns] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
@@ -44,12 +61,31 @@ export default function CampaignSettings() {
   const [newCampaignDraft, setNewCampaignDraft] = useState({
     name: '',
     audience_filter: 'any',
+    match_all_tags: true,
     tag_filter: '',
-    priority: 100,
-    trigger_delay_minutes: 10,
+    trigger_delay_value: 10,
+    trigger_delay_unit: 'minutes',
+    total_attempts: 3,
+    spacing_value: 1,
+    spacing_unit: 'days',
   });
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+
+  // Simple/Advanced toggle — only available in the tenant-1 sandbox while we're testing.
+  const effectiveTenantId = user?.is_global_admin ? selectedTenantId : user?.tenant_id;
+  const sandboxTenant = Number(effectiveTenantId) === 1;
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window === 'undefined') return 'advanced';
+    return window.localStorage.getItem('campaignSettings.viewMode') || 'simple';
+  });
+  const isSimple = sandboxTenant && viewMode === 'simple';
+  const setViewModePersistent = useCallback((mode) => {
+    setViewMode(mode);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('campaignSettings.viewMode', mode);
+    }
+  }, []);
 
   const isDirty = useMemo(() => {
     if (!originalCampaigns.length) return false;
@@ -229,19 +265,40 @@ export default function CampaignSettings() {
     }
     setCreating(true);
     try {
-      const tagList = newCampaignDraft.tag_filter
-        .split(',')
-        .map(t => t.trim())
-        .filter(Boolean);
+      const tagList = newCampaignDraft.match_all_tags
+        ? []
+        : newCampaignDraft.tag_filter
+            .split(',')
+            .map(t => t.trim())
+            .filter(Boolean);
+
+      const triggerMinutes = toMinutes(
+        newCampaignDraft.trigger_delay_value,
+        newCampaignDraft.trigger_delay_unit,
+      );
+      const spacingMinutes = toMinutes(
+        newCampaignDraft.spacing_value,
+        newCampaignDraft.spacing_unit,
+      );
+      const attempts = Math.max(1, parseInt(newCampaignDraft.total_attempts, 10) || 1);
+
+      const steps = Array.from({ length: attempts }, (_, i) => ({
+        step_number: i + 1,
+        delay_minutes: i === 0 ? 0 : spacingMinutes,
+        message_template: '',
+        check_availability: false,
+        fallback_template: null,
+      }));
+
       const payload = {
         name: newCampaignDraft.name.trim(),
         campaign_type: 'custom',
         audience_filter: newCampaignDraft.audience_filter === 'any' ? null : newCampaignDraft.audience_filter,
         tag_filter: tagList.length ? tagList : null,
-        priority: parseInt(newCampaignDraft.priority, 10) || 100,
-        trigger_delay_minutes: parseInt(newCampaignDraft.trigger_delay_minutes, 10) || 10,
+        priority: 100,
+        trigger_delay_minutes: triggerMinutes,
         is_enabled: false,
-        steps: [],
+        steps,
       };
       const res = await fetch(`${API_BASE}/drip-campaigns`, {
         method: 'POST',
@@ -256,11 +313,15 @@ export default function CampaignSettings() {
       setNewCampaignDraft({
         name: '',
         audience_filter: 'any',
+        match_all_tags: true,
         tag_filter: '',
-        priority: 100,
-        trigger_delay_minutes: 10,
+        trigger_delay_value: 10,
+        trigger_delay_unit: 'minutes',
+        total_attempts: 3,
+        spacing_value: 1,
+        spacing_unit: 'days',
       });
-      showToast('Campaign created — add message steps and enable when ready');
+      showToast('Campaign created — fill in the message templates and enable when ready');
       await fetchData();
     } catch (err) {
       showToast(err.message || 'Failed to create campaign', 'error');
@@ -396,8 +457,66 @@ export default function CampaignSettings() {
       <header className="sms-header">
         <h1 className="sms-header__title">Drip Campaigns</h1>
         <p className="sms-header__subtitle">
-          Manage automated follow-up sequences for new leads. Each campaign can target leads by audience and tags.
+          {isSimple
+            ? 'Toggle a campaign on and every new lead gets enrolled until they reply STOP, become a customer, or finish all messages.'
+            : 'Manage automated follow-up sequences for new leads. Each campaign can target leads by audience and tags.'}
         </p>
+        {sandboxTenant && (
+          <div
+            style={{
+              marginTop: '12px',
+              display: 'inline-flex',
+              border: '1px solid #d1d5db',
+              borderRadius: '8px',
+              overflow: 'hidden',
+            }}
+          >
+            <button
+              type="button"
+              className="sms-btn"
+              style={{
+                borderRadius: 0,
+                background: viewMode === 'simple' ? '#4f46e5' : '#fff',
+                color: viewMode === 'simple' ? '#fff' : '#374151',
+                border: 'none',
+              }}
+              onClick={() => setViewModePersistent('simple')}
+            >
+              Simple
+            </button>
+            <button
+              type="button"
+              className="sms-btn"
+              style={{
+                borderRadius: 0,
+                background: viewMode === 'advanced' ? '#4f46e5' : '#fff',
+                color: viewMode === 'advanced' ? '#fff' : '#374151',
+                border: 'none',
+              }}
+              onClick={() => setViewModePersistent('advanced')}
+            >
+              Advanced
+            </button>
+          </div>
+        )}
+        {isSimple && (
+          <div
+            style={{
+              marginTop: '12px',
+              padding: '12px 14px',
+              background: '#fef3c7',
+              border: '1px solid #fde68a',
+              borderRadius: '8px',
+              fontSize: '13px',
+              color: '#92400e',
+            }}
+          >
+            Auto-enrollment is OFF by default. To start enrolling new leads, set
+            <code style={{ margin: '0 4px' }}>auto_enroll_new_leads = true</code>
+            on this tenant's <code>tenant_business_profiles</code> row. Flip back to
+            <code style={{ margin: '0 4px' }}>false</code> to stop.
+          </div>
+        )}
         <div style={{ marginTop: '12px' }}>
           <button
             type="button"
@@ -469,83 +588,120 @@ export default function CampaignSettings() {
                 />
               </div>
 
-              {/* Audience Filter */}
-              <div className="sms-field">
-                <label className="sms-field__label">Audience</label>
-                <select
-                  className="sms-input"
-                  value={campaign.audience_filter || 'any'}
-                  onChange={(e) =>
-                    updateCampaign(campaign.id, 'audience_filter', e.target.value === 'any' ? null : e.target.value)
-                  }
-                >
-                  <option value="any">Any audience</option>
-                  <option value="adult">Adult</option>
-                  <option value="child">Child (any age)</option>
-                  <option value="under_3">Child — under 3</option>
-                </select>
-                <p className="sms-field__hint">
-                  Lead's audience is auto-detected from their qualifying-question answer or class type.
-                </p>
-              </div>
+              {/* Audience Filter — Advanced only */}
+              {!isSimple && (
+                <div className="sms-field">
+                  <label className="sms-field__label">Audience</label>
+                  <select
+                    className="sms-input"
+                    value={campaign.audience_filter || 'any'}
+                    onChange={(e) =>
+                      updateCampaign(campaign.id, 'audience_filter', e.target.value === 'any' ? null : e.target.value)
+                    }
+                  >
+                    <option value="any">Any audience</option>
+                    <option value="adult">Adult</option>
+                    <option value="child">Child (any age)</option>
+                    <option value="under_3">Child — under 3</option>
+                  </select>
+                  <p className="sms-field__hint">
+                    Lead's audience is auto-detected from their qualifying-question answer or class type.
+                  </p>
+                </div>
+              )}
 
-              {/* Tag Filter */}
-              <div className="sms-field">
-                <label className="sms-field__label">Required Tags</label>
-                <input
-                  type="text"
-                  className="sms-input"
-                  value={(campaign.tag_filter || []).join(', ')}
-                  onChange={(e) => {
-                    const list = e.target.value
-                      .split(',')
-                      .map(t => t.trim())
-                      .filter(Boolean);
-                    updateCampaign(campaign.id, 'tag_filter', list.length ? list : null);
-                  }}
-                  placeholder="e.g. Meta IG, Starfish (comma-separated)"
-                />
-                <p className="sms-field__hint">
-                  Lead must have ALL listed tags. Leave blank to match any lead. Matches both auto-derived tags (location, class, source) and manual tags.
-                </p>
-              </div>
-
-              {/* Priority */}
-              <div className="sms-field">
-                <label className="sms-field__label">Priority</label>
-                <input
-                  type="number"
-                  className="sms-input sms-input--number"
-                  min="1"
-                  max="999"
-                  value={campaign.priority || 100}
-                  onChange={(e) => updateCampaign(campaign.id, 'priority', parseInt(e.target.value, 10) || 100)}
-                />
-                <p className="sms-field__hint">
-                  Lower number wins when multiple campaigns match a lead. Default is 100.
-                </p>
-              </div>
+              {/* Tag Filter — Advanced only */}
+              {!isSimple && (() => {
+                const matchAll = !campaign.tag_filter || campaign.tag_filter.length === 0;
+                return (
+                  <div className="sms-field">
+                    <label className="sms-field__label">Required Tags</label>
+                    <div className="sms-field sms-field--toggle" style={{ marginBottom: '8px' }}>
+                      <label className="sms-toggle" htmlFor={`match-all-tags-${campaign.id}`}>
+                        <input
+                          id={`match-all-tags-${campaign.id}`}
+                          type="checkbox"
+                          checked={matchAll}
+                          onChange={(e) => {
+                            updateCampaign(
+                              campaign.id,
+                              'tag_filter',
+                              e.target.checked ? null : (campaign.tag_filter || []),
+                            );
+                          }}
+                          className="sms-toggle__input"
+                        />
+                        <span className="sms-toggle__switch" />
+                        <span className="sms-toggle__label">Match all leads (no tag filter)</span>
+                      </label>
+                    </div>
+                    {!matchAll && (
+                      <>
+                        <input
+                          type="text"
+                          className="sms-input"
+                          value={(campaign.tag_filter || []).join(', ')}
+                          onChange={(e) => {
+                            const list = e.target.value
+                              .split(',')
+                              .map(t => t.trim())
+                              .filter(Boolean);
+                            updateCampaign(campaign.id, 'tag_filter', list);
+                          }}
+                          placeholder="e.g. Meta IG, Starfish (comma-separated)"
+                        />
+                        <p className="sms-field__hint">
+                          Lead must have ALL listed tags. Matches both auto-derived tags (location, class, source) and manual tags.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Trigger Delay */}
-              <div className="sms-field">
-                <label className="sms-field__label">Trigger Delay</label>
-                <div className="sms-input-group">
-                  <input
-                    type="number"
-                    className="sms-input sms-input--number"
-                    min="0"
-                    max="1440"
-                    value={campaign.trigger_delay_minutes}
-                    onChange={(e) =>
-                      updateCampaign(campaign.id, 'trigger_delay_minutes', parseInt(e.target.value, 10) || 0)
-                    }
-                  />
-                  <span className="sms-input-group__suffix">minutes after enrollment</span>
-                </div>
-                <p className="sms-field__hint">
-                  How long to wait after a lead is enrolled before sending the first message.
-                </p>
-              </div>
+              {(() => {
+                const split = splitMinutes(campaign.trigger_delay_minutes);
+                return (
+                  <div className="sms-field">
+                    <label className="sms-field__label">First message after</label>
+                    <div className="sms-input-group">
+                      <input
+                        type="number"
+                        className="sms-input sms-input--number"
+                        min="0"
+                        value={split.value}
+                        onChange={(e) =>
+                          updateCampaign(
+                            campaign.id,
+                            'trigger_delay_minutes',
+                            toMinutes(e.target.value, split.unit),
+                          )
+                        }
+                      />
+                      <select
+                        className="sms-input"
+                        style={{ maxWidth: '120px' }}
+                        value={split.unit}
+                        onChange={(e) =>
+                          updateCampaign(
+                            campaign.id,
+                            'trigger_delay_minutes',
+                            toMinutes(split.value, e.target.value),
+                          )
+                        }
+                      >
+                        <option value="minutes">minutes</option>
+                        <option value="hours">hours</option>
+                        <option value="days">days</option>
+                      </select>
+                    </div>
+                    <p className="sms-field__hint">
+                      How long to wait after a lead arrives before sending the first message.
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Steps Section */}
               <div className="campaign-section">
@@ -566,10 +722,23 @@ export default function CampaignSettings() {
                   <div className="campaign-steps">
                     {[...campaign.steps]
                       .sort((a, b) => a.step_number - b.step_number)
-                      .map((step) => (
+                      .map((step) => {
+                        // Step N advances the lead from pipeline position N-1 to N,
+                        // so the badge shows the destination stage label when available.
+                        const targetStage = pipelineStages?.[step.step_number];
+                        const badgeLabel = targetStage?.label || `Step ${step.step_number}`;
+                        return (
                         <div key={step.step_number} className="campaign-step">
                           <div className="campaign-step__header">
-                            <span className="campaign-step__badge">Step {step.step_number}</span>
+                            <span
+                              className="campaign-step__badge"
+                              style={targetStage?.color ? {
+                                background: targetStage.color,
+                                color: '#fff',
+                              } : undefined}
+                            >
+                              {badgeLabel}
+                            </span>
                             <span className="campaign-step__delay">
                               {formatDelay(step.delay_minutes)} delay
                             </span>
@@ -587,23 +756,25 @@ export default function CampaignSettings() {
                             />
                           </div>
 
-                          <div className="sms-field sms-field--toggle">
-                            <label className="sms-toggle" htmlFor={`step-avail-${campaign.id}-${step.step_number}`}>
-                              <input
-                                id={`step-avail-${campaign.id}-${step.step_number}`}
-                                type="checkbox"
-                                checked={step.check_availability}
-                                onChange={(e) =>
-                                  updateStep(campaign.id, step.step_number, 'check_availability', e.target.checked)
-                                }
-                                className="sms-toggle__input"
-                              />
-                              <span className="sms-toggle__switch" />
-                              <span className="sms-toggle__label">Check availability before sending</span>
-                            </label>
-                          </div>
+                          {!isSimple && (
+                            <div className="sms-field sms-field--toggle">
+                              <label className="sms-toggle" htmlFor={`step-avail-${campaign.id}-${step.step_number}`}>
+                                <input
+                                  id={`step-avail-${campaign.id}-${step.step_number}`}
+                                  type="checkbox"
+                                  checked={step.check_availability}
+                                  onChange={(e) =>
+                                    updateStep(campaign.id, step.step_number, 'check_availability', e.target.checked)
+                                  }
+                                  className="sms-toggle__input"
+                                />
+                                <span className="sms-toggle__switch" />
+                                <span className="sms-toggle__label">Check availability before sending</span>
+                              </label>
+                            </div>
+                          )}
 
-                          {step.check_availability && (
+                          {!isSimple && step.check_availability && (
                             <div className="sms-field">
                               <label className="sms-field__label">Fallback Template</label>
                               <textarea
@@ -621,13 +792,14 @@ export default function CampaignSettings() {
                             </div>
                           )}
                         </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 )}
               </div>
 
-              {/* Response Templates Section */}
-              {campaign.response_templates && Object.keys(campaign.response_templates).length > 0 && (
+              {/* Response Templates Section — Advanced only */}
+              {!isSimple && campaign.response_templates && Object.keys(campaign.response_templates).length > 0 && (
                 <div className="campaign-section">
                   <button
                     type="button"
@@ -810,58 +982,126 @@ export default function CampaignSettings() {
                 />
               </div>
 
+              {!isSimple && (
+                <div className="sms-field">
+                  <label className="sms-field__label">Audience</label>
+                  <select
+                    className="sms-input"
+                    value={newCampaignDraft.audience_filter}
+                    onChange={(e) => setNewCampaignDraft(d => ({ ...d, audience_filter: e.target.value }))}
+                  >
+                    <option value="any">Any audience</option>
+                    <option value="adult">Adult</option>
+                    <option value="child">Child (any age)</option>
+                    <option value="under_3">Child — under 3</option>
+                  </select>
+                </div>
+              )}
+
+              {!isSimple && (
+                <div className="sms-field">
+                  <label className="sms-field__label">Required Tags</label>
+                  <div className="sms-field sms-field--toggle" style={{ marginBottom: '8px' }}>
+                    <label className="sms-toggle" htmlFor="new-match-all-tags">
+                      <input
+                        id="new-match-all-tags"
+                        type="checkbox"
+                        checked={newCampaignDraft.match_all_tags}
+                        onChange={(e) =>
+                          setNewCampaignDraft(d => ({ ...d, match_all_tags: e.target.checked }))
+                        }
+                        className="sms-toggle__input"
+                      />
+                      <span className="sms-toggle__switch" />
+                      <span className="sms-toggle__label">Match all leads (no tag filter)</span>
+                    </label>
+                  </div>
+                  {!newCampaignDraft.match_all_tags && (
+                    <input
+                      type="text"
+                      className="sms-input"
+                      value={newCampaignDraft.tag_filter}
+                      onChange={(e) => setNewCampaignDraft(d => ({ ...d, tag_filter: e.target.value }))}
+                      placeholder="comma-separated, e.g. Meta IG, Starfish"
+                    />
+                  )}
+                </div>
+              )}
+
               <div className="sms-field">
-                <label className="sms-field__label">Audience</label>
-                <select
-                  className="sms-input"
-                  value={newCampaignDraft.audience_filter}
-                  onChange={(e) => setNewCampaignDraft(d => ({ ...d, audience_filter: e.target.value }))}
-                >
-                  <option value="any">Any audience</option>
-                  <option value="adult">Adult</option>
-                  <option value="child">Child (any age)</option>
-                  <option value="under_3">Child — under 3</option>
-                </select>
+                <label className="sms-field__label">First message after</label>
+                <div className="sms-input-group">
+                  <input
+                    type="number"
+                    className="sms-input sms-input--number"
+                    min="0"
+                    value={newCampaignDraft.trigger_delay_value}
+                    onChange={(e) =>
+                      setNewCampaignDraft(d => ({ ...d, trigger_delay_value: e.target.value }))
+                    }
+                  />
+                  <select
+                    className="sms-input"
+                    style={{ maxWidth: '120px' }}
+                    value={newCampaignDraft.trigger_delay_unit}
+                    onChange={(e) =>
+                      setNewCampaignDraft(d => ({ ...d, trigger_delay_unit: e.target.value }))
+                    }
+                  >
+                    <option value="minutes">minutes</option>
+                    <option value="hours">hours</option>
+                    <option value="days">days</option>
+                  </select>
+                </div>
+                <p className="sms-field__hint">How long to wait after a lead arrives before the first message.</p>
               </div>
 
               <div className="sms-field">
-                <label className="sms-field__label">Required Tags</label>
-                <input
-                  type="text"
-                  className="sms-input"
-                  value={newCampaignDraft.tag_filter}
-                  onChange={(e) => setNewCampaignDraft(d => ({ ...d, tag_filter: e.target.value }))}
-                  placeholder="comma-separated, e.g. Meta IG, Starfish"
-                />
-              </div>
-
-              <div className="sms-field">
-                <label className="sms-field__label">Priority</label>
+                <label className="sms-field__label">Number of attempts</label>
                 <input
                   type="number"
                   className="sms-input sms-input--number"
                   min="1"
-                  max="999"
-                  value={newCampaignDraft.priority}
-                  onChange={(e) => setNewCampaignDraft(d => ({ ...d, priority: e.target.value }))}
+                  max="20"
+                  value={newCampaignDraft.total_attempts}
+                  onChange={(e) =>
+                    setNewCampaignDraft(d => ({ ...d, total_attempts: e.target.value }))
+                  }
                 />
-                <p className="sms-field__hint">Lower wins when multiple match. Default 100.</p>
+                <p className="sms-field__hint">Total messages to send before the campaign completes.</p>
               </div>
 
-              <div className="sms-field">
-                <label className="sms-field__label">Trigger Delay (minutes)</label>
-                <input
-                  type="number"
-                  className="sms-input sms-input--number"
-                  min="0"
-                  max="1440"
-                  value={newCampaignDraft.trigger_delay_minutes}
-                  onChange={(e) => setNewCampaignDraft(d => ({ ...d, trigger_delay_minutes: e.target.value }))}
-                />
-              </div>
+              {parseInt(newCampaignDraft.total_attempts, 10) > 1 && (
+                <div className="sms-field">
+                  <label className="sms-field__label">Time between attempts</label>
+                  <div className="sms-input-group">
+                    <input
+                      type="number"
+                      className="sms-input sms-input--number"
+                      min="0"
+                      value={newCampaignDraft.spacing_value}
+                      onChange={(e) =>
+                        setNewCampaignDraft(d => ({ ...d, spacing_value: e.target.value }))
+                      }
+                    />
+                    <select
+                      className="sms-input"
+                      style={{ maxWidth: '120px' }}
+                      value={newCampaignDraft.spacing_unit}
+                      onChange={(e) =>
+                        setNewCampaignDraft(d => ({ ...d, spacing_unit: e.target.value }))
+                      }
+                    >
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                      <option value="days">days</option>
+                    </select>
+                  </div>
+                </div>
+              )}
 
               <p className="sms-field__hint" style={{ marginTop: '12px' }}>
-                The campaign will be created disabled with no message steps. Add steps and enable it after creating.
+                The campaign will be created disabled with empty message templates. Fill them in and enable when ready.
               </p>
             </div>
             <div className="sms-actions" style={{ padding: '16px 24px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>

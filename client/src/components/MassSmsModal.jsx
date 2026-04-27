@@ -2,15 +2,44 @@ import { useState, useEffect, useRef } from 'react';
 import { api } from '../api/client';
 import './SendSmsModal.css';
 
+const getAudience = (lead) => {
+  const tag = Array.isArray(lead.tags)
+    ? lead.tags.find((t) => t?.category === 'audience')
+    : null;
+  const value = tag?.value;
+  if (value === 'Adult') return 'adult';
+  if (value === 'Child' || value === 'Child (under 3)') return 'child';
+  return 'unknown';
+};
+
 export default function MassSmsModal({ leads, onClose, onSuccess }) {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+  const [audienceFilter, setAudienceFilter] = useState('all');
   const textareaRef = useRef(null);
 
-  const recipientCount = leads.filter((l) => l.phone).length;
-  const noPhoneCount = leads.length - recipientCount;
+  const audienceCounts = leads.reduce(
+    (acc, l) => {
+      if (!l.phone) return acc;
+      const a = getAudience(l);
+      acc[a] = (acc[a] || 0) + 1;
+      acc.all += 1;
+      return acc;
+    },
+    { all: 0, adult: 0, child: 0, unknown: 0 },
+  );
+
+  const filteredLeads = leads.filter((l) => {
+    if (!l.phone) return false;
+    if (audienceFilter === 'all') return true;
+    return getAudience(l) === audienceFilter;
+  });
+
+  const recipientCount = filteredLeads.length;
+  const totalWithPhone = audienceCounts.all;
+  const noPhoneCount = leads.length - totalWithPhone;
 
   useEffect(() => {
     const handleEscape = (e) => {
@@ -45,7 +74,7 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
     setProgress(null);
 
     try {
-      const phones = leads.filter((l) => l.phone).map((l) => l.phone);
+      const phones = filteredLeads.map((l) => l.phone);
       const totalBatches = Math.ceil(phones.length / BATCH_SIZE);
       const totals = { sent: 0, failed: 0, errors: [] };
 
@@ -103,6 +132,28 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
 
             <div className="mass-sms-recipients">
               <label>Recipients</label>
+              <div className="mass-sms-segments" role="tablist" aria-label="Audience filter">
+                {[
+                  { key: 'all', label: 'All', count: audienceCounts.all },
+                  { key: 'adult', label: 'Adults', count: audienceCounts.adult },
+                  { key: 'child', label: 'Children', count: audienceCounts.child },
+                  ...(audienceCounts.unknown > 0
+                    ? [{ key: 'unknown', label: 'Untagged', count: audienceCounts.unknown }]
+                    : []),
+                ].map((seg) => (
+                  <button
+                    key={seg.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={audienceFilter === seg.key}
+                    className={`mass-sms-segment${audienceFilter === seg.key ? ' is-active' : ''}`}
+                    onClick={() => setAudienceFilter(seg.key)}
+                    disabled={loading || !!result || seg.count === 0}
+                  >
+                    {seg.label} <span className="mass-sms-segment__count">{seg.count}</span>
+                  </button>
+                ))}
+              </div>
               <div className="mass-sms-summary">
                 <span className="mass-sms-count">{recipientCount}</span> contact{recipientCount !== 1 ? 's' : ''} with phone numbers
                 {noPhoneCount > 0 && (
@@ -110,7 +161,7 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
                 )}
               </div>
               <div className="mass-sms-list">
-                {leads.filter((l) => l.phone).map((l) => (
+                {filteredLeads.map((l) => (
                   <span key={l.id} className="mass-sms-chip">{l.name || l.phone}</span>
                 ))}
               </div>

@@ -201,3 +201,58 @@
   margin-bottom: 16px;
   font-size: 14px;
 }
+
+.mass-sms-segments {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 8px 0 10px;
+}
+
+.mass-sms-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mass-sms-segment:hover:not(:disabled) {
+  border-color: #c7d2fe;
+  background: #f5f7ff;
+}
+
+.mass-sms-segment.is-active {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+
+.mass-sms-segment:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mass-sms-segment__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  padding: 0 6px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mass-sms-segment.is-active .mass-sms-segment__count {
+  background: rgba(255, 255, 255, 0.22);
+}

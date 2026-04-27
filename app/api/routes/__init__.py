@@ -40,6 +40,10 @@ api_router.include_router(dashboard_analytics.router, prefix="/analytics", tags=
 # Tenant SMS settings
 api_router.include_router(tenant_sms.router, prefix="/sms", tags=["sms"])
 
+# Mass-text templates (per-tenant, shared across users)
+from app.api.routes import sms_templates
+api_router.include_router(sms_templates.router, prefix="/sms/templates", tags=["sms-templates"])
+
 # Tenant Voice settings
 api_router.include_router(tenant_voice.router, prefix="/voice", tags=["voice"])
 

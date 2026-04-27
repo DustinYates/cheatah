@@ -291,3 +291,138 @@
   color: #6b7280;
   font-weight: 400;
 }
+
+.mass-sms-templates {
+  margin: 14px 0 0;
+}
+
+.mass-sms-templates__row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.mass-sms-templates__select {
+  flex: 1 1 auto;
+  min-width: 180px;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  cursor: pointer;
+}
+
+.mass-sms-templates__select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mass-sms-templates__btn {
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid #4f46e5;
+  background: #4f46e5;
+  color: #fff;
+  cursor: pointer;
+}
+
+.mass-sms-templates__btn:hover:not(:disabled) {
+  background: #4338ca;
+  border-color: #4338ca;
+}
+
+.mass-sms-templates__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mass-sms-templates__btn--ghost {
+  background: #fff;
+  color: #4f46e5;
+}
+
+.mass-sms-templates__btn--ghost:hover:not(:disabled) {
+  background: #eef2ff;
+  color: #4338ca;
+  border-color: #4338ca;
+}
+
+.mass-sms-templates__error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #b91c1c;
+}
+
+.mass-sms-templates__list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.mass-sms-templates__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #eef0f3;
+}
+
+.mass-sms-templates__item:last-child {
+  border-bottom: none;
+}
+
+.mass-sms-templates__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mass-sms-templates__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.mass-sms-templates__actions button {
+  padding: 4px 9px;
+  font-size: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+}
+
+.mass-sms-templates__actions button:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.mass-sms-templates__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mass-sms-templates__delete {
+  color: #b91c1c !important;
+  border-color: #fecaca !important;
+}
+
+.mass-sms-templates__delete:hover:not(:disabled) {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+}

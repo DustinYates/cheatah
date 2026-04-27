@@ -1077,6 +1077,30 @@ class ApiClient {
     });
   }
 
+  async getSmsTemplates() {
+    return this.request('/sms/templates');
+  }
+
+  async createSmsTemplate(name, body) {
+    return this.request('/sms/templates', {
+      method: 'POST',
+      body: JSON.stringify({ name, body }),
+    });
+  }
+
+  async updateSmsTemplate(id, { name, body }) {
+    return this.request(`/sms/templates/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name, body }),
+    });
+  }
+
+  async deleteSmsTemplate(id) {
+    return this.request(`/sms/templates/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getEmailConversations(params = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request(`/email/conversations${query ? `?${query}` : ''}`);

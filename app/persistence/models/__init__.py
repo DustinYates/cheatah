@@ -41,6 +41,7 @@ from app.persistence.models.customer import Customer
 from app.persistence.models.tenant_customer_support_config import TenantCustomerSupportConfig
 from app.persistence.models.telnyx_sync_result import TelnyxSyncResult
 from app.persistence.models.tenant_pipeline_stage import TenantPipelineStage
+from app.persistence.models.sms_template import SmsTemplate
 from app.persistence.models.forum import (
     Forum,
     ForumCategory,
@@ -121,5 +122,7 @@ __all__ = [
     "EmailCampaignRecipient",
     # Telnyx sync monitoring
     "TelnyxSyncResult",
+    # SMS templates
+    "SmsTemplate",
 ]
 

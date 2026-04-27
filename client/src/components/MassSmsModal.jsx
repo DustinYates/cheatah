@@ -19,7 +19,87 @@ export default function MassSmsModal({ leads, stages = [], onClose, onSuccess })
   const [result, setResult] = useState(null);
   const [audienceFilter, setAudienceFilter] = useState('all');
   const [advanceStage, setAdvanceStage] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templateError, setTemplateError] = useState('');
+  const [manageOpen, setManageOpen] = useState(false);
   const textareaRef = useRef(null);
+
+  useEffect(() => {
+    let mounted = true;
+    setTemplatesLoading(true);
+    api.getSmsTemplates()
+      .then((data) => {
+        if (!mounted) return;
+        setTemplates(Array.isArray(data?.templates) ? data.templates : []);
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        setTemplateError(err.message || 'Failed to load templates');
+      })
+      .finally(() => {
+        if (mounted) setTemplatesLoading(false);
+      });
+    return () => { mounted = false; };
+  }, []);
+
+  const handleApplyTemplate = (id) => {
+    const t = templates.find((x) => String(x.id) === String(id));
+    if (t) setMessage(t.body);
+  };
+
+  const handleSaveAsTemplate = async () => {
+    const body = message.trim();
+    if (!body) return;
+    const name = window.prompt('Template name:');
+    if (!name || !name.trim()) return;
+    try {
+      const created = await api.createSmsTemplate(name.trim(), body);
+      setTemplates((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+    } catch (err) {
+      window.alert(err.message || 'Failed to save template');
+    }
+  };
+
+  const handleRenameTemplate = async (t) => {
+    const name = window.prompt('Rename template:', t.name);
+    if (!name || !name.trim() || name.trim() === t.name) return;
+    try {
+      const updated = await api.updateSmsTemplate(t.id, { name: name.trim() });
+      setTemplates((prev) =>
+        prev
+          .map((x) => (x.id === t.id ? updated : x))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
+    } catch (err) {
+      window.alert(err.message || 'Failed to rename template');
+    }
+  };
+
+  const handleOverwriteTemplate = async (t) => {
+    const body = message.trim();
+    if (!body) {
+      window.alert('Type a message first, then overwrite the template with it.');
+      return;
+    }
+    if (!window.confirm(`Replace "${t.name}" with the current message?`)) return;
+    try {
+      const updated = await api.updateSmsTemplate(t.id, { body });
+      setTemplates((prev) => prev.map((x) => (x.id === t.id ? updated : x)));
+    } catch (err) {
+      window.alert(err.message || 'Failed to update template');
+    }
+  };
+
+  const handleDeleteTemplate = async (t) => {
+    if (!window.confirm(`Delete template "${t.name}"?`)) return;
+    try {
+      await api.deleteSmsTemplate(t.id);
+      setTemplates((prev) => prev.filter((x) => x.id !== t.id));
+    } catch (err) {
+      window.alert(err.message || 'Failed to delete template');
+    }
+  };
 
   const sortedStages = [...stages].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   const nextStageFor = (currentKey) => {
@@ -214,6 +294,67 @@ export default function MassSmsModal({ leads, stages = [], onClose, onSuccess })
                 </span>
               </label>
             )}
+
+            <div className="mass-sms-templates">
+              <div className="mass-sms-templates__row">
+                <select
+                  className="mass-sms-templates__select"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleApplyTemplate(e.target.value);
+                      e.target.value = '';
+                    }
+                  }}
+                  disabled={loading || !!result || templatesLoading || templates.length === 0}
+                >
+                  <option value="">
+                    {templatesLoading
+                      ? 'Loading templates...'
+                      : templates.length === 0
+                      ? 'No templates yet'
+                      : 'Use template...'}
+                  </option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="mass-sms-templates__btn"
+                  onClick={handleSaveAsTemplate}
+                  disabled={loading || !!result || !message.trim()}
+                  title={message.trim() ? 'Save current message as a new template' : 'Type a message first'}
+                >
+                  Save as new
+                </button>
+                {templates.length > 0 && (
+                  <button
+                    type="button"
+                    className="mass-sms-templates__btn mass-sms-templates__btn--ghost"
+                    onClick={() => setManageOpen((v) => !v)}
+                    disabled={loading || !!result}
+                  >
+                    {manageOpen ? 'Done' : 'Manage'}
+                  </button>
+                )}
+              </div>
+              {templateError && <div className="mass-sms-templates__error">{templateError}</div>}
+              {manageOpen && templates.length > 0 && (
+                <ul className="mass-sms-templates__list">
+                  {templates.map((t) => (
+                    <li key={t.id} className="mass-sms-templates__item">
+                      <span className="mass-sms-templates__name">{t.name}</span>
+                      <div className="mass-sms-templates__actions">
+                        <button type="button" onClick={() => handleRenameTemplate(t)} disabled={loading}>Rename</button>
+                        <button type="button" onClick={() => handleOverwriteTemplate(t)} disabled={loading || !message.trim()} title={message.trim() ? 'Replace template body with current message' : 'Type a message first'}>Save current</button>
+                        <button type="button" className="mass-sms-templates__delete" onClick={() => handleDeleteTemplate(t)} disabled={loading}>Delete</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             <div className="form-group">
               <label htmlFor="mass-sms-message">Message</label>

@@ -662,30 +662,28 @@ export default function CampaignSettings() {
                 />
               </div>
 
-              {/* Audience Filter — Advanced only */}
-              {!isSimple && (
-                <div className="sms-field">
-                  <label className="sms-field__label">Audience</label>
-                  <select
-                    className="sms-input"
-                    value={campaign.audience_filter || 'any'}
-                    onChange={(e) =>
-                      updateCampaign(campaign.id, 'audience_filter', e.target.value === 'any' ? null : e.target.value)
-                    }
-                  >
-                    <option value="any">Any audience</option>
-                    <option value="adult">Adult</option>
-                    <option value="child">Child (any age)</option>
-                    <option value="under_3">Child — under 3</option>
-                  </select>
-                  <p className="sms-field__hint">
-                    Lead's audience is auto-detected from their qualifying-question answer or class type.
-                  </p>
-                </div>
-              )}
+              {/* Audience Filter — routing control, always visible */}
+              <div className="sms-field">
+                <label className="sms-field__label">Audience</label>
+                <select
+                  className="sms-input"
+                  value={campaign.audience_filter || 'any'}
+                  onChange={(e) =>
+                    updateCampaign(campaign.id, 'audience_filter', e.target.value === 'any' ? null : e.target.value)
+                  }
+                >
+                  <option value="any">Any audience</option>
+                  <option value="adult">Adult</option>
+                  <option value="child">Child (any age)</option>
+                  <option value="under_3">Child — under 3</option>
+                </select>
+                <p className="sms-field__hint">
+                  Only leads matching this audience enter this campaign. Auto-detected from the lead's qualifying-question answer, class, or ad source.
+                </p>
+              </div>
 
-              {/* Tag Filter — Advanced only */}
-              {!isSimple && (() => {
+              {/* Tag Filter — routing control, always visible */}
+              {(() => {
                 const matchAll = !campaign.tag_filter || campaign.tag_filter.length === 0;
                 return (
                   <div className="sms-field">
@@ -1149,51 +1147,50 @@ export default function CampaignSettings() {
                 />
               </div>
 
-              {!isSimple && (
-                <div className="sms-field">
-                  <label className="sms-field__label">Audience</label>
-                  <select
-                    className="sms-input"
-                    value={newCampaignDraft.audience_filter}
-                    onChange={(e) => setNewCampaignDraft(d => ({ ...d, audience_filter: e.target.value }))}
-                  >
-                    <option value="any">Any audience</option>
-                    <option value="adult">Adult</option>
-                    <option value="child">Child (any age)</option>
-                    <option value="under_3">Child — under 3</option>
-                  </select>
-                </div>
-              )}
+              <div className="sms-field">
+                <label className="sms-field__label">Audience</label>
+                <select
+                  className="sms-input"
+                  value={newCampaignDraft.audience_filter}
+                  onChange={(e) => setNewCampaignDraft(d => ({ ...d, audience_filter: e.target.value }))}
+                >
+                  <option value="any">Any audience</option>
+                  <option value="adult">Adult</option>
+                  <option value="child">Child (any age)</option>
+                  <option value="under_3">Child — under 3</option>
+                </select>
+                <p className="sms-field__hint">
+                  Only leads matching this audience enter this campaign.
+                </p>
+              </div>
 
-              {!isSimple && (
-                <div className="sms-field">
-                  <label className="sms-field__label">Required Tags</label>
-                  <div className="sms-field sms-field--toggle" style={{ marginBottom: '8px' }}>
-                    <label className="sms-toggle" htmlFor="new-match-all-tags">
-                      <input
-                        id="new-match-all-tags"
-                        type="checkbox"
-                        checked={newCampaignDraft.match_all_tags}
-                        onChange={(e) =>
-                          setNewCampaignDraft(d => ({ ...d, match_all_tags: e.target.checked }))
-                        }
-                        className="sms-toggle__input"
-                      />
-                      <span className="sms-toggle__switch" />
-                      <span className="sms-toggle__label">Match all leads (no tag filter)</span>
-                    </label>
-                  </div>
-                  {!newCampaignDraft.match_all_tags && (
+              <div className="sms-field">
+                <label className="sms-field__label">Required Tags</label>
+                <div className="sms-field sms-field--toggle" style={{ marginBottom: '8px' }}>
+                  <label className="sms-toggle" htmlFor="new-match-all-tags">
                     <input
-                      type="text"
-                      className="sms-input"
-                      value={newCampaignDraft.tag_filter}
-                      onChange={(e) => setNewCampaignDraft(d => ({ ...d, tag_filter: e.target.value }))}
-                      placeholder="comma-separated, e.g. Meta IG, Starfish"
+                      id="new-match-all-tags"
+                      type="checkbox"
+                      checked={newCampaignDraft.match_all_tags}
+                      onChange={(e) =>
+                        setNewCampaignDraft(d => ({ ...d, match_all_tags: e.target.checked }))
+                      }
+                      className="sms-toggle__input"
                     />
-                  )}
+                    <span className="sms-toggle__switch" />
+                    <span className="sms-toggle__label">Match all leads (no tag filter)</span>
+                  </label>
                 </div>
-              )}
+                {!newCampaignDraft.match_all_tags && (
+                  <input
+                    type="text"
+                    className="sms-input"
+                    value={newCampaignDraft.tag_filter}
+                    onChange={(e) => setNewCampaignDraft(d => ({ ...d, tag_filter: e.target.value }))}
+                    placeholder="comma-separated, e.g. Meta IG, Starfish"
+                  />
+                )}
+              </div>
 
               <div className="sms-field">
                 <label className="sms-field__label">First message after</label>

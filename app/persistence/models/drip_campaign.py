@@ -29,6 +29,11 @@ class DripCampaign(Base):
     priority = Column(Integer, nullable=False, default=100, server_default="100")
     is_enabled = Column(Boolean, default=False, nullable=False)
     trigger_delay_minutes = Column(Integer, default=10, nullable=False)
+    # Allowed sending window in the tenant's local timezone. "HH:MM" 24-hour.
+    # Defaults match the prior global quiet-hours rule (8am-9pm). Steps that
+    # fire outside this window get deferred to the next window-open.
+    send_window_start = Column(String(5), nullable=False, default="08:00", server_default="08:00")
+    send_window_end = Column(String(5), nullable=False, default="21:00", server_default="21:00")
     response_templates = Column(JSON, nullable=True)  # Hardcoded response category templates
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

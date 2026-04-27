@@ -39,6 +39,31 @@ class DripStepResponse(BaseModel):
     fallback_template: str | None
 
 
+def _validate_window(start: str | None, end: str | None) -> None:
+    """Validate HH:MM 24h strings and refuse anything outside 07:00-22:00 (anti-spam)."""
+    import re
+    pat = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+    for label, val in (("send_window_start", start), ("send_window_end", end)):
+        if val is None:
+            continue
+        if not pat.match(val):
+            raise HTTPException(status_code=400, detail=f"{label} must be HH:MM 24-hour format")
+        h, m = int(val[:2]), int(val[3:])
+        mins = h * 60 + m
+        if mins < 7 * 60 or mins > 22 * 60:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{label} must be between 07:00 and 22:00 (anti-spam guard)",
+            )
+    if start and end:
+        s_mins = int(start[:2]) * 60 + int(start[3:])
+        e_mins = int(end[:2]) * 60 + int(end[3:])
+        if e_mins <= s_mins:
+            raise HTTPException(
+                status_code=400, detail="send_window_end must be after send_window_start"
+            )
+
+
 class DripCampaignCreateRequest(BaseModel):
     name: str
     campaign_type: str = "custom"  # legacy label; "kids"/"adults"/"custom"
@@ -47,6 +72,8 @@ class DripCampaignCreateRequest(BaseModel):
     priority: int = 100
     is_enabled: bool = False
     trigger_delay_minutes: int = 10
+    send_window_start: str = "08:00"
+    send_window_end: str = "21:00"
     response_templates: dict | None = None
     steps: list[DripStepRequest] = []
 
@@ -59,6 +86,8 @@ class DripCampaignUpdateRequest(BaseModel):
     priority: int | None = None
     is_enabled: bool | None = None
     trigger_delay_minutes: int | None = None
+    send_window_start: str | None = None
+    send_window_end: str | None = None
     response_templates: dict | None = None
 
 
@@ -72,6 +101,8 @@ class DripCampaignResponse(BaseModel):
     priority: int = 100
     is_enabled: bool
     trigger_delay_minutes: int
+    send_window_start: str
+    send_window_end: str
     response_templates: dict | None
     steps: list[DripStepResponse]
 
@@ -192,6 +223,7 @@ async def create_campaign(
     tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> DripCampaignResponse:
     """Create a new drip campaign."""
+    _validate_window(body.send_window_start, body.send_window_end)
     repo = DripCampaignRepository(db)
 
     campaign = await repo.create(
@@ -203,6 +235,8 @@ async def create_campaign(
         priority=body.priority,
         is_enabled=body.is_enabled,
         trigger_delay_minutes=body.trigger_delay_minutes,
+        send_window_start=body.send_window_start,
+        send_window_end=body.send_window_end,
         response_templates=body.response_templates,
     )
 
@@ -221,10 +255,17 @@ async def update_campaign(
     tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> DripCampaignResponse:
     """Update a drip campaign."""
+    _validate_window(body.send_window_start, body.send_window_end)
     repo = DripCampaignRepository(db)
     update_data = body.model_dump(exclude_none=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No update data provided")
+    if "send_window_start" in update_data or "send_window_end" in update_data:
+        existing = await repo.get_by_id(tenant_id, campaign_id)
+        if existing:
+            new_start = update_data.get("send_window_start", existing.send_window_start)
+            new_end = update_data.get("send_window_end", existing.send_window_end)
+            _validate_window(new_start, new_end)
 
     campaign = await repo.update(tenant_id, campaign_id, **update_data)
     if not campaign:
@@ -267,11 +308,23 @@ async def delete_campaign(
     db: Annotated[AsyncSession, Depends(get_db)],
     tenant_id: Annotated[int, Depends(require_tenant_context)],
 ) -> None:
-    """Delete a drip campaign and all its steps."""
+    """Delete a drip campaign, its steps, and any enrollments referencing it."""
+    from sqlalchemy import delete as sql_delete
+    from app.persistence.models.drip_campaign import DripEnrollment
+
     repo = DripCampaignRepository(db)
-    deleted = await repo.delete(tenant_id, campaign_id)
-    if not deleted:
+    campaign = await repo.get_with_steps(tenant_id, campaign_id)
+    if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
+
+    await db.execute(
+        sql_delete(DripEnrollment).where(
+            DripEnrollment.tenant_id == tenant_id,
+            DripEnrollment.campaign_id == campaign_id,
+        )
+    )
+    await repo.delete(tenant_id, campaign_id)
+    await db.commit()
 
 
 # ── Enrollment Management ────────────────────────────────────────────────
@@ -411,6 +464,8 @@ def _campaign_to_response(campaign) -> DripCampaignResponse:
         priority=campaign.priority or 100,
         is_enabled=campaign.is_enabled,
         trigger_delay_minutes=campaign.trigger_delay_minutes,
+        send_window_start=campaign.send_window_start or "08:00",
+        send_window_end=campaign.send_window_end or "21:00",
         response_templates=campaign.response_templates,
         steps=[
             DripStepResponse(

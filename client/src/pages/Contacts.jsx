@@ -433,8 +433,15 @@ export default function Contacts() {
             <tbody>
               {paginatedContacts.map((contact) => {
                 const isSelectedForMerge = selectedForMerge.some(c => c.id === contact.id);
+                const previewTitle = contact.last_message_preview
+                  ? `${contact.last_message_role === 'assistant' ? 'AI' : contact.last_message_role === 'user' ? 'Them' : contact.last_message_role === 'system' ? 'System' : ''}${contact.last_message_role ? ': ' : ''}${contact.last_message_preview}`
+                  : undefined;
                 return (
-                  <tr key={contact.id} className={isSelectedForMerge ? 'selected-for-merge' : ''}>
+                  <tr
+                    key={contact.id}
+                    className={isSelectedForMerge ? 'selected-for-merge' : ''}
+                    title={previewTitle}
+                  >
                     <td className="td-checkbox">
                       <input
                         type="checkbox"

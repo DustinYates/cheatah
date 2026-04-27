@@ -1,7 +1,30 @@
 """Service for managing drip campaign enrollment, step execution, and response handling."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+
+def _seconds_until_send_window(tz_name: str, start_hhmm: str, end_hhmm: str) -> int:
+    """Return 0 if `now` (in tz_name) is inside [start, end), else seconds to wait
+    until the next window opens. Both bounds are HH:MM strings in the same tz.
+    """
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    try:
+        sh, sm = int(start_hhmm[:2]), int(start_hhmm[3:])
+        eh, em = int(end_hhmm[:2]), int(end_hhmm[3:])
+    except (ValueError, IndexError):
+        sh, sm, eh, em = 8, 0, 21, 0
+    now = datetime.now(tz)
+    start_today = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
+    end_today = now.replace(hour=eh, minute=em, second=0, microsecond=0)
+    if start_today <= now < end_today:
+        return 0
+    target = start_today if now < start_today else start_today + timedelta(days=1)
+    return max(60, int((target - now).total_seconds()))
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -177,17 +200,40 @@ class DripCampaignService:
             await self.session.commit()
             return {"status": "skipped", "reason": "no_phone"}
 
+        # If the lead has already become enrolled (via Jackrabbit customer match
+        # or a manual stage move), halt the drip — we never message enrolled
+        # leads. Customer-match short-circuit below covers the live-data path;
+        # this catches leads whose pipeline_stage was set to "enrolled" by any
+        # other means.
+        if lead.pipeline_stage == "enrolled":
+            enrollment.status = "completed"
+            enrollment.cancelled_reason = "already_enrolled"
+            enrollment.next_task_id = None
+            enrollment.next_step_at = None
+            enrollment.updated_at = datetime.utcnow()
+            await self.session.commit()
+            logger.info(
+                f"Drip enrollment {enrollment_id}: lead {lead.id} already "
+                f"pipeline_stage=enrolled — drip halted, no SMS sent."
+            )
+            return {"status": "completed", "reason": "already_enrolled"}
+
         # Pipeline-impact gate: tenants without pipelines (or who don't want
         # drips touching stages) can opt out via tenant_business_profiles.
         # When off, the drip behaves as a plain N-message linear sequence —
         # no customer-match divert, no missed-terminal, no stage updates.
         affects_pipeline = await self._tenant_drip_affects_pipeline(tenant_id)
 
+        # Resolve tenant timezone up front so note timestamps render in local
+        # time even on branches that exit before sms_config is required.
+        factory = TelephonyProviderFactory(self.session)
+        sms_config = await factory.get_config(tenant_id)
+        tz_name = (sms_config.timezone if sms_config else None) or "UTC"
+
         # Customer-match check: if the lead has become a Jackrabbit customer at
-        # any point during the drip, divert to the "enrolled" path — send the
-        # last step's template (treated as the enrolled-confirmation message)
-        # and complete the enrollment. If no match AND this is the final step,
-        # mark the lead "missed" and don't send anything.
+        # any point during the drip, silently complete the enrollment and pin
+        # the lead to "enrolled" — no SMS is sent. If no match AND this is the
+        # final step, mark the lead "missed" and don't send anything.
         if affects_pipeline:
             from app.persistence.repositories.customer_repository import CustomerRepository
             customer_match = await CustomerRepository(self.session).get_by_phone(tenant_id, lead.phone)
@@ -195,14 +241,42 @@ class DripCampaignService:
             customer_match = None
         last_step = max(campaign.steps, key=lambda s: s.step_number)
         is_last_step = step.step_number == last_step.step_number
-        enrolled_path = bool(customer_match)
-        missed_path = affects_pipeline and (not enrolled_path) and is_last_step
 
-        if missed_path:
+        if customer_match:
+            try:
+                await self._set_pipeline_stage_if_exists(tenant_id, lead, "enrolled")
+                self._append_drip_note(
+                    lead,
+                    "drip campaign ended — lead became a customer (silent enroll)",
+                    tz_name=tz_name,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to mark lead {lead.id} enrolled for enrollment {enrollment_id}: {e}",
+                    exc_info=True,
+                )
+            enrollment.status = "completed"
+            enrollment.cancelled_reason = "customer_enrolled"
+            enrollment.next_task_id = None
+            enrollment.next_step_at = None
+            enrollment.current_step = next_step_num
+            enrollment.updated_at = datetime.utcnow()
+            await self.session.commit()
+            logger.info(
+                f"Drip enrollment {enrollment_id}: customer match — lead {lead.id} "
+                f"silently marked enrolled, enrollment completed (no SMS sent)."
+            )
+            return {"status": "completed", "reason": "enrolled"}
+
+        if affects_pipeline and is_last_step:
             # No message — final step reached without conversion.
             try:
                 await self._set_pipeline_stage_if_exists(tenant_id, lead, "missed")
-                self._append_drip_note(lead, "drip campaign ended — lead missed (no enrollment)")
+                self._append_drip_note(
+                    lead,
+                    "drip campaign ended — lead missed (no enrollment)",
+                    tz_name=tz_name,
+                )
             except Exception as e:
                 logger.error(
                     f"Failed to mark lead {lead.id} missed for enrollment {enrollment_id}: {e}",
@@ -221,24 +295,21 @@ class DripCampaignService:
             )
             return {"status": "completed", "reason": "missed"}
 
-        # If customer matched, the message we send is the LAST step's template
-        # (which is the enrolled-confirmation message by convention).
-        effective_step = last_step if enrolled_path else step
-
-        # Get SMS config for quiet hours / provider
-        factory = TelephonyProviderFactory(self.session)
-        sms_config = await factory.get_config(tenant_id)
+        # SMS config required from here down (already loaded at top for tz)
         if not sms_config or not sms_config.is_enabled:
             return {"status": "skipped", "reason": "sms_not_enabled"}
 
-        # Quiet hours check
-        from app.workers.followup_worker import _is_quiet_hours, _seconds_until_quiet_hours_end
-        tz_name = sms_config.timezone or "UTC"
-        if _is_quiet_hours(tz_name):
-            delay_seconds = _seconds_until_quiet_hours_end(tz_name)
-            logger.info(f"Quiet hours for enrollment {enrollment_id}, deferring {delay_seconds}s")
-            await self._schedule_step_raw(enrollment, delay_seconds)
-            return {"status": "deferred", "reason": "quiet_hours", "seconds": delay_seconds}
+        # Send-window check (per-campaign)
+        window_start = campaign.send_window_start or "08:00"
+        window_end = campaign.send_window_end or "21:00"
+        defer_seconds = _seconds_until_send_window(tz_name, window_start, window_end)
+        if defer_seconds > 0:
+            logger.info(
+                f"Outside send window {window_start}-{window_end} ({tz_name}) "
+                f"for enrollment {enrollment_id}, deferring {defer_seconds}s"
+            )
+            await self._schedule_step_raw(enrollment, defer_seconds)
+            return {"status": "deferred", "reason": "send_window", "seconds": defer_seconds}
 
         # DNC check
         dnc_service = DncService(self.session)
@@ -269,12 +340,12 @@ class DripCampaignService:
         if lead.name and "first_name" not in context:
             context["first_name"] = lead.name.split()[0] if lead.name else ""
 
-        if effective_step.check_availability:
+        if step.check_availability:
             message = await self.message_service.render_with_availability(
-                effective_step.message_template, context, tenant_id, effective_step.fallback_template
+                step.message_template, context, tenant_id, step.fallback_template
             )
         else:
-            message = self.message_service.render_template(effective_step.message_template, context)
+            message = self.message_service.render_template(step.message_template, context)
 
         if not message:
             logger.error(f"Empty message for enrollment {enrollment_id} step {next_step_num}")
@@ -324,61 +395,45 @@ class DripCampaignService:
             tenant_id, conversation.id, "assistant", message
         )
 
-        # Branch: enrolled (customer matched) vs normal drip step.
-        if enrolled_path:
-            # Pin to the "enrolled" stage and complete the enrollment.
-            try:
-                await self._set_pipeline_stage_if_exists(tenant_id, lead, "enrolled")
-                self._append_drip_note(lead, f"drip campaign (enrolled): {message}")
-            except Exception as e:
-                logger.error(
-                    f"Failed to set enrolled stage / note for lead {lead.id} "
-                    f"enrollment {enrollment_id}: {e}",
-                    exc_info=True,
+        # Normal drip step: append note. Advance pipeline stage by +1 only if
+        # the tenant allows drip-driven pipeline changes.
+        try:
+            if affects_pipeline:
+                await self._record_drip_send_on_lead(
+                    tenant_id=tenant_id,
+                    lead=lead,
+                    step_number=next_step_num,
+                    message=message,
+                    tz_name=tz_name,
                 )
-            enrollment.current_step = next_step_num
+            else:
+                self._append_drip_note(
+                    lead,
+                    f"drip campaign step {next_step_num}: {message}",
+                    tz_name=tz_name,
+                )
+        except Exception as e:
+            logger.error(
+                f"Failed to record drip note/pipeline-advance for lead {lead.id} "
+                f"enrollment {enrollment_id}: {e}",
+                exc_info=True,
+            )
+
+        enrollment.current_step = next_step_num
+        enrollment.updated_at = datetime.utcnow()
+
+        # Schedule next step if there are more
+        next_next_step = next(
+            (s for s in campaign.steps if s.step_number == next_step_num + 1), None
+        )
+        if next_next_step:
+            task_id = await self._schedule_step(enrollment, next_next_step.delay_minutes)
+            enrollment.next_task_id = task_id
+        else:
+            # Last step — mark completed
             enrollment.status = "completed"
-            enrollment.cancelled_reason = "customer_enrolled"
             enrollment.next_task_id = None
             enrollment.next_step_at = None
-            enrollment.updated_at = datetime.utcnow()
-        else:
-            # Normal drip: append note. Advance pipeline stage by +1 only if
-            # the tenant allows drip-driven pipeline changes.
-            try:
-                if affects_pipeline:
-                    await self._record_drip_send_on_lead(
-                        tenant_id=tenant_id,
-                        lead=lead,
-                        step_number=next_step_num,
-                        message=message,
-                    )
-                else:
-                    self._append_drip_note(
-                        lead, f"drip campaign step {next_step_num}: {message}"
-                    )
-            except Exception as e:
-                logger.error(
-                    f"Failed to record drip note/pipeline-advance for lead {lead.id} "
-                    f"enrollment {enrollment_id}: {e}",
-                    exc_info=True,
-                )
-
-            enrollment.current_step = next_step_num
-            enrollment.updated_at = datetime.utcnow()
-
-            # Schedule next step if there are more
-            next_next_step = next(
-                (s for s in campaign.steps if s.step_number == next_step_num + 1), None
-            )
-            if next_next_step:
-                task_id = await self._schedule_step(enrollment, next_next_step.delay_minutes)
-                enrollment.next_task_id = task_id
-            else:
-                # Last step — mark completed
-                enrollment.status = "completed"
-                enrollment.next_task_id = None
-                enrollment.next_step_at = None
 
         await self.session.commit()
 
@@ -781,9 +836,13 @@ class DripCampaignService:
             )
             return True
 
-    def _append_drip_note(self, lead, body: str) -> None:
-        """Append a timestamped note line to lead.notes."""
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    def _append_drip_note(self, lead, body: str, tz_name: str = "UTC") -> None:
+        """Append a timestamped note line to lead.notes (rendered in tz_name)."""
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = ZoneInfo("UTC")
+        timestamp = datetime.now(tz).strftime("%Y-%m-%d %I:%M %p %Z")
         new_line = f"{timestamp} - {body}"
         existing = (lead.notes or "").rstrip()
         lead.notes = f"{existing}\n{new_line}" if existing else new_line
@@ -820,6 +879,7 @@ class DripCampaignService:
         lead,
         step_number: int,
         message: str,
+        tz_name: str = "UTC",
     ) -> None:
         """Append a timestamped note + advance the lead's pipeline stage.
 
@@ -836,8 +896,12 @@ class DripCampaignService:
         # 0. Record drip-send signal so scoring can decay if unanswered.
         _record_score_signal(lead, drip_sent=True)
 
-        # 1. Append note (preserve existing).
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        # 1. Append note (preserve existing) in tenant-local time.
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = ZoneInfo("UTC")
+        timestamp = datetime.now(tz).strftime("%Y-%m-%d %I:%M %p %Z")
         new_line = f"{timestamp} - drip campaign step {step_number}: {message}"
         existing = (lead.notes or "").rstrip()
         lead.notes = f"{existing}\n{new_line}" if existing else new_line
@@ -859,15 +923,33 @@ class DripCampaignService:
         if current in keys:
             idx = keys.index(current)
             if idx < len(keys) - 1:
-                lead.pipeline_stage = keys[idx + 1]
-                logger.info(
-                    f"Drip advanced lead {lead.id} pipeline_stage: "
-                    f"{current} → {lead.pipeline_stage}"
-                )
+                next_key = keys[idx + 1]
+                # Outcome stages are externally determined (enrolled = Jackrabbit
+                # customer match; missed = drip-final fallback). Auto-advance
+                # must never land on them — hold the lead's current stage.
+                if next_key in {"enrolled", "missed"}:
+                    logger.info(
+                        f"Drip skipped advance for lead {lead.id}: next stage "
+                        f"'{next_key}' is outcome-only — staying at {current!r}"
+                    )
+                else:
+                    lead.pipeline_stage = next_key
+                    logger.info(
+                        f"Drip advanced lead {lead.id} pipeline_stage: "
+                        f"{current} → {lead.pipeline_stage}"
+                    )
         else:
-            # Lead has unknown/null stage — drop them on the first stage.
-            lead.pipeline_stage = keys[0]
-            logger.info(f"Drip set lead {lead.id} pipeline_stage to {keys[0]} (was {current!r})")
+            # Lead has unknown/null stage — drop them on the first stage,
+            # unless that first stage is itself an outcome (misconfig safety).
+            first_key = keys[0]
+            if first_key in {"enrolled", "missed"}:
+                logger.warning(
+                    f"Drip refused to set lead {lead.id} stage to outcome key "
+                    f"'{first_key}' (pipeline misconfigured); leaving as {current!r}"
+                )
+            else:
+                lead.pipeline_stage = first_key
+                logger.info(f"Drip set lead {lead.id} pipeline_stage to {first_key} (was {current!r})")
 
     async def _schedule_step(self, enrollment: DripEnrollment, delay_minutes: int) -> str | None:
         """Schedule the next drip step via Cloud Tasks."""

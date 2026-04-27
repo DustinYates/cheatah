@@ -47,7 +47,7 @@ const STATUS_COLORS = {
 
 export default function CampaignSettings() {
   const { token, user, selectedTenantId } = useAuth();
-  const { stages: pipelineStages } = usePipelineStages();
+  const { stages: pipelineStages, stageMap } = usePipelineStages();
   const [campaigns, setCampaigns] = useState([]);
   const [originalCampaigns, setOriginalCampaigns] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
@@ -173,6 +173,8 @@ export default function CampaignSettings() {
           priority: campaign.priority ?? 100,
           is_enabled: campaign.is_enabled,
           trigger_delay_minutes: campaign.trigger_delay_minutes,
+          send_window_start: campaign.send_window_start || '08:00',
+          send_window_end: campaign.send_window_end || '21:00',
           response_templates: campaign.response_templates,
         };
 
@@ -719,46 +721,84 @@ export default function CampaignSettings() {
                 );
               })()}
 
-              {/* Trigger Delay */}
+              {/* Trigger Delay + Send Window (side-by-side) */}
               {(() => {
                 const split = splitMinutes(campaign.trigger_delay_minutes);
+                const winStart = campaign.send_window_start || '08:00';
+                const winEnd = campaign.send_window_end || '21:00';
                 return (
-                  <div className="sms-field">
-                    <label className="sms-field__label">First message after</label>
-                    <div className="sms-input-group">
-                      <input
-                        type="number"
-                        className="sms-input sms-input--number"
-                        min="0"
-                        value={split.value}
-                        onChange={(e) =>
-                          updateCampaign(
-                            campaign.id,
-                            'trigger_delay_minutes',
-                            toMinutes(e.target.value, split.unit),
-                          )
-                        }
-                      />
-                      <select
-                        className="sms-input"
-                        style={{ maxWidth: '120px' }}
-                        value={split.unit}
-                        onChange={(e) =>
-                          updateCampaign(
-                            campaign.id,
-                            'trigger_delay_minutes',
-                            toMinutes(split.value, e.target.value),
-                          )
-                        }
-                      >
-                        <option value="minutes">minutes</option>
-                        <option value="hours">hours</option>
-                        <option value="days">days</option>
-                      </select>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                    <div className="sms-field" style={{ flex: '1 1 220px', minWidth: '220px' }}>
+                      <label className="sms-field__label">First message after</label>
+                      <div className="sms-input-group">
+                        <input
+                          type="number"
+                          className="sms-input sms-input--number"
+                          min="0"
+                          value={split.value}
+                          onChange={(e) =>
+                            updateCampaign(
+                              campaign.id,
+                              'trigger_delay_minutes',
+                              toMinutes(e.target.value, split.unit),
+                            )
+                          }
+                        />
+                        <select
+                          className="sms-input"
+                          style={{ maxWidth: '120px' }}
+                          value={split.unit}
+                          onChange={(e) =>
+                            updateCampaign(
+                              campaign.id,
+                              'trigger_delay_minutes',
+                              toMinutes(split.value, e.target.value),
+                            )
+                          }
+                        >
+                          <option value="minutes">minutes</option>
+                          <option value="hours">hours</option>
+                          <option value="days">days</option>
+                        </select>
+                      </div>
+                      <p className="sms-field__hint">
+                        How long to wait after a lead arrives before sending the first message.
+                      </p>
                     </div>
-                    <p className="sms-field__hint">
-                      How long to wait after a lead arrives before sending the first message.
-                    </p>
+
+                    <div className="sms-field" style={{ flex: '1 1 260px', minWidth: '260px' }}>
+                      <label className="sms-field__label">Send window (tenant timezone)</label>
+                      <div className="sms-input-group" style={{ alignItems: 'center' }}>
+                        <input
+                          type="time"
+                          className="sms-input"
+                          min="07:00"
+                          max="22:00"
+                          step="900"
+                          value={winStart}
+                          onChange={(e) =>
+                            updateCampaign(campaign.id, 'send_window_start', e.target.value)
+                          }
+                          style={{ maxWidth: '120px' }}
+                        />
+                        <span style={{ color: '#6b7280' }}>to</span>
+                        <input
+                          type="time"
+                          className="sms-input"
+                          min="07:00"
+                          max="22:00"
+                          step="900"
+                          value={winEnd}
+                          onChange={(e) =>
+                            updateCampaign(campaign.id, 'send_window_end', e.target.value)
+                          }
+                          style={{ maxWidth: '120px' }}
+                        />
+                      </div>
+                      <p className="sms-field__hint">
+                        Drip steps only fire inside this window (07:00–22:00 max). Anything that lands outside is deferred to the next window-open. Protects leads from late-night texts.
+                      </p>
+                    </div>
                   </div>
                 );
               })()}
@@ -785,20 +825,29 @@ export default function CampaignSettings() {
                       .map((step, idx, arr) => {
                         // Step N moves the lead from pipeline position N-1 → N.
                         // Show the transition as "From → To" using the stage labels.
-                        // Last step is special: only fires on customer match (→ enrolled),
-                        // otherwise lead lands on "missed". So the badge says "→ End of Drip".
+                        // Last step is terminal: lead lands on "missed" (no SMS sent),
+                        // unless they've become a customer — then silent enroll.
+                        // Outcome stages (enrolled/missed) are externally determined;
+                        // auto-advance never sets them on non-last steps, so the
+                        // badge holds at the current stage with no arrow.
                         const isLastStep = idx === arr.length - 1;
                         const fromStage = pipelineStages?.[step.step_number - 1];
                         const toStage = pipelineStages?.[step.step_number];
+                        const missedStage = stageMap?.missed;
+                        const OUTCOME_KEYS = new Set(['enrolled', 'missed']);
+                        const targetIsOutcome = toStage && OUTCOME_KEYS.has(toStage.key);
                         let badgeLabel;
                         let badgeColor;
                         if (isLastStep && fromStage) {
-                          badgeLabel = `${fromStage.label} → End of Drip`;
-                          badgeColor = '#374151';
+                          badgeLabel = `${fromStage.label} → ${missedStage?.label || 'Missed'}`;
+                          badgeColor = missedStage?.color || '#6b7280';
+                        } else if (fromStage && targetIsOutcome) {
+                          badgeLabel = fromStage.label;
+                          badgeColor = fromStage.color;
                         } else if (fromStage && toStage) {
                           badgeLabel = `${fromStage.label} → ${toStage.label}`;
                           badgeColor = toStage.color;
-                        } else if (toStage) {
+                        } else if (toStage && !targetIsOutcome) {
                           badgeLabel = toStage.label;
                           badgeColor = toStage.color;
                         } else {
@@ -806,11 +855,9 @@ export default function CampaignSettings() {
                           badgeColor = null;
                         }
                         // Sample placeholder text per step position.
-                        const samplePlaceholder = isLastStep
-                          ? "Welcome {{first_name}}! Excited to have you on board — let us know if you have any questions."
-                          : step.step_number === 1
-                            ? "Hi {{first_name}}! Just following up on your interest. Happy to answer any questions whenever works for you."
-                            : "Hi {{first_name}}, circling back to see if you have any questions. Reply anytime!";
+                        const samplePlaceholder = step.step_number === 1
+                          ? "Hi {{first_name}}! Just following up on your interest. Happy to answer any questions whenever works for you."
+                          : "Hi {{first_name}}, circling back to see if you have any questions. Reply anytime!";
                         return (
                         <div key={step.step_number} className="campaign-step">
                           <div className="campaign-step__header">
@@ -830,11 +877,6 @@ export default function CampaignSettings() {
 
                           <div className="sms-field">
                             <label className="sms-field__label">Message Template</label>
-                            {isLastStep && (
-                              <p className="sms-field__hint" style={{ margin: '0 0 6px 0', fontStyle: 'italic' }}>
-                                Only sent if the lead has actually enrolled (customer match found). Otherwise the lead is marked "missed" and no message is sent.
-                              </p>
-                            )}
                             <textarea
                               className="sms-textarea"
                               rows={3}

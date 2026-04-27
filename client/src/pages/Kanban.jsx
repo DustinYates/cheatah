@@ -183,6 +183,19 @@ function getChannel(lead) {
   return null;
 }
 
+function lastMessageTooltip(lead) {
+  const preview = lead.last_message_preview;
+  if (!preview) return undefined;
+  const role = lead.last_message_role;
+  const speaker =
+    role === 'assistant' ? 'AI' :
+    role === 'user' ? 'Them' :
+    role === 'voice' ? 'Voice' :
+    role === 'system' ? 'System' :
+    null;
+  return speaker ? `${speaker}: ${preview}` : preview;
+}
+
 export default function Kanban() {
   const navigate = useNavigate();
   const { stages: STAGES, loading: stagesLoading, stageMap } = usePipelineStages();
@@ -499,6 +512,7 @@ export default function Kanban() {
                         draggable={!mergeMode}
                         onDragStart={(e) => handleDragStart(e, lead)}
                         onDragEnd={handleDragEnd}
+                        title={lastMessageTooltip(lead)}
                         onClick={() => {
                           if (mergeMode && mergeMode.primaryId !== lead.id) {
                             handleMergeSecondarySelect(
@@ -697,6 +711,7 @@ export default function Kanban() {
                     draggable={!mergeMode}
                     onDragStart={(e) => handleDragStart(e, lead)}
                     onDragEnd={handleDragEnd}
+                    title={lastMessageTooltip(lead)}
                     onClick={() => {
                       if (mergeMode && mergeMode.primaryId !== lead.id) {
                         handleMergeSecondarySelect(

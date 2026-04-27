@@ -45,6 +45,8 @@ class ContactResponse(BaseModel):
     role: str | None = None
     tags: list[str] | None = None
     notes: str | None = None
+    last_message_preview: str | None = None
+    last_message_role: str | None = None
 
     class Config:
         from_attributes = True
@@ -331,6 +333,8 @@ def _contact_to_response(
     first_contacted: str | None = None,
     last_contacted: str | None = None,
     pipeline_stage: str | None = None,
+    last_message_preview: str | None = None,
+    last_message_role: str | None = None,
 ) -> ContactResponse:
     """Convert a Contact model to ContactResponse."""
     return ContactResponse(
@@ -353,6 +357,8 @@ def _contact_to_response(
         role=contact.role,
         tags=contact.tags or [],
         notes=contact.notes,
+        last_message_preview=last_message_preview,
+        last_message_role=last_message_role,
     )
 
 
@@ -401,6 +407,87 @@ async def list_contacts(
             )
             stage_map = {row.id: row.pipeline_stage for row in lead_stages_result}
 
+    # Batch fetch latest message per contact (for hover preview).
+    # Conversation.contact_id is often null in this codebase — most conversations
+    # link via Lead.conversation_id. Walk that path: Lead → Conversation → Message,
+    # also fall back to direct Conversation.contact_id for orphan conversations.
+    last_msg_map: dict[int, tuple[str, str]] = {}
+    if contact_ids:
+        # Path A: contact → lead → conversation → latest message
+        lead_conv_rows = await db.execute(
+            select(Lead.id, Lead.conversation_id, Lead.contact_id, Lead.extra_data)
+            .where(Lead.contact_id.in_(contact_ids), Lead.tenant_id == tenant_id)
+        )
+        contact_to_conv: dict[int, int] = {}
+        contact_voice_fallback: dict[int, str] = {}
+        for lead_row in lead_conv_rows.all():
+            if lead_row.contact_id is None:
+                continue
+            if lead_row.conversation_id and lead_row.contact_id not in contact_to_conv:
+                contact_to_conv[lead_row.contact_id] = lead_row.conversation_id
+            elif lead_row.contact_id not in contact_to_conv and lead_row.extra_data:
+                voice_calls = lead_row.extra_data.get("voice_calls") or []
+                for vc in reversed(voice_calls):
+                    transcript = vc.get("transcript") or vc.get("summary")
+                    if transcript:
+                        contact_voice_fallback[lead_row.contact_id] = str(transcript)
+                        break
+
+        conv_ids_for_contacts = list({cid for cid in contact_to_conv.values() if cid})
+        conv_to_last_msg: dict[int, tuple[str, str]] = {}
+        if conv_ids_for_contacts:
+            last_msg_stmt = (
+                select(
+                    Message.conversation_id,
+                    Message.content,
+                    Message.role,
+                )
+                .where(Message.conversation_id.in_(conv_ids_for_contacts))
+                .order_by(Message.conversation_id, Message.sequence_number.desc())
+                .distinct(Message.conversation_id)
+            )
+            for row in (await db.execute(last_msg_stmt)).all():
+                conv_to_last_msg[row.conversation_id] = (row.content, row.role)
+
+        for cid, conv_id in contact_to_conv.items():
+            payload = conv_to_last_msg.get(conv_id)
+            if not payload:
+                continue
+            content, role = payload
+            text = (content or "").strip().replace("\n", " ")
+            preview = (text[:140] + "…") if len(text) > 140 else text
+            last_msg_map[cid] = (preview, role)
+
+        for cid, transcript in contact_voice_fallback.items():
+            if cid in last_msg_map:
+                continue
+            text = transcript.strip().replace("\n", " ")
+            preview = (text[:140] + "…") if len(text) > 140 else text
+            last_msg_map[cid] = (preview, "voice")
+
+        # Path B fallback: direct Conversation.contact_id (covers conversations
+        # not linked to any Lead — e.g. orphan chats).
+        missing_ids = [cid for cid in contact_ids if cid not in last_msg_map]
+        if missing_ids:
+            direct_stmt = (
+                select(
+                    Conversation.contact_id,
+                    Message.content,
+                    Message.role,
+                )
+                .join(Message, Message.conversation_id == Conversation.id)
+                .where(
+                    Conversation.contact_id.in_(missing_ids),
+                    Conversation.tenant_id == tenant_id,
+                )
+                .order_by(Conversation.contact_id, Message.created_at.desc())
+                .distinct(Conversation.contact_id)
+            )
+            for row in (await db.execute(direct_stmt)).all():
+                text = (row.content or "").strip().replace("\n", " ")
+                preview = (text[:140] + "…") if len(text) > 140 else text
+                last_msg_map[row.contact_id] = (preview, row.role)
+
     # For now, estimate total as we don't have a count method
     # If we get a full page, there might be more
     total = offset + len(contacts)
@@ -415,6 +502,8 @@ async def list_contacts(
                 first_contacted=timestamps_map.get(c.id, (None, None))[0],
                 last_contacted=timestamps_map.get(c.id, (None, None))[1],
                 pipeline_stage=stage_map.get(c.lead_id) if c.lead_id else None,
+                last_message_preview=last_msg_map.get(c.id, (None, None))[0],
+                last_message_role=last_msg_map.get(c.id, (None, None))[1],
             )
             for c in contacts
         ],

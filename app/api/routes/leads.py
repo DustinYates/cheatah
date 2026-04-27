@@ -61,6 +61,9 @@ class LeadResponse(BaseModel):
     pending_task_count: int = 0
     next_task_due: str | None = None  # ISO date of earliest pending task due date
     unread_count: int = 0  # Unread notification count for this lead's conversation
+    last_message_preview: str | None = None  # Trimmed body of latest message for hover tooltip
+    last_message_role: str | None = None  # 'user' | 'assistant' | 'system'
+    last_message_at: str | None = None  # ISO timestamp of latest message
     score: int = 0
     score_band: str = "cold"
     score_updated_at: str | None = None
@@ -242,6 +245,24 @@ async def list_leads(
         )
         conv_channel_map = {row[0]: row[1] for row in channel_result.all()}
 
+    # Batch fetch latest message per conversation (for hover preview)
+    last_msg_map: dict[int, tuple[str, str, "datetime"]] = {}
+    if conv_ids:
+        last_msg_stmt = (
+            select(
+                Message.conversation_id,
+                Message.content,
+                Message.role,
+                Message.created_at,
+            )
+            .where(Message.conversation_id.in_(conv_ids))
+            .order_by(Message.conversation_id, Message.sequence_number.desc())
+            .distinct(Message.conversation_id)
+        )
+        last_msg_result = await db.execute(last_msg_stmt)
+        for row in last_msg_result.all():
+            last_msg_map[row.conversation_id] = (row.content, row.role, row.created_at)
+
     # Batch fetch unread notification counts per conversation_id
     unread_counts = {}
     if conv_ids:
@@ -288,6 +309,26 @@ async def list_leads(
                 if voice_calls and any(vc.get("transcript") for vc in voice_calls):
                     llm_responded = True
 
+        last_msg_preview = None
+        last_msg_role = None
+        last_msg_at = None
+        last_msg_tuple = last_msg_map.get(lead.conversation_id) if lead.conversation_id else None
+        if last_msg_tuple:
+            content, role, created_at = last_msg_tuple
+            text = (content or "").strip().replace("\n", " ")
+            last_msg_preview = (text[:140] + "…") if len(text) > 140 else text
+            last_msg_role = role
+            last_msg_at = _isoformat_utc(created_at)
+        elif lead.extra_data:
+            voice_calls = lead.extra_data.get("voice_calls") or []
+            for vc in reversed(voice_calls):
+                transcript = vc.get("transcript") or vc.get("summary")
+                if transcript:
+                    text = str(transcript).strip().replace("\n", " ")
+                    last_msg_preview = (text[:140] + "…") if len(text) > 140 else text
+                    last_msg_role = "voice"
+                    break
+
         lead_responses.append(
             LeadResponse(
                 id=lead.id,
@@ -309,6 +350,9 @@ async def list_leads(
                 pending_task_count=task_counts.get(lead.id, 0),
                 next_task_due=_isoformat_utc(task_next_due.get(lead.id)),
                 unread_count=unread_counts.get(lead.conversation_id, 0) if lead.conversation_id else 0,
+                last_message_preview=last_msg_preview,
+                last_message_role=last_msg_role,
+                last_message_at=last_msg_at,
             )
         )
 

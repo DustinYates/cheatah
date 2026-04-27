@@ -1441,8 +1441,12 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {filteredLeads.map((lead) => (
-                  <tr key={lead.id} className={getRowClassName(lead)}>
+                {filteredLeads.map((lead) => {
+                  const previewTitle = lead.last_message_preview
+                    ? `${lead.last_message_role === 'assistant' ? 'AI' : lead.last_message_role === 'user' ? 'Them' : lead.last_message_role === 'voice' ? 'Voice' : lead.last_message_role === 'system' ? 'System' : ''}${lead.last_message_role ? ': ' : ''}${lead.last_message_preview}`
+                    : undefined;
+                  return (
+                  <tr key={lead.id} className={getRowClassName(lead)} title={previewTitle}>
                     <td className="col-select">
                       <input
                         type="checkbox"
@@ -1722,7 +1726,8 @@ export default function Dashboard() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </CompactTable>
           )}

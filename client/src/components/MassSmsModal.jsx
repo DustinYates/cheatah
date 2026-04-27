@@ -12,13 +12,21 @@ const getAudience = (lead) => {
   return 'unknown';
 };
 
-export default function MassSmsModal({ leads, onClose, onSuccess }) {
+export default function MassSmsModal({ leads, stages = [], onClose, onSuccess }) {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
   const [audienceFilter, setAudienceFilter] = useState('all');
+  const [advanceStage, setAdvanceStage] = useState(false);
   const textareaRef = useRef(null);
+
+  const sortedStages = [...stages].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const nextStageFor = (currentKey) => {
+    const idx = sortedStages.findIndex((s) => s.key === currentKey);
+    if (idx < 0 || idx >= sortedStages.length - 1) return null;
+    return sortedStages[idx + 1];
+  };
 
   const audienceCounts = leads.reduce(
     (acc, l) => {
@@ -40,6 +48,10 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
   const recipientCount = filteredLeads.length;
   const totalWithPhone = audienceCounts.all;
   const noPhoneCount = leads.length - totalWithPhone;
+
+  const advanceableCount = sortedStages.length === 0
+    ? 0
+    : filteredLeads.filter((l) => nextStageFor(l.pipeline_stage || sortedStages[0]?.key) !== null).length;
 
   useEffect(() => {
     const handleEscape = (e) => {
@@ -89,7 +101,21 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
         if (res.errors) totals.errors.push(...res.errors);
       }
 
-      setResult(totals);
+      let advanced = 0;
+      if (totals.sent > 0 && advanceStage && advanceableCount > 0) {
+        const moves = filteredLeads
+          .map((l) => {
+            const next = nextStageFor(l.pipeline_stage || sortedStages[0]?.key);
+            return next ? { id: l.id, nextKey: next.key } : null;
+          })
+          .filter(Boolean);
+        const results = await Promise.allSettled(
+          moves.map((m) => api.updateLeadPipelineStage(m.id, m.nextKey)),
+        );
+        advanced = results.filter((r) => r.status === 'fulfilled').length;
+      }
+
+      setResult({ ...totals, advanced });
       setProgress(null);
       if (totals.sent > 0) {
         setTimeout(() => {
@@ -126,7 +152,9 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
             )}
             {result && (
               <div className={result.failed > 0 ? 'error-message' : 'success-message'}>
-                Sent: {result.sent}{result.failed > 0 ? `, Failed: ${result.failed}` : ''}
+                Sent: {result.sent}
+                {result.failed > 0 ? `, Failed: ${result.failed}` : ''}
+                {result.advanced > 0 ? `, Advanced: ${result.advanced}` : ''}
               </div>
             )}
 
@@ -166,6 +194,26 @@ export default function MassSmsModal({ leads, onClose, onSuccess }) {
                 ))}
               </div>
             </div>
+
+            {sortedStages.length > 0 && (
+              <label className={`mass-sms-advance${advanceableCount === 0 ? ' is-disabled' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={advanceStage && advanceableCount > 0}
+                  onChange={(e) => setAdvanceStage(e.target.checked)}
+                  disabled={loading || !!result || advanceableCount === 0}
+                />
+                <span>
+                  Advance to next pipeline stage after sending
+                  {advanceableCount > 0 && advanceableCount < recipientCount && (
+                    <span className="mass-sms-advance__note"> ({advanceableCount} of {recipientCount} eligible)</span>
+                  )}
+                  {advanceableCount === 0 && recipientCount > 0 && (
+                    <span className="mass-sms-advance__note"> (none eligible — already at final stage)</span>
+                  )}
+                </span>
+              </label>
+            )}
 
             <div className="form-group">
               <label htmlFor="mass-sms-message">Message</label>

@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { usePipelineStages } from '../hooks/usePipelineStages';
 import LeadDetailsModal from '../components/LeadDetailsModal';
 import LeadScoreBadge from '../components/LeadScoreBadge';
+import { HoverPreviewWrapper } from '../components/HoverPreview';
 import SendSmsModal from '../components/SendSmsModal';
 import MassSmsModal from '../components/MassSmsModal';
 import EditLeadModal from '../components/EditLeadModal';
@@ -181,19 +182,6 @@ function getChannel(lead) {
   if (lead.extra_data?.source) return lead.extra_data.source;
   if (lead.extra_data?.channel) return lead.extra_data.channel;
   return null;
-}
-
-function lastMessageTooltip(lead) {
-  const preview = lead.last_message_preview;
-  if (!preview) return undefined;
-  const role = lead.last_message_role;
-  const speaker =
-    role === 'assistant' ? 'AI' :
-    role === 'user' ? 'Them' :
-    role === 'voice' ? 'Voice' :
-    role === 'system' ? 'System' :
-    null;
-  return speaker ? `${speaker}: ${preview}` : preview;
 }
 
 export default function Kanban() {
@@ -504,15 +492,20 @@ export default function Kanban() {
                     const isMergeTarget = mergeMode && mergeMode.primaryId === lead.id;
                     const isMergeSecondary = mergeMode && mergeMode.primaryId !== lead.id;
                     return (
-                      <div
+                      <HoverPreviewWrapper
                         key={lead.id}
+                        text={lead.last_message_preview}
+                        role={lead.last_message_role}
+                      >
+                        {(hoverHandlers) => (
+                      <div
                         className={`kanban-card ${isMergeTarget ? 'merge-primary' : ''} ${
                           isMergeSecondary ? 'merge-secondary' : ''
                         } ${selectedLeadIds.has(lead.id) ? 'kanban-card--selected' : ''}`}
                         draggable={!mergeMode}
                         onDragStart={(e) => handleDragStart(e, lead)}
                         onDragEnd={handleDragEnd}
-                        title={lastMessageTooltip(lead)}
+                        {...hoverHandlers}
                         onClick={() => {
                           if (mergeMode && mergeMode.primaryId !== lead.id) {
                             handleMergeSecondarySelect(
@@ -684,6 +677,8 @@ export default function Kanban() {
                           </span>
                         </div>
                       </div>
+                        )}
+                      </HoverPreviewWrapper>
                     );
                   })
                 )}
@@ -703,15 +698,20 @@ export default function Kanban() {
                 const isMergeTarget = mergeMode && mergeMode.primaryId === lead.id;
                 const isMergeSecondary = mergeMode && mergeMode.primaryId !== lead.id;
                 return (
-                  <div
+                  <HoverPreviewWrapper
                     key={lead.id}
+                    text={lead.last_message_preview}
+                    role={lead.last_message_role}
+                  >
+                    {(hoverHandlers) => (
+                  <div
                     className={`kanban-card ${isMergeTarget ? 'merge-primary' : ''} ${
                       isMergeSecondary ? 'merge-secondary' : ''
                     } ${selectedLeadIds.has(lead.id) ? 'kanban-card--selected' : ''}`}
                     draggable={!mergeMode}
                     onDragStart={(e) => handleDragStart(e, lead)}
                     onDragEnd={handleDragEnd}
-                    title={lastMessageTooltip(lead)}
+                    {...hoverHandlers}
                     onClick={() => {
                       if (mergeMode && mergeMode.primaryId !== lead.id) {
                         handleMergeSecondarySelect(
@@ -857,6 +857,8 @@ export default function Kanban() {
                       </span>
                     </div>
                   </div>
+                    )}
+                  </HoverPreviewWrapper>
                 );
               })}
             </div>
@@ -915,6 +917,7 @@ export default function Kanban() {
       {massSmsLeads && (
         <MassSmsModal
           leads={massSmsLeads}
+          stages={STAGES}
           onClose={() => setMassSmsLeads(null)}
           onSuccess={() => {
             clearSelection();

@@ -256,3 +256,38 @@
 .mass-sms-segment.is-active .mass-sms-segment__count {
   background: rgba(255, 255, 255, 0.22);
 }
+
+.mass-sms-advance {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 4px;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mass-sms-advance input[type="checkbox"] {
+  margin: 2px 0 0;
+  cursor: pointer;
+  accent-color: #4f46e5;
+}
+
+.mass-sms-advance.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.mass-sms-advance.is-disabled input[type="checkbox"] {
+  cursor: not-allowed;
+}
+
+.mass-sms-advance__note {
+  color: #6b7280;
+  font-weight: 400;
+}

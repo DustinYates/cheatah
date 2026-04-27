@@ -8,6 +8,7 @@ import { formatPhone } from '../utils/formatPhone';
 import { usePipelineStages } from '../hooks/usePipelineStages';
 import LeadDetailsModal from '../components/LeadDetailsModal';
 import LeadScoreBadge from '../components/LeadScoreBadge';
+import { useHoverPreview } from '../components/HoverPreview';
 import SendSmsModal from '../components/SendSmsModal';
 import EditLeadModal from '../components/EditLeadModal';
 import SideDrawer from '../components/SideDrawer';
@@ -328,6 +329,21 @@ const StatusBadge = ({ status, label, variant = 'pill' }) => (
     {variant === 'dot' ? null : label || status || 'New'}
   </span>
 );
+
+function LeadRow({ lead, className, children }) {
+  const { handlers, tooltip } = useHoverPreview({
+    text: lead.last_message_preview,
+    role: lead.last_message_role,
+  });
+  return (
+    <>
+      <tr className={className} {...handlers}>
+        {children}
+      </tr>
+      {tooltip}
+    </>
+  );
+}
 
 export default function Dashboard() {
   const { user, selectedTenantId, selectTenant } = useAuth();
@@ -1394,6 +1410,8 @@ export default function Dashboard() {
                   <option value={10}>10</option>
                   <option value={50}>50</option>
                   <option value={100}>100</option>
+                  <option value={250}>250</option>
+                  <option value={500}>500</option>
                 </select>
               </div>
               {selectedLeadIds.size > 0 && (
@@ -1441,12 +1459,8 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {filteredLeads.map((lead) => {
-                  const previewTitle = lead.last_message_preview
-                    ? `${lead.last_message_role === 'assistant' ? 'AI' : lead.last_message_role === 'user' ? 'Them' : lead.last_message_role === 'voice' ? 'Voice' : lead.last_message_role === 'system' ? 'System' : ''}${lead.last_message_role ? ': ' : ''}${lead.last_message_preview}`
-                    : undefined;
-                  return (
-                  <tr key={lead.id} className={getRowClassName(lead)} title={previewTitle}>
+                {filteredLeads.map((lead) => (
+                  <LeadRow key={lead.id} lead={lead} className={getRowClassName(lead)}>
                     <td className="col-select">
                       <input
                         type="checkbox"
@@ -1725,9 +1739,8 @@ export default function Dashboard() {
                         </div>
                       </div>
                     </td>
-                  </tr>
-                  );
-                })}
+                  </LeadRow>
+                ))}
               </tbody>
             </CompactTable>
           )}

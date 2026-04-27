@@ -990,10 +990,10 @@ export default function CampaignSettings() {
           </section>
         ))}
 
-        {/* ── Active Enrollments ──────────────────────────────────────── */}
+        {/* ── Active Drips ──────────────────────────────────────── */}
         <section className="sms-card">
           <div className="sms-card__header">
-            <h2 className="sms-card__title">Active Enrollments</h2>
+            <h2 className="sms-card__title">Active Drips</h2>
             <span className="sms-card__badge">
               {enrollments.length}
             </span>

@@ -347,9 +347,20 @@ class DripCampaignService:
         else:
             message = self.message_service.render_template(step.message_template, context)
 
+        # Empty template → use a generic follow-up so the drip never locks up.
+        # Step 1 gets a softer first-touch line; later steps get a circle-back.
         if not message:
-            logger.error(f"Empty message for enrollment {enrollment_id} step {next_step_num}")
-            return {"status": "error", "reason": "empty_message"}
+            default_template = (
+                "Hi {{first_name}}! Just following up on your interest. "
+                "Happy to answer any questions whenever works for you."
+                if next_step_num == 1
+                else "Hi {{first_name}}, circling back to see if you have any questions. Reply anytime!"
+            )
+            message = self.message_service.render_template(default_template, context)
+            logger.info(
+                f"Empty message_template for enrollment {enrollment_id} step "
+                f"{next_step_num} — using default fallback."
+            )
 
         # Get SMS provider and phone
         from_phone = factory.get_sms_phone_number(sms_config)

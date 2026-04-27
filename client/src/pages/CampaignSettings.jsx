@@ -70,18 +70,16 @@ export default function CampaignSettings() {
     spacing_unit: 'days',
   });
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [dripSettings, setDripSettings] = useState({ drip_affects_pipeline: true });
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // Simple/Advanced toggle — only available in the tenant-1 sandbox while we're testing.
-  const effectiveTenantId = user?.is_global_admin ? selectedTenantId : user?.tenant_id;
-  const sandboxTenant = Number(effectiveTenantId) === 1;
   const [viewMode, setViewMode] = useState(() => {
-    if (typeof window === 'undefined') return 'advanced';
+    if (typeof window === 'undefined') return 'simple';
     return window.localStorage.getItem('campaignSettings.viewMode') || 'simple';
   });
-  const isSimple = sandboxTenant && viewMode === 'simple';
+  const isSimple = viewMode === 'simple';
   const setViewModePersistent = useCallback((mode) => {
     setViewMode(mode);
     if (typeof window !== 'undefined') {
@@ -268,8 +266,22 @@ export default function CampaignSettings() {
   };
 
   const createCampaign = async () => {
+    setCreateError(null);
     if (!newCampaignDraft.name.trim()) {
-      showToast('Name is required', 'error');
+      setCreateError('Name is required');
+      return;
+    }
+    const requestedAttempts = Math.max(1, parseInt(newCampaignDraft.total_attempts, 10) || 1);
+    const cap = dripSettings.max_attempts;
+    if (cap != null && requestedAttempts > cap) {
+      const bridgeList = (dripSettings.pipeline_bridges || []).join('; ') || '(none)';
+      setCreateError(
+        `Drip campaigns can only have one message per pipeline bridge ` +
+        `(a transition between stages). Your pipeline supports ${cap} ` +
+        `bridge${cap === 1 ? '' : 's'}: ${bridgeList}. You requested ` +
+        `${requestedAttempts}. Reduce 'Number of attempts' to ${cap}, add more ` +
+        `pipeline stages, or turn off "drip affects pipeline" in settings.`
+      );
       return;
     }
     setCreating(true);
@@ -316,7 +328,9 @@ export default function CampaignSettings() {
       });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to create campaign');
+        const detail = errorData.detail || 'Failed to create campaign';
+        setCreateError(detail);
+        throw new Error(detail);
       }
       setShowCreateModal(false);
       setNewCampaignDraft({
@@ -495,44 +509,42 @@ export default function CampaignSettings() {
             ? 'Toggle a campaign on and every new lead gets enrolled until they reply STOP, become a customer, or finish all messages.'
             : 'Manage automated follow-up sequences for new leads. Each campaign can target leads by audience and tags.'}
         </p>
-        {sandboxTenant && (
-          <div
+        <div
+          style={{
+            marginTop: '12px',
+            display: 'inline-flex',
+            border: '1px solid #d1d5db',
+            borderRadius: '8px',
+            overflow: 'hidden',
+          }}
+        >
+          <button
+            type="button"
+            className="sms-btn"
             style={{
-              marginTop: '12px',
-              display: 'inline-flex',
-              border: '1px solid #d1d5db',
-              borderRadius: '8px',
-              overflow: 'hidden',
+              borderRadius: 0,
+              background: viewMode === 'simple' ? '#4f46e5' : '#fff',
+              color: viewMode === 'simple' ? '#fff' : '#374151',
+              border: 'none',
             }}
+            onClick={() => setViewModePersistent('simple')}
           >
-            <button
-              type="button"
-              className="sms-btn"
-              style={{
-                borderRadius: 0,
-                background: viewMode === 'simple' ? '#4f46e5' : '#fff',
-                color: viewMode === 'simple' ? '#fff' : '#374151',
-                border: 'none',
-              }}
-              onClick={() => setViewModePersistent('simple')}
-            >
-              Simple
-            </button>
-            <button
-              type="button"
-              className="sms-btn"
-              style={{
-                borderRadius: 0,
-                background: viewMode === 'advanced' ? '#4f46e5' : '#fff',
-                color: viewMode === 'advanced' ? '#fff' : '#374151',
-                border: 'none',
-              }}
-              onClick={() => setViewModePersistent('advanced')}
-            >
-              Advanced
-            </button>
-          </div>
-        )}
+            Simple
+          </button>
+          <button
+            type="button"
+            className="sms-btn"
+            style={{
+              borderRadius: 0,
+              background: viewMode === 'advanced' ? '#4f46e5' : '#fff',
+              color: viewMode === 'advanced' ? '#fff' : '#374151',
+              border: 'none',
+            }}
+            onClick={() => setViewModePersistent('advanced')}
+          >
+            Advanced
+          </button>
+        </div>
         {isSimple && (
           <div
             style={{
@@ -820,6 +832,29 @@ export default function CampaignSettings() {
 
                 {expandedSections[`steps-${campaign.id}`] && (
                   <div className="campaign-steps">
+                    {dripSettings.max_attempts != null
+                      && campaign.steps.length > dripSettings.max_attempts && (
+                      <div
+                        role="alert"
+                        style={{
+                          margin: '8px 0 12px',
+                          padding: '10px 12px',
+                          borderRadius: 6,
+                          background: '#fef2f2',
+                          border: '1px solid #fecaca',
+                          color: '#991b1b',
+                          fontSize: 13,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        This campaign has {campaign.steps.length} steps but your pipeline only
+                        supports {dripSettings.max_attempts} bridge{dripSettings.max_attempts === 1 ? '' : 's'}
+                        {' '}
+                        ({(dripSettings.pipeline_bridges || []).join('; ') || 'none'}).
+                        Steps beyond #{dripSettings.max_attempts} have no pipeline transition and won't
+                        save when you next edit steps. Trim the campaign or add pipeline stages.
+                      </div>
+                    )}
                     {[...campaign.steps]
                       .sort((a, b) => a.step_number - b.step_number)
                       .map((step, idx, arr) => {
@@ -1091,7 +1126,7 @@ export default function CampaignSettings() {
             justifyContent: 'center',
             zIndex: 1000,
           }}
-          onClick={() => !creating && setShowCreateModal(false)}
+          onClick={() => !creating && (setShowCreateModal(false), setCreateError(null))}
         >
           <div
             className="sms-card"
@@ -1194,13 +1229,35 @@ export default function CampaignSettings() {
                   type="number"
                   className="sms-input sms-input--number"
                   min="1"
-                  max="20"
+                  max={dripSettings.max_attempts ?? 20}
                   value={newCampaignDraft.total_attempts}
-                  onChange={(e) =>
-                    setNewCampaignDraft(d => ({ ...d, total_attempts: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    const cap = dripSettings.max_attempts ?? 20;
+                    const raw = parseInt(e.target.value, 10);
+                    const clamped = Number.isFinite(raw)
+                      ? Math.max(1, Math.min(cap, raw))
+                      : e.target.value;
+                    setNewCampaignDraft(d => ({ ...d, total_attempts: clamped }));
+                    setCreateError(null);
+                  }}
                 />
-                <p className="sms-field__hint">Total messages to send before the campaign completes.</p>
+                <p className="sms-field__hint">
+                  {dripSettings.max_attempts != null
+                    ? `One message per pipeline bridge — capped at ${dripSettings.max_attempts}.`
+                    : 'Total messages to send before the campaign completes.'}
+                </p>
+                {dripSettings.pipeline_bridges?.length > 0 && (
+                  <div className="sms-field__hint" style={{ marginTop: 8 }}>
+                    <strong>Bridges this drip will cover:</strong>
+                    <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                      {dripSettings.pipeline_bridges
+                        .slice(0, Math.max(1, parseInt(newCampaignDraft.total_attempts, 10) || 1))
+                        .map((b, i) => (
+                          <li key={i}>{`Step ${i + 1}: ${b}`}</li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {parseInt(newCampaignDraft.total_attempts, 10) > 1 && (
@@ -1235,12 +1292,30 @@ export default function CampaignSettings() {
               <p className="sms-field__hint" style={{ marginTop: '12px' }}>
                 The campaign will be created disabled with empty message templates. Fill them in and enable when ready.
               </p>
+
+              {createError && (
+                <div
+                  role="alert"
+                  style={{
+                    marginTop: 12,
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    color: '#991b1b',
+                    fontSize: 13,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {createError}
+                </div>
+              )}
             </div>
             <div className="sms-actions" style={{ padding: '16px 24px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
                 type="button"
                 className="sms-btn sms-btn--ghost"
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => { setShowCreateModal(false); setCreateError(null); }}
                 disabled={creating}
               >
                 Cancel

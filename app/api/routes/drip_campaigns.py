@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_tenant_context
@@ -18,6 +19,82 @@ from app.persistence.repositories.lead_repository import LeadRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Pipeline stages that aren't "contact attempts" — entry + outcomes.
+# A drip step costs one attempt; outcome stages are reached without messaging.
+_NON_CONTACT_STAGE_KEYS = frozenset({
+    "new_lead",
+    "enrolled",
+    "registered",
+    "missed",
+    "missed_opportunity",
+    "lost_opportunity",
+})
+
+
+async def _pipeline_bridges_for_tenant(
+    db: AsyncSession, tenant_id: int
+) -> list[tuple[str, str]] | None:
+    """Return the list of (from_label, to_label) bridges between contact stages.
+
+    A "bridge" is the transition a single drip message advances a lead across:
+    e.g. NEW LEAD → CONTACTED, CONTACTED → CONTACTED AGAIN. The terminal bridge
+    into an outcome (e.g. CONTACTED AGAIN → MISSED) does not count — that
+    transition happens automatically without a message.
+
+    Returns None if the tenant has `drip_affects_pipeline = False` (uncapped).
+    """
+    from app.persistence.models.tenant import TenantBusinessProfile
+    from app.persistence.models.tenant_pipeline_stage import TenantPipelineStage
+
+    affects_row = await db.execute(
+        select(TenantBusinessProfile.drip_affects_pipeline).where(
+            TenantBusinessProfile.tenant_id == tenant_id
+        )
+    )
+    affects = affects_row.scalar_one_or_none()
+    affects = True if affects is None else bool(affects)
+    if not affects:
+        return None
+
+    rows = await db.execute(
+        select(TenantPipelineStage.key, TenantPipelineStage.label, TenantPipelineStage.position)
+        .where(TenantPipelineStage.tenant_id == tenant_id)
+        .order_by(TenantPipelineStage.position)
+    )
+    stages = [(k, lbl) for (k, lbl, _pos) in rows.all()]
+    if not stages:
+        return None
+    contact_stages = [(k, lbl) for (k, lbl) in stages if k not in _NON_CONTACT_STAGE_KEYS]
+    if not contact_stages:
+        return []
+    # Bridges: entry → contact_1, contact_1 → contact_2, ..., contact_{n-1} → contact_n.
+    # The final contact → outcome bridge is terminal and doesn't count.
+    bridges: list[tuple[str, str]] = []
+    entry_label = stages[0][1]  # whatever the first-by-position stage is
+    bridges.append((entry_label, contact_stages[0][1]))
+    for prev, curr in zip(contact_stages, contact_stages[1:]):
+        bridges.append((prev[1], curr[1]))
+    return bridges
+
+
+async def _max_attempts_for_tenant(db: AsyncSession, tenant_id: int) -> int | None:
+    """Return the per-tenant cap on drip attempts (= bridge count), or None if uncapped."""
+    bridges = await _pipeline_bridges_for_tenant(db, tenant_id)
+    return None if bridges is None else len(bridges)
+
+
+def _bridges_error_detail(bridges: list[tuple[str, str]], requested: int) -> str:
+    cap = len(bridges)
+    bridge_list = "; ".join(f"{a} → {b}" for a, b in bridges) or "(none)"
+    return (
+        f"Drip campaigns can only have one message per pipeline bridge "
+        f"(a transition between stages). Your pipeline supports "
+        f"{cap} bridge{'s' if cap != 1 else ''}: {bridge_list}. "
+        f"You requested {requested}. Reduce 'Number of attempts' to {cap}, "
+        f"add more pipeline stages, or turn off 'drip affects pipeline' to "
+        f"send a free-form sequence."
+    )
 
 
 # ── Request/Response Schemas ─────────────────────────────────────────────
@@ -131,6 +208,12 @@ class DripEnrollmentResponse(BaseModel):
 class DripSettingsResponse(BaseModel):
     drip_affects_pipeline: bool
     auto_enroll_new_leads: bool
+    # Cap on Number of Attempts — None means uncapped (toggle off, or
+    # tenant has no pipeline configured).
+    max_attempts: int | None = None
+    # Each entry is "FROM_LABEL → TO_LABEL" describing one bridge that a drip
+    # message advances. Empty/None when uncapped.
+    pipeline_bridges: list[str] | None = None
 
 
 class DripSettingsUpdateRequest(BaseModel):
@@ -151,12 +234,24 @@ async def get_drip_settings(
         _select(TenantBusinessProfile).where(TenantBusinessProfile.tenant_id == tenant_id)
     )
     profile = result.scalar_one_or_none()
+    bridges = await _pipeline_bridges_for_tenant(db, tenant_id)
+    max_attempts = None if bridges is None else len(bridges)
+    bridge_strs = (
+        None if bridges is None else [f"{a} → {b}" for a, b in bridges]
+    )
     if not profile:
         # No profile row yet — return safe defaults.
-        return DripSettingsResponse(drip_affects_pipeline=True, auto_enroll_new_leads=False)
+        return DripSettingsResponse(
+            drip_affects_pipeline=True,
+            auto_enroll_new_leads=False,
+            max_attempts=max_attempts,
+            pipeline_bridges=bridge_strs,
+        )
     return DripSettingsResponse(
         drip_affects_pipeline=bool(profile.drip_affects_pipeline),
         auto_enroll_new_leads=bool(profile.auto_enroll_new_leads),
+        max_attempts=max_attempts,
+        pipeline_bridges=bridge_strs,
     )
 
 
@@ -183,9 +278,12 @@ async def update_drip_settings(
         profile.auto_enroll_new_leads = body.auto_enroll_new_leads
     await db.commit()
     await db.refresh(profile)
+    bridges = await _pipeline_bridges_for_tenant(db, tenant_id)
     return DripSettingsResponse(
         drip_affects_pipeline=bool(profile.drip_affects_pipeline),
         auto_enroll_new_leads=bool(profile.auto_enroll_new_leads),
+        max_attempts=None if bridges is None else len(bridges),
+        pipeline_bridges=None if bridges is None else [f"{a} → {b}" for a, b in bridges],
     )
 
 
@@ -224,6 +322,15 @@ async def create_campaign(
 ) -> DripCampaignResponse:
     """Create a new drip campaign."""
     _validate_window(body.send_window_start, body.send_window_end)
+
+    if body.steps:
+        bridges = await _pipeline_bridges_for_tenant(db, tenant_id)
+        if bridges is not None and len(body.steps) > len(bridges):
+            raise HTTPException(
+                status_code=400,
+                detail=_bridges_error_detail(bridges, len(body.steps)),
+            )
+
     repo = DripCampaignRepository(db)
 
     campaign = await repo.create(
@@ -287,6 +394,13 @@ async def update_campaign_steps(
     campaign = await repo.get_by_id(tenant_id, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
+
+    bridges = await _pipeline_bridges_for_tenant(db, tenant_id)
+    if bridges is not None and len(steps) > len(bridges):
+        raise HTTPException(
+            status_code=400,
+            detail=_bridges_error_detail(bridges, len(steps)),
+        )
 
     new_steps = await repo.upsert_steps(campaign_id, [s.model_dump() for s in steps])
     return [

@@ -684,7 +684,7 @@ export default function CampaignSettings() {
 
               {/* Tag Filter — routing control, always visible */}
               {(() => {
-                const matchAll = !campaign.tag_filter || campaign.tag_filter.length === 0;
+                const matchAll = campaign.tag_filter == null;
                 return (
                   <div className="sms-field">
                     <label className="sms-field__label">Required Tags</label>

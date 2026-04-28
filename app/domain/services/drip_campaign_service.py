@@ -235,6 +235,28 @@ class DripCampaignService:
         # the lead to "enrolled" — no SMS is sent. If no match AND this is the
         # final step, mark the lead "missed" and don't send anything.
         if affects_pipeline:
+            # Trigger a live Jackrabbit lookup so we catch leads who registered
+            # between drip steps. The customers table is populated only by
+            # Zapier callbacks (no scheduled sync), so without this a fresh
+            # enrollment looks like a non-customer until something else queries
+            # them. lookup_by_phone is a fast no-op for tenants without Zapier
+            # configured (returns "not enabled" without hitting the network).
+            if lead.phone:
+                try:
+                    from app.domain.services.customer_lookup_service import CustomerLookupService
+                    await CustomerLookupService(self.session).lookup_by_phone(
+                        tenant_id=tenant_id,
+                        phone_number=lead.phone,
+                        use_cache=True,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"Pre-drip Jackrabbit lookup failed for lead {lead.id} "
+                        f"(enrollment {enrollment_id}): {exc} — falling back to "
+                        f"local customers table only.",
+                        exc_info=True,
+                    )
+
             from app.persistence.repositories.customer_repository import CustomerRepository
             customer_match = await CustomerRepository(self.session).get_by_phone(tenant_id, lead.phone)
         else:

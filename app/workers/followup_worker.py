@@ -62,6 +62,43 @@ async def process_followup_task(
             logger.info(f"Follow-up already sent for lead {payload.lead_id}")
             return {"status": "skipped", "reason": "already_sent"}
 
+        # Skip if a drip campaign has taken over outbound for this lead.
+        # The drip's first step replaces the generic followup SMS.
+        if lead.extra_data and lead.extra_data.get("drip_enrolled"):
+            logger.info(f"Lead {payload.lead_id} is drip-enrolled, skipping generic follow-up")
+            return {"status": "skipped", "reason": "drip_enrolled"}
+
+        # Customer-match guard: a lead can become a Jackrabbit customer between
+        # capture (when this task is queued) and fire time (often the next
+        # morning after quiet-hours deferral). Don't nudge a registered customer.
+        if lead.phone:
+            try:
+                from app.domain.services.customer_lookup_service import CustomerLookupService
+                await CustomerLookupService(db).lookup_by_phone(
+                    tenant_id=payload.tenant_id,
+                    phone_number=lead.phone,
+                    use_cache=True,
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Pre-followup Jackrabbit lookup failed for lead {payload.lead_id}: "
+                    f"{exc} — falling back to local customers table only.",
+                    exc_info=True,
+                )
+
+            from app.persistence.repositories.customer_repository import CustomerRepository
+            customer_match = await CustomerRepository(db).get_by_phone(
+                payload.tenant_id, lead.phone
+            )
+            if customer_match:
+                await _mark_lead_converted_and_skip(db, lead, payload.tenant_id)
+                logger.info(
+                    f"Lead {payload.lead_id} matched existing customer "
+                    f"(external_id={customer_match.external_customer_id}) — "
+                    f"skipping followup SMS."
+                )
+                return {"status": "skipped", "reason": "already_customer"}
+
         # Get SMS provider using factory
         factory = TelephonyProviderFactory(db)
         sms_config = await factory.get_config(payload.tenant_id)
@@ -284,6 +321,40 @@ def _generate_initial_message(lead: Lead, sms_config: TenantSmsConfig) -> str:
         if first_name:
             return f"Hi {first_name}! Thanks for reaching out. I wanted to follow up and see how I can help you today."
         return "Hi! Thanks for reaching out. I wanted to follow up and see how I can help you today."
+
+
+async def _mark_lead_converted_and_skip(
+    db: AsyncSession,
+    lead: Lead,
+    tenant_id: int,
+) -> None:
+    """Set lead pipeline_stage to the tenant's first available "converted" key
+    and record a marker so re-runs short-circuit cleanly.
+    """
+    from app.persistence.models.tenant_pipeline_stage import TenantPipelineStage
+
+    # Tenants use different keys for the registered/enrolled terminal — pick
+    # the first one that exists for this tenant.
+    candidates = ("registered", "enrolled", "converted", "won", "customer")
+    result = await db.execute(
+        select(TenantPipelineStage.key).where(
+            TenantPipelineStage.tenant_id == tenant_id,
+            TenantPipelineStage.key.in_(candidates),
+        )
+    )
+    available = {row[0] for row in result.all()}
+    chosen = next((c for c in candidates if c in available), None)
+
+    if chosen and lead.pipeline_stage != chosen:
+        old = lead.pipeline_stage
+        lead.pipeline_stage = chosen
+        logger.info(f"Followup set lead {lead.id} pipeline_stage: {old} → {chosen}")
+
+    extra_data = dict(lead.extra_data or {})
+    extra_data["followup_skipped_reason"] = "already_customer"
+    extra_data["followup_skipped_at"] = datetime.now(timezone.utc).isoformat()
+    lead.extra_data = extra_data
+    await db.commit()
 
 
 def _is_quiet_hours(tz_name: str) -> bool:

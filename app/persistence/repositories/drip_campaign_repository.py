@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete as sql_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -55,13 +55,15 @@ class DripCampaignRepository(BaseRepository[DripCampaign]):
 
     async def upsert_steps(self, campaign_id: int, steps_data: list[dict]) -> list[DripCampaignStep]:
         """Replace all steps for a campaign with new ones."""
-        # Delete existing steps
-        existing_stmt = select(DripCampaignStep).where(DripCampaignStep.campaign_id == campaign_id)
-        result = await self.session.execute(existing_stmt)
-        for step in result.scalars().all():
-            await self.session.delete(step)
+        # Bulk-delete existing rows and flush so the unique constraint
+        # (campaign_id, step_number) is clear before we insert replacements.
+        # SQLAlchemy's default flush order runs INSERTs before DELETEs,
+        # which would otherwise trigger uq_drip_step_campaign_number.
+        await self.session.execute(
+            sql_delete(DripCampaignStep).where(DripCampaignStep.campaign_id == campaign_id)
+        )
+        await self.session.flush()
 
-        # Create new steps
         new_steps = []
         for step_data in steps_data:
             step = DripCampaignStep(campaign_id=campaign_id, **step_data)

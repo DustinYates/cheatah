@@ -4079,8 +4079,11 @@ async def get_customer_context_tool(
         if not phone_number:
             return JSONResponse(content={"found": False, "reason": "no_phone"})
 
-        # Normalize phone for lookup (lead.phone is stored normalized)
-        normalized_phone = normalize_phone_for_dedup(phone_number) or phone_number
+        # Normalize phone for lookup. Lead.phone is stored in E.164
+        # (+1XXXXXXXXXX), not the last-10-digit dedup form, so use the E.164
+        # normalizer here.
+        from app.core.phone import normalize_phone_e164
+        normalized_phone = normalize_phone_e164(phone_number) or phone_number
 
         # 1. Find the most recently created lead for this phone in this tenant
         from app.persistence.models.lead import Lead

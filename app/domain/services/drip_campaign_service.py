@@ -252,12 +252,19 @@ class DripCampaignService:
             channel="sms",
             external_id=conv_external_id,
         )
-        # Set phone on conversation
+        # Link the conversation to the lead so it surfaces in the Lead Activity
+        # Timeline. The timeline endpoint loads conversations via
+        # lead.conversation_id OR lead.contact_id; without either link the
+        # message row is orphaned and only the lead.notes audit line is visible.
         from app.persistence.repositories.conversation_repository import ConversationRepository
         conv_repo = ConversationRepository(self.session)
         conv = await conv_repo.get_by_id(tenant_id, conversation.id)
         if conv:
             conv.phone_number = lead.phone
+            if lead.contact_id and not conv.contact_id:
+                conv.contact_id = lead.contact_id
+            if not lead.conversation_id:
+                lead.conversation_id = conv.id
             await self.session.commit()
 
         await conversation_service.add_message(
@@ -567,6 +574,19 @@ class DripCampaignService:
             conversation = await conversation_service.create_conversation(
                 tenant_id=tenant_id, channel="sms", external_id=conv_external_id
             )
+            # Link the conversation to the lead so the message surfaces in the
+            # Lead Activity Timeline (loads convs via lead.conversation_id OR
+            # lead.contact_id). Without this the message row is orphaned.
+            from app.persistence.repositories.conversation_repository import ConversationRepository
+            conv_repo = ConversationRepository(self.session)
+            conv = await conv_repo.get_by_id(tenant_id, conversation.id)
+            if conv:
+                conv.phone_number = lead.phone
+                if lead.contact_id and not conv.contact_id:
+                    conv.contact_id = lead.contact_id
+                if not lead.conversation_id:
+                    lead.conversation_id = conversation.id
+                await self.session.commit()
             await conversation_service.add_message(
                 tenant_id, conversation.id, "assistant", message
             )

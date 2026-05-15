@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.conversation_service import ConversationService
@@ -235,6 +235,29 @@ class DripCampaignService:
             webhook_prefix = factory.get_webhook_path_prefix(sms_config)
             status_callback_url = f"{settings.api_base_url}/api/v1/sms{webhook_prefix}/status"
 
+        # Atomically claim this step before sending. Prevents duplicate SMS when
+        # Cloud Tasks retries a task whose previous attempt sent the SMS but
+        # didn't return 2xx in time. Only the worker whose UPDATE matches the
+        # current step value proceeds to send.
+        claim_stmt = (
+            update(DripEnrollment)
+            .where(
+                DripEnrollment.id == enrollment_id,
+                DripEnrollment.current_step == next_step_num - 1,
+                DripEnrollment.status == "active",
+            )
+            .values(current_step=next_step_num, updated_at=datetime.now(timezone.utc))
+        )
+        claim_result = await self.session.execute(claim_stmt)
+        await self.session.commit()
+        if claim_result.rowcount == 0:
+            logger.warning(
+                f"Drip step {next_step_num} for enrollment {enrollment_id} "
+                f"already claimed by another worker, skipping send"
+            )
+            return {"status": "skipped", "reason": "already_claimed"}
+        await self.session.refresh(enrollment)
+
         # Send SMS
         send_result = await sms_provider.send_sms(
             to=lead.phone,
@@ -271,8 +294,8 @@ class DripCampaignService:
             tenant_id, conversation.id, "assistant", message
         )
 
-        # Update enrollment
-        enrollment.current_step = next_step_num
+        # current_step + updated_at were bumped by the CAS above; only manage
+        # downstream fields (next task scheduling, completion state) here.
         enrollment.updated_at = datetime.now(timezone.utc)
 
         # Schedule next step if there are more

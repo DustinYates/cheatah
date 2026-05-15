@@ -1201,3 +1201,80 @@ class TestManualSmsRecording:
         # If a message exists, it should have delivery_error in metadata
 
         print("✓ message.failed webhook captures error details")
+
+
+# =============================================================================
+# Test: get-customer-context Tool Endpoint
+# =============================================================================
+
+
+class TestGetCustomerContextTool:
+    """Tests for /tools/get-customer-context endpoint.
+
+    The endpoint is fail-open: any error path returns
+    {"found": False, "reason": "..."} so the Telnyx AI agent falls back to
+    its default greeting behaviour rather than crashing the conversation.
+    """
+
+    def test_missing_phone_returns_not_found(self):
+        """No phone in body or query → found: false, reason: no_phone."""
+        response = client.post(
+            "/api/v1/telnyx/tools/get-customer-context?tenant_id=3",
+            json={},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["found"] is False
+        assert data["reason"] == "no_phone"
+
+    def test_missing_tenant_returns_not_found(self):
+        """No tenant_id resolvable → found: false, reason: tenant_unresolved.
+
+        Without a tenant_id query param and without a Telnyx call-control
+        header to look up via the Telnyx API, we have no tenant to scope the
+        lookup to.
+        """
+        response = client.post(
+            "/api/v1/telnyx/tools/get-customer-context",
+            json={"phone_number": "+15551234567"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["found"] is False
+        assert data["reason"] == "tenant_unresolved"
+
+    def test_no_lead_returns_not_found(self):
+        """Phone + tenant valid but no lead row exists → found: false."""
+        from app.persistence.database import get_db
+
+        mock_session = AsyncMock()
+        # First call: lead lookup → no result
+        mock_lead_result = MagicMock()
+        mock_lead_result.scalar_one_or_none.return_value = None
+        mock_session.execute = AsyncMock(return_value=mock_lead_result)
+
+        async def override_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db] = override_db
+        try:
+            response = client.post(
+                "/api/v1/telnyx/tools/get-customer-context?tenant_id=3",
+                json={"phone_number": "+15551234567"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["found"] is False
+            assert data["reason"] == "no_lead"
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_get_accepts_query_params(self):
+        """GET request with phone_number as query param also works."""
+        response = client.get(
+            "/api/v1/telnyx/tools/get-customer-context?tenant_id=3"
+        )
+        # No phone → not_found, but should still respond 200 (fail-open).
+        assert response.status_code == 200
+        data = response.json()
+        assert data["found"] is False

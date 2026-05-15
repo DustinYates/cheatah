@@ -4006,6 +4006,214 @@ async def book_meeting_tool(
         })
 
 
+@router.api_route("/tools/get-customer-context", methods=["GET", "POST"])
+async def get_customer_context_tool(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Webhook tool for Telnyx AI Assistant to look up a customer's prior history.
+
+    Called by the AI agent at the start of an inbound conversation so the
+    assistant can answer in-context instead of treating every inbound message
+    as a brand-new lead. Returns lead identity, qualification data, active
+    drip-campaign status, and the last few messages across channels.
+
+    Body params:
+        phone_number: E.164 caller phone (required)
+
+    Query params:
+        tenant_id: Tenant ID (set per-agent in the Telnyx portal tool URL)
+
+    Response shape: see README — { found, lead, qualification, drip_status,
+    recent_messages, open_topics }.
+    """
+    try:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        params = dict(request.query_params)
+        phone_number = (
+            body.get("phone_number")
+            or body.get("phone")
+            or body.get("to")
+            or params.get("phone_number", "")
+        )
+
+        # Resolve tenant: query param first (set per-agent in Telnyx portal),
+        # then Telnyx call-control fallback, then Telnyx number lookup.
+        tenant_id: int | None = None
+        raw_tid = params.get("tenant_id") or body.get("tenant_id")
+        if raw_tid:
+            try:
+                tenant_id = int(raw_tid)
+            except (ValueError, TypeError):
+                pass
+
+        if not tenant_id:
+            call_control_id = request.headers.get("x-telnyx-call-control-id", "")
+            if call_control_id and settings.telnyx_api_key:
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(
+                        base_url="https://api.telnyx.com/v2",
+                        headers={"Authorization": f"Bearer {settings.telnyx_api_key}"},
+                        timeout=5.0,
+                    ) as client:
+                        resp = await client.get(f"/calls/{call_control_id}")
+                        if resp.status_code == 200:
+                            telnyx_to = resp.json().get("data", {}).get("to")
+                            if telnyx_to:
+                                tenant_id = await _get_tenant_from_telnyx_number(telnyx_to, db)
+                except Exception as e:
+                    logger.warning(f"[TOOL] get_customer_context: Telnyx API fallback failed: {e}")
+
+        logger.info(
+            f"[TOOL] get_customer_context called - phone={phone_number}, tenant_id={tenant_id}"
+        )
+
+        if not tenant_id:
+            return JSONResponse(content={"found": False, "reason": "tenant_unresolved"})
+
+        if not phone_number:
+            return JSONResponse(content={"found": False, "reason": "no_phone"})
+
+        # Normalize phone for lookup (lead.phone is stored normalized)
+        normalized_phone = normalize_phone_for_dedup(phone_number) or phone_number
+
+        # 1. Find the most recently created lead for this phone in this tenant
+        from app.persistence.models.lead import Lead
+        lead_stmt = (
+            select(Lead)
+            .where(Lead.tenant_id == tenant_id, Lead.phone == normalized_phone)
+            .order_by(Lead.created_at.desc())
+            .limit(1)
+        )
+        lead_result = await db.execute(lead_stmt)
+        lead = lead_result.scalar_one_or_none()
+
+        if not lead:
+            return JSONResponse(content={"found": False, "reason": "no_lead"})
+
+        extra = dict(lead.extra_data or {})
+        tags = list(lead.custom_tags or [])
+
+        # 2. Active drip enrollment + campaign name + step count
+        from app.persistence.repositories.drip_campaign_repository import (
+            DripCampaignRepository,
+            DripEnrollmentRepository,
+        )
+        enrollment_repo = DripEnrollmentRepository(db)
+        enrollment = await enrollment_repo.get_active_for_lead(tenant_id, lead.id)
+        drip_status: dict | None = None
+        if enrollment:
+            campaign_repo = DripCampaignRepository(db)
+            campaign = await campaign_repo.get_with_steps(tenant_id, enrollment.campaign_id)
+            drip_status = {
+                "active": enrollment.status == "active",
+                "status": enrollment.status,
+                "campaign": campaign.name if campaign else None,
+                "step": enrollment.current_step,
+                "of": len(campaign.steps) if campaign and campaign.steps else None,
+                "last_step_at": (
+                    enrollment.updated_at.replace(tzinfo=timezone.utc).isoformat()
+                    if enrollment.updated_at else None
+                ),
+            }
+
+        # 3. Recent messages across all SMS conversations for this phone in this
+        #    tenant. Drip messages live in a different conversation row than
+        #    web-chat messages, so we union by phone_number rather than by
+        #    lead.conversation_id.
+        from app.persistence.models.conversation import Conversation, Message
+        msg_stmt = (
+            select(Message.role, Message.content, Message.created_at, Conversation.channel)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .where(
+                Conversation.tenant_id == tenant_id,
+                Conversation.phone_number == normalized_phone,
+            )
+            .order_by(Message.created_at.desc())
+            .limit(10)
+        )
+        msg_rows = (await db.execute(msg_stmt)).all()
+        recent_messages = [
+            {
+                "from": "us" if row.role == "assistant" else "customer",
+                "channel": row.channel,
+                "at": row.created_at.replace(tzinfo=timezone.utc).isoformat()
+                if row.created_at else None,
+                "body": (row.content or "")[:280],
+            }
+            for row in reversed(msg_rows)  # chronological order for the AI
+        ]
+
+        # 4. Open topics: classify the most recent customer message against drip
+        #    response categories so the AI knows what they're asking about.
+        open_topics: list[str] = []
+        last_customer_msg = next(
+            (m for m in reversed(recent_messages) if m["from"] == "customer"),
+            None,
+        )
+        if last_customer_msg and enrollment:
+            try:
+                campaign_repo = DripCampaignRepository(db)
+                campaign = await campaign_repo.get_with_steps(tenant_id, enrollment.campaign_id)
+                if campaign and campaign.response_templates:
+                    from app.domain.services.drip_message_service import DripMessageService
+                    category = DripMessageService().classify_response(
+                        last_customer_msg["body"], campaign.response_templates
+                    )
+                    if category != "other":
+                        open_topics.append(category)
+            except Exception as e:
+                logger.warning(f"[TOOL] get_customer_context: topic classify failed: {e}")
+
+        # 5. Audience tag (adult vs kid) — used by the agent to skip irrelevant
+        #    questions. Surface from custom_tags first, then extra_data.
+        audience = None
+        tag_lower = [str(t).lower() for t in tags]
+        if "adult" in tag_lower:
+            audience = "adult"
+        elif any(t in tag_lower for t in ("child", "kid", "kids", "children")):
+            audience = "kid"
+        if not audience:
+            audience = extra.get("audience") or extra.get("audience_tag")
+
+        response = {
+            "found": True,
+            "lead": {
+                "name": lead.name,
+                "email": lead.email,
+                "phone": lead.phone,
+                "audience": audience,
+                "tags": tags,
+                "source": extra.get("source") or extra.get("utm_source"),
+                "location_interest": extra.get("location") or extra.get("location_interest"),
+                "first_contact": lead.created_at.replace(tzinfo=timezone.utc).isoformat()
+                if lead.created_at else None,
+                "pipeline_stage": lead.pipeline_stage,
+            },
+            "qualification": {
+                "swimmer_relation": extra.get("swimmer_relation"),
+                "swimmer_age": extra.get("swimmer_age") or extra.get("child_age"),
+                "experience_level": extra.get("experience_level") or extra.get("level"),
+                "preferred_schedule": extra.get("preferred_schedule") or extra.get("schedule"),
+                "child_name": extra.get("child_name"),
+            },
+            "drip_status": drip_status,
+            "recent_messages": recent_messages,
+            "open_topics": open_topics,
+        }
+        return JSONResponse(content=response)
+
+    except Exception as e:
+        logger.error(f"[TOOL] get_customer_context error: {e}", exc_info=True)
+        # Fail open — agent treats as unknown lead, behavior matches today.
+        return JSONResponse(content={"found": False, "reason": "internal_error"})
+
+
 def _map_location_to_code(location: str) -> str | None:
     """Map a location name from conversation to a location code.
 

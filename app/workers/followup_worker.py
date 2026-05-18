@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.services.conversation_service import ConversationService
@@ -113,6 +113,46 @@ async def process_followup_task(
                 logger.info(f"Phone {payload.phone_number} not opted in, skipping follow-up")
                 return {"status": "skipped", "reason": "not_opted_in"}
 
+        # Atomically claim this follow-up before composing/sending the SMS.
+        # Mirrors the drip atomic-claim pattern (commit 524031f): Cloud Tasks
+        # retries advance_task on any non-2xx (timeout, worker error), and the
+        # LLM/send path below takes hundreds of ms — long enough for a retry
+        # to pass the line 61 already_sent check and double-send. The UPDATE
+        # only matches if followup_sent_at is still unset; rowcount==0 means
+        # another worker won. extra_data is JSON (not JSONB) so we cast.
+        now_dt = datetime.now(timezone.utc)
+        now_iso = now_dt.isoformat()
+        claim_result = await db.execute(
+            text(
+                """
+                UPDATE leads
+                SET extra_data = jsonb_set(
+                        COALESCE(extra_data::jsonb, '{}'::jsonb),
+                        '{followup_sent_at}',
+                        to_jsonb(CAST(:now_iso AS text))
+                    )::json,
+                    updated_at = :now_dt
+                WHERE id = :lead_id
+                  AND tenant_id = :tenant_id
+                  AND (extra_data IS NULL
+                       OR (extra_data::jsonb ->> 'followup_sent_at') IS NULL)
+                """
+            ),
+            {
+                "lead_id": payload.lead_id,
+                "tenant_id": payload.tenant_id,
+                "now_iso": now_iso,
+                "now_dt": now_dt,
+            },
+        )
+        await db.commit()
+        if claim_result.rowcount == 0:
+            logger.warning(
+                f"Follow-up for lead {payload.lead_id} already claimed by another worker, skipping send"
+            )
+            return {"status": "skipped", "reason": "already_claimed"}
+        await db.refresh(lead)
+
         # Create new conversation for follow-up
         conversation_service = ConversationService(db)
         conversation = await conversation_service.create_conversation(
@@ -129,10 +169,10 @@ async def process_followup_task(
             conv.phone_number = payload.phone_number
             await db.commit()
 
-        # Update lead with follow-up info (create new dict to trigger SQLAlchemy change detection)
+        # followup_sent_at was set by the atomic claim above; only link the new
+        # conversation here. (New dict to trigger SQLAlchemy change detection.)
         extra_data = dict(lead.extra_data or {})
         extra_data["followup_conversation_id"] = conversation.id
-        extra_data["followup_sent_at"] = datetime.now(timezone.utc).isoformat()
         lead.extra_data = extra_data
         lead.conversation_id = conversation.id  # Update primary conversation link
         await db.commit()

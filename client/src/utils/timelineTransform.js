@@ -142,7 +142,12 @@ export function buildUnifiedTimeline(lead, conversationData) {
       // Generate appropriate summary based on channel type
       let summary = `Conversation (${messages.length} message${messages.length > 1 ? 's' : ''})`;
       if (channelType === 'email') {
-        summary = `Get In Touch Form Submission`;
+        // Label with the actual capture form rather than blanket-labeling every
+        // email as a "Get In Touch" form. Capture subjects look like
+        // "Email Capture from Booking Page - ..." or "Get In Touch Form Submission - ...";
+        // show the form name (the part before the first " - ").
+        const emailSubject = lead.extra_data?.email_subject;
+        summary = emailSubject ? emailSubject.split(' - ')[0].trim() : 'Email';
       }
 
       timeline.push({

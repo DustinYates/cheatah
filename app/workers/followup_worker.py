@@ -120,8 +120,13 @@ async def process_followup_task(
         # to pass the line 61 already_sent check and double-send. The UPDATE
         # only matches if followup_sent_at is still unset; rowcount==0 means
         # another worker won. extra_data is JSON (not JSONB) so we cast.
-        now_dt = datetime.now(timezone.utc)
-        now_iso = now_dt.isoformat()
+        #
+        # updated_at is TIMESTAMP WITHOUT TIME ZONE (naive). Compute it in SQL
+        # as naive UTC — binding an aware datetime.now(timezone.utc) makes
+        # asyncpg raise "can't subtract offset-naive and offset-aware datetimes"
+        # and threw on every follow-up. followup_sent_at stays an ISO string
+        # (with offset) to match how the rest of the codebase stores it.
+        now_iso = datetime.now(timezone.utc).isoformat()
         claim_result = await db.execute(
             text(
                 """
@@ -131,7 +136,7 @@ async def process_followup_task(
                         '{followup_sent_at}',
                         to_jsonb(CAST(:now_iso AS text))
                     )::json,
-                    updated_at = :now_dt
+                    updated_at = (now() AT TIME ZONE 'utc')
                 WHERE id = :lead_id
                   AND tenant_id = :tenant_id
                   AND (extra_data IS NULL
@@ -142,7 +147,6 @@ async def process_followup_task(
                 "lead_id": payload.lead_id,
                 "tenant_id": payload.tenant_id,
                 "now_iso": now_iso,
-                "now_dt": now_dt,
             },
         )
         await db.commit()

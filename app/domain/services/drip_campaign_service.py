@@ -239,6 +239,12 @@ class DripCampaignService:
         # Cloud Tasks retries a task whose previous attempt sent the SMS but
         # didn't return 2xx in time. Only the worker whose UPDATE matches the
         # current step value proceeds to send.
+        # NOTE: do NOT pass updated_at here. The column is TIMESTAMP WITHOUT TIME
+        # ZONE (naive); binding an aware datetime.now(timezone.utc) through a Core
+        # update() bypasses the model's onupdate=datetime.utcnow and makes asyncpg
+        # raise "can't subtract offset-naive and offset-aware datetimes", which
+        # threw on every drip step and stalled all enrollments. Omitting the column
+        # lets the model's onupdate populate it with a naive UTC value.
         claim_stmt = (
             update(DripEnrollment)
             .where(
@@ -246,7 +252,7 @@ class DripCampaignService:
                 DripEnrollment.current_step == next_step_num - 1,
                 DripEnrollment.status == "active",
             )
-            .values(current_step=next_step_num, updated_at=datetime.now(timezone.utc))
+            .values(current_step=next_step_num)
         )
         claim_result = await self.session.execute(claim_stmt)
         await self.session.commit()

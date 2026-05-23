@@ -132,8 +132,9 @@ class DripCampaignService:
         )
         task_id = await self._schedule_step(enrollment, delay_minutes)
         if task_id:
-            enrollment.next_task_id = task_id
-            enrollment.next_step_at = _naive_utcnow()
+            # _schedule_step already set next_task_id and next_step_at (= now + delay)
+            # on the enrollment; just persist them. Re-assigning next_step_at here
+            # would clobber it with "now" and mislabel the dashboard's next-send time.
             await self.session.commit()
 
         logger.info(

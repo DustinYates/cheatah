@@ -358,27 +358,6 @@ export default function CampaignSettings() {
                 </label>
               </div>
 
-              {/* Trigger Delay */}
-              <div className="sms-field">
-                <label className="sms-field__label">Trigger Delay</label>
-                <div className="sms-input-group">
-                  <input
-                    type="number"
-                    className="sms-input sms-input--number"
-                    min="0"
-                    max="1440"
-                    value={campaign.trigger_delay_minutes}
-                    onChange={(e) =>
-                      updateCampaign(campaign.id, 'trigger_delay_minutes', parseInt(e.target.value, 10) || 0)
-                    }
-                  />
-                  <span className="sms-input-group__suffix">minutes after enrollment</span>
-                </div>
-                <p className="sms-field__hint">
-                  How long to wait after a lead is enrolled before sending the first message.
-                </p>
-              </div>
-
               {/* Steps Section */}
               <div className="campaign-section">
                 <button
@@ -403,7 +382,7 @@ export default function CampaignSettings() {
                           <div className="campaign-step__header">
                             <span className="campaign-step__badge">Step {step.step_number}</span>
                             <span className="campaign-step__delay">
-                              {formatDelay(step.delay_minutes)} delay
+                              {formatDelay(step.delay_minutes)} {step.step_number === 1 ? 'after enrollment' : 'after previous message'}
                             </span>
                           </div>
 

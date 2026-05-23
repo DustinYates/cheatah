@@ -121,8 +121,15 @@ class DripCampaignService:
         lead.extra_data = extra_data
         await self.session.commit()
 
-        # Schedule first step
-        delay_minutes = campaign.trigger_delay_minutes or 10
+        # Schedule first step. Step 1's own delay_minutes is the single source of
+        # truth for the after-enrollment wait; the legacy trigger_delay_minutes
+        # field is no longer used (kept only as a fallback if step 1 has no delay).
+        first_step = next((s for s in campaign.steps if s.step_number == 1), None)
+        delay_minutes = (
+            first_step.delay_minutes
+            if first_step and first_step.delay_minutes is not None
+            else (campaign.trigger_delay_minutes or 10)
+        )
         task_id = await self._schedule_step(enrollment, delay_minutes)
         if task_id:
             enrollment.next_task_id = task_id

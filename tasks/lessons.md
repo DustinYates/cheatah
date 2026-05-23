@@ -16,23 +16,29 @@ I shipped the same bug twice and didn't catch it until the tenant reported silen
 **Why it slipped through:** ORM attribute assignment (`obj.updated_at = aware_dt`) had
 always *looked* fine because the model column has `onupdate=datetime.utcnow` (naive),
 which overrides the aware value on flush. So aware datetimes "work" everywhere via the
-ORM — masking the fact that they're wrong. The crash only appears when the column is
-put **explicitly in the SET clause** of a Core `update().values(...)` or a raw `text()`
-UPDATE, which bypass `onupdate` and hand the aware value straight to the driver.
+ORM — but ONLY because `onupdate=datetime.utcnow` (naive) fires when the column is NOT
+explicitly set. The crash appears whenever the aware value reaches the column: a Core
+`update().values(...)`, a raw `text()` UPDATE, **or an explicit ORM assignment**
+(`obj.updated_at = datetime.now(timezone.utc)`, which bypasses `onupdate`). Columns with
+**no `onupdate`** (e.g. `drip_enrollments.next_step_at`) crash unconditionally.
+
+**This bit twice in one session:** my first fix patched only the `.values()` CAS and
+missed the ORM `enrollment.updated_at = ...` / `next_step_at = ...` assignments — so the
+drip then fired a lead's entire 4-step sequence in 15s (post-CAS crash → Cloud Tasks
+retry → each retry advanced+sent a step).
 
 **Rules:**
-1. When writing a timestamp via **Core `update().values()`** or **raw `text()` SQL**,
-   never pass `datetime.now(timezone.utc)`. Either:
-   - omit `updated_at` and let the model's `onupdate=datetime.utcnow` populate it, or
-   - compute it naive: `datetime.now(timezone.utc).replace(tzinfo=None)`, or in SQL
-     `(now() AT TIME ZONE 'utc')`.
-2. This codebase stores **naive UTC** in all `created_at`/`updated_at`/`*_at` DateTime
-   columns (CLAUDE.md convention). ORM hides aware/naive mismatches; Core/raw SQL does not.
-3. **Verify a hotfix against real column types before deploying.** A 30-second
-   `information_schema.columns` check (or running the worker once) would have caught this.
-   Don't deploy a DB-write fix to a background worker without exercising the write path.
-4. If you make the same class of fix in a second place, re-audit the first — the bug
-   you're copying may be the bug.
+1. Use naive UTC for **every** datetime written to a naive column, regardless of path
+   (Core `.values()`, raw SQL, OR ORM attribute assignment): `datetime.now(timezone.utc).replace(tzinfo=None)`
+   in Python, `(now() AT TIME ZONE 'utc')` in SQL. A `_naive_utcnow()` helper keeps it DRY.
+2. This codebase stores **naive UTC** in all `*_at` DateTime columns (CLAUDE.md). Do NOT
+   assume the ORM saves you — `onupdate` only fires when the column isn't explicitly set.
+3. When fixing, grep for **all** writes to the column (`= datetime.now(timezone.utc)`
+   assignments too), not just `.values(`. The bug you're copying may be the bug.
+4. **Cascade trap:** an atomic CAS that commits the advance *separately, before* a later
+   commit that crashes turns one crash into a runaway — each Cloud Tasks retry advances.
+5. **Verify a worker DB-write hotfix end-to-end before declaring done** — trigger the
+   endpoint with a throwaway 555-number lead and confirm the DB state, not just "no error".
 
 **Recovery note:** background-worker tasks retry via Cloud Tasks (`maxAttempts: 100`,
 `maxBackoff: 3600s`), so a crashing worker silently piles up a backlog that **blasts all

@@ -24,6 +24,19 @@ from app.settings import settings
 logger = logging.getLogger(__name__)
 
 
+def _naive_utcnow() -> datetime:
+    """Naive UTC 'now' for the TIMESTAMP WITHOUT TIME ZONE columns on drip_enrollments.
+
+    updated_at / next_step_at are naive. Writing an aware datetime.now(timezone.utc)
+    to them — via ORM attribute assignment OR Core update() — makes asyncpg raise
+    "can't subtract offset-naive and offset-aware datetimes" and 500s the worker.
+    For updated_at the model's onupdate=datetime.utcnow only saves us when the column
+    is NOT explicitly assigned; these methods assign it explicitly, so we must hand it
+    a naive value ourselves. next_step_at has no onupdate at all.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class DripCampaignService:
     """Manages drip campaign enrollment, step advancement, and response handling."""
 
@@ -113,7 +126,7 @@ class DripCampaignService:
         task_id = await self._schedule_step(enrollment, delay_minutes)
         if task_id:
             enrollment.next_task_id = task_id
-            enrollment.next_step_at = datetime.now(timezone.utc)
+            enrollment.next_step_at = _naive_utcnow()
             await self.session.commit()
 
         logger.info(
@@ -152,7 +165,7 @@ class DripCampaignService:
         if not step:
             # No more steps — mark completed
             enrollment.status = "completed"
-            enrollment.updated_at = datetime.now(timezone.utc)
+            enrollment.updated_at = _naive_utcnow()
             await self.session.commit()
             logger.info(f"Enrollment {enrollment_id} completed (no step {next_step_num})")
             return {"status": "completed"}
@@ -302,7 +315,7 @@ class DripCampaignService:
 
         # current_step + updated_at were bumped by the CAS above; only manage
         # downstream fields (next task scheduling, completion state) here.
-        enrollment.updated_at = datetime.now(timezone.utc)
+        enrollment.updated_at = _naive_utcnow()
 
         # Schedule next step if there are more
         next_next_step = next(
@@ -364,7 +377,7 @@ class DripCampaignService:
             )
 
         enrollment.response_category = category
-        enrollment.updated_at = datetime.now(timezone.utc)
+        enrollment.updated_at = _naive_utcnow()
 
         template_data = response_templates.get(category, {})
         action = template_data.get("action")
@@ -430,7 +443,7 @@ class DripCampaignService:
 
         enrollment.status = "cancelled"
         enrollment.cancelled_reason = reason
-        enrollment.updated_at = datetime.now(timezone.utc)
+        enrollment.updated_at = _naive_utcnow()
         await self.session.commit()
         logger.info(f"Cancelled drip enrollment {enrollment_id}: {reason}")
         return True
@@ -463,7 +476,7 @@ class DripCampaignService:
 
         # Resume to active and advance to next step
         enrollment.status = "active"
-        enrollment.updated_at = datetime.now(timezone.utc)
+        enrollment.updated_at = _naive_utcnow()
         await self.session.commit()
 
         logger.info(f"Resuming drip enrollment {enrollment_id} after response timeout")
@@ -536,7 +549,7 @@ class DripCampaignService:
             )
 
             from datetime import timedelta
-            enrollment.next_step_at = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
+            enrollment.next_step_at = _naive_utcnow() + timedelta(seconds=delay_seconds)
             enrollment.next_task_id = task_name
             return task_name
         except Exception as e:

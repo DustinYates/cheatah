@@ -209,6 +209,15 @@ export default function CampaignSettings() {
   };
 
   const cancelEnrollment = async (enrollmentId) => {
+    // Guard the destructive action: cancelling stops the remaining drip messages, and
+    // re-enrolling later restarts the lead at step 1 (their current progress is lost).
+    // Name the lead + campaign so an accidental click on the row's Cancel is caught.
+    const enrollment = enrollments.find(e => e.id === enrollmentId);
+    const who = enrollment?.lead_name || `Lead #${enrollment?.lead_id ?? enrollmentId}`;
+    const campaign = enrollment?.campaign_name || enrollment?.campaign_type || 'the drip';
+    if (!confirm(`Cancel ${who}'s ${campaign} enrollment? They'll stop receiving the remaining drip messages.`)) {
+      return;
+    }
     setCancellingId(enrollmentId);
     try {
       const res = await fetch(`${API_BASE}/drip-campaigns/enrollments/${enrollmentId}/cancel`, {

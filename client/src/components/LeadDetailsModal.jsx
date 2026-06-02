@@ -46,8 +46,10 @@ export default function LeadDetailsModal({ lead, onClose }) {
 
   // Drip enrollment state
   const [dripEnrolled, setDripEnrolled] = useState(Boolean(lead.extra_data?.drip_enrolled));
-  const [dripEnrolling, setDripEnrolling] = useState(false);
+  const [dripBusy, setDripBusy] = useState(false); // covers both enroll and remove
   const [dripMessage, setDripMessage] = useState(null); // { type: 'success' | 'error', text }
+  const [dripCampaigns, setDripCampaigns] = useState([]); // enrollable campaigns for the picker
+  const [selectedCampaignType, setSelectedCampaignType] = useState('');
 
   // Tasks state
   const [tasks, setTasks] = useState([]);
@@ -95,6 +97,30 @@ export default function LeadDetailsModal({ lead, onClose }) {
     };
 
     fetchTimelineData();
+  }, [lead.id]);
+
+  // Load the tenant's drip campaigns so the user can pick which one to enroll into.
+  // Only enabled campaigns with at least one step are enrollable (mirrors the backend's
+  // eligibility checks), so we filter to those. Default the selection to the
+  // audience-derived type when available, else the first enrollable campaign.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await api.getDripCampaigns();
+        if (cancelled) return;
+        const enrollable = (list || []).filter(
+          (c) => c.is_enabled && (c.steps?.length || 0) > 0
+        );
+        setDripCampaigns(enrollable);
+        const auto = getLeadDripCampaignType(lead);
+        const match = enrollable.find((c) => c.campaign_type === auto) || enrollable[0];
+        setSelectedCampaignType(match?.campaign_type || '');
+      } catch (err) {
+        console.warn('Failed to load drip campaigns:', err);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [lead.id]);
 
   // Toggle expand/collapse for a timeline item
@@ -250,29 +276,57 @@ export default function LeadDetailsModal({ lead, onClose }) {
     };
   }, []);
 
+  // Resolve a campaign-type to a human label, preferring the campaign's real name
+  // (e.g. "Adults Registration Drip") and falling back to the generic phrase.
+  const dripPhraseFor = (type) => {
+    const picked = dripCampaigns.find((c) => c.campaign_type === type);
+    return picked ? `the ${picked.name}` : dripCampaignPhrase(type);
+  };
+
   const handleEnroll = async () => {
-    const campaignType = getLeadDripCampaignType(lead);
-    if (!confirm(`Enroll ${lead.name || 'this lead'} in ${dripCampaignPhrase(campaignType)}?`)) {
+    // Prefer the explicitly-picked campaign; fall back to audience auto-detect when no
+    // campaigns loaded so enrollment still works (backend reports any error).
+    const type = selectedCampaignType || getLeadDripCampaignType(lead);
+    if (!confirm(`Enroll ${lead.name || 'this lead'} in ${dripPhraseFor(type)}?`)) {
       return;
     }
-    setDripEnrolling(true);
+    setDripBusy(true);
     setDripMessage(null);
     try {
-      const res = await api.enrollLeadInDrip(lead.id, campaignType);
+      const res = await api.enrollLeadInDrip(lead.id, type || null);
       setDripEnrolled(true);
       // Mutate the shared lead object so the Dashboard row reflects enrollment when
       // the modal closes (matches this file's convention — handleSaveNotes/handleAddTag
       // mutate `lead` directly; the parent re-renders on closeModal).
       lead.extra_data = { ...(lead.extra_data || {}), drip_enrolled: true };
-      // Prefer the campaign the backend actually used (request type may have been
-      // null → auto-detected) so the message names the right campaign.
-      const resolvedType = res?.campaign_type ?? campaignType;
-      setDripMessage({ type: 'success', text: `Enrolled in ${dripCampaignPhrase(resolvedType)}.` });
+      // Name the campaign the backend actually used (request type may have been
+      // null → auto-detected).
+      const resolvedType = res?.campaign_type ?? type;
+      setDripMessage({ type: 'success', text: `Enrolled in ${dripPhraseFor(resolvedType)}.` });
     } catch (err) {
       // Backend sends the specific reason (no phone, already enrolled, existing customer, etc.)
       setDripMessage({ type: 'error', text: err.message || 'Failed to enroll in drip campaign' });
     } finally {
-      setDripEnrolling(false);
+      setDripBusy(false);
+    }
+  };
+
+  const handleStop = async () => {
+    if (!confirm(`Remove ${lead.name || 'this lead'} from the drip campaign?`)) {
+      return;
+    }
+    setDripBusy(true);
+    setDripMessage(null);
+    try {
+      // opt-out cancels ALL active enrollments for the lead (same path the dashboard uses).
+      await api.optOutLeadFromDrip(lead.id);
+      setDripEnrolled(false);
+      lead.extra_data = { ...(lead.extra_data || {}), drip_enrolled: false };
+      setDripMessage({ type: 'success', text: 'Removed from the drip campaign.' });
+    } catch (err) {
+      setDripMessage({ type: 'error', text: err.message || 'Failed to remove from drip campaign' });
+    } finally {
+      setDripBusy(false);
     }
   };
 
@@ -398,19 +452,44 @@ export default function LeadDetailsModal({ lead, onClose }) {
           {/* Drip campaign enrollment */}
           <div className="summary-drip-action">
             {dripEnrolled ? (
-              <span className="drip-status drip-status--active">
-                <Megaphone size={12} /> In drip campaign
-              </span>
+              <>
+                <span className="drip-status drip-status--active">
+                  <Megaphone size={12} /> In drip campaign
+                </span>
+                <button
+                  type="button"
+                  className="drip-stop-btn"
+                  onClick={handleStop}
+                  disabled={dripBusy}
+                >
+                  {dripBusy ? 'Removing…' : 'Remove'}
+                </button>
+              </>
             ) : (
-              <button
-                type="button"
-                className="drip-enroll-btn"
-                onClick={handleEnroll}
-                disabled={dripEnrolling}
-              >
-                <Megaphone size={14} />
-                {dripEnrolling ? 'Enrolling…' : 'Enroll in drip campaign'}
-              </button>
+              <>
+                {dripCampaigns.length > 1 && (
+                  <select
+                    className="drip-campaign-select"
+                    value={selectedCampaignType}
+                    onChange={(e) => setSelectedCampaignType(e.target.value)}
+                    disabled={dripBusy}
+                    aria-label="Choose drip campaign"
+                  >
+                    {dripCampaigns.map((c) => (
+                      <option key={c.id} value={c.campaign_type}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  className="drip-enroll-btn"
+                  onClick={handleEnroll}
+                  disabled={dripBusy}
+                >
+                  <Megaphone size={14} />
+                  {dripBusy ? 'Enrolling…' : 'Enroll in drip campaign'}
+                </button>
+              </>
             )}
             {dripMessage && (
               <span className={`drip-enroll-msg drip-enroll-msg--${dripMessage.type}`}>

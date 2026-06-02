@@ -1191,3 +1191,44 @@
 .drip-enroll-msg--error {
   color: #dc2626;
 }
+
+.drip-campaign-select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #4c1d95;
+  background: #faf5ff;
+  border: 1px solid #ddd6fe;
+  cursor: pointer;
+  max-width: 200px;
+}
+
+.drip-campaign-select:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.drip-stop-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #dc2626;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.drip-stop-btn:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.drip-stop-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

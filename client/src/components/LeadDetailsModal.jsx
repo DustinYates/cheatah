@@ -3,6 +3,7 @@ import { Phone, MessageSquare, Bot, Mail, Calendar, X, StickyNote, Check, Loader
 import { api } from '../api/client';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
+import { getLeadDripCampaignType, dripCampaignPhrase } from '../utils/dripCampaign';
 import { buildUnifiedTimeline, getTimelineSources } from '../utils/timelineTransform';
 import TimelineItem from './TimelineItem';
 import SendSmsModal from './SendSmsModal';
@@ -42,6 +43,11 @@ export default function LeadDetailsModal({ lead, onClose }) {
 
   // SMS modal state
   const [showSmsModal, setShowSmsModal] = useState(false);
+
+  // Drip enrollment state
+  const [dripEnrolled, setDripEnrolled] = useState(Boolean(lead.extra_data?.drip_enrolled));
+  const [dripEnrolling, setDripEnrolling] = useState(false);
+  const [dripMessage, setDripMessage] = useState(null); // { type: 'success' | 'error', text }
 
   // Tasks state
   const [tasks, setTasks] = useState([]);
@@ -244,6 +250,25 @@ export default function LeadDetailsModal({ lead, onClose }) {
     };
   }, []);
 
+  const handleEnroll = async () => {
+    const campaignType = getLeadDripCampaignType(lead);
+    if (!confirm(`Enroll ${lead.name || 'this lead'} in ${dripCampaignPhrase(campaignType)}?`)) {
+      return;
+    }
+    setDripEnrolling(true);
+    setDripMessage(null);
+    try {
+      await api.enrollLeadInDrip(lead.id, campaignType);
+      setDripEnrolled(true);
+      setDripMessage({ type: 'success', text: `Enrolled in ${dripCampaignPhrase(campaignType)}.` });
+    } catch (err) {
+      // Backend sends the specific reason (no phone, already enrolled, existing customer, etc.)
+      setDripMessage({ type: 'error', text: err.message || 'Failed to enroll in drip campaign' });
+    } finally {
+      setDripEnrolling(false);
+    }
+  };
+
   // Get source types present in timeline
   const sources = getTimelineSources(timeline);
 
@@ -361,6 +386,30 @@ export default function LeadDetailsModal({ lead, onClose }) {
                 disabled={tagSaving}
               />
             </form>
+          </div>
+
+          {/* Drip campaign enrollment */}
+          <div className="summary-drip-action">
+            {dripEnrolled ? (
+              <span className="drip-status drip-status--active">
+                <Megaphone size={12} /> In drip campaign
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="drip-enroll-btn"
+                onClick={handleEnroll}
+                disabled={dripEnrolling}
+              >
+                <Megaphone size={14} />
+                {dripEnrolling ? 'Enrolling…' : 'Enroll in drip campaign'}
+              </button>
+            )}
+            {dripMessage && (
+              <span className={`drip-enroll-msg drip-enroll-msg--${dripMessage.type}`}>
+                {dripMessage.text}
+              </span>
+            )}
           </div>
         </div>
 

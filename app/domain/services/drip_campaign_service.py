@@ -95,11 +95,78 @@ class DripCampaignService:
             )
             return None
 
-        # Create enrollment
+        return await self._create_and_schedule_enrollment(campaign, lead, context_data)
+
+    async def enroll_lead_manual(
+        self,
+        tenant_id: int,
+        lead_id: int,
+        campaign_type: str | None = None,
+    ) -> DripEnrollment:
+        """Manually enroll a lead in a drip campaign (from the dashboard UI).
+
+        Unlike enroll_lead (the automatic path, which silently returns None on any
+        skip condition), this raises ValueError with a user-facing message per failure
+        so the UI can show exactly why an enrollment did not happen. campaign_type is
+        auto-detected from the lead's audience tag when not provided.
+        """
+        lead = await self.lead_repo.get_by_id(tenant_id, lead_id)
+        if not lead:
+            raise ValueError("Lead not found.")
+        if not lead.phone:
+            raise ValueError(
+                "This lead has no phone number — add one before enrolling in an SMS drip."
+            )
+
+        existing = await self.enrollment_repo.get_active_for_lead(tenant_id, lead_id)
+        if existing:
+            raise ValueError("This lead is already enrolled in an active drip campaign.")
+
+        # Respect the existing-customer guard (auto-path skips silently; we report it).
+        from app.persistence.repositories.customer_repository import CustomerRepository
+        customer = await CustomerRepository(self.session).get_by_phone(tenant_id, lead.phone)
+        if customer:
+            raise ValueError(
+                f"Not enrolled — this phone matches an existing customer ({customer.name})."
+            )
+
+        ctype = campaign_type or self.detect_campaign_type(
+            lead_extra_data=lead.extra_data,
+            custom_tags=list(lead.custom_tags or []),
+        )
+        campaign = await self.campaign_repo.get_by_type(tenant_id, ctype)
+        if not campaign:
+            raise ValueError(f"No '{ctype}' drip campaign is configured for this tenant.")
+        if not campaign.is_enabled:
+            raise ValueError(
+                f"The '{ctype}' drip campaign is disabled — enable it in Campaign Settings first."
+            )
+        if not campaign.steps:
+            raise ValueError(f"The '{ctype}' drip campaign has no steps configured.")
+
+        context_data = {
+            "first_name": lead.name.split()[0] if lead.name else None,
+            "source": "manual_enroll",
+        }
+        return await self._create_and_schedule_enrollment(campaign, lead, context_data)
+
+    async def _create_and_schedule_enrollment(
+        self,
+        campaign: DripCampaign,
+        lead,
+        context_data: dict | None,
+    ) -> DripEnrollment:
+        """Create the enrollment row, flag the lead, and schedule step 1.
+
+        Shared by both enroll_lead (automatic) and enroll_lead_manual so the
+        carefully-fixed create/commit/schedule sequence lives in one place.
+        Assumes all eligibility checks (campaign enabled, has steps, lead has
+        phone, not already enrolled) have already passed.
+        """
         enrollment = DripEnrollment(
-            tenant_id=tenant_id,
+            tenant_id=lead.tenant_id,
             campaign_id=campaign.id,
-            lead_id=lead_id,
+            lead_id=lead.id,
             status="active",
             current_step=0,
             context_data=context_data or {},
@@ -138,7 +205,7 @@ class DripCampaignService:
             await self.session.commit()
 
         logger.info(
-            f"Enrolled lead {lead_id} in drip campaign {campaign.id} ({campaign_type}), "
+            f"Enrolled lead {lead.id} in drip campaign {campaign.id} ({campaign.campaign_type}), "
             f"enrollment={enrollment.id}, first step in {delay_minutes} min"
         )
         return enrollment

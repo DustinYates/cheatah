@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui';
 import { formatSmartDateTime } from '../utils/dateFormat';
 import { formatPhone } from '../utils/formatPhone';
+import { getLeadDripCampaignType, dripCampaignPhrase } from '../utils/dripCampaign';
 import { usePipelineStages } from '../hooks/usePipelineStages';
 import LeadDetailsModal from '../components/LeadDetailsModal';
 import SendSmsModal from '../components/SendSmsModal';
@@ -607,6 +608,29 @@ export default function Dashboard() {
       setError('');
     } catch (err) {
       setError(`Failed to stop drip: ${err.message || 'Unknown error'}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleEnrollDrip = async (lead) => {
+    const campaignType = getLeadDripCampaignType(lead);
+    if (!confirm(`Enroll ${lead.name || 'this lead'} in ${dripCampaignPhrase(campaignType)}?`)) {
+      return;
+    }
+
+    setActionLoading(`drip-${lead.id}`);
+    try {
+      await api.enrollLeadInDrip(lead.id, campaignType);
+      setLeads(prevLeads => prevLeads.map(l =>
+        l.id === lead.id
+          ? { ...l, extra_data: { ...l.extra_data, drip_enrolled: true } }
+          : l
+      ));
+      setError('');
+    } catch (err) {
+      // Backend sends a specific reason (no phone, already enrolled, existing customer, etc.)
+      setError(err.message || 'Failed to enroll in drip campaign');
     } finally {
       setActionLoading(null);
     }
@@ -1681,7 +1705,7 @@ export default function Dashboard() {
                           </IconButton>
                           {openActionMenuId === lead.id && (
                             <div className="action-menu__popover" role="menu">
-                              {lead.extra_data?.drip_enrolled && (
+                              {lead.extra_data?.drip_enrolled ? (
                                 <button
                                   type="button"
                                   className="action-menu__item"
@@ -1693,6 +1717,19 @@ export default function Dashboard() {
                                   role="menuitem"
                                 >
                                   Stop drip campaign
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="action-menu__item"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    handleEnrollDrip(lead);
+                                  }}
+                                  disabled={actionLoading === `drip-${lead.id}`}
+                                  role="menuitem"
+                                >
+                                  Enroll in drip campaign
                                 </button>
                               )}
                               <button

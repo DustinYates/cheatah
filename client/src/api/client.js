@@ -1022,6 +1022,13 @@ class ApiClient {
     });
   }
 
+  async enrollLeadInDrip(leadId, campaignType = null) {
+    return this.request(`/drip-campaigns/leads/${leadId}/enroll`, {
+      method: 'POST',
+      body: JSON.stringify({ campaign_type: campaignType }),
+    });
+  }
+
   // DNC (Do Not Contact) methods
   async blockContact({ phone, email, reason }) {
     return this.request('/dnc/block', {

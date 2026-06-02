@@ -55,6 +55,10 @@ class DripCampaignUpdateRequest(BaseModel):
     response_templates: dict | None = None
 
 
+class ManualEnrollRequest(BaseModel):
+    campaign_type: str | None = None  # optional override; auto-detected when null
+
+
 class DripCampaignResponse(BaseModel):
     id: int
     tenant_id: int
@@ -329,6 +333,34 @@ async def opt_out_lead(
     service = DripCampaignService(db)
     count = await service.cancel_all_for_lead(tenant_id, lead_id, reason="manual_opt_out")
     return {"cancelled_count": count}
+
+
+@router.post("/leads/{lead_id}/enroll")
+async def manually_enroll_lead(
+    lead_id: int,
+    body: ManualEnrollRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tenant_id: Annotated[int, Depends(require_tenant_context)],
+) -> dict:
+    """Manually enroll a lead into the drip campaign.
+
+    Mirrors the cancel/opt-out endpoints. Campaign type is auto-detected from the
+    lead's audience tag unless an override is supplied. Surfaces the specific reason
+    as a 400 when enrollment can't proceed (no phone, already enrolled, existing
+    customer, campaign disabled/unconfigured).
+    """
+    service = DripCampaignService(db)
+    try:
+        enrollment = await service.enroll_lead_manual(
+            tenant_id, lead_id, campaign_type=body.campaign_type
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "status": "enrolled",
+        "enrollment_id": enrollment.id,
+        "campaign_id": enrollment.campaign_id,
+    }
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────

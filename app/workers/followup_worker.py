@@ -14,6 +14,7 @@ from app.domain.services.conversation_service import ConversationService
 from app.domain.services.dnc_service import DncService
 from app.domain.services.followup_message_service import FollowUpMessageService
 from app.domain.services.opt_in_service import OptInService
+from app.infrastructure.telephony.base import RecipientOptedOutError
 from app.infrastructure.telephony.factory import TelephonyProviderFactory
 from app.persistence.database import get_db
 from app.persistence.models.lead import Lead
@@ -200,12 +201,28 @@ async def process_followup_task(
             status_callback_url = f"{settings.api_base_url}/api/v1/sms{webhook_prefix}/status"
 
         # Send SMS via the configured provider
-        send_result = await sms_provider.send_sms(
-            to=payload.phone_number,
-            from_=from_phone,
-            body=initial_message,
-            status_callback=status_callback_url,
-        )
+        try:
+            send_result = await sms_provider.send_sms(
+                to=payload.phone_number,
+                from_=from_phone,
+                body=initial_message,
+                status_callback=status_callback_url,
+            )
+        except RecipientOptedOutError:
+            # Carrier-level opt-out we never saw an inbound STOP for. Sync state
+            # and skip (no retry — Telnyx will reject every attempt).
+            from app.domain.services.opt_out_reconciler import (
+                reconcile_carrier_opt_out,
+            )
+            logger.info(
+                f"Follow-up: recipient {payload.phone_number} opted out at "
+                f"carrier — syncing opt-out, skipping send"
+            )
+            await reconcile_carrier_opt_out(
+                db, payload.tenant_id, payload.phone_number,
+                method="telnyx_blocked", reason="opted_out_telnyx",
+            )
+            return {"status": "skipped", "reason": "opted_out"}
 
         # Store initial message in conversation
         await conversation_service.add_message(

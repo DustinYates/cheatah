@@ -11,6 +11,7 @@ from app.domain.services.dnc_service import DncService
 from app.domain.services.drip_message_service import DripMessageService
 from app.domain.services.opt_in_service import OptInService
 from app.infrastructure.cloud_tasks import CloudTasksClient
+from app.infrastructure.telephony.base import RecipientOptedOutError
 from app.infrastructure.telephony.factory import TelephonyProviderFactory
 from app.persistence.models.drip_campaign import DripCampaign, DripCampaignStep, DripEnrollment
 from app.persistence.models.tenant_sms_config import TenantSmsConfig
@@ -427,12 +428,34 @@ class DripCampaignService:
         await self.session.refresh(enrollment)
 
         # Send SMS
-        send_result = await sms_provider.send_sms(
-            to=lead.phone,
-            from_=from_phone,
-            body=message,
-            status_callback=status_callback_url,
-        )
+        try:
+            send_result = await sms_provider.send_sms(
+                to=lead.phone,
+                from_=from_phone,
+                body=message,
+                status_callback=status_callback_url,
+            )
+        except RecipientOptedOutError:
+            # Telnyx/carrier suppressed this number (opted out) without ever
+            # delivering us an inbound STOP. Sync our state instead of leaving
+            # the enrollment ACTIVE and re-attempting on every future step.
+            from app.domain.services.opt_out_reconciler import (
+                reconcile_carrier_opt_out,
+            )
+            logger.info(
+                f"Enrollment {enrollment_id}: recipient {lead.phone} opted out "
+                f"at carrier on step {next_step_num} — cancelling + syncing opt-out"
+            )
+            enrollment.status = "cancelled"
+            enrollment.cancelled_reason = "opted_out_telnyx"
+            enrollment.next_task_id = None
+            enrollment.next_step_at = None
+            await self.session.commit()
+            await reconcile_carrier_opt_out(
+                self.session, tenant_id, lead.phone,
+                method="telnyx_blocked", reason="opted_out_telnyx",
+            )
+            return {"status": "skipped", "reason": "opted_out"}
 
         # Store in conversation
         conversation_service = ConversationService(self.session)

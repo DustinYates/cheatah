@@ -10,11 +10,29 @@ from app.infrastructure.telephony.base import (
     VoiceProviderProtocol,
     SmsResult,
     PhoneNumberResult,
+    RecipientOptedOutError,
+    is_opt_out_send_error,
 )
 
 logger = logging.getLogger(__name__)
 
 TELNYX_API_BASE = "https://api.telnyx.com/v2"
+
+
+def _parse_telnyx_error(response: httpx.Response) -> tuple[str | None, str | None]:
+    """Pull (code, detail) out of a Telnyx error response body, best-effort."""
+    try:
+        body = response.json()
+        errors = body.get("errors") or []
+        if errors:
+            return (
+                str(errors[0].get("code") or "") or None,
+                errors[0].get("detail") or None,
+            )
+    except Exception:
+        pass
+    text = getattr(response, "text", None)
+    return None, (text[:300] if text else None)
 
 
 class TelnyxSmsProvider(SmsProviderProtocol):
@@ -92,6 +110,19 @@ class TelnyxSmsProvider(SmsProviderProtocol):
                 break
             except httpx.HTTPStatusError as e:
                 last_exc = e
+                # Recipient opted out / suppressed at the carrier (Telnyx 40300
+                # "Destination banned"). Retrying is futile and every attempt is
+                # a wasted send — signal the caller so it can sync our opt-out
+                # state instead.
+                err_code, err_detail = _parse_telnyx_error(e.response)
+                if is_opt_out_send_error(err_code, err_detail):
+                    logger.warning(
+                        f"Telnyx rejected SMS to {to} as opted-out/suppressed "
+                        f"(code={err_code}): {err_detail}"
+                    )
+                    raise RecipientOptedOutError(
+                        phone=to, detail=err_detail, code=err_code
+                    ) from e
                 if e.response.status_code >= 500 and attempt < max_retries - 1:
                     wait = 2 ** attempt  # 1s, 2s
                     logger.warning(

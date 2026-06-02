@@ -699,6 +699,7 @@ async def _handle_telnyx_delivery_status(
         payload: Webhook payload
         db: Database session
     """
+    from app.infrastructure.telephony.base import is_opt_out_send_error
     from app.persistence.models.conversation import Message
 
     message_id = payload.get("id")
@@ -722,6 +723,10 @@ async def _handle_telnyx_delivery_status(
     result = await db.execute(stmt)
     message = result.scalar_one_or_none()
 
+    errors = payload.get("errors", []) or []
+    err_code = str(errors[0].get("code") or "") if errors else None
+    err_detail = errors[0].get("detail") if errors else None
+
     if message:
         if message.message_metadata is None:
             message.message_metadata = {}
@@ -730,11 +735,39 @@ async def _handle_telnyx_delivery_status(
 
         # Add error info if failed
         if event_type == "message.failed":
-            errors = payload.get("errors", [])
-            if errors:
-                message.message_metadata["delivery_error"] = errors[0].get("detail", "Unknown error")
+            message.message_metadata["delivery_error"] = err_detail or "Unknown error"
 
         await db.commit()
+
+    # Sync carrier-level opt-outs surfaced as a send failure. Telnyx may accept
+    # a message (200) and then fail it with 40300 "Destination banned" once the
+    # number is on its suppression list; without this we'd keep the lead opted-in
+    # and active in drip. Runs even when the message row isn't found (drip sends
+    # don't persist a telnyx_message_id).
+    if event_type == "message.failed" and is_opt_out_send_error(err_code, err_detail):
+        try:
+            to_list = payload.get("to") or []
+            cust_phone = to_list[0].get("phone_number") if to_list else None
+            from_obj = payload.get("from") or {}
+            from_number = from_obj.get("phone_number") if isinstance(from_obj, dict) else None
+            opt_tenant = (
+                await _get_tenant_from_telnyx_number(from_number, db)
+                if from_number
+                else None
+            )
+            if opt_tenant and cust_phone:
+                from app.domain.services.opt_out_reconciler import (
+                    reconcile_carrier_opt_out,
+                )
+                await reconcile_carrier_opt_out(
+                    db, opt_tenant, cust_phone,
+                    method="telnyx_blocked", reason="opted_out_telnyx",
+                )
+        except Exception as e:
+            logger.error(
+                f"[OPT-OUT-SYNC] delivery-status reconcile failed: {e}",
+                exc_info=True,
+            )
 
     logger.info(f"Telnyx status update: message_id={message_id}, status={status}")
 
@@ -1553,6 +1586,35 @@ async def telnyx_ai_call_complete(
                                 f"[SMS-DEDUP] Stored {new_msg_count} new SMS messages, skipped {skipped_dup_count} duplicates "
                                 f"(API returned {len(actual_messages)}): conversation_id={sms_conversation.id}"
                             )
+
+                            # Earliest opt-out catch: Telnyx handles STOP at the
+                            # messaging-profile level and sends "You have
+                            # successfully been unsubscribed ... Reply START"
+                            # itself, never delivering us an inbound STOP webhook.
+                            # If that confirmation is in the ingested thread, sync
+                            # our opt-out + drip state now (before the next step
+                            # fires and bounces).
+                            try:
+                                from app.domain.services.opt_out_reconciler import (
+                                    messages_contain_opt_out_confirmation,
+                                    reconcile_carrier_opt_out,
+                                )
+                                if (
+                                    sms_conversation.phone_number
+                                    and messages_contain_opt_out_confirmation(actual_messages)
+                                ):
+                                    await reconcile_carrier_opt_out(
+                                        db,
+                                        sms_conversation.tenant_id,
+                                        sms_conversation.phone_number,
+                                        method="telnyx_carrier",
+                                        reason="opted_out_telnyx",
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    f"[OPT-OUT-SYNC] ingestion reconcile failed: {e}",
+                                    exc_info=True,
+                                )
 
                             # Build transcript from assistant messages for class level detection
                             # The assistant messages contain specific class recommendations like "Young Adult Level 3"

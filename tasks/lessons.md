@@ -46,3 +46,42 @@ at once** when the bug is fixed. Before deploying a fix for a long-broken worker
 what to do with the queued backlog (`sms-processing` is shared across all tenants).
 Purging it is a human-in-the-loop action (the safety layer blocks agent-initiated mass
 deletion of shared jobs — by design).
+
+---
+
+## Carrier-level (Telnyx) opt-outs never reach our opt-out logic (2026-06-02)
+
+**Symptom (tenant 3):** A lead's timeline showed a bot "You have successfully been
+unsubscribed... Reply START to re-subscribe" message, but the customer was NOT on the
+do-not-contact list, NOT marked opted-out, and STILL ACTIVE in a drip campaign.
+
+**Root cause:** Telnyx handles STOP/unsubscribe at the messaging-profile level for 10DLC
+compliance. It sends the confirmation and suppresses the number ITSELF, and never delivers
+an inbound `message.received` STOP webhook to us. Our only opt-out sync path was
+`compliance_handler` on inbound SMS — which never ran. We only learned of the confirmation
+later when the `ai-call-complete` insight fetch blindly stored it (source
+`telnyx_ai_assistant`) with no opt-out detection. So our opt-in / DNC / drip state stayed
+stale while Telnyx silently blocked every further send.
+
+**Tell-tale diagnostic:** the stored message's wording/`source` proves origin.
+- Our code: "You have been unsubscribed... Reply START to opt back in." (compliance_handler)
+- Telnyx carrier: "You have **successfully** been unsubscribed... from **this number**.
+  Reply START to **re-subscribe**." with `metadata.source = "telnyx_ai_assistant"`.
+If the text/source is Telnyx's, OUR code did not send it — look outside the app.
+
+**Rules:**
+1. An opt-out can happen at THREE layers — app (our STOP handler), Telnyx (messaging
+   profile auto-STOP), and carrier (spam-report → STOP). Only the first writes our DB.
+   Always reconcile the other two back into `sms_opt_ins` + drip state.
+2. The durable signal for a carrier opt-out is the OUTBOUND send getting rejected
+   (Telnyx error code **40300** "Destination banned"). Telnyx may reject synchronously OR
+   accept-then-fail via `message.failed`. Handle BOTH.
+3. Drip/followup send paths must catch `RecipientOptedOutError` and sync — never just let
+   it bubble (Cloud Tasks would retry a send Telnyx will always reject, leaving the
+   enrollment ACTIVE forever).
+4. When you find a desync bug, sweep ALL tenants for the same pattern before declaring
+   done — tenant 3's report was 1 of 4 affected leads (2 in t3, 2 in t330).
+
+**Fix:** `app/domain/services/opt_out_reconciler.py` (idempotent `reconcile_carrier_opt_out`)
+called from 3 detection points: ingested confirmation text (`ai-call-complete`), blocked
+send (`RecipientOptedOutError` in drip + followup), and `message.failed` 40300 webhook.

@@ -4,6 +4,51 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+# Telnyx error code for "Destination banned" — returned when the recipient has
+# opted out / been suppressed at the carrier level. Carriers/Telnyx handle STOP
+# at the messaging-profile level and reject (or accept-then-fail) every further
+# send to that number with this code.
+TELNYX_OPT_OUT_ERROR_CODE = "40300"
+
+# Defensive free-text markers for the error `detail` string, since the exact
+# wording varies by carrier. Kept narrow to avoid mistaking unrelated failures
+# for opt-outs.
+_OPT_OUT_ERROR_MARKERS = (
+    "opted out",
+    "opt-out",
+    "opt out",
+    "unsubscrib",
+    "destination banned",
+)
+
+
+def is_opt_out_send_error(code: str | None, detail: str | None) -> bool:
+    """True if a Telnyx send error means the recipient opted out / is suppressed.
+
+    Used by send paths and the delivery-status webhook to decide when a failed
+    outbound SMS should sync our opt-out state rather than be retried.
+    """
+    if code and str(code).strip() == TELNYX_OPT_OUT_ERROR_CODE:
+        return True
+    if detail:
+        d = detail.lower()
+        return any(m in d for m in _OPT_OUT_ERROR_MARKERS)
+    return False
+
+
+class RecipientOptedOutError(Exception):
+    """Raised by an SMS provider when the recipient has opted out / been
+    suppressed at the carrier level (e.g. Telnyx error 40300 "Destination
+    banned"). Callers should sync our opt-out state instead of retrying."""
+
+    def __init__(
+        self, phone: str, detail: str | None = None, code: str | None = None
+    ) -> None:
+        self.phone = phone
+        self.detail = detail
+        self.code = code
+        super().__init__(detail or f"Recipient {phone} has opted out")
+
 
 @dataclass
 class SmsResult:

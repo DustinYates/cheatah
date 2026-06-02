@@ -144,11 +144,32 @@ class DripCampaignService:
         if not campaign.steps:
             raise ValueError(f"The '{ctype}' drip campaign has no steps configured.")
 
-        context_data = {
-            "first_name": lead.name.split()[0] if lead.name else None,
-            "source": "manual_enroll",
-        }
-        return await self._create_and_schedule_enrollment(campaign, lead, context_data)
+        # split() on a whitespace-only name raises IndexError; guard with strip().
+        first_name = lead.name.split()[0] if (lead.name and lead.name.strip()) else None
+        context_data = {"first_name": first_name, "source": "manual_enroll"}
+
+        # If the lead previously finished/cancelled THIS campaign, reuse that row
+        # (re-engagement). A fresh insert with the same (tenant, campaign, lead)
+        # would violate uq_drip_enrollment_tenant_campaign_lead and 500. An ACTIVE
+        # row in this campaign was already caught by the get_active_for_lead guard
+        # above, so any row found here is terminal (completed/cancelled).
+        prior = await self.enrollment_repo.get_for_campaign_and_lead(
+            tenant_id, campaign.id, lead_id
+        )
+        if prior is not None:
+            enrollment = await self._reactivate_enrollment(prior, campaign, lead, context_data)
+        else:
+            enrollment = await self._create_and_schedule_enrollment(campaign, lead, context_data)
+
+        # Don't advertise a phantom success: if Cloud Tasks scheduling failed, the
+        # enrollment would sit 'active' with no task to ever fire it. Roll it back to
+        # a recoverable terminal state and surface a retryable error (becomes a 400).
+        if not enrollment.next_task_id:
+            await self._mark_schedule_failed(enrollment, lead)
+            raise ValueError(
+                "Couldn't schedule the first message right now — please try again in a moment."
+            )
+        return enrollment
 
     async def _create_and_schedule_enrollment(
         self,
@@ -188,9 +209,56 @@ class DripCampaignService:
         lead.extra_data = extra_data
         await self.session.commit()
 
-        # Schedule first step. Step 1's own delay_minutes is the single source of
-        # truth for the after-enrollment wait; the legacy trigger_delay_minutes
-        # field is no longer used (kept only as a fallback if step 1 has no delay).
+        delay_minutes = await self._schedule_first_step(enrollment, campaign)
+        logger.info(
+            f"Enrolled lead {lead.id} in drip campaign {campaign.id} ({campaign.campaign_type}), "
+            f"enrollment={enrollment.id}, first step in {delay_minutes} min"
+        )
+        return enrollment
+
+    async def _reactivate_enrollment(
+        self,
+        enrollment: DripEnrollment,
+        campaign: DripCampaign,
+        lead,
+        context_data: dict | None,
+    ) -> DripEnrollment:
+        """Reset a previously completed/cancelled enrollment to active and reschedule
+        step 1 — re-engages a lead without inserting a duplicate row (forbidden by the
+        unique (tenant, campaign, lead) constraint)."""
+        enrollment.status = "active"
+        enrollment.current_step = 0
+        enrollment.cancelled_reason = None
+        enrollment.response_category = None
+        enrollment.context_data = context_data or {}
+        enrollment.next_task_id = None
+        enrollment.next_step_at = None
+        enrollment.updated_at = _naive_utcnow()
+
+        extra_data = dict(lead.extra_data or {})
+        extra_data["drip_enrolled"] = True
+        ids = extra_data.setdefault("drip_enrollment_ids", [])
+        if enrollment.id not in ids:
+            ids.append(enrollment.id)
+        lead.extra_data = extra_data
+        await self.session.commit()
+
+        delay_minutes = await self._schedule_first_step(enrollment, campaign)
+        logger.info(
+            f"Reactivated drip enrollment {enrollment.id} for lead {lead.id} in campaign "
+            f"{campaign.id} ({campaign.campaign_type}), first step in {delay_minutes} min"
+        )
+        return enrollment
+
+    async def _schedule_first_step(self, enrollment: DripEnrollment, campaign: DripCampaign) -> int:
+        """Schedule step 1 and persist the schedule; returns the delay used.
+
+        Step 1's own delay_minutes is the single source of truth for the
+        after-enrollment wait; trigger_delay_minutes is only a fallback when step 1
+        has no delay. _schedule_step sets next_task_id/next_step_at (= now + delay) on
+        the enrollment on success; we just persist them. Re-assigning next_step_at
+        here would clobber it with 'now' and mislabel the dashboard's next-send time.
+        """
         first_step = next((s for s in campaign.steps if s.step_number == 1), None)
         delay_minutes = (
             first_step.delay_minutes
@@ -199,16 +267,22 @@ class DripCampaignService:
         )
         task_id = await self._schedule_step(enrollment, delay_minutes)
         if task_id:
-            # _schedule_step already set next_task_id and next_step_at (= now + delay)
-            # on the enrollment; just persist them. Re-assigning next_step_at here
-            # would clobber it with "now" and mislabel the dashboard's next-send time.
             await self.session.commit()
+        return delay_minutes
 
-        logger.info(
-            f"Enrolled lead {lead.id} in drip campaign {campaign.id} ({campaign.campaign_type}), "
-            f"enrollment={enrollment.id}, first step in {delay_minutes} min"
-        )
-        return enrollment
+    async def _mark_schedule_failed(self, enrollment: DripEnrollment, lead) -> None:
+        """Roll an enrollment back to a recoverable terminal state when its first step
+        couldn't be scheduled, so it isn't left 'active' with nothing to fire it. A
+        later retry will reactivate this same row."""
+        enrollment.status = "cancelled"
+        enrollment.cancelled_reason = "schedule_failed"
+        enrollment.next_task_id = None
+        enrollment.next_step_at = None
+        enrollment.updated_at = _naive_utcnow()
+        extra_data = dict(lead.extra_data or {})
+        extra_data["drip_enrolled"] = False
+        lead.extra_data = extra_data
+        await self.session.commit()
 
     # ── Step Advancement ─────────────────────────────────────────────────
 

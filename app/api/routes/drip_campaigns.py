@@ -356,10 +356,15 @@ async def manually_enroll_lead(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Resolve the campaign type that was actually used so the UI can show it
+    # (the request's campaign_type may have been null → auto-detected).
+    campaign = await DripCampaignRepository(db).get_with_steps(tenant_id, enrollment.campaign_id)
     return {
         "status": "enrolled",
         "enrollment_id": enrollment.id,
         "campaign_id": enrollment.campaign_id,
+        "campaign_type": campaign.campaign_type if campaign else None,
     }
 
 

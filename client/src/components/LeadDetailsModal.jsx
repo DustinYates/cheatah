@@ -258,9 +258,16 @@ export default function LeadDetailsModal({ lead, onClose }) {
     setDripEnrolling(true);
     setDripMessage(null);
     try {
-      await api.enrollLeadInDrip(lead.id, campaignType);
+      const res = await api.enrollLeadInDrip(lead.id, campaignType);
       setDripEnrolled(true);
-      setDripMessage({ type: 'success', text: `Enrolled in ${dripCampaignPhrase(campaignType)}.` });
+      // Mutate the shared lead object so the Dashboard row reflects enrollment when
+      // the modal closes (matches this file's convention — handleSaveNotes/handleAddTag
+      // mutate `lead` directly; the parent re-renders on closeModal).
+      lead.extra_data = { ...(lead.extra_data || {}), drip_enrolled: true };
+      // Prefer the campaign the backend actually used (request type may have been
+      // null → auto-detected) so the message names the right campaign.
+      const resolvedType = res?.campaign_type ?? campaignType;
+      setDripMessage({ type: 'success', text: `Enrolled in ${dripCampaignPhrase(resolvedType)}.` });
     } catch (err) {
       // Backend sends the specific reason (no phone, already enrolled, existing customer, etc.)
       setDripMessage({ type: 'error', text: err.message || 'Failed to enroll in drip campaign' });

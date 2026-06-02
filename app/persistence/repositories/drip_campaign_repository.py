@@ -95,6 +95,23 @@ class DripEnrollmentRepository(BaseRepository[DripEnrollment]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_for_campaign_and_lead(
+        self, tenant_id: int, campaign_id: int, lead_id: int
+    ) -> DripEnrollment | None:
+        """Get the enrollment for an exact (tenant, campaign, lead) tuple, ANY status.
+
+        This is the unique key (uq_drip_enrollment_tenant_campaign_lead), so it
+        returns at most one row. Used to reactivate a previously completed/cancelled
+        enrollment instead of inserting a duplicate (which would violate the
+        constraint and 500)."""
+        stmt = select(DripEnrollment).where(
+            DripEnrollment.tenant_id == tenant_id,
+            DripEnrollment.campaign_id == campaign_id,
+            DripEnrollment.lead_id == lead_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_active_for_tenant(
         self, tenant_id: int, skip: int = 0, limit: int = 50
     ) -> list[DripEnrollment]:

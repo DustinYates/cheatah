@@ -9,6 +9,29 @@ from app.persistence.models import *  # noqa: F401, F403
 from app.settings import get_async_database_url
 
 
+@pytest.fixture(autouse=True)
+async def _dispose_global_engine():
+    """Dispose the app's global async engine after every test.
+
+    `app.persistence.database` creates a module-level engine with a connection
+    pool. pytest-asyncio runs each test in its own event loop, so a pooled asyncpg
+    connection opened in one test's loop and then reused by the next test raises
+    "got Future attached to a different loop" (it surfaces as an RLS-setup error in
+    the FastAPI DB middleware and fails whichever test happens to reuse it). The
+    victim depends purely on collection order, so adding/removing test files made
+    unrelated tests flip red. Disposing the pool in this test's loop, before the
+    next test starts, forces fresh per-loop connections and keeps the suite
+    order-independent. For fully-mocked tests the pool is empty and this is a no-op.
+    """
+    yield
+    from app.persistence.database import engine
+
+    try:
+        await engine.dispose()
+    except Exception:
+        pass
+
+
 @pytest.fixture
 async def db_session():
     """Create a test database session using PostgreSQL with transaction rollback."""

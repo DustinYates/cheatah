@@ -152,16 +152,32 @@ async def get_tenants_overview(
     contact_result = await db.execute(contact_counts_query)
     contact_counts = {row[0]: row[1] for row in contact_result}
 
-    # Query last activity (most recent message) per tenant
-    last_activity_query = (
+    # Last activity = most recent interaction across BOTH channels: SMS/chat messages
+    # AND voice calls. Calls live in their own `calls` table (a voice call never writes
+    # a Message), so a voice-heavy tenant would otherwise show a stale "last message"
+    # date — e.g. 25 calls this week but ACTIVITY frozen at the last SMS months ago.
+    msg_activity_query = (
         select(Conversation.tenant_id, func.max(Message.created_at))
         .select_from(Message)
         .join(Conversation, Message.conversation_id == Conversation.id)
         .where(Conversation.tenant_id.in_(tenant_ids))
         .group_by(Conversation.tenant_id)
     )
-    activity_result = await db.execute(last_activity_query)
-    last_activities = {row[0]: row[1].isoformat() if row[1] else None for row in activity_result}
+    call_activity_query = (
+        select(Call.tenant_id, func.max(Call.created_at))
+        .where(Call.tenant_id.in_(tenant_ids))
+        .group_by(Call.tenant_id)
+    )
+    # Merge per tenant, keeping the latest timestamp (both columns are naive UTC).
+    last_activity_dt = {}
+    for activity_result in (
+        await db.execute(msg_activity_query),
+        await db.execute(call_activity_query),
+    ):
+        for tid, ts in activity_result:
+            if ts and (tid not in last_activity_dt or ts > last_activity_dt[tid]):
+                last_activity_dt[tid] = ts
+    last_activities = {tid: ts.isoformat() for tid, ts in last_activity_dt.items()}
 
     # Query Gmail status per tenant
     email_config_query = (

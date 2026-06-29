@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -578,7 +578,6 @@ async def _store_widget_events(
 
 @router.post("/events", response_model=WidgetEventResponse)
 async def track_widget_events(
-    request_data: WidgetEventRequest,
     background_tasks: BackgroundTasks,
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -588,7 +587,24 @@ async def track_widget_events(
 
     This endpoint does NOT require authentication and is called by the widget
     running on third-party customer websites. Events are batched for efficiency.
+
+    The body is parsed manually rather than via a typed parameter because the
+    widget sends events with ``navigator.sendBeacon`` using a ``text/plain``
+    content-type (an ``application/json`` beacon would trigger a CORS preflight,
+    which sendBeacon cannot perform). FastAPI only auto-parses a body model when
+    the content-type is ``application/json``, so a typed param would 422 every
+    beacon. Reading the raw body decouples parsing from the content-type and
+    accepts both the beacon and the ``fetch`` fallback.
     """
+    raw_body = await request.body()
+    try:
+        request_data = WidgetEventRequest.model_validate_json(raw_body)
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid widget event payload",
+        ) from e
+
     # Extract device info from User-Agent
     user_agent = request.headers.get("user-agent", "")[:500]
     device_type = _detect_device_type(user_agent)

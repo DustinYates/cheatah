@@ -1278,3 +1278,112 @@ class TestGetCustomerContextTool:
         assert response.status_code == 200
         data = response.json()
         assert data["found"] is False
+
+
+class TestMessagingWebhookUrlSymmetry:
+    """Both messaging webhook routes must handle both Telnyx event families.
+
+    A Telnyx messaging profile has a single webhook_url and posts inbound
+    messages AND delivery receipts to it. When tenant 3's profile pointed at
+    /sms/status, every inbound message was silently discarded by the
+    delivery-status handler and answered with a 200 - hiding a two-month
+    inbound SMS outage. These tests pin the symmetry that prevents a recurrence.
+    """
+
+    @staticmethod
+    def _inbound_payload(message_id: str) -> dict:
+        return {
+            "data": {
+                "event_type": "message.received",
+                "id": "evt-symmetry",
+                "payload": {
+                    "id": message_id,
+                    "direction": "inbound",
+                    "from": {"phone_number": "+19876543210"},
+                    "to": [{"phone_number": "+12817679141"}],
+                    "text": "Do you have Saturday classes?",
+                },
+            }
+        }
+
+    def test_status_url_processes_inbound_message(self):
+        """message.received on /sms/status must reach tenant resolution, not be dropped."""
+        with patch(
+            "app.api.routes.telnyx_webhooks._get_tenant_from_telnyx_number",
+            new_callable=AsyncMock,
+        ) as mock_tenant:
+            mock_tenant.return_value = 3
+
+            response = client.post(
+                "/api/v1/telnyx/sms/status",
+                json=self._inbound_payload("msg-symmetry-status-001"),
+            )
+
+            assert response.status_code == 200
+            # The regression: this used to be zero - the message was swallowed
+            # by _handle_telnyx_delivery_status and never looked up a tenant.
+            assert mock_tenant.await_count == 1
+
+    def test_both_urls_take_the_same_path_for_inbound(self):
+        """/sms/inbound and /sms/status must behave identically on inbound."""
+        calls = {}
+        for route, msg_id in (
+            ("inbound", "msg-symmetry-cmp-inbound"),
+            ("status", "msg-symmetry-cmp-status"),
+        ):
+            with patch(
+                "app.api.routes.telnyx_webhooks._get_tenant_from_telnyx_number",
+                new_callable=AsyncMock,
+            ) as mock_tenant:
+                mock_tenant.return_value = 3
+                response = client.post(
+                    f"/api/v1/telnyx/sms/{route}",
+                    json=self._inbound_payload(msg_id),
+                )
+                assert response.status_code == 200
+                calls[route] = mock_tenant.await_count
+
+        assert calls["inbound"] == calls["status"] == 1
+
+    def test_delivery_receipt_still_handled_on_both_urls(self):
+        """Unifying the routes must not break delivery-status handling."""
+        payload = {
+            "data": {
+                "event_type": "message.delivered",
+                "id": "evt-symmetry-dlr",
+                "payload": {
+                    "id": "msg-symmetry-dlr-001",
+                    "to": [{"phone_number": "+19876543210"}],
+                },
+            }
+        }
+
+        for route in ("inbound", "status"):
+            with patch(
+                "app.api.routes.telnyx_webhooks._handle_telnyx_delivery_status",
+                new_callable=AsyncMock,
+            ) as mock_status:
+                response = client.post(f"/api/v1/telnyx/sms/{route}", json=payload)
+                assert response.status_code == 200
+                assert mock_status.await_count == 1
+
+    def test_finalized_event_reaches_status_handler(self):
+        """message.finalized must not be dropped by the dispatcher's event filter."""
+        payload = {
+            "data": {
+                "event_type": "message.finalized",
+                "id": "evt-symmetry-final",
+                "payload": {
+                    "id": "msg-symmetry-final-001",
+                    "to": [{"phone_number": "+19876543210"}],
+                },
+            }
+        }
+
+        with patch(
+            "app.api.routes.telnyx_webhooks._handle_telnyx_delivery_status",
+            new_callable=AsyncMock,
+        ) as mock_status:
+            response = client.post("/api/v1/telnyx/sms/status", json=payload)
+            assert response.status_code == 200
+            assert mock_status.await_count == 1

@@ -24,8 +24,11 @@ class PromptRepository(BaseRepository[PromptBundle]):
             PromptBundle.channel == channel,
             PromptBundle.is_active == True
         ).order_by(PromptBundle.created_at.desc())
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        result = await self.session.execute(stmt.limit(1))
+        # Deliberately first(), not scalar_one_or_none(): duplicate active/
+        # production bundles are possible in the data, and the order_by above
+        # already declares which one wins. Raising here took down inbound SMS.
+        return result.scalars().first()
 
     async def get_production_bundle(
         self, tenant_id: int | None, channel: str = PromptChannel.CHAT.value
@@ -36,8 +39,11 @@ class PromptRepository(BaseRepository[PromptBundle]):
             PromptBundle.channel == channel,
             PromptBundle.status == PromptStatus.PRODUCTION.value
         ).order_by(PromptBundle.published_at.desc())
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        result = await self.session.execute(stmt.limit(1))
+        # Deliberately first(), not scalar_one_or_none(): duplicate active/
+        # production bundles are possible in the data, and the order_by above
+        # already declares which one wins. Raising here took down inbound SMS.
+        return result.scalars().first()
 
     async def get_draft_bundle(
         self, tenant_id: int | None, channel: str = PromptChannel.CHAT.value
@@ -48,8 +54,11 @@ class PromptRepository(BaseRepository[PromptBundle]):
             PromptBundle.channel == channel,
             PromptBundle.status == PromptStatus.DRAFT.value
         ).order_by(PromptBundle.updated_at.desc())
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        result = await self.session.execute(stmt.limit(1))
+        # Deliberately first(), not scalar_one_or_none(): duplicate active/
+        # production bundles are possible in the data, and the order_by above
+        # already declares which one wins. Raising here took down inbound SMS.
+        return result.scalars().first()
 
     async def get_global_base_bundle(self, channel: str = PromptChannel.CHAT.value) -> PromptBundle | None:
         """Get the global base prompt bundle (tenant_id is NULL)."""

@@ -359,6 +359,108 @@ class TelnyxWebhookRequest(BaseModel):
     data: TelnyxWebhookData | None = None
 
 
+async def _handle_telnyx_sms_event(
+    body: dict,
+    db: AsyncSession,
+) -> JSONResponse:
+    """Dispatch a Telnyx messaging webhook by event type.
+
+    Telnyx delivers inbound messages AND delivery receipts to the same
+    messaging-profile webhook URL, so every messaging route has to accept
+    both event families. Dispatching on event_type here - rather than on
+    which URL the request happened to arrive at - means a misconfigured
+    profile can no longer cause inbound messages to be silently dropped.
+    """
+    logger.info(
+        "Telnyx SMS webhook received",
+        extra={"event_type": body.get("data", {}).get("event_type")},
+    )
+
+    data = body.get("data", {})
+    event_type = data.get("event_type", "")
+    payload = data.get("payload", {})
+
+    # Everything that isn't an inbound message is a delivery receipt. Forward
+    # them all rather than allow-listing event types here - the status handler
+    # knows which it understands and logs the ones it doesn't, so a new Telnyx
+    # event type can't go missing without a trace.
+    if event_type != "message.received":
+        await _handle_telnyx_delivery_status(event_type, payload, db)
+        return JSONResponse(content={"status": "ok"})
+
+    # Extract message details
+    from_info = payload.get("from", {})
+    to_list = payload.get("to", [])
+
+    from_number = from_info.get("phone_number", "")
+    to_number = to_list[0].get("phone_number", "") if to_list else ""
+    message_body = payload.get("text", "")
+    message_id = payload.get("id", "")
+
+    # Deduplicate by message_id to prevent processing same message twice
+    # (handles Telnyx retries, webhook replay attacks, etc.)
+    if message_id:
+        dedup_key = f"sms_msg_processed:{message_id}"
+        if not await redis_client.setnx(dedup_key, "1", ttl=MESSAGE_DEDUP_TTL_SECONDS):
+            # MONITORING: Log duplicate webhook with structured data for alerting
+            logger.warning(
+                "[DUPLICATE_WEBHOOK] Duplicate inbound SMS webhook ignored",
+                extra={
+                    "event_type": "duplicate_webhook_blocked",
+                    "provider": "telnyx",
+                    "message_id": message_id,
+                    "from_number": from_number,
+                    "to_number": to_number,
+                },
+            )
+            return JSONResponse(content={"status": "ok"})
+
+    if not from_number or not to_number:
+        logger.warning("Missing phone numbers in Telnyx webhook")
+        return JSONResponse(content={"status": "ok"})
+
+    # Look up tenant by Telnyx phone number
+    logger.info(f"Looking up tenant for Telnyx number: {to_number}")
+    tenant_id = await _get_tenant_from_telnyx_number(to_number, db)
+
+    if not tenant_id:
+        logger.warning(f"Could not determine tenant for Telnyx number: {to_number}")
+        return JSONResponse(content={"status": "ok"})
+
+    logger.info(f"Found tenant_id={tenant_id} for Telnyx number: {to_number}")
+
+    # Queue message for async processing
+    if settings.cloud_tasks_worker_url:
+        cloud_tasks = CloudTasksClient()
+        await cloud_tasks.create_task_async(
+            payload={
+                "tenant_id": tenant_id,
+                "phone_number": from_number,
+                "message_body": message_body,
+                # Must match SmsTaskPayload.external_message_id - Pydantic
+                # drops unknown keys, so a mismatched name silently loses the
+                # ID (and with it dedup and the audit trail) in the worker.
+                "external_message_id": message_id,
+                "to_number": to_number,
+                "provider": "telnyx",
+            },
+            url=settings.cloud_tasks_worker_url,
+        )
+    else:
+        # Fallback: process synchronously
+        logger.warning("Cloud Tasks not configured, processing synchronously")
+        sms_service = SmsService(db)
+        result = await sms_service.process_inbound_sms(
+            tenant_id=tenant_id,
+            phone_number=from_number,
+            message_body=message_body,
+            twilio_message_sid=message_id,  # Re-using param name for Telnyx message ID
+        )
+        logger.info(f"SMS processed for tenant_id={tenant_id}, response_sent={bool(result.message_sid)}")
+
+    return JSONResponse(content={"status": "ok"})
+
+
 @router.post("/sms/inbound")
 @router.post("/inbound")  # Alternate path for backwards compatibility
 async def telnyx_inbound_sms_webhook(
@@ -404,90 +506,7 @@ async def telnyx_inbound_sms_webhook(
         # Parse JSON body
         body = await request.json()
 
-        logger.info(
-            "Telnyx SMS webhook received",
-            extra={"event_type": body.get("data", {}).get("event_type")},
-        )
-
-        data = body.get("data", {})
-        event_type = data.get("event_type", "")
-        payload = data.get("payload", {})
-
-        # Only process inbound messages
-        if event_type != "message.received":
-            # Handle delivery status updates
-            if event_type in ("message.sent", "message.delivered", "message.failed"):
-                await _handle_telnyx_delivery_status(event_type, payload, db)
-            return JSONResponse(content={"status": "ok"})
-
-        # Extract message details
-        from_info = payload.get("from", {})
-        to_list = payload.get("to", [])
-
-        from_number = from_info.get("phone_number", "")
-        to_number = to_list[0].get("phone_number", "") if to_list else ""
-        message_body = payload.get("text", "")
-        message_id = payload.get("id", "")
-
-        # Deduplicate by message_id to prevent processing same message twice
-        # (handles Telnyx retries, webhook replay attacks, etc.)
-        if message_id:
-            dedup_key = f"sms_msg_processed:{message_id}"
-            if not await redis_client.setnx(dedup_key, "1", ttl=MESSAGE_DEDUP_TTL_SECONDS):
-                # MONITORING: Log duplicate webhook with structured data for alerting
-                logger.warning(
-                    "[DUPLICATE_WEBHOOK] Duplicate inbound SMS webhook ignored",
-                    extra={
-                        "event_type": "duplicate_webhook_blocked",
-                        "provider": "telnyx",
-                        "message_id": message_id,
-                        "from_number": from_number,
-                        "to_number": to_number,
-                    },
-                )
-                return JSONResponse(content={"status": "ok"})
-
-        if not from_number or not to_number:
-            logger.warning("Missing phone numbers in Telnyx webhook")
-            return JSONResponse(content={"status": "ok"})
-
-        # Look up tenant by Telnyx phone number
-        logger.info(f"Looking up tenant for Telnyx number: {to_number}")
-        tenant_id = await _get_tenant_from_telnyx_number(to_number, db)
-
-        if not tenant_id:
-            logger.warning(f"Could not determine tenant for Telnyx number: {to_number}")
-            return JSONResponse(content={"status": "ok"})
-
-        logger.info(f"Found tenant_id={tenant_id} for Telnyx number: {to_number}")
-
-        # Queue message for async processing
-        if settings.cloud_tasks_worker_url:
-            cloud_tasks = CloudTasksClient()
-            await cloud_tasks.create_task_async(
-                payload={
-                    "tenant_id": tenant_id,
-                    "phone_number": from_number,
-                    "message_body": message_body,
-                    "telnyx_message_id": message_id,
-                    "to_number": to_number,
-                    "provider": "telnyx",
-                },
-                url=settings.cloud_tasks_worker_url,
-            )
-        else:
-            # Fallback: process synchronously
-            logger.warning("Cloud Tasks not configured, processing synchronously")
-            sms_service = SmsService(db)
-            result = await sms_service.process_inbound_sms(
-                tenant_id=tenant_id,
-                phone_number=from_number,
-                message_body=message_body,
-                twilio_message_sid=message_id,  # Re-using param name for Telnyx message ID
-            )
-            logger.info(f"SMS processed for tenant_id={tenant_id}, response_sent={bool(result.message_sid)}")
-
-        return JSONResponse(content={"status": "ok"})
+        return await _handle_telnyx_sms_event(body, db)
 
     except Exception as e:
         logger.error(f"Error processing Telnyx SMS webhook: {e}", exc_info=True)
@@ -501,7 +520,11 @@ async def telnyx_sms_status_webhook(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
-    """Handle SMS delivery status webhook from Telnyx.
+    """Handle SMS webhooks from Telnyx arriving on the status URL.
+
+    Despite the name this is NOT status-only. A Telnyx messaging profile has a
+    single webhook_url and sends inbound messages there alongside delivery
+    receipts, so this route delegates to the shared dispatcher.
 
     Args:
         request: FastAPI request
@@ -518,13 +541,11 @@ async def telnyx_sms_status_webhook(
                 raise HTTPException(status_code=403, detail="Invalid webhook signature")
 
         body = await request.json()
-        data = body.get("data", {})
-        event_type = data.get("event_type", "")
-        payload = data.get("payload", {})
 
-        await _handle_telnyx_delivery_status(event_type, payload, db)
-
-        return JSONResponse(content={"status": "ok"})
+        # Same dispatcher as /sms/inbound: a messaging profile points ONE
+        # webhook URL at us and sends both inbound messages and delivery
+        # receipts to it, so this route must handle message.received too.
+        return await _handle_telnyx_sms_event(body, db)
 
     except Exception as e:
         logger.error(f"Error processing Telnyx status webhook: {e}", exc_info=True)
@@ -702,10 +723,6 @@ async def _handle_telnyx_delivery_status(
     from app.infrastructure.telephony.base import is_opt_out_send_error
     from app.persistence.models.conversation import Message
 
-    message_id = payload.get("id")
-    if not message_id:
-        return
-
     # Map Telnyx event to status
     status_map = {
         "message.sent": "sent",
@@ -713,6 +730,29 @@ async def _handle_telnyx_delivery_status(
         "message.failed": "failed",
         "message.finalized": "finalized",
     }
+
+    # An inbound message reaching here means a caller bypassed the dispatcher.
+    # This used to be swallowed with a silent 200 and hid a two-month inbound
+    # SMS outage, so make it loud rather than dropping the message.
+    if event_type == "message.received":
+        logger.error(
+            "[TELNYX-WEBHOOK] Inbound message routed to the delivery-status "
+            "handler and was NOT processed - callers must use "
+            "_handle_telnyx_sms_event",
+            extra={"event_type": event_type, "message_id": payload.get("id")},
+        )
+        return
+
+    if event_type not in status_map:
+        logger.warning(
+            f"[TELNYX-WEBHOOK] Unrecognized messaging event type '{event_type}' - ignoring",
+            extra={"event_type": event_type, "message_id": payload.get("id")},
+        )
+
+    message_id = payload.get("id")
+    if not message_id:
+        return
+
     status = status_map.get(event_type, event_type)
 
     # Find message by Telnyx message ID in metadata
